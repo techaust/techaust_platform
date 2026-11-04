@@ -56,4 +56,4 @@ Status: **Client lines C1–C24 and G1–G10 APPROVED by the owner as drafted (2
 
 ## Two more lines from the review fixes (the lead's words, approved by the owner, 2026-11-05)
 - G11. A shared file's size on the Files lists: "{n} bytes" · "{n} KB" · "{n} MB" (for example "512 bytes", "248 KB", "1.8 MB")
-- G12. An "I've paid" note the server refuses: "We couldn't save this note. Keep it under 300 characters."
+- G12. An "I've paid" note the server refuses: "We couldn't save this note. Remove any unusual characters and try again." (reworded and approved by the owner, 2026-11-05: the box already stops more than 300 characters, so a refusal means a pasted control character)
