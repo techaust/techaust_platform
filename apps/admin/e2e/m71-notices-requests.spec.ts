@@ -461,20 +461,52 @@ async function s10Inside(page: Page, label: string) {
     .locator(".pay-notices .dtable__table :is(.pay-notice__payment, .pay-notice__undone a)")
     .all();
   expect(links.length, `${label}: S10 links drawn`).toBeGreaterThan(0);
+  // S10 can wrap under the pill (its narrowest box is narrower than its one-line box), so it never sets the Status column's width
+  const wraps = await page
+    .locator(".pay-notices .dtable__table :is(.pay-notice__payment, .pay-notice__undone)")
+    .evaluateAll((els) =>
+      els.map((el) => {
+        const e = el as HTMLElement;
+        const before = e.style.inlineSize;
+        e.style.inlineSize = "min-content";
+        const min = e.getBoundingClientRect().width;
+        e.style.inlineSize = "max-content";
+        const max = e.getBoundingClientRect().width;
+        e.style.inlineSize = before;
+        return min < max;
+      }),
+    );
+  expect(wraps.every(Boolean), `${label}: every S10 line can wrap`).toBe(true);
   for (const link of links) {
+    // reached by the keyboard (Shift+Tab, then Tab), so the ring drawn is the one a keyboard user sees
     await link.focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
     const r = await link.evaluate((a) => {
       const s = getComputedStyle(a);
-      return (
-        a.getBoundingClientRect().right +
-        Number.parseFloat(s.outlineWidth) +
-        Number.parseFloat(s.outlineOffset)
-      );
+      return {
+        visible: a.matches(":focus-visible"),
+        right:
+          a.getBoundingClientRect().right +
+          Number.parseFloat(s.outlineWidth) +
+          Number.parseFloat(s.outlineOffset),
+      };
     });
-    expect(r, `${label}: an S10 link's focus ring ends inside .dtable`).toBeLessThanOrEqual(region.right);
+    expect(r.visible, `${label}: an S10 link shows its focus ring`).toBe(true);
+    expect(r.right, `${label}: an S10 link's focus ring ends inside .dtable`).toBeLessThanOrEqual(
+      region.right,
+    );
   }
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/recheck-s10-focus-${label.replaceAll(" ", "-")}.png` });
+  // back to the top, as a page opens (axe's target-size reads the tabs, which sit under the sticky bar once scrolled)
+  await page.evaluate(() => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    window.scrollTo(0, 0);
+  });
 }
 
+/** Finding 2: the Client cell is at least 11rem of content plus its padding (2 × space-4): 208 px, a little under for rounding. */
+const CLIENT_COLUMN_MIN = 200;
 /** Finding 2: the Client column (the second) of the first row of the visible table. */
 const clientColumnWidth = async (page: Page) =>
   (
@@ -572,7 +604,7 @@ test("re-check: S10 wraps inside the Recorded table, the Client column keeps its
         expect(
           await clientColumnWidth(page),
           `the Recorded tab's Client column at ${width}`,
-        ).toBeGreaterThanOrEqual(176);
+        ).toBeGreaterThanOrEqual(CLIENT_COLUMN_MIN);
       }
       await page.waitForLoadState("networkidle");
       expect(await axe(page), `recorded ${width} ${theme}`).toEqual([]);
@@ -580,7 +612,7 @@ test("re-check: S10 wraps inside the Recorded table, the Client column keeps its
       if (SHOTS)
         await page.screenshot({ path: `${SHOTS}/recheck-recorded-${width}-${theme}.png`, fullPage: true });
       // the Open tab at the same width: the Client column and the table's region there too
-      await page.getByRole("tab", { name: "Open" }).click();
+      await page.getByRole("tab", { name: "Open", exact: true }).click();
       await expect(page.getByText(`UTR${run}P`).filter({ visible: true }).first()).toBeVisible();
       if (width === 1280) {
         const fits = await page
@@ -589,7 +621,9 @@ test("re-check: S10 wraps inside the Recorded table, the Client column keeps its
           .first()
           .evaluate((d) => d.scrollWidth <= d.clientWidth + 1);
         expect(fits, `open ${width} ${theme}: no sideways scroll inside the table's region`).toBe(true);
-        expect(await clientColumnWidth(page), "the Open tab's Client column").toBeGreaterThanOrEqual(176);
+        expect(await clientColumnWidth(page), "the Open tab's Client column").toBeGreaterThanOrEqual(
+          CLIENT_COLUMN_MIN,
+        );
       }
       await page.waitForLoadState("networkidle");
       expect(await axe(page), `open ${width} ${theme}`).toEqual([]);
@@ -621,7 +655,9 @@ test("re-check 5 and 7: from a notice whose invoice can no longer take money, th
   await expect(dialog.getByText(/Filled in from .*'s notice of/)).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Record a payment" })).toBeEnabled();
   await expect(dialog.getByRole("textbox", { name: /^Amount on this invoice/ })).toHaveCount(0);
-  expect(reads).toEqual([`/api/v1/invoices/${docId}`]);
+  // (the dev server's StrictMode runs the effect twice, so the one read may be made twice; never a list page)
+  expect(reads.length).toBeGreaterThan(0);
+  expect([...new Set(reads)]).toEqual([`/api/v1/invoices/${docId}`]);
   // finding 5: the server's 409 names the invoice, but there is no row: S1's line, never S8 ("this invoice")
   await dialog.getByRole("combobox", { name: "How it was paid" }).selectOption({ label: "NEFT" });
   await dialog.getByRole("button", { name: "Record a payment" }).click();

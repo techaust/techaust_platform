@@ -9,7 +9,7 @@ import { Link } from "react-router";
 import type { Currency, PaymentStatus } from "../../api.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
-import { EmptyState, StatusPill, When } from "../../components/display.tsx";
+import { EmptyState, KeepDates, StatusPill, When } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Alert, CheckCircle, Inbox } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
@@ -94,7 +94,8 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
       key: "told",
       header: ZP_UI.colTold,
       card: "title",
-      cell: (n) => <When ms={n.createdAt} />,
+      // re-check 2: the time may go under the date, so the Client column keeps its width
+      cell: (n) => <When ms={n.createdAt} wrap />,
     },
     {
       key: "client",
@@ -129,7 +130,10 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
       cell: (n) => (
         <span className="pay-notice__money">
           <span className="tnum pay-lines__nowrap">{amountText(n.amountMinor, n.currency)}</span>
-          <span className="pay-lines__meta pay-lines__nowrap">{`${ZP_UI.colPaidOn} ${day(n.paidOn)}`}</span>
+          {/* re-check 2: "Paid on" may go above the date in a narrow column; the date itself never breaks */}
+          <span className="pay-lines__meta">
+            {ZP_UI.colPaidOn} <span className="when--keep">{day(n.paidOn)}</span>
+          </span>
         </span>
       ),
     },
@@ -165,7 +169,8 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
                   {n.payment && <NoticePayment payment={n.payment} />}
                   {n.closedBy?.name && n.closedAt !== null && (
                     <span className="pay-lines__meta">
-                      {ZP_UI.closedBy(n.closedBy.name, day(isoDayOf(n.closedAt)))}
+                      {/* re-check 1: the narrower Status column never breaks the date */}
+                      <KeepDates text={ZP_UI.closedBy(n.closedBy.name, day(isoDayOf(n.closedAt)))} />
                     </span>
                   )}
                   {n.closeNote && <span className="pay-lines__meta">{n.closeNote}</span>}
