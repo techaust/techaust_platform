@@ -465,7 +465,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 - **Meta:** "About TecHaust Technologies | Senior software studio, India" · "A small senior software and AI automation studio in Balurghat, West Bengal, working with clients across India and abroad."
 - **H1:** "A small senior team, by design"
 - **Story (draft, 🟧 OWNER reviews):** "TecHaust Technologies is a software and AI automation studio in Balurghat, West Bengal. We've delivered 20+ projects (business web apps, SaaS products, automations and mobile apps) for clients in India and abroad. We stay deliberately small: a few senior people who build carefully, explain clearly, and look after what they ship."
-- **Founder:** headshot 🟧 OWNER · "**Rupak Sarkar**, Founder" · bio 🟧 OWNER (≈ 80–120 words) · LinkedIn link ✅ (2026-10-23)
+- **Founder:** headshot ✅ (2026-11-04) · "**Rupak Sarkar**, Founder" · bio 🟧 OWNER (≈ 80–120 words) · LinkedIn link ✅ (2026-10-23)
 - **The team:** "Alongside the founder, a small team of senior engineers and designers, each with 10+ years' experience across web, mobile, AI and automation. We bring in trusted specialists, such as security testers and legal partners, when a project needs them." (No names or photos until each person agrees.)
 - **What we value:** "Say what we'll do, then do it" · "Fixed prices, written scope" · "Senior people on every project" · "Honest numbers" · "Look after what we build"
 - **Where we are:** "Balurghat, West Bengal, India. We work remotely with clients everywhere, and visit in India when it helps."
@@ -575,7 +575,7 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 | Asset / input | Used on | Status |
 |---|---|---|
 | Logo | Everywhere; PDFs; email; favicon | ✅ New identity "Patina" approved 2026-10-06; files in `packages/ui/brand/` ([06 §1](06-design-system.md)). The supplied `TecHaust.ai` logo is retired. |
-| Founder headshot (≥ 1200 px, plain background) | About, blog author, OG | 🟧 OWNER: on hold, a new iPhone photo to come (2026-10-23); none used until then |
+| Founder headshot (≥ 1200 px, plain background) | About, blog author, OG | ✅ 2026-11-04: the owner's photo, background and light edited, chosen by the owner; `apps/web/src/assets/founder/founder.jpg` (1122 × 1402, 4:5; the About frame uses up to 1056 px) |
 | Founder bio (80–120 words) + LinkedIn URL | About, blog | Bio 🟧 OWNER sends facts, the lead drafts, the owner approves · LinkedIn ✅ `https://www.linkedin.com/in/r4rupak1997` (2026-10-23) |
 | TecHaust LinkedIn company page URL | Footer, schema `sameAs` | 🟧 OWNER |
 | WhatsApp business number | Contact, footer, thanks, CTA bands | ✅ 2026-11-01: +91 98830 23931 (registered, on WhatsApp Business; also the company phone, `site.whatsapp` and `site.phone`) |
