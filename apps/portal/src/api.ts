@@ -586,12 +586,12 @@ export const portalApi = {
   projects: (after?: string) =>
     send<{ projects: ProjectItem[]; next: string | null }>(`/projects${query(q("after", after))}`, {}),
   project: (id: string) => send<ProjectPage>(`/projects/${encodeURIComponent(id)}`, {}),
-  /**
-   * The next page of a project's milestones (B3, early check 2 finding 6). ASSUMED shape, to confirm with B3: `GET /projects/:id?milestonesAfter=` answering the
-   * project page (its `milestones` and `milestonesNext`).
-   */
+  /** The next page of a project's milestones (B3, early check 2 finding 6): `GET /projects/:id?after=<the last position shown>`, keyset pages of 50. */
   milestones: (id: string, after: string) =>
-    send<ProjectPage>(`/projects/${encodeURIComponent(id)}${query(q("milestonesAfter", after))}`, {}),
+    send<{ milestones: Milestone[]; milestonesNext: string | null }>(
+      `/projects/${encodeURIComponent(id)}${query(q("after", after))}`,
+      {},
+    ),
   notes: (projectId: string, after: string) =>
     send<{ notes: SharedNote[]; next: string | null }>(
       `/notes${query(q("project", projectId), q("after", after))}`,

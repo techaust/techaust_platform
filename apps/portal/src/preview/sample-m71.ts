@@ -237,7 +237,7 @@ let requests: (RequestItem & { contact: string })[] = [
   },
 ];
 
-let me = {
+let me: { name: string; email: string; phone: string | null; title: string | null; updatedAt: number } = {
   name: "Asha Iyer (sample)",
   email: "asha.iyer@kestrel.example.test",
   phone: "+91 98300 00000",
