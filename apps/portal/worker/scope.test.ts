@@ -119,29 +119,102 @@ const TENANT_CASES: Record<string, TenantCase> = {
 };
 
 /**
- * Guarded routes that name an organisation's row by an id and are proven in offer-routes.test.ts with the same `crossTenant` harness on
- * their own fixtures (a proposal must be sent and rendered to be shown, which an invoice fixture is not). Here they only join the SQL-spy loop.
+ * Guarded routes that name an organisation's row by an id and are proven in another test file on its own fixtures (a proposal must be sent and rendered to
+ * be shown, a deed signed, which an invoice fixture is not). Here they only join the SQL-spy loop. M7.1 (run file I): each entry names its FILE and the
+ * `crossTenant` CASE there that proves it (a source scan below checks the file holds that case); `proof` instead of `case` is a route proven by its file's
+ * own 404 tests, with the reason (the pre-M7.1 rows that have no `crossTenant` case; every M7.1 row has one).
  */
-const TENANT_ELSEWHERE: Record<string, { request: (id: string) => { path: string; init?: CallInit } }> = {
-  "GET /api/v1/offers": { request: () => ({ path: "/offers" }) },
-  "GET /api/v1/invoices/:id/pdf": { request: (id) => ({ path: `/invoices/${id}/pdf` }) },
-  "GET /api/v1/offers/:id": { request: (id) => ({ path: `/offers/${id}` }) },
-  "GET /api/v1/offers/:id/pdf": { request: (id) => ({ path: `/offers/${id}/pdf` }) },
-  "GET /api/v1/offers/:id/certificate": { request: (id) => ({ path: `/offers/${id}/certificate` }) },
+type Elsewhere = { request: (id: string) => { path: string; init?: CallInit }; file: string } & (
+  | { case: string }
+  | { proof: string }
+);
+let noticeRef = 0;
+const TENANT_ELSEWHERE: Record<string, Elsewhere> = {
+  "GET /api/v1/offers": {
+    request: () => ({ path: "/offers" }),
+    file: "offer-routes.test.ts",
+    proof: "the list of the session's own organisation: no id from the caller",
+  },
+  "GET /api/v1/invoices/:id/pdf": {
+    request: (id) => ({ path: `/invoices/${id}/pdf` }),
+    file: "cross-tenant.test.ts",
+    case: "GET /invoices/:id/pdf (a credit note)",
+  },
+  "GET /api/v1/offers/:id": {
+    request: (id) => ({ path: `/offers/${id}` }),
+    file: "offer-routes.test.ts",
+    case: "GET /offers/:id",
+  },
+  "GET /api/v1/offers/:id/pdf": {
+    request: (id) => ({ path: `/offers/${id}/pdf` }),
+    file: "offer-routes.test.ts",
+    case: "GET /offers/:id/pdf",
+  },
+  "GET /api/v1/offers/:id/certificate": {
+    request: (id) => ({ path: `/offers/${id}/certificate` }),
+    file: "offer-routes.test.ts",
+    proof:
+      "another organisation's certificate is the plain 404 in offer-routes.test.ts (an accepted offer is needed)",
+  },
   "POST /api/v1/offers/:id/accept": {
     request: (id) => ({
       path: `/offers/${id}/accept`,
       init: { body: { typedName: "Sample Person", agree: true } },
     }),
+    file: "offer-routes.test.ts",
+    proof: "accept on another organisation's offer is the plain 404 in offer-routes.test.ts",
   },
   "POST /api/v1/offers/:id/decline": {
     request: (id) => ({ path: `/offers/${id}/decline`, init: { body: { reason: "price" } } }),
+    file: "offer-routes.test.ts",
+    proof: "decline on another organisation's offer is the plain 404 in offer-routes.test.ts",
   },
   // T11: the signed deeds and the signed PDF (named in the body), proven with `crossTenant` in deeds.test.ts on their own fixtures (a deed must be signed).
-  "GET /api/v1/deeds": { request: (id) => ({ path: `/deeds?document=${id}` }) },
-  // M6.5 (E): a receipt's PDF, proven in receipts.test.ts on its own fixtures (a receipt needs a confirmed payment).
-  "GET /api/v1/receipts/:id/pdf": { request: (id) => ({ path: `/receipts/rct_${id}/pdf` }) },
-  "POST /api/v1/deeds/pdf": { request: (id) => ({ path: "/deeds/pdf", init: { body: { id } } }) },
+  "GET /api/v1/deeds": {
+    request: (id) => ({ path: `/deeds?document=${id}` }),
+    file: "deeds.test.ts",
+    proof: "the organisation's own signed deeds: no id from the caller is read",
+  },
+  // M6.5 (E): a receipt's PDF; M7.1 proves it with `crossTenant` on the fixtures' receipts.
+  "GET /api/v1/receipts/:id/pdf": {
+    request: (id) => ({ path: `/receipts/rct_${id}/pdf` }),
+    file: "cross-tenant.test.ts",
+    case: "GET /receipts/:id/pdf",
+  },
+  "POST /api/v1/deeds/pdf": {
+    request: (id) => ({ path: "/deeds/pdf", init: { body: { id } } }),
+    file: "deeds.test.ts",
+    case: "POST /deeds/pdf",
+  },
+  // M7.1 (run file I): every route that takes an id, proven in cross-tenant.test.ts on the fixtures' M7.1 rows.
+  "GET /api/v1/projects/:id": {
+    request: (id) => ({ path: `/projects/${id}` }),
+    file: "cross-tenant.test.ts",
+    case: "GET /projects/:id",
+  },
+  "GET /api/v1/notes": {
+    request: (id) => ({ path: `/notes?project=${id}` }),
+    file: "cross-tenant.test.ts",
+    case: "GET /notes?project=",
+  },
+  "GET /api/v1/files": {
+    request: (id) => ({ path: `/files?project=${id}` }),
+    file: "cross-tenant.test.ts",
+    case: "GET /files?project=",
+  },
+  "GET /api/v1/files/:id/download": {
+    request: (id) => ({ path: `/files/${id}/download` }),
+    file: "cross-tenant.test.ts",
+    case: "GET /files/:id/download",
+  },
+  "POST /api/v1/invoices/:id/paid-notice": {
+    request: (id) => ({
+      path: `/invoices/${id}/paid-notice`,
+      init: { body: { amountMinor: 100, paidOn: "2026-11-04", reference: `SPY${++noticeRef}` } },
+    }),
+    file: "cross-tenant.test.ts",
+    case: "POST /invoices/:id/paid-notice",
+  },
 };
 
 /** Guarded routes that touch no row of an organisation by a caller-named id, with the reason and a sample request. */
@@ -165,6 +238,36 @@ const NO_CLIENT_ROWS: Record<
     request: (f) => ({ path: `/invoices/${f.b.docs.issued}/pay`, init: { body: { amountMinor: 118000 } } }),
     // The finance Worker is unreachable here (`NO_FINANCE`): the portal answers 502 (gateway_error) without reading anything.
     statuses: [502],
+  },
+  // M7.1 (run file C): the routes of the session's own organisation and contact that take no id from the caller.
+  "GET /api/v1/home": {
+    why: "the session's own organisation's blocks: no id from the caller",
+    request: () => ({ path: "/home" }),
+  },
+  "GET /api/v1/projects": {
+    why: "the list of the session's own organisation: no id from the caller",
+    request: () => ({ path: "/projects" }),
+  },
+  "GET /api/v1/receipts": {
+    why: "the list of the session's own organisation: no id from the caller",
+    request: () => ({ path: "/receipts" }),
+  },
+  "GET /api/v1/profile": {
+    why: "the session's own contact, colleagues and requests: no id from the caller",
+    request: () => ({ path: "/profile" }),
+  },
+  "POST /api/v1/profile": {
+    why: "updates the session's own contact only (a stale version is a 409)",
+    request: () => ({
+      path: "/profile",
+      init: { body: { name: "finance of CL-A", phone: null, expectedUpdatedAt: 1 } },
+    }),
+    statuses: [200, 409],
+  },
+  "POST /api/v1/requests": {
+    why: "a request by the session's own contact for its own organisation",
+    request: () => ({ path: "/requests", init: { body: { kind: "data_access" } } }),
+    statuses: [201, 409, 429],
   },
   "GET /api/v1/test/echo": { why: "echoes the scope", request: () => ({ path: "/test/echo" }) },
   "POST /api/v1/test/echo-body": {
@@ -203,9 +306,44 @@ describe("every guarded route is classified for the cross-tenant and SQL-spy tes
         "GET /api/v1/invoices",
         "GET /api/v1/invoices/:id",
         "POST /api/v1/invoices/:id/pay",
+        "GET /api/v1/home",
+        "GET /api/v1/projects",
+        "GET /api/v1/receipts",
+        "GET /api/v1/profile",
+        "POST /api/v1/profile",
+        "POST /api/v1/requests",
         ...Object.keys(TENANT_ELSEWHERE),
       ].sort(),
     );
+  });
+
+  it("M7.1: each TENANT_ELSEWHERE entry names its file, and that file holds the crossTenant case it names (or a stated proof)", () => {
+    const sources = import.meta.glob("./*.test.ts", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    }) as Record<string, string>;
+    for (const [key, e] of Object.entries(TENANT_ELSEWHERE)) {
+      const text = sources[`./${e.file}`];
+      expect(text, `${key}: ${e.file} does not exist`).toBeTypeOf("string");
+      if ("case" in e) {
+        expect(text, `${key}: ${e.file} has no crossTenant call`).toMatch(/\bcrossTenant\(/);
+        expect(text, `${key}: ${e.file} has no crossTenant case named "${e.case}"`).toContain(
+          `name: "${e.case}"`,
+        );
+      } else expect(e.proof.length, key).toBeGreaterThan(10);
+    }
+    // Every M7.1 route that takes an id has a crossTenant case (none relies on a stated proof).
+    for (const key of [
+      "GET /api/v1/projects/:id",
+      "GET /api/v1/notes",
+      "GET /api/v1/files",
+      "GET /api/v1/files/:id/download",
+      "GET /api/v1/receipts/:id/pdf",
+      "GET /api/v1/invoices/:id/pdf",
+      "POST /api/v1/invoices/:id/paid-notice",
+    ])
+      expect("case" in (TENANT_ELSEWHERE[key] as Elsewhere), key).toBe(true);
   });
 });
 

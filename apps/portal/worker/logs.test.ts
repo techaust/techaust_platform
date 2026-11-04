@@ -42,7 +42,7 @@ const accessOf = (rid: string) =>
   );
 
 describe("the request log line [NFR-6]", () => {
-  it("has exactly ev, r, s, rid, iso and n; r is the route PATTERN (or 'other')", async () => {
+  it("has exactly ev, r, s, rid, iso and n (and f: 1 on a pattern's first run in the isolate, M7.1 J); r is the route PATTERN (or 'other')", async () => {
     const f = await fixtures();
     const s = await sessionFor(f.a.plain);
     const spy = spyConsole();
@@ -57,7 +57,15 @@ describe("the request log line [NFR-6]", () => {
     }
     const logged = reqLines(spy.lines);
     expect(logged).toHaveLength(5);
-    for (const l of logged) expect(Object.keys(l).sort()).toEqual(["ev", "iso", "n", "r", "rid", "s"]);
+    for (const l of logged) {
+      expect(
+        Object.keys(l)
+          .filter((k) => k !== "f")
+          .sort(),
+      ).toEqual(["ev", "iso", "n", "r", "rid", "s"]);
+      // `f` is the first-run marker: 1 or absent, never anything else.
+      expect([undefined, 1]).toContain(l.f);
+    }
     expect(logged.map((l) => [l.r, l.s, l.rid])).toEqual([
       ["/api/v1/auth/magic", 200, "ray-1"],
       ["/api/v1/me", 200, "ray-2"],
@@ -69,6 +77,22 @@ describe("the request log line [NFR-6]", () => {
     expect(logged[0]?.iso).toMatch(/^[0-9a-f]{6}$/);
     const ns = logged.map((l) => l.n as number);
     for (let i = 1; i < ns.length; i++) expect(ns[i]).toBe((ns[i - 1] as number) + 1);
+  });
+
+  it("M7.1 J: f: 1 marks only the first run of a route pattern in the isolate; the next request to it has no f", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.plain);
+    const spy = spyConsole();
+    try {
+      // /profile is answered first here (no earlier test in this file asks for it), then again.
+      await call("/profile", { cookie: s.cookie });
+      await call("/profile", { cookie: s.cookie });
+      await call("/profile?limit=5", { cookie: s.cookie });
+    } finally {
+      spy.stop();
+    }
+    const lines = reqLines(spy.lines).filter((l) => l.r === "/api/v1/profile");
+    expect(lines.map((l) => l.f)).toEqual([1, undefined, undefined]);
   });
 
   it("a request with no cf-ray logs its own random 16-hex request id", async () => {

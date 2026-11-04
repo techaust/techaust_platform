@@ -16,6 +16,7 @@ import {
   call,
   counting,
   countOf,
+  extraContact,
   one,
   rows,
   withDb,
@@ -150,6 +151,8 @@ describe("a valid link opens exactly one document [POR-06]", () => {
         // M6.3: the gateway of the document's currency (Stripe for USD, Razorpay for INR)
         "provider",
         "providers",
+        // M7.1 (L10): whether "I've paid" is offered
+        "paidNotice",
       ].sort(),
     );
     expect(body.document).toMatchObject({
@@ -349,7 +352,10 @@ describe("a valid link opens exactly one document [POR-06]", () => {
         r.path
           .replace("/offers/:id", "/offers")
           .replace("/invoices/:id", "/invoices")
-          .replace("/receipts/:id", "/receipts"),
+          .replace("/receipts/:id", "/receipts")
+          // M7.1: a project's and a shared file's ids (the session's own, bound to its client).
+          .replace("/projects/:id", "/projects")
+          .replace("/files/:id", "/files"),
         r.path,
       ).not.toMatch(/:|\?|token/i);
     }
@@ -549,7 +555,8 @@ describe("everything else is the same 404 [POR-06]", () => {
       const did = uuidv7();
       // inserted frozen, as a link needs (a draft cannot get one); the quote statuses are never open for an invoice-family document
       await env.DB.prepare(
-        "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display, voided_at, void_reason) VALUES (?1, 'proforma', ?2, ?3, 'INR', 1000, 'p', '2627', ?4, ?5, ?6, ?7)",
+        // M7.1 L12: frozen now, so a paid or credited one is inside its 30 days after settlement (its own freeze, no allocation).
+        "INSERT INTO documents (id, type, status, client_id, currency, frozen_at, series, fy, number, number_display, voided_at, void_reason) VALUES (?1, 'proforma', ?2, ?3, 'INR', ?8, 'p', '2627', ?4, ?5, ?6, ?7)",
       )
         .bind(
           did,
@@ -559,6 +566,7 @@ describe("everything else is the same 404 [POR-06]", () => {
           `TH/S/${seq}`,
           status === "void" ? 5 : null,
           status === "void" ? "x" : null,
+          Date.now(),
         )
         .run();
       const token = await link(f.a.finance, did);
@@ -611,14 +619,17 @@ describe("the first view and the audit rows [NFR-9, Q1 = A]", () => {
     );
   });
 
-  it("every valid use writes exactly one doc_token.use row (actor type contact, the contact the link is bound to, the document) and one access row", async () => {
+  it("a valid use writes one doc_token.use row (actor type contact, the contact the link is bound to, the document) and one access row; a second use within 15 minutes an access row only (L11)", async () => {
     const f = await fixtures();
+    // A fresh document and link: the shared fixtures' link was used by earlier tests within the 15 minutes.
+    const fresh = await frozenDoc(f.a.id, "tax_invoice");
+    const token = await link(f.a.finance, fresh);
     await call("/t/document", {
-      body: { token: f.tokens.aIssued },
+      body: { token },
       ip: "192.0.2.81",
       headers: { "cf-ray": "ray-doc-1", "User-Agent": "doc-agent" },
     });
-    await call("/t/document", { body: { token: f.tokens.aIssued }, headers: { "cf-ray": "ray-doc-2" } });
+    await call("/t/document", { body: { token }, headers: { "cf-ray": "ray-doc-2" } });
     expect(
       await rows(
         "SELECT actor_type, actor_id, role, action, entity_type, entity_id, ip, user_agent FROM audit_log WHERE request_id = 'ray-doc-1'",
@@ -630,15 +641,26 @@ describe("the first view and the audit rows [NFR-9, Q1 = A]", () => {
         role: null,
         action: "doc_token.use",
         entity_type: "document",
-        entity_id: f.a.docs.issued,
+        entity_id: fresh,
         ip: "192.0.2.81",
         user_agent: "doc-agent",
       },
     ]);
-    expect(await countOf("audit_log", "request_id = 'ray-doc-2' AND action = 'doc_token.use'")).toBe(1);
+    expect(await countOf("audit_log", "request_id = 'ray-doc-2' AND action = 'doc_token.use'")).toBe(0);
     expect(
       await rows("SELECT realm, actor_id, route, status FROM access_log WHERE request_id = 'ray-doc-1'"),
     ).toEqual([{ realm: "portal", actor_id: f.a.finance.id, route: "/api/v1/t/document", status: 200 }]);
+    expect(await countOf("access_log", "request_id = 'ray-doc-2'")).toBe(1);
+    // After 15 minutes the next use is audited again (the audit log is append-only, so the Worker's clock moves 16 minutes on instead).
+    const real = Date.now();
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => real + 16 * 60_000);
+    try {
+      await call("/t/document", { body: { token }, headers: { "cf-ray": "ray-doc-3" } });
+    } finally {
+      clock.mockRestore();
+    }
+    expect(await countOf("audit_log", "request_id = 'ray-doc-3' AND action = 'doc_token.use'")).toBe(1);
+    expect(await countOf("audit_log", `entity_id = '${fresh}' AND action = 'doc_token.use'`)).toBe(2);
   });
 
   it("a failed check writes its counter and an access row (404) and NO audit row", async () => {
@@ -802,5 +824,106 @@ describe("failed checks count per address; a blocked address writes nothing [POR
     for (let i = 0; i < 10; i++) await use(`d-${i}`, { ip });
     expect((await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip)))?.failures).toBe(20);
     expect((await use("one-more", { ip })).status).toBe(429);
+  });
+});
+
+describe("M7.1 L12: a link ends 30 days after the document is settled", () => {
+  /** A paid invoice whose only allocation was made `ago` ms before now (a confirmed payment, as M6.1 records one). */
+  async function paidAgo(orgId: string, ago: number, status = "paid") {
+    const owner = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO staff_users (id, email, name, role, status) VALUES (?1, ?2, 'Owner', 'owner', 'active')",
+    )
+      .bind(owner, `${owner}@example.test`)
+      .run();
+    const doc = await frozenDoc(orgId, "tax_invoice");
+    const pid = uuidv7();
+    await env.DB.prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 100000, '2026-11-02', 'neft', ?3, 1000, ?3, 1000)`,
+    )
+      .bind(pid, orgId, owner)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_at) VALUES (?1, ?2, ?3, 100000, 'allocate', ?4)",
+    )
+      .bind(uuidv7(), pid, doc, Date.now() - ago)
+      .run();
+    const paid = status === "paid" ? 118000 : 100000;
+    await env.DB.prepare(
+      "UPDATE documents SET status = ?2, paid_minor = ?3, balance_minor = 118000 - ?3, updated_at = updated_at + 1 WHERE id = ?1",
+    )
+      .bind(doc, status, paid)
+      .run();
+    return doc;
+  }
+
+  it("29 days after full payment it opens; 31 days after it is the 404 (counted like any dead link); a refund that reopens the balance opens it again", async () => {
+    const f = await fixtures();
+    const DAY_MS = 86_400_000;
+    expect((await use(await link(f.a.finance, await paidAgo(f.a.id, 29 * DAY_MS)))).status).toBe(200);
+    const ip = "192.0.2.171";
+    const old = await use(await link(f.a.finance, await paidAgo(f.a.id, 31 * DAY_MS)), { ip });
+    expect(old.status).toBe(404);
+    expect(await bodyOf(old)).toEqual(NOT_FOUND);
+    expect((await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip)))?.failures).toBe(1);
+    // M6.5 L1: a refund releases the allocation and the status leaves `paid`: the link opens again whatever the old allocation's age.
+    expect(
+      (await use(await link(f.a.finance, await paidAgo(f.a.id, 365 * DAY_MS, "partially_paid")))).status,
+    ).toBe(200);
+  });
+});
+
+describe("M7.1 L13: the PDF is served only from the state read in the view's batch", () => {
+  async function pdfDoc(orgId: string, withPdf: boolean) {
+    const key = `docs/tax_invoice/2026-27/${9500 + ++seq}-v1.pdf`;
+    await env.DOCS.put(key, "%PDF-1.4 l13");
+    const doc = await frozenDoc(orgId, "tax_invoice", withPdf ? { pdfKey: key } : {});
+    return { doc, key };
+  }
+  const viewedAt = async (id: string) =>
+    (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", id))?.v ?? null;
+
+  it("a link revoked, or its contact's finance turned off, after the link was checked: the 404, R2 not read, no view, not counted", async () => {
+    const f = await fixtures();
+    for (const change of ["revoke", "finance"] as const) {
+      const who = await extraContact(f.a.id, { finance: true });
+      const { doc } = await pdfDoc(f.a.id, true);
+      const token = await link(who, doc);
+      const ip = change === "revoke" ? "192.0.2.172" : "192.0.2.173";
+      const apply = () =>
+        change === "revoke"
+          ? env.DB.prepare("UPDATE doc_access_tokens SET revoked_at = ?1 WHERE document_id = ?2")
+              .bind(Date.now(), doc)
+              .run()
+          : env.DB.prepare("UPDATE contacts SET can_see_finance = 0 WHERE id = ?1").bind(who.id).run();
+      const get = vi.spyOn(env.DOCS, "get");
+      try {
+        const res = await call(
+          "/t/document/pdf",
+          { body: { token }, ip },
+          withDb(beforeBatch(env.DB, 2, apply)),
+        );
+        expect(res.status, change).toBe(404);
+        expect(await bodyOf(res), change).toEqual(NOT_FOUND);
+        expect(get, change).not.toHaveBeenCalled();
+      } finally {
+        get.mockRestore();
+      }
+      expect(await viewedAt(doc), change).toBeNull();
+      expect(await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip)), change).toBeNull();
+    }
+  });
+
+  it("a PDF that finished after the link was checked is served from the state read (not the earlier read's empty key)", async () => {
+    const f = await fixtures();
+    const { doc, key } = await pdfDoc(f.a.id, false);
+    const token = await link(f.a.finance, doc);
+    const finish = () =>
+      env.DB.prepare("UPDATE documents SET pdf_r2_key = ?2 WHERE id = ?1").bind(doc, key).run();
+    const res = await call("/t/document/pdf", { body: { token } }, withDb(beforeBatch(env.DB, 2, finish)));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("%PDF-1.4 l13");
+    expect(await viewedAt(doc)).not.toBeNull();
   });
 });

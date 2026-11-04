@@ -448,7 +448,8 @@ export function crossTenant(
       const f = await fx();
       const s = await sessionFor(f.a.finance);
       const { path, init } = c.request(mine(f));
-      expect((await send(path, { ...init, cookie: s.cookie })).status).toBe(200);
+      // 200, or 201 for a route that creates a row of mine (M7.1's "I've paid").
+      expect([200, 201]).toContain((await send(path, { ...init, cookie: s.cookie })).status);
     });
     it(`${c.name}: another organisation's document, a made-up id and a hidden document are one and the same 404`, async () => {
       const f = await fx();

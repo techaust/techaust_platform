@@ -64,6 +64,7 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "POST /api/v1/t/document",
         "POST /api/v1/t/document/pdf",
         "POST /api/v1/t/document/pay", // M6.2
+        "POST /api/v1/t/document/paid-notice", // M7.1: "I've paid" from the emailed link
         "POST /api/v1/t/offer",
         "POST /api/v1/t/offer/pdf",
         "POST /api/v1/t/offer/certificate",
@@ -91,6 +92,18 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "GET /api/v1/deeds",
         "POST /api/v1/deeds/pdf",
         "GET /api/v1/receipts/:id/pdf", // M6.5
+        // M7.1: the full portal
+        "GET /api/v1/home",
+        "GET /api/v1/projects",
+        "GET /api/v1/projects/:id",
+        "GET /api/v1/notes",
+        "GET /api/v1/files",
+        "GET /api/v1/files/:id/download",
+        "GET /api/v1/receipts",
+        "GET /api/v1/profile",
+        "POST /api/v1/profile",
+        "POST /api/v1/requests",
+        "POST /api/v1/invoices/:id/paid-notice",
       ].sort(),
     );
     expect(pairs(ROUTES.filter((r) => r.access === "finance"))).toEqual(
@@ -102,6 +115,9 @@ describe("every guarded route needs a session [POR-02, POR-03]", () => {
         "GET /api/v1/deeds",
         "POST /api/v1/deeds/pdf",
         "GET /api/v1/receipts/:id/pdf",
+        // M7.1: the receipts and credit-notes list, and "I've paid" when signed in
+        "GET /api/v1/receipts",
+        "POST /api/v1/invoices/:id/paid-notice",
       ].sort(),
     );
   });

@@ -288,6 +288,21 @@ describe("viewPayLiveSql is core viewPayLive [L12]", () => {
     expect(viewPayLive(null, t + 365 * DAY)).toBe(true);
   });
 
+  it("B2: a settled document with no allocation, credit note or child invoice is settled at its own freeze (30 days from issue, never at once)", async () => {
+    const client = await mkClientRow();
+    const t = 1_870_000_000_000;
+    const doc = await mkIssued(client, { status: "paid", balance: 0, frozenAt: t });
+    for (const [now, want] of [
+      [t + 29 * DAY, 1],
+      [t + 31 * DAY, 0],
+    ] as const) {
+      const r = await live(doc, now);
+      expect(r.settled).toBe(t);
+      expect(r.live).toBe(want);
+      expect(viewPayLive(r.settled, now)).toBe(want === 1);
+    }
+  });
+
   it("reads the allocation and credit-note indexes it names", async () => {
     const p = await plan(`SELECT ${viewPayLiveSql("d", "?2")} FROM documents d WHERE d.id = ?1`, "x", 1);
     expect(p).toMatch(/payment_allocations_document/);

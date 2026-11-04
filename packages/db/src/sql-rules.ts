@@ -306,10 +306,12 @@ export const VIEW_PAY_GRACE_MS_SQL = 2_592_000_000;
 /**
  * When document `d` (a documents alias) was last settled: the latest of its allocation rows' `created_at`, the freeze of any credit note against it, and the
  * freeze of any tax or export invoice issued from it (a proforma's money is on its tax invoice for the payment received, `parent_id` = the proforma: early check 1
- * finding 2); 0 when there is none. One seek of `payment_allocations_document` and one of `documents_parent`.
+ * finding 2); never before the document's own freeze (B2: a document settled at issue, such as one with no allocation row, ends 30 days after it was issued,
+ * never at once). One seek of `payment_allocations_document` and one of `documents_parent`.
  */
 export const settledAtSql = (d: string): string =>
-  `max(coalesce((SELECT max(vpa.created_at) FROM payment_allocations vpa INDEXED BY payment_allocations_document WHERE vpa.document_id = ${d}.id), 0),
+  `max(coalesce(${d}.frozen_at, 0),
+       coalesce((SELECT max(vpa.created_at) FROM payment_allocations vpa INDEXED BY payment_allocations_document WHERE vpa.document_id = ${d}.id), 0),
        coalesce((SELECT max(vcn.frozen_at) FROM documents vcn INDEXED BY documents_parent WHERE vcn.parent_id = ${d}.id AND vcn.type IN ('credit_note', 'tax_invoice', 'export_invoice') AND vcn.frozen_at IS NOT NULL), 0))`;
 
 /**

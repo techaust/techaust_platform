@@ -21,7 +21,37 @@ export type FxOrg = {
   anonymised: FxContact;
   /** Document ids by state. */
   docs: { issued: string; draft: string; pending: string; void: string; proposal: string; proforma: string };
+  /** M7.1: a project with milestones, shared and internal notes, shared, unshared and missing files, a receipt and a credit note. */
+  portal: FxPortal;
 };
+
+/** M7.1's rows of one organisation (`portal` of `FxOrg`). Every internal note's body holds `INTERNAL_CANARY` and the organisation's code. */
+export type FxPortal = {
+  /** An active project with two milestones (the second invoiced by `docs.issued`). */
+  project: string;
+  /** A completed one, with nothing shared. */
+  doneProject: string;
+  sharedNote: string;
+  internalNote: string;
+  /** Shared, not in a project. */
+  clientNote: string;
+  /** Shared, in `project`, its object in FILES. */
+  sharedFile: string;
+  unsharedFile: string;
+  /** Shared, but its object is not in FILES (an incident). */
+  missingFile: string;
+  /** The bytes of `sharedFile`. */
+  fileBytes: string;
+  /** An issued receipt (of a confirmed payment) with its PDF in DOCS. */
+  receipt: string;
+  /** An issued credit note against `payable`, its PDF in DOCS. */
+  creditNote: string;
+  /** An issued tax invoice with an issue day (2026-11-01) and a balance of 118,000: "I've paid" takes a notice on it. */
+  payable: string;
+};
+
+/** Every internal note's body carries this: no portal answer may ever contain it. */
+export const INTERNAL_CANARY = "INTERNAL-CANARY-7f3c";
 
 export type Fixtures = {
   a: FxOrg;
@@ -97,6 +127,14 @@ async function org(code: string, name: string): Promise<FxOrg> {
       .run();
     return did;
   };
+  const docs = {
+    issued: await doc("tax_invoice", "issued", { frozen: true }),
+    draft: await doc("tax_invoice", "draft"),
+    pending: await doc("tax_invoice", "pending_approval"),
+    void: await doc("tax_invoice", "void", { frozen: true, void: true }),
+    proposal: await doc("proposal", "sent"),
+    proforma: await doc("proforma", "issued", { frozen: true }),
+  };
   return {
     id,
     name,
@@ -104,14 +142,136 @@ async function org(code: string, name: string): Promise<FxOrg> {
     plain: await contact("plain", { portal: true, finance: false }),
     noAccess: await contact("noaccess", { portal: false, finance: false }),
     anonymised: await contact("anon", { portal: true, finance: false, anonymised: true }),
-    docs: {
-      issued: await doc("tax_invoice", "issued", { frozen: true }),
-      draft: await doc("tax_invoice", "draft"),
-      pending: await doc("tax_invoice", "pending_approval"),
-      void: await doc("tax_invoice", "void", { frozen: true, void: true }),
-      proposal: await doc("proposal", "sent"),
-      proforma: await doc("proforma", "issued", { frozen: true }),
-    },
+    docs,
+    portal: await portalRows(id, code, docs.issued),
+  };
+}
+
+/** M7.1's rows of one organisation, straight in the database (and FILES / DOCS for the objects). */
+async function portalRows(clientId: string, code: string, invoiceId: string): Promise<FxPortal> {
+  const db = env.DB;
+  const now = Date.now();
+  const project = async (status: string, at: number) => {
+    const pid = uuidv7();
+    await db
+      .prepare(
+        "INSERT INTO projects (id, code, client_id, name, status, start_date, target_date, currency, budget_minor, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, '2026-10-01', '2026-12-31', 'INR', 9900000, ?6, ?6)",
+      )
+      .bind(pid, `P-${code}-${pid.slice(-6)}`, clientId, `Website for ${code}`, status, at)
+      .run();
+    return pid;
+  };
+  const p = await project("active", now - 2 * DAY);
+  const done = await project("completed", now - 3 * DAY);
+  await db.batch([
+    db
+      .prepare(
+        "INSERT INTO milestones (id, project_id, position, title, amount_minor, due_date, status) VALUES (?1, ?2, 1, 'Discovery', 50000, '2026-11-10', 'pending')",
+      )
+      .bind(uuidv7(), p),
+    db
+      .prepare(
+        "INSERT INTO milestones (id, project_id, position, title, amount_minor, due_date, status, document_id) VALUES (?1, ?2, 2, 'Build', 118000, '2026-11-30', 'invoiced', ?3)",
+      )
+      .bind(uuidv7(), p, invoiceId),
+  ]);
+  const note = async (projectId: string | null, visibility: string, body: string, at: number) => {
+    const nid = uuidv7();
+    await db
+      .prepare(
+        "INSERT INTO notes (id, client_id, project_id, visibility, body_md, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
+      )
+      .bind(nid, clientId, projectId, visibility, body, at)
+      .run();
+    return nid;
+  };
+  const sharedNote = await note(p, "shared", `**Kick-off** notes for ${code}`, now - DAY);
+  const internalNote = await note(p, "internal", `${INTERNAL_CANARY} ${code} margin talk`, now - DAY + 1);
+  const clientNote = await note(null, "shared", `Welcome, ${code}`, now - DAY + 2);
+  const fileBytes = `%PDF-1.7 shared file of ${code}`;
+  const file = async (shared: number, put: boolean) => {
+    const fid = uuidv7();
+    const key = `files/${clientId}/${fid}`;
+    if (put) await env.FILES.put(key, new TextEncoder().encode(fileBytes));
+    await db
+      .prepare(
+        "INSERT INTO files (id, client_id, project_id, r2_key, filename, mime, size, sha256, shared, created_at) VALUES (?1, ?2, ?3, ?4, ?5, 'application/pdf', ?6, ?7, ?8, ?9)",
+      )
+      .bind(fid, clientId, p, key, `Brief ${code}.pdf`, fileBytes.length, "a".repeat(64), shared, now - DAY)
+      .run();
+    return fid;
+  };
+  const sharedFile = await file(1, true);
+  const unsharedFile = await file(0, true);
+  const missingFile = await file(1, false);
+  const n = ++docNo;
+  const receiptKey = `docs/receipt/fx/${clientId}-${n}.pdf`;
+  await env.DOCS.put(receiptKey, new TextEncoder().encode("%PDF-1.7 receipt"));
+  // A receipt is the receipt of a confirmed payment of the client, of the same amount (trigger `documents_receipt_insert`).
+  const owner = uuidv7();
+  await db
+    .prepare(
+      "INSERT INTO staff_users (id, email, name, role, status) VALUES (?1, ?2, 'Owner', 'owner', 'active')",
+    )
+    .bind(owner, `${owner}@example.test`)
+    .run();
+  const pid = uuidv7();
+  await db
+    .prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'payment', 'manual', 'confirmed', 'INR', 50000, '2026-11-02', 'neft', ?3, 1000, ?3, 1000)`,
+    )
+    .bind(pid, clientId, owner)
+    .run();
+  const receipt = `rct_${pid}`;
+  await db
+    .prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, total_minor, header_extras, pdf_r2_key) VALUES (?1, 'receipt', 'issued', ?2, 'INR', 'receipt', '2627', ?3, ?4, ?5, '2026-11-03', 50000, ?6, ?7)",
+    )
+    .bind(
+      receipt,
+      clientId,
+      n,
+      `TH/RCT/2627/${String(n).padStart(4, "0")}`,
+      now - DAY,
+      JSON.stringify({
+        receiptOf: { receivedOn: "2026-11-02", appliedTo: [{ number: "TH/INV/2627/0001" }], appliedMore: 0 },
+      }),
+      receiptKey,
+    )
+    .run();
+  const payable = uuidv7();
+  const pn = ++docNo;
+  await db
+    .prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor) VALUES (?1, 'tax_invoice', 'issued', ?2, 'INR', 'invoice', '2627', ?3, ?4, ?5, '2026-11-01', '2026-11-15', 100000, 100000, 118000, 118000)",
+    )
+    .bind(payable, clientId, pn, `TH/INV/2627/${String(pn).padStart(4, "0")}`, now - DAY)
+    .run();
+  // A credit note against `payable` (not the shared fixtures' invoice, whose answers other tests pin), inserted issued and frozen as the doc-token tests do (the freeze triggers watch an UPDATE of the status).
+  const creditNote = uuidv7();
+  const cn = ++docNo;
+  const cnKey = `docs/credit_note/fx/${clientId}-${cn}.pdf`;
+  await env.DOCS.put(cnKey, new TextEncoder().encode("%PDF-1.7 credit note"));
+  await db
+    .prepare(
+      "INSERT INTO documents (id, type, status, client_id, currency, parent_id, frozen_at, series, fy, number, number_display, issue_date, total_minor, balance_minor, pdf_r2_key) VALUES (?1, 'credit_note', 'issued', ?2, 'INR', ?3, ?4, 'cn', '2627', ?5, ?6, '2026-11-04', 1180, 0, ?7)",
+    )
+    .bind(creditNote, clientId, payable, now - DAY, cn, `TH/CN/2627/${String(cn).padStart(4, "0")}`, cnKey)
+    .run();
+  return {
+    payable,
+    project: p,
+    doneProject: done,
+    sharedNote,
+    internalNote,
+    clientNote,
+    sharedFile,
+    unsharedFile,
+    missingFile,
+    fileBytes,
+    receipt,
+    creditNote,
   };
 }
 
