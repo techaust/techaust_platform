@@ -328,6 +328,10 @@ export const documents = sqliteTable(
       .where(
         sql`${t.frozenAt} is not null and ${t.type} in ('tax_invoice', 'export_invoice', 'credit_note', 'debit_note')`,
       ),
+    // M7.1 (POR-07; CREATE INDEX only, 0071): the portal's keyset list of a client's receipts and credit notes, newest first.
+    index("documents_client_receipts")
+      .on(t.clientId, t.issueDate, t.id)
+      .where(sql`${t.frozenAt} is not null and ${t.type} in ('receipt', 'credit_note')`),
     // M4.4: the PDF sweep reads only frozen documents that have no PDF yet (a small set), oldest first. M5.1 (LD9) widens the predicate to
     // the invoice family (receipts and vouchers have no PDF of their own yet); the type stays in it so a frozen row of any other type
     // never keeps the sweep busy.

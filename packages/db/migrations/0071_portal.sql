@@ -71,4 +71,6 @@ CREATE INDEX `payment_notices_payment` ON `payment_notices` (`payment_id`) WHERE
 CREATE INDEX `files_shared_project` ON `files` (`project_id`,`created_at`,`id`) WHERE "files"."shared" = 1;--> statement-breakpoint
 CREATE INDEX `files_shared_client` ON `files` (`client_id`,`created_at`,`id`) WHERE "files"."shared" = 1;--> statement-breakpoint
 CREATE INDEX `notes_shared_project` ON `notes` (`project_id`,`created_at`,`id`) WHERE "notes"."visibility" = 'shared';--> statement-breakpoint
-CREATE INDEX `notes_shared_client` ON `notes` (`client_id`,`created_at`,`id`) WHERE "notes"."visibility" = 'shared';
+CREATE INDEX `notes_shared_client` ON `notes` (`client_id`,`created_at`,`id`) WHERE "notes"."visibility" = 'shared';--> statement-breakpoint
+CREATE INDEX `projects_client_created` ON `projects` (`client_id`,`created_at`,`id`);--> statement-breakpoint
+CREATE INDEX `documents_client_receipts` ON `documents` (`client_id`,`issue_date`,`id`) WHERE "documents"."frozen_at" is not null and "documents"."type" in ('receipt', 'credit_note');

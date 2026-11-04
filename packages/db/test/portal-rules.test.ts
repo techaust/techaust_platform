@@ -477,6 +477,15 @@ describe("portal-shared [POR-04, POR-08]: inside the client, on the M7.1 indexes
         "SELECT id FROM client_requests WHERE contact_id = ?1 AND (created_at, id) < (?2, ?3) ORDER BY created_at DESC, id DESC LIMIT 50",
         /client_requests_contact/,
       ],
+      // B2: a client's projects and its receipts and credit notes (the portal lists), on the two indexes 0071 adds for them.
+      [
+        "SELECT id FROM projects WHERE client_id = ?1 AND (created_at, id) < (?2, ?3) ORDER BY created_at DESC, id DESC LIMIT 50",
+        /projects_client_created/,
+      ],
+      [
+        "SELECT id FROM documents WHERE client_id = ?1 AND frozen_at IS NOT NULL AND type IN ('receipt', 'credit_note') AND (issue_date, id) < (?2, ?3) ORDER BY issue_date DESC, id DESC LIMIT 50",
+        /documents_client_receipts/,
+      ],
     ] as const) {
       const p = await plan(sql, "c", 1, "x");
       expect(p, p).toMatch(index);

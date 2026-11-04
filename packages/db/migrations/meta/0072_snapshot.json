@@ -1,6 +1,6 @@
 {
-  "id": "0aa34937-df0f-4534-a25b-7ce1a5effe3c",
-  "prevId": "dd32c0d9-e954-40bd-a067-d34b4b96413c",
+  "id": "d6a8c9b0-37a5-4ba0-a4bb-5895355d3b81",
+  "prevId": "ee8488b7-b6bd-4d62-8aef-d55af6c70d62",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -2683,6 +2683,11 @@
           "columns": ["\"name\" collate nocase"],
           "isUnique": false
         },
+        "projects_client_created": {
+          "name": "projects_client_created",
+          "columns": ["client_id", "created_at", "id"],
+          "isUnique": false
+        },
         "projects_source_document": {
           "name": "projects_source_document",
           "columns": ["source_document_id"],
@@ -4893,6 +4898,12 @@
           "name": "documents_client_issued",
           "columns": ["client_id", "issue_date", "id"],
           "where": "\"documents\".\"frozen_at\" is not null and \"documents\".\"type\" in ('tax_invoice', 'export_invoice', 'credit_note', 'debit_note')",
+          "isUnique": false
+        },
+        "documents_client_receipts": {
+          "name": "documents_client_receipts",
+          "columns": ["client_id", "issue_date", "id"],
+          "where": "\"documents\".\"frozen_at\" is not null and \"documents\".\"type\" in ('receipt', 'credit_note')",
           "isUnique": false
         },
         "documents_pdf_pending": {

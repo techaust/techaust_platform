@@ -246,6 +246,8 @@ export const projects = sqliteTable(
     index("projects_created").on(t.createdAt, t.id),
     index("projects_status_created").on(t.status, t.createdAt, t.id),
     index("projects_name_nocase").on(sql`${t.name} collate nocase`),
+    // M7.1 (POR-08; CREATE INDEX only, 0071): the portal's keyset list of a client's projects, newest first.
+    index("projects_client_created").on(t.clientId, t.createdAt, t.id),
     uniqueIndex("projects_source_document")
       .on(t.sourceDocumentId)
       .where(sql`${t.sourceDocumentId} is not null`),
