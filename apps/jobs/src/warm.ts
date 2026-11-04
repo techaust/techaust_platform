@@ -34,6 +34,7 @@ import {
 } from "@techaust/pdf";
 import { buildCertificateView } from "./certificate.ts";
 import { alertData } from "./leads.ts";
+import { warmPortalAlerts } from "./portal-alerts.ts";
 
 /**
  * One made-up statement of `count` lines through the same steps the `pdf.statement` consumer takes before Browser Run: `statementEntries`, the view, the canonical JSON the
@@ -325,6 +326,8 @@ export function warmConsumers(): number {
   warmBillingMessages();
   // M6.2: the three gateway messages of the leads queue.
   warmGatewayMessages();
+  // M7.1 (J): the portal bells' titles on made-up rows (the money formatter and the kind words); counted in `warm.test.ts`.
+  parsed += warmPortalAlerts();
   try {
     renderCertificateHtml(
       buildCertificateView({
