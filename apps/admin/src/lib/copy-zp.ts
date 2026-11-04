@@ -40,7 +40,12 @@ export const ZP_UI = {
   dismissConfirm: "Dismiss notice",
   dismissed: "Notice dismissed.",
   /** L25: the Owner's way for a notice on a proforma (the existing advance flow), then the dismiss with S7's note. */
-  issueFromNotice: "Issue the tax invoice for the payment received",
+  /**
+   * S9 (review M3, replacing S1's "Issue the tax invoice for the payment received" as the visible label): the Notices row's label, and the words its
+   * accessible name adds after it (so the name starts with what is seen: "Issue tax invoice for the payment received, {amount} {number}").
+   */
+  issueFromNoticeShort: "Issue tax invoice",
+  issueFromNoticeRest: "for the payment received",
   advanceDoneDismissFailed:
     "The tax invoice was issued, but the notice is still open. Dismiss it from the Notices tab.",
   /** In "Record payment" opened from a notice: what was prefilled, and that the bank comes first. */
@@ -50,6 +55,8 @@ export const ZP_UI = {
   noticeNotMoved:
     "The payment was recorded, but the notice is still open: it changed while you were recording. Check it on the Notices tab.",
   noticeRecorded: "The notice is marked as recorded.",
+  /** S8 (review M2): 409 `notice_mismatch` with `reason: "document"`, under the notice's invoice row: the payment must go on it, at least in part. */
+  noticeOnDocument: "The notice is about this invoice: put the payment, or part of it, on this invoice.",
 
   // ---- S2: the client page's Requests panel ----
   requestsTab: "Requests",
@@ -88,7 +95,7 @@ export const ZP_UI = {
 
   // ---- S4: the warning on void and withdraw (never a block, L10) ----
   noticeWarning: (n: number, action: "void" | "withdraw") =>
-    `${plural(n, "The client says they have paid this document (1 open notice", `The client says they have paid this document (${n} open notices`)} in Payments, Notices). Check the bank before you ${action === "void" ? "void it" : "withdraw it"}. The notice doesn't stop the ${action === "void" ? "void" : "withdrawal"}.`,
+    `${plural(n, "The client says they have paid this document (1 open notice", `The client says they have paid this document (${n} open notices`)} on the Payments › Notices tab). Check the bank before you ${action === "void" ? "void it" : "withdraw it"}. The notice doesn't stop the ${action === "void" ? "void" : "withdrawal"}.`,
 
   // ---- S7: the fixed note when a proforma's notice is dismissed after its tax invoice was issued (L25) ----
   advanceDismissNote: "Tax invoice for the payment received issued from this notice.",

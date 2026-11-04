@@ -6,7 +6,8 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 
-const P = "[Placeholder] ";
+// 07-ZP is owner-approved (2026-11-05): the lines show unmarked
+const P = "";
 
 async function axe(page: Page) {
   const r = await new AxeBuilder({ page })

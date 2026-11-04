@@ -1,7 +1,7 @@
 // The Payments "Notices" tab (M7.1; ADM-PAY-05, POR-06; run file G.7, L10, L23, L25): what clients told us they paid, from the portal or an emailed invoice
 // link. A notice is never a payment and never money (L10): Staff and the Owner check the bank, then "Record payment" from it (the record dialog filled in from the
 // notice, its document the only allocation; the batch marks it recorded) or "Dismiss" it (an optional note, no personal data: S6). A notice on a proforma is the
-// Owner's to settle by "Issue the tax invoice for the payment received" (the proforma's own advance dialog, started from the notice, then the notice dismissed
+// Owner's to settle by "Issue tax invoice" (S9; the proforma's own advance dialog, started from the notice, then the notice dismissed
 // with S7's note; L25); Staff record it as the whole-amount proforma ask, as any Staff entry. The Accountant reads the tab only. Words: lib/copy-zp.ts (S1).
 import type { Role } from "@techaust/core/permissions";
 import { useId, useState } from "react";
@@ -184,8 +184,9 @@ function NoticeList(props: { status: NoticeStatus; role: Role; onChanged: () => 
             to={`/invoices/${encodeURIComponent(n.document.id)}?fromNotice=${encodeURIComponent(n.id)}`}
             className="btn btn--primary"
           >
-            {ZP_UI.issueFromNotice}
-            <span className="visually-hidden">{` ${rowName(n)}`}</span>
+            {/* review M3: a short visible label keeps both actions in view at every width; the accessible name starts with it and says the rest (S9) */}
+            {ZP_UI.issueFromNoticeShort}
+            <span className="visually-hidden">{` ${ZP_UI.issueFromNoticeRest}, ${rowName(n)}`}</span>
           </Link>
         ) : (
           canRecord && (

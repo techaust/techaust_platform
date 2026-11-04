@@ -1,5 +1,5 @@
 // The pieces the M7.1 screens share (POR-04, POR-07, POR-08): a download button with its own message, the shared files as a table (a card each on
-// phones), a shared note, and a project's status pill. Every word is copy-zp.ts (C-lines, marked until the owner approves them) or an approved line.
+// phones), a shared note, and a project's status pill. Every word is copy-zp.ts (07-ZP, owner-approved; G11's size words still marked) or an approved line.
 import "./m71.css";
 import { type ReactNode, useCallback, useState } from "react";
 import { Link } from "react-router";
@@ -17,7 +17,7 @@ import {
   XCircle,
 } from "../../components/icons.tsx";
 import { INV } from "../../copy-invoices.ts";
-import { ZP } from "../../copy-zp.ts";
+import { GAP, ZP } from "../../copy-zp.ts";
 import { istDayText, plainProblem, sizeText } from "../../lib/m71.ts";
 import { saveDownload } from "../../lib/offers.ts";
 
@@ -112,7 +112,8 @@ export function FilesTable(props: {
           key: "size",
           label: ZP.fileSize,
           num: true,
-          cell: (f) => <span className="nowrap">{sizeText(f.size)}</span>,
+          // G11 (review L4): the size words have no approved client line yet, so they carry the mark until the owner words them
+          cell: (f) => <span className="nowrap">{GAP.fileSize(sizeText(f.size))}</span>,
         },
         {
           key: "added",

@@ -24,7 +24,6 @@ import { PageTitle, TokenShell } from "../components/shell/portal-shell.tsx";
 import { COPY } from "../copy.ts";
 import { N } from "../copy-documents.ts";
 import { INV } from "../copy-invoices.ts";
-import { ZP } from "../copy-zp.ts";
 import { capturedInvoiceToken, invoicePdfName, pdfFailure } from "../lib/invoices.ts";
 import { saveDownload } from "../lib/offers.ts";
 import {
@@ -82,8 +81,6 @@ function DocumentScreen(props: {
    * Stripe's page without paying (`?pay=cancel`, 07-ZM line 5); M6.4: `paypal` with our checkout id (`?pay=paypal&c=…`), `paypal-cancel` (07-ZN line 7).
    */
   returned?: PayReturn | null;
-  /** M7.1 (C25): the page's footer (the emailed link's way to sign in). */
-  footer?: ReactNode;
 }) {
   const { source } = props;
   const [state, setState] = useState<State>({ phase: "loading" });
@@ -296,7 +293,6 @@ function DocumentScreen(props: {
         ) : null
       }
       linkParent={!props.link}
-      footer={props.footer}
       noticeSent={noticeSent}
       paidNotice={
         // L10: only where the document can take a notice (the server checks again in SQL); never on a withdrawn payment request (`paidNotice` is null there)
@@ -308,6 +304,7 @@ function DocumentScreen(props: {
             currency={doc.currency}
             balanceMinor={doc.balanceMinor}
             issueDate={doc.issueDate}
+            link={props.link}
             send={source.paidNotice}
             onSent={() => setNoticeSent(true)}
           />
@@ -397,15 +394,6 @@ export function InvoiceLinkRoute() {
           source={source}
           loadKey="link"
           link
-          footer={
-            <p className="pnotice-foot">
-              <LogIn size={20} />
-              <span>{ZP.linkFooter}</span>
-              <Link to="/" className="textlink">
-                {N.signIn}
-              </Link>
-            </p>
-          }
           notices={
             <div className="notice notice--info notice--action" role="note">
               <LogIn size={20} />

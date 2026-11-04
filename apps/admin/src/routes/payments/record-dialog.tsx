@@ -31,7 +31,8 @@ import { dateError } from "../../lib/date-field.ts";
 import { INVT_COPY } from "../../lib/invoice-types.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import { m71ErrorText } from "../../lib/m71-errors.ts";
-import { loadOpenDocs, OPEN_DOCS_CAP } from "../../lib/open-docs.ts";
+import { invoicesApi } from "../../lib/invoices-api.ts";
+import { loadOpenDocs, OPEN_DOCS_CAP, OPEN_STATUSES } from "../../lib/open-docs.ts";
 import {
   type AllocRow,
   amountText,
@@ -203,11 +204,13 @@ function RecordBody(props: {
     setDocs(null);
     void docsTry;
     loadOpenDocs(client.id, { kind: props.kind, proformas: !owner })
-      .then((page) => {
-        if (!live) return;
+      .then(async (page) => {
         const from = props.from;
         // The invoice the dialog came from is always a row, the first (even past the cap); the rest in due-date order.
-        const listed = from ? page.docs.find((d) => d.id === from.id) : undefined;
+        let listed: OpenDoc | undefined = from ? page.docs.find((d) => d.id === from.id) : undefined;
+        // review M2: a notice's document past the lists' cap is read by id, so its row still starts from its real balance
+        if (notice && from && !listed) listed = await noticeDocOf(from.id, currency);
+        if (!live) return;
         // M7.1 (L23): from a notice, the notice's document is the only row (B3's 409 `notice_mismatch` `document` otherwise)
         const open: OpenDoc[] = notice ? [] : page.docs.filter((d) => d.id !== from?.id);
         if (listed) open.unshift(listed);
@@ -219,7 +222,7 @@ function RecordBody(props: {
     return () => {
       live = false;
     };
-  }, [client, props.kind, props.from, owner, docsTry, notice]);
+  }, [client, props.kind, props.from, owner, docsTry, notice, currency]);
   const docsWaiting = client !== null && (docs === null || docsFailed !== null);
 
   const parsed = useMemo(() => {
@@ -227,12 +230,14 @@ function RecordBody(props: {
     return m.ok && m.minor > 0 ? m.minor : null;
   }, [form.amount, currency]);
 
-  // the opened-from row, filled from the amount
+  // the opened-from row, filled from the amount up to the row's balance (review M2: from a notice the balance is the listed document's, read when the
+  // dialog opens, so the row starts at min(notice amount, balance) and follows the amount until a person types in it)
+  const fromBalance = docs?.find((d) => d.id === props.from?.id)?.balanceMinor ?? props.from?.balanceMinor ?? 0;
   const shownRows: AllocRow[] =
     autoRow && props.from
       ? [
           ...rows.filter((r) => r.documentId !== props.from?.id),
-          { documentId: props.from.id, text: autoFill(parsed, props.from.balanceMinor, currency) },
+          { documentId: props.from.id, text: autoFill(parsed, fromBalance, currency) },
         ]
       : rows;
   const plan = docs ? readAllocations(shownRows, docs, parsed, currency) : null;
@@ -424,7 +429,8 @@ function RecordBody(props: {
       // A refusal that names one invoice (`details.documentId`: over its balance, a proforma that must take the whole payment) is that row's error.
       const rowId = e instanceof RequestError ? e.extra.details?.documentId : undefined;
       if (typeof rowId === "string" && docs?.some((d) => d.id === rowId)) {
-        setAllocErrors({ [rowId]: payErrorText(e) });
+        // review M2: worded by its code (S8 for the notice's invoice), never the server's English
+        setAllocErrors({ [rowId]: m71ErrorText(e) });
         requestAnimationFrame(() => document.getElementById(`pay-alloc-${rowId}`)?.focus());
         return;
       }
@@ -753,6 +759,37 @@ function RecordBody(props: {
       </div>
     </form>
   );
+}
+
+/**
+ * Review M2: a notice's document that the open lists didn't return (past their cap), read by id: a row while it can still take money in the payment's
+ * currency, else none (the server then refuses with `notice_mismatch`, worded by S8). A refusal of the read itself (gone, not this member's) is no row; any
+ * other failure is the dialog's failed read, with its retry.
+ */
+async function noticeDocOf(id: string, currency: Currency): Promise<OpenDoc | undefined> {
+  let v: Awaited<ReturnType<typeof invoicesApi.get>>;
+  try {
+    v = await invoicesApi.get(id);
+  } catch (e) {
+    if (e instanceof RequestError && e.status >= 400 && e.status < 500 && e.status !== 401) return undefined;
+    throw e;
+  }
+  if (
+    v.number === null ||
+    v.currency !== currency ||
+    v.balanceMinor <= 0 ||
+    !(OPEN_STATUSES as readonly string[]).includes(v.status)
+  )
+    return undefined;
+  return {
+    id: v.id,
+    number: v.number,
+    type: v.type,
+    currency: v.currency,
+    balanceMinor: v.balanceMinor,
+    dueDate: v.dueDate,
+    issueDate: v.issueDate,
+  };
 }
 
 /** The client picker of /payments: a search over the client list (the first 50 matches), one select; each on its own row, so a name and code read in full. */

@@ -5,6 +5,7 @@ import { formatDate, istDate } from "@techaust/core/dates";
 import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";
 import { RequestError } from "../api.ts";
 import { COPY, waitText } from "../copy.ts";
+import { INV } from "../copy-invoices.ts";
 import { PENDING } from "../copy-documents.ts";
 import { GAP, ZP } from "../copy-zp.ts";
 
@@ -38,7 +39,20 @@ export function forText(f: { numbers: readonly string[]; more: number }): string
 // ---- "I've paid" ------------------------------------------------------------------------------------------------------------------------------------------
 
 export type NoticeForm = { amount: string; paidOn: string; reference: string; note: string };
-export type NoticeErrors = Partial<Record<"amount" | "paidOn" | "reference" | "form", string>>;
+export type NoticeErrors = Partial<Record<"amount" | "paidOn" | "reference" | "note" | "form", string>>;
+
+/**
+ * The field a 400 `bad_request` names (review M1: `details.path`, a field name or a zod path such as `["note"]`; `details.field` read too), or null. A refusal
+ * of the note is never worded as the reference's.
+ */
+export function refusedField(e: RequestError): string | null {
+  const d = e.extra.details;
+  if (!d || typeof d !== "object") return null;
+  const r = d as { path?: unknown; field?: unknown };
+  const p = Array.isArray(r.path) ? r.path[0] : r.path;
+  if (typeof p === "string" && p !== "") return p;
+  return typeof r.field === "string" && r.field !== "" ? r.field : null;
+}
 
 /**
  * The form's own checks (amount readable and above zero, not above the balance; a date; a reference), in the field order. The date's range (not in the
@@ -66,8 +80,11 @@ export function checkNotice(
 
 export const formatMoneyOf = (minor: number, currency: string) => formatMoney(moneyOf(minor, currency));
 
-/** A notice the server refused, by its code (C15; G3 and G8 for a 400 `bad_request`), with the field it belongs to. */
-export function noticeRefusal(e: unknown, currency: string): NoticeErrors {
+/**
+ * A notice the server refused, by its code (C15; G8 and G12 for a 400 `bad_request`, by the field it names), with the field it belongs to. `link`: the emailed
+ * "View & pay" page, where a 404 means the link ended (07-U's approved "This link no longer works"; lead, 2026-11-05, question 2), never C15.
+ */
+export function noticeRefusal(e: unknown, currency: string, o: { link?: boolean } = {}): NoticeErrors {
   if (!(e instanceof RequestError) || e.code === "network") return { form: COPY.network };
   switch (e.code) {
     case "amount_above_balance": {
@@ -86,10 +103,16 @@ export function noticeRefusal(e: unknown, currency: string): NoticeErrors {
       return { form: ZP.noticeErrors.notice_open_limit };
     case "not_payable":
       return { form: ZP.noticeErrors.not_payable };
-    case "bad_request":
-      return { reference: GAP.referenceRefused };
+    case "bad_request": {
+      const field = refusedField(e);
+      if (field === "note") return { note: GAP.noteRefused };
+      if (field === "amountMinor") return { amount: GAP.amountUnread };
+      if (field === "paidOn") return { paidOn: GAP.dateInvalid };
+      if (field === "reference" || field === null) return { reference: GAP.referenceRefused };
+      return { form: COPY.server };
+    }
     case "not_found":
-      return { form: ZP.noticeErrors.not_payable };
+      return { form: o.link ? INV.linkEnded : ZP.noticeErrors.not_payable };
     case "rate_limited":
       return { form: PENDING.linkRateLimited(waitText(e.retryAfterS)) };
   }

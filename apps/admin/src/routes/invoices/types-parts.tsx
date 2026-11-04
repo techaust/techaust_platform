@@ -33,6 +33,7 @@ import {
   checkFx,
   childLine,
   day,
+  day,
   FX_SOURCE_LABELS,
   type FxForm,
   type FxValue,
@@ -1052,6 +1053,10 @@ function AdvanceBody(props: {
       }}
     >
       <div className="dialog__body inv-advance">
+        {/* review L2: from a client's notice, the amount is the client's word: S1's line, as in "Record payment" from a notice */}
+        {props.start && !fixed && (
+          <Notice tone="info">{ZP_UI.fromNotice(v.client.name, day(props.start.receivedOn))}</Notice>
+        )}
         <p>{fixed ? PAY_COPY.proformaLine : INVT_COPY.advanceBody}</p>
         <dl className="inv-facts">
           <div>

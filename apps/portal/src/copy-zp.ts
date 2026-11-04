@@ -1,12 +1,12 @@
-// M7.1 (the full client portal; POR-04, POR-06 to POR-11): the client lines C1 to C25 of the run file (docs/runs/m7.1-portal.md section H), word for word, as
-// DRAFTS for the owner. Each one shows the "[Placeholder] " mark before the words until the owner approves the page; then the lead turns `APPROVED_07ZP` true
-// and the marks go (the copy-y.ts pattern; the page will be docs/07-content-appendix/ZP-m7.1-portal.md, the next free letter). `GAP` holds the lines a screen
-// needs that section H lacks: they keep the mark even after the switch, until the owner gives their words (run file, designer report). English (India/UK
-// spelling), "and" never "&", no banned phrases (07 §1.3). No line names a card or bank field: there are none (ADM-PAY-12; Researched 2026-10-28, 08-C RB-07).
+// M7.1 (the full client portal; POR-04, POR-06 to POR-11): the client lines C1 to C24 of docs/07-content-appendix/ZP-m7.1-portal.md, word for word, approved
+// by the owner on 2026-11-05 (`APPROVED_07ZP`; the copy-y.ts pattern: while it was false every line showed the "[Placeholder] " mark). C25 is withdrawn (L27).
+// `GAP` holds G1 to G10, the lines the screens needed that the run file's section H lacked, in the owner-approved 07-ZP words (unmarked); a newer gap line
+// (`G`, G11 onwards) keeps the mark until the owner gives its words. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). No line names
+// a card or bank field: there are none (ADM-PAY-12; Researched 2026-10-28, 08-C RB-07).
 
-export const APPROVED_07ZP = false;
+export const APPROVED_07ZP = true;
 const P = (line: string): string => (APPROVED_07ZP ? line : `[Placeholder] ${line}`);
-/** A line section H lacks: always marked, so it can never pass for approved words. */
+/** A gap line the owner has not worded yet: always marked, so it can never pass for approved words. The words after the mark say what it is for. */
 const G = (line: string): string => `[Placeholder] ${line}`;
 
 export const ZP = {
@@ -133,39 +133,41 @@ export const ZP = {
   tooManyRequests: P(
     "You've sent several requests today. Try again tomorrow, or email contact@techaust.com.",
   ),
-  /** C25: the "View & pay" page's footer (the emailed link). */
-  linkFooter: P("Sign in to see all your invoices, receipts and projects."),
 } as const;
 
 /**
- * Lines a screen needs that section H lacks (run file, designer report "Copy gaps"): each keeps its mark until the owner gives the words. The words after the
- * mark say what the line is for; they are not proposed copy.
+ * Lines a screen needs that section H lacked: G1 to G10 in the owner-approved 07-ZP words (2026-11-05), unmarked. G11 and G12 came later (review 1, L4 and
+ * M1) and keep the mark until the owner gives their words; the words after their mark say what the line is for (G11 shows the size as the screen writes it).
  */
 export const GAP = {
   /** G1: a receipt applied to more invoices than the list names (`for.more`). */
-  forMore: (n: number) => G(`and ${n} more`),
+  forMore: (n: number) => `and ${n} more`,
   /** G2: the name left empty on Profile. */
-  nameMissing: G("name missing"),
-  /** G3: a phone the server refuses (400 `bad_request` on save). */
-  detailsRefused: G("name or phone refused"),
+  nameMissing: "Enter your name.",
+  /** G3: a name or phone the server refuses (400 `bad_request` on save). */
+  detailsRefused: "We couldn't save these details. Check your name and phone number.",
   /** G4: no kind chosen in the new-request dialog. */
-  kindMissing: G("choose a kind"),
+  kindMissing: "Choose what your request is about.",
   /** G5: details left empty where the kind needs them, or over 1,000 characters. */
-  detailsMissing: G("details needed"),
-  detailsTooLong: G("details over 1,000 characters"),
+  detailsMissing: "Tell us a little about what you need.",
+  detailsTooLong: "Keep it under 1,000 characters.",
   /** G6: "I've paid" without an amount, or one that can't be read. */
-  amountMissing: G("amount missing"),
-  amountUnread: G("amount can't be read"),
+  amountMissing: "Enter the amount you paid.",
+  amountUnread: "Enter the amount in numbers, for example 23,600.00.",
   /** G7: "I've paid" without a date (an unreadable one is G9). */
-  dateMissing: G("date missing"),
-  /** G8: "I've paid" without a reference, or one the server refuses (400 `bad_request`). */
-  referenceMissing: G("reference missing"),
-  referenceRefused: G("reference refused"),
-  /** G9: the date field's own lines (the admin's, owner-approved for staff; new to clients). */
-  dateInvalid: G("Enter the date as DD/MM/YYYY, for example 26/10/2026."),
-  choosePicker: G("Choose a date"),
+  dateMissing: "Enter the date you paid.",
+  /** G8: "I've paid" without a reference, or one the server refuses (400 `bad_request` naming the reference). */
+  referenceMissing: "Enter the transaction reference from your bank.",
+  referenceRefused: "We couldn't read this reference. Check it and try again.",
+  /** G9: the date field's own lines (as approved for staff). */
+  dateInvalid: "Enter the date as DD/MM/YYYY, for example 26/10/2026.",
+  choosePicker: "Choose a date",
   /** G10: a project page with no milestones. */
-  milestonesEmpty: G("no milestones yet"),
+  milestonesEmpty: "No milestones yet.",
+  /** G11 (review L4): a shared file's size, "512 bytes", "820 KB", "2.4 MB" (`sizeText` in lib/m71.ts); no approved client words cover them yet. */
+  fileSize: (size: string) => G(size),
+  /** G12 (review M1): "I've paid" with a note the server refuses (400 `bad_request` naming the note); never worded as the reference's G8. */
+  noteRefused: G("note refused"),
 } as const;
 
 /** Every line as text, for the tests (banned words, no "&"). */

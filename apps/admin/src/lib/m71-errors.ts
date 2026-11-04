@@ -10,7 +10,10 @@ export function m71ErrorText(e: unknown): string {
     if (e.code === "notice_closed")
       return "This notice was already recorded or dismissed. The list shows it as it is now.";
     if (e.code === "notice_mismatch")
-      return "This notice is for another client, currency or invoice. Record the payment on the notice's own invoice.";
+      // S8 (review M2): the payment isn't put on the notice's invoice (`details.reason: "document"`, shown under that invoice's row)
+      return e.extra.details?.reason === "document"
+        ? ZP_UI.noticeOnDocument
+        : "This notice is for another client, currency or invoice. Record the payment on the notice's own invoice.";
     if (e.code === "request_closed")
       return "This request was already closed. The list shows it as it is now.";
     if (e.status === 403) return ZP_UI.ownerOnly;

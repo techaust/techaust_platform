@@ -4,6 +4,7 @@
 // field, DD/MM/YYYY, not after today), the transaction reference and an optional note; NO card or bank-account field exists here or anywhere in the portal
 // (ADM-PAY-12; Researched 2026-10-28, 08-C RB-07: a UTR is a reference, not a credential), and the hint says not to type them. Every refusal is worded from
 // its code (C15). The same dialog on the signed-in page and on the emailed "View & pay" link (the token goes in the body only).
+import { NOTICE_NOTE_MAX } from "@techaust/core/portal";
 import { useId, useRef, useState } from "react";
 import type { PaidNotice, PaidNoticeInput } from "../../api.ts";
 import { ZP } from "../../copy-zp.ts";
@@ -19,7 +20,9 @@ type Props = {
   balanceMinor: number;
   /** The document's issue day (`YYYY-MM-DD`): the date field's earliest day (the server refuses an earlier one, `date_before_issue`). */
   issueDate: string | null;
-  send: (body: PaidNoticeInput) => Promise<{ notice: PaidNotice }>;
+  /** The emailed "View & pay" page: a 404 there means the link ended (07-U's "This link no longer works"), never C15. */
+  link?: boolean | undefined;
+  send:(body: PaidNoticeInput) => Promise<{ notice: PaidNotice }>;
   onSent: () => void;
 };
 
@@ -47,7 +50,7 @@ export function PaidNoticeButton(props: Props) {
   );
 }
 
-const ORDER: (keyof NoticeErrors)[] = ["amount", "paidOn", "reference"];
+const ORDER: (keyof NoticeErrors)[] = ["amount", "paidOn", "reference", "note"];
 
 function NoticeForm(props: Props & { onCancel: () => void }) {
   const id = useId();
@@ -58,7 +61,7 @@ function NoticeForm(props: Props & { onCancel: () => void }) {
   const dates = useUnreadDates<"paidOn">();
   const failureRef = useRef<HTMLDivElement>(null);
   const sign = props.currency === "USD" ? "$" : "₹";
-  const ids = { amount: `${id}-amount`, paidOn: `${id}-date`, reference: `${id}-ref` };
+  const ids = { amount: `${id}-amount`, paidOn: `${id}-date`, reference: `${id}-ref`, note: `${id}-note` };
 
   function focusFirst(e: NoticeErrors) {
     const first = ORDER.find((k) => e[k]);
@@ -92,7 +95,7 @@ function NoticeForm(props: Props & { onCancel: () => void }) {
       props.onSent();
     } catch (e) {
       setBusy(false);
-      const r = noticeRefusal(e, props.currency);
+      const r = noticeRefusal(e, props.currency, { link: props.link === true });
       setErrors(r);
       focusFirst(r);
     }
@@ -161,15 +164,18 @@ function NoticeForm(props: Props & { onCancel: () => void }) {
           {errors.reference && <FieldError id={`${id}-reference-error`}>{errors.reference}</FieldError>}
         </div>
         <div className="field">
-          <label htmlFor={`${id}-note`}>{ZP.note}</label>
+          <label htmlFor={ids.note}>{ZP.note}</label>
+          {/* several lines are fine (review M1: the server reads it as lines, up to NOTICE_NOTE_MAX); a refusal is the note's own (G12), never the reference's */}
           <textarea
-            id={`${id}-note`}
+            id={ids.note}
             rows={3}
-            maxLength={300}
+            maxLength={NOTICE_NOTE_MAX}
             value={form.note}
             onChange={(e) => setForm({ ...form, note: e.target.value })}
-            aria-describedby={`${id}-safe`}
+            aria-invalid={errors.note ? true : undefined}
+            aria-describedby={described("note", `${id}-safe`)}
           />
+          {errors.note && <FieldError id={`${id}-note-error`}>{errors.note}</FieldError>}
         </div>
       </div>
       {errors.form && (

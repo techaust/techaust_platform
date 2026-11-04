@@ -353,6 +353,18 @@
   container: sheet / inline-size;
 }
 
+/* Review M4: four columns (a name, the size, the day added and a Download button that never wraps) need about 40rem before the name gets room to read, so
+   below that the files are cards, whatever the screen: Home's half column on a laptop is one of those places. */
+@container sheet (max-width: 39.99rem) {
+  .m71-files .rtable__wide {
+    display: none;
+  }
+
+  .m71-files .rtable__cards {
+    display: block;
+  }
+}
+
 .m71-files__name {
   display: inline-flex;
   align-items: flex-start;

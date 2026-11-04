@@ -228,8 +228,6 @@ export function InvoicePage(props: {
   paidNotice?: ReactNode;
   /** M7.1 (C14): a notice was just sent from this page. */
   noticeSent?: boolean;
-  /** M7.1 (C25): the emailed "View & pay" link's footer (the way to sign in). */
-  footer?: ReactNode;
 }) {
   const d = props.doc;
   const status = clientStatus(d, todayIst(props.now));
@@ -509,7 +507,6 @@ export function InvoicePage(props: {
           foot={totalsRows(d)}
         />
       </section>
-      {props.footer}
     </div>
   );
 }

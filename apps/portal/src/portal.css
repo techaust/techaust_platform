@@ -2837,26 +2837,6 @@ textarea[aria-invalid="true"] {
   outline-offset: 4px;
 }
 
-/* The emailed "View & pay" link's footer (C25): one quiet line with the way to sign in. */
-.pnotice-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-2) var(--space-3);
-  margin: var(--space-12) 0 0;
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-}
-
-.pnotice-foot .icon {
-  color: var(--color-text-accent);
-}
-
-.pnotice-foot .textlink {
-  min-height: var(--target-min);
-}
-
 /* ---------- M7.1: the date field (components/date-field.tsx, copied from the admin's) ----------
    Typed DD/MM/YYYY, a calendar button joined to its right edge (tokens in both themes), the date read back underneath. */
 .datefield {

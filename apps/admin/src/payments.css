@@ -658,9 +658,12 @@
   width: 8rem;
 }
 
+/* review M2: the row's error wraps inside its cell (the cell is `.num`, which never wraps), so a long refusal never scrolls the dialog sideways */
 .alloc__cell .field-error {
   justify-content: flex-end;
   text-align: start;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 
 .alloc__none {
