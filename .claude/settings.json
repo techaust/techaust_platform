@@ -5,7 +5,9 @@
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-5-5",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-opus-5-5"
   },
-  "availableModels": ["claude-opus-5-5"],
+  "availableModels": [
+    "claude-opus-5-5"
+  ],
   "effortLevel": "high",
   "hooks": {
     "SessionStart": [
@@ -38,7 +40,12 @@
     "playwright@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
-    "github@claude-plugins-official": true
+    "github@claude-plugins-official": true,
+    "aws-core@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": false,
+    "sentry@synced": false,
+    "supabase@synced": false,
+    "upstash@synced": false
   },
   "extraKnownMarketplaces": {
     "cloudflare": {
@@ -47,5 +54,42 @@
         "repo": "cloudflare/skills"
       }
     }
+  },
+  "deniedMcpServers": [
+    {
+      "serverName": "supabase"
+    },
+    {
+      "serverName": "upstash"
+    },
+    {
+      "serverName": "aws-mcp"
+    },
+    {
+      "serverUrl": "https://mcp.supabase.com/*"
+    },
+    {
+      "serverUrl": "https://mcp.upstash.com/*"
+    }
+  ],
+  "skillOverrides": {
+    "docs": "off",
+    "docx": "off",
+    "pptx": "off",
+    "google-workspace": "off",
+    "import-memory": "off",
+    "morning": "off",
+    "skill-creator": "off",
+    "consolidate-memory": "off",
+    "explain-usage": "off",
+    "setup-claude": "off",
+    "keybindings-help": "off",
+    "claude-api": "off",
+    "plugin-authoring": "off",
+    "init": "off",
+    "fewer-permission-prompts": "off",
+    "loop": "off",
+    "schedule": "off",
+    "workflow-authoring": "off"
   }
 }
