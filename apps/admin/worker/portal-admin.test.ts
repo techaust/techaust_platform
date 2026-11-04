@@ -9,7 +9,7 @@ import { REQUEST_CLOSE_SQL } from "./client-requests.ts";
 import { noticeRecordStatement } from "./payments.ts";
 import { bodyOf, call, countOf, one, sessionFor } from "./test-helpers.ts";
 import { recordBody } from "./test-payments.ts";
-import { mkNotice, mkPortalClient, mkPortalDocument, mkRequest } from "./test-portal.ts";
+import { mkNotice, mkPortalBell, mkPortalClient, mkPortalDocument, mkRequest } from "./test-portal.ts";
 
 const owner = () => sessionFor("owner", { stepUp: true });
 
@@ -308,4 +308,75 @@ describe("the contact's export [ADM-CLI-05, RB-36]", () => {
       ).toEqual([id]);
     }
   });
+
+  it("early check 2, finding 5 (RB-36): both parts carry the staff's close note", async () => {
+    const o = await owner();
+    const p = await mkPortalClient();
+    const req = await mkRequest(p, "grievance", "My concern");
+    const notice = await mkNotice(p);
+    expect(
+      (
+        await call(`/client-requests/${req}/close`, {
+          cookie: o.cookie,
+          body: { outcome: "done", note: "Answered by phone" },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call(`/payments/notices/${notice}/close`, {
+          cookie: o.cookie,
+          body: { outcome: "dismissed", note: "Not received yet" },
+        })
+      ).status,
+    ).toBe(200);
+    for (const [part, id, note] of [
+      ["client_requests", req, "Answered by phone"],
+      ["payment_notices", notice, "Not received yet"],
+    ] as const) {
+      const page = (await (
+        await call(`/contacts/${p.contactId}/export`, { cookie: o.cookie, body: { part } })
+      ).json()) as { items: { id: string; close_note: string | null; closed_at: number | null }[] };
+      expect(page.items, part).toEqual([expect.objectContaining({ id, close_note: note })]);
+      expect(page.items[0]?.closed_at, part).toEqual(expect.any(Number));
+    }
+  });
+});
+
+describe("early check 2, finding 2: an erase or anonymise removes the portal bells that name the person [RB-11]", () => {
+  // An individual with an issued document (a notice is always about one) can only be anonymised (CONTACT_ON_ISSUED_DOCUMENT_SQL), so the erase runs on the
+  // business contact alone, and the anonymise on both.
+  for (const mode of ["erase", "anonymise"] as const)
+    it(`${mode}: a business contact's request bells go and its client's notice bells stay; ${mode === "anonymise" ? "an individual's last contact takes both; " : ""}another client's stay`, async () => {
+      const o = await owner();
+      const business = await mkPortalClient();
+      const individual = await mkPortalClient(mode === "anonymise" ? "individual" : "business");
+      const other = await mkPortalClient();
+      const bell = async (p: Awaited<ReturnType<typeof mkPortalClient>>) => ({
+        request: await mkPortalBell(o.id, "client_request", await mkRequest(p, "grievance", "Named")),
+        notice: await mkPortalBell(o.id, "payment_notice", await mkNotice(p)),
+      });
+      const b = await bell(business);
+      const i = await bell(individual);
+      const x = await bell(other);
+      const left = async (ids: string[]) =>
+        (
+          await env.DB.prepare(
+            `SELECT id FROM notifications WHERE id IN (${ids.map((_, k) => `?${k + 1}`).join(", ")})`,
+          )
+            .bind(...ids)
+            .all<{ id: string }>()
+        ).results.map((r) => r.id);
+      for (const p of mode === "anonymise" ? [business, individual] : [business]) {
+        const res = await call(`/contacts/${p.contactId}/erase`, {
+          cookie: o.cookie,
+          body: { mode, reason: "requested" },
+        });
+        expect(res.status, await res.clone().text()).toBe(200);
+      }
+      const gone = mode === "anonymise" ? [b.request, i.request, i.notice] : [b.request];
+      const kept = [b.notice, x.request, x.notice, ...(mode === "anonymise" ? [] : [i.request, i.notice])];
+      expect(await left(gone)).toEqual([]);
+      expect((await left(kept)).sort()).toEqual(kept.sort());
+    });
 });

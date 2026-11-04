@@ -11,16 +11,17 @@ const run = (sql: string, ...p: unknown[]) =>
 
 export type PortalClient = { clientId: string; contactId: string; invoiceId: string };
 
-/** A client in India (INR) with a portal contact who can see finance, and an issued invoice of 118,000 with an issue day. */
-export async function mkPortalClient(): Promise<PortalClient> {
+/** A client in India (INR; a business unless `type` says otherwise) with a portal contact who can see finance, and an issued invoice of 118,000 with an issue day. */
+export async function mkPortalClient(type: "business" | "individual" = "business"): Promise<PortalClient> {
   const n = ++seq;
   const clientId = uuidv7();
   await run(
-    "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, ?3, ?4, 'business', 'IN', 'unregistered', '19', 'INR')",
+    "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, ?3, ?4, ?5, 'IN', 'unregistered', '19', 'INR')",
     clientId,
     `CL-M71-${n}-${clientId.slice(-4)}`,
     `Portal Client ${n} Pvt Ltd`,
     `Portal Client ${n}`,
+    type,
   );
   const contactId = uuidv7();
   await run(
@@ -74,6 +75,24 @@ export async function mkNotice(
     p.contactId,
     o.amountMinor ?? 118_000,
     reference,
+  );
+  return id;
+}
+
+/** A bell for `userId` about a request or a notice, as jobs' `portal.alert` writes one (its title names the person or the client). */
+export async function mkPortalBell(
+  userId: string,
+  entityType: "client_request" | "payment_notice",
+  entityId: string,
+): Promise<string> {
+  const id = uuidv7();
+  await run(
+    "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link) VALUES (?1, ?2, ?3, ?4, ?5, 'Asha at Portal Client sent a request', '/x')",
+    id,
+    userId,
+    entityType === "client_request" ? "portal.request" : "payment.notice",
+    entityType,
+    entityId,
   );
   return id;
 }
