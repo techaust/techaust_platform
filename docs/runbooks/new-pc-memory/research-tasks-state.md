@@ -8,7 +8,7 @@ metadata:
   modified: 2026-11-03T12:34:37.400Z
 ---
 
-**2026-11-04:** the formatted PC was restored and proven (runbook docs/runbooks/new-pc.md corrected from the run); wrangler 4.156.2 merged (#173, owner chose the newest set past the one-day release age). Next is unchanged: the owner's M6.5 sandbox refund on staging, then M7.1.
+**2026-11-04:** the formatted PC was restored and proven (runbook docs/runbooks/new-pc.md corrected from the run); wrangler 4.156.2 merged (#173, owner chose the newest set past the one-day release age). Unused tools turned off for this project in the committed .claude/settings.json (#175, owner): security-guidance, sentry (Phase 7), supabase, upstash plugins off; supabase/upstash/aws-mcp connections blocked; 18 skills hidden; Claude Docs connector kept (app-wide only). After #175 merges: pull, owner restarts the app, verify each is gone (synced plugin names may differ in the desktop app). Next is unchanged: the owner's M6.5 sandbox refund on staging, then M7.1.
 
 State at end of day 2026-10-31 (EOD PR #136):
 - M5 approved by the owner (#122); GSTR-1 quarterly (QRMP).
