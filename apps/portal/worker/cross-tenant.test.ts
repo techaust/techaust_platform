@@ -15,7 +15,11 @@ const today = () => new Date(Date.now() + 19_800_000).toISOString().slice(0, 10)
 describe("cross-tenant: M7.1's routes that take an id [POR-03]", () => {
   crossTenant(
     app,
-    [{ name: "GET /projects/:id", request: (id) => ({ path: `/projects/${id}` }) }],
+    [
+      { name: "GET /projects/:id", request: (id) => ({ path: `/projects/${id}` }) },
+      // early check 2, finding 6: the milestones' follow-up page is scoped like the first
+      { name: "GET /projects/:id?after=", request: (id) => ({ path: `/projects/${id}?after=1` }) },
+    ],
     fixtures,
     (f) => f.a.portal.project,
     (f) => f.b.portal.project,

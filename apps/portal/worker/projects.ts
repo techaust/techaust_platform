@@ -3,7 +3,9 @@
 // four statements). Every statement says `client_id = ?1` (the session's organisation); milestones are reached only through their project (scope.ts's rule for
 // tables without `client_id`). Money is finance-only IN THE SQL: a contact without "can see finance" runs the milestone statement that selects no amount and
 // no invoice, so neither can reach the answer. A milestone's invoice is named only when the client may open it itself (frozen, not void, an open status and
-// type: `CLIENT_INVOICE_STATUSES`). The project's budget is never shown.
+// type: `CLIENT_INVOICE_STATUSES`). The project's budget is never shown. Milestones are keyset pages of 50 (early check 2, finding 6): the first rides the
+// batch of four, `milestonesNext` names the last position shown, and `GET /projects/:id?after=<position>` answers `{milestones, milestonesNext}` in a batch
+// of two (the project under the session's client, then the page).
 import { sharedFilesForProject, sharedNotesForProject } from "@techaust/db/portal-shared";
 import { Hono } from "hono/tiny";
 import { type AppEnv, BAD_REQUEST, type Ctx, err, NOT_FOUND } from "./context.ts";
@@ -26,15 +28,31 @@ export const PROJECTS_AFTER_SQL = `SELECT ${PROJECT_COLS} FROM projects p INDEXE
 /** ?1 client, ?2 project. */
 export const PROJECT_SQL = `SELECT ${PROJECT_COLS} FROM projects p WHERE p.client_id = ?1 AND p.id = ?2`;
 
-/** A project's milestones for a contact WITHOUT finance (?1 client, ?2 project): no amount, no invoice. */
-export const MILESTONES_SQL = `SELECT m.id, m.position, m.title, m.status, m.due_date FROM milestones m JOIN projects p ON p.id = m.project_id
-   WHERE p.client_id = ?1 AND m.project_id = ?2 ORDER BY m.position LIMIT 100`;
+/**
+ * Early check 2, finding 6: milestones are keyset pages of `MILESTONE_PAGE` (50, the convention), in order of `position` (unique per project:
+ * `milestones_project_position`). The first page rides the project page's batch; `GET /projects/:id?after=<position>` reads the next one (`milestonesNext` is the
+ * last position shown when more follow), scoped through the project like the first.
+ */
+export const MILESTONE_PAGE = 50;
+const AFTER_POSITION = /^-?\d{1,9}$/;
+/** The page's tail: `?3` the page size plus one, or (`after`) `?3` the last position shown and `?4` the page size plus one. */
+const milestoneTail = (after: boolean) =>
+  `WHERE p.client_id = ?1 AND m.project_id = ?2${after ? " AND m.position > ?3" : ""} ORDER BY m.position LIMIT ${after ? "?4" : "?3"}`;
+/** A project's milestones for a contact WITHOUT finance (?1 client, ?2 project, then the tail): no amount, no invoice. */
+export const milestonesSql = (after: boolean) =>
+  `SELECT m.id, m.position, m.title, m.status, m.due_date FROM milestones m JOIN projects p ON p.id = m.project_id
+   ${milestoneTail(after)}`;
 /** The same for a contact WITH finance: the amount, and the invoice only when the client may open it itself (bound to the same client). */
-export const MILESTONES_FINANCE_SQL = `SELECT m.id, m.position, m.title, m.status, m.due_date, m.amount_minor, p.currency, d.id AS invoice_id, d.number_display AS invoice_number
+export const milestonesFinanceSql = (after: boolean) =>
+  `SELECT m.id, m.position, m.title, m.status, m.due_date, m.amount_minor, p.currency, d.id AS invoice_id, d.number_display AS invoice_number
    FROM milestones m JOIN projects p ON p.id = m.project_id
      LEFT JOIN documents d ON d.id = m.document_id AND d.client_id = ?1 AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL
        AND d.status IN (${STATUSES_SQL}) AND d.type IN (${TYPES_SQL})
-   WHERE p.client_id = ?1 AND m.project_id = ?2 ORDER BY m.position LIMIT 100`;
+   ${milestoneTail(after)}`;
+export const MILESTONES_SQL = milestonesSql(false);
+export const MILESTONES_AFTER_SQL = milestonesSql(true);
+export const MILESTONES_FINANCE_SQL = milestonesFinanceSql(false);
+export const MILESTONES_FINANCE_AFTER_SQL = milestonesFinanceSql(true);
 
 export type ProjectRow = {
   id: string;
@@ -79,6 +97,16 @@ export function milestoneOf(r: MilestoneRow, finance: boolean) {
   };
 }
 
+/** A page of milestones read with one row more than `MILESTONE_PAGE`: the rows shown and the cursor (the last position shown) when more follow. */
+function milestonePage(rows: readonly MilestoneRow[], finance: boolean) {
+  const shown = rows.slice(0, MILESTONE_PAGE);
+  const last = shown[shown.length - 1];
+  return {
+    milestones: shown.map((m) => milestoneOf(m, finance)),
+    next: rows.length > MILESTONE_PAGE && last ? String(last.position) : null,
+  };
+}
+
 const idOf = (c: Ctx): string | null => {
   const id = c.req.param("id") ?? "";
   return ID.test(id) ? id : null;
@@ -111,10 +139,28 @@ export const projects = new Hono<AppEnv>()
     const s = scope(c);
     const id = idOf(c);
     if (!id) return err(c, NOT_FOUND, 404);
+    const rawAfter = c.req.query("after");
+    if (rawAfter !== undefined && !AFTER_POSITION.test(rawAfter)) return err(c, BAD_REQUEST, 400);
     const db = c.env.DB;
+    const finance = s.canSeeFinance;
+    // The follow-up read (finding 6): the project (its existence, under the session's client) and the next page of milestones, ONE batch of two.
+    if (rawAfter !== undefined) {
+      const [project, more] = await db.batch([
+        bound(db, PROJECT_SQL, [s.clientId, id]),
+        bound(db, finance ? MILESTONES_FINANCE_AFTER_SQL : MILESTONES_AFTER_SQL, [
+          s.clientId,
+          id,
+          Number(rawAfter),
+          MILESTONE_PAGE + 1,
+        ]),
+      ]);
+      if (!project?.results[0]) return err(c, NOT_FOUND, 404);
+      const page = milestonePage((more?.results ?? []) as MilestoneRow[], finance);
+      return c.json({ milestones: page.milestones, milestonesNext: page.next });
+    }
     const [project, milestones, notes, files] = await db.batch([
       bound(db, PROJECT_SQL, [s.clientId, id]),
-      bound(db, s.canSeeFinance ? MILESTONES_FINANCE_SQL : MILESTONES_SQL, [s.clientId, id]),
+      bound(db, finance ? MILESTONES_FINANCE_SQL : MILESTONES_SQL, [s.clientId, id, MILESTONE_PAGE + 1]),
       sharedNotesForProject(db, s.clientId, id, PROJECT_PAGE_ITEMS),
       sharedFilesForProject(db, s.clientId, id, PROJECT_PAGE_ITEMS),
     ]);
@@ -122,9 +168,11 @@ export const projects = new Hono<AppEnv>()
     if (!p) return err(c, NOT_FOUND, 404);
     const noteRows = (notes?.results ?? []) as NoteRow[];
     const fileRows = (files?.results ?? []) as FileRow[];
+    const page = milestonePage((milestones?.results ?? []) as MilestoneRow[], finance);
     return c.json({
       project: projectOf(p),
-      milestones: ((milestones?.results ?? []) as MilestoneRow[]).map((m) => milestoneOf(m, s.canSeeFinance)),
+      milestones: page.milestones,
+      milestonesNext: page.next,
       notes: noteRows.map(noteOf),
       notesNext: nextOf(noteRows, PROJECT_PAGE_ITEMS),
       files: fileRows.map(fileOf),

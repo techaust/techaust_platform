@@ -5,8 +5,9 @@
 // Colleagues are shown by NAME AND TITLE ONLY (L15), never an email, a phone or an id: OPEN (08-C RB-45): is a list of the organisation's portal users, by name
 // and title, the minimum a contact needs to see (DPDP Act s.8(3) and s.4(2), purpose limitation), or should even that wait for a request? Until the lead
 // researches it, the list carries only those two fields of people who have portal access and are not anonymised.
-// The self-edit is a correction by the person themselves: OPEN (08-C RB-44) (the question is in `@techaust/core/portal`); it is audited as
-// `contact.self_update` with the field names only (never the values).
+// The self-edit is a correction by the person themselves: OPEN (08-C RB-44): does a portal self-edit of name and phone, plus a `data_correction` request for
+// anything else, meet s.12's duty to correct, or must every correction be logged as a request? Until the lead researches it, both channels exist; the
+// self-edit is audited as `contact.self_update` with the field names only (never the values).
 import { uuidv7 } from "@techaust/core/ids";
 import { profileUpdate, storedPhone } from "@techaust/core/portal-schemas";
 import { accessStmt, auditStmt } from "@techaust/db/log";
@@ -20,7 +21,11 @@ import { json } from "./validate.ts";
 /** ?1 client, ?2 the session's contact: their own details. */
 export const ME_SQL =
   "SELECT c.name, c.email, c.phone, c.title, c.updated_at FROM contacts c WHERE c.client_id = ?1 AND c.id = ?2 AND c.anonymised_at IS NULL";
-/** ?1 client, ?2 the session's contact (marked as "(you)", C18): every live contact with portal access, by name and title only (L15). */
+/**
+ * ?1 client, ?2 the session's contact (marked as "(you)", C18): every live contact with portal access, by name and title only (L15). One read of at most 50,
+ * not keyset pages: a recorded exception to the paging convention (lead, L26, early check 2 finding 6): an organisation's contacts with portal access are few,
+ * and the list is a courtesy view, not a record.
+ */
 export const COLLEAGUES_SQL = `SELECT c.name, c.title, c.id = ?2 AS you FROM contacts c
    WHERE c.client_id = ?1 AND c.portal_access = 1 AND c.anonymised_at IS NULL ORDER BY c.name COLLATE NOCASE, c.id LIMIT 50`;
 const REQUEST_COLS = "r.id, r.kind, r.details, r.status, r.outcome, r.created_at, r.closed_at";

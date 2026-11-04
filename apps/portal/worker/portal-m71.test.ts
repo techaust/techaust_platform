@@ -3,14 +3,18 @@
 // Profile page (a stale save, an email in the body, the colleagues by name and title only, one audit row), requests (the open kind, the daily cap, the details
 // rule, one `portal.alert` each) and "I've paid" (every refusal in SQL, the open limit, the duplicate, the link path and its counter). Invented test data.
 import { env } from "cloudflare:workers";
-import { docTokenStmt, portalFailKey } from "@techaust/auth";
+import { docTokenStmt, portalFailKey, tokenHash } from "@techaust/auth";
 import { uuidv7 } from "@techaust/core";
 import { NOTICES_OPEN_MAX, REQUESTS_PER_DAY } from "@techaust/core/portal";
 import { describe, expect, it, vi } from "vitest";
 import { fixtures } from "./fixtures.ts";
 import { SESSION_READ } from "./guard.ts";
+import { bound } from "./offer-core.ts";
+import { NOTICE_INSERT_SQL } from "./paid-notice.ts";
+import { REQUEST_INSERT_SQL } from "./requests.ts";
 import {
   attemptsRow,
+  beforeBatch,
   bodyOf,
   call,
   captureQueue,
@@ -21,6 +25,7 @@ import {
   rows,
   sessionFor,
   spyConsole,
+  withDb,
   withEnv,
 } from "./test-helpers.ts";
 
@@ -169,6 +174,66 @@ describe("lists are keyset pages of at most 50 [POR-08, NFR-9]", () => {
     };
     expect(files.files.map((x) => x.id)).not.toContain(f.a.portal.unsharedFile);
     for (const x of files.files) expect(Object.keys(x)).not.toContain("r2Key");
+  });
+
+  it("milestones (early check 2, finding 6): pages of 50 in position order with milestonesNext; ?after= reads the next page in a batch of two, money only for finance; another organisation's project is the 404; a bad cursor is 400", async () => {
+    const f = await fixtures();
+    // An organisation of its own, so the shared fixtures' lists are untouched.
+    const clientId = uuidv7();
+    const project = uuidv7();
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, 'Pager Pvt Ltd', 'Pager', 'business', 'IN', 'unregistered', '19', 'INR')",
+      ).bind(clientId, `PGR-${clientId.slice(-6)}`),
+      env.DB.prepare(
+        "INSERT INTO projects (id, code, client_id, name, status, currency) VALUES (?1, ?2, ?3, 'Long build', 'active', 'INR')",
+      ).bind(project, `PRJ-PG${clientId.slice(-4)}`, clientId),
+      // 53 milestones at positions 2, 4, ..., 106 (the cursor is a position, not a count)
+      env.DB.prepare(
+        `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 53)
+         INSERT INTO milestones (id, project_id, position, title, amount_minor, status) SELECT 'ms-' || ?2 || '-' || i, ?1, i * 2, 'Step ' || i, 1000 * i, 'pending' FROM n`,
+      ).bind(project, project.slice(-8)),
+    ]);
+    const finance = await sessionFor(await extraContact(clientId, { finance: true }));
+    const plain = await sessionFor(await extraContact(clientId));
+    type Ms = { position: number; amountMinor?: number };
+    const first = (await (await call(`/projects/${project}`, { cookie: finance.cookie })).json()) as {
+      milestones: Ms[];
+      milestonesNext: string | null;
+    };
+    expect(first.milestones).toHaveLength(50);
+    expect(first.milestones.map((m) => m.position)).toEqual(
+      Array.from({ length: 50 }, (_, i) => (i + 1) * 2),
+    );
+    expect(first.milestonesNext).toBe("100");
+    const c = counted();
+    const res = await call(
+      `/projects/${project}?after=${first.milestonesNext}`,
+      { cookie: finance.cookie },
+      c.env,
+    );
+    expect(res.status).toBe(200);
+    const second = (await res.json()) as Record<string, unknown> & { milestones: Ms[] };
+    expect(Object.keys(second).sort()).toEqual(["milestones", "milestonesNext"]);
+    expect(second.milestones.map((m) => [m.position, m.amountMinor])).toEqual([
+      [102, 51_000],
+      [104, 52_000],
+      [106, 53_000],
+    ]);
+    expect(second.milestonesNext).toBeNull();
+    expect(c.seen.filter((x) => /FROM (projects|milestones)/.test(x.sql))).toHaveLength(2);
+    // Without finance: the same page, no money keys.
+    const bare = (await (await call(`/projects/${project}?after=100`, { cookie: plain.cookie })).json()) as {
+      milestones: Record<string, unknown>[];
+    };
+    expect(bare.milestones).toHaveLength(3);
+    for (const m of bare.milestones) expect(Object.keys(m)).not.toContain("amountMinor");
+    // Another organisation's contact: the plain 404 for the project and its follow-up page.
+    const other = await sessionFor(f.b.finance);
+    for (const path of [`/projects/${project}`, `/projects/${project}?after=100`])
+      expect((await call(path, { cookie: other.cookie })).status, path).toBe(404);
+    for (const bad of ["after=x", "after=1.5", "after=1234567890", "after="])
+      expect((await call(`/projects/${project}?${bad}`, { cookie: finance.cookie })).status, bad).toBe(400);
   });
 });
 
@@ -581,6 +646,86 @@ describe(`"I've paid" from the emailed link [POR-06, L10]`, () => {
     const t2 = await linkFor(who, doc);
     await env.DB.prepare("UPDATE contacts SET can_see_finance = 0 WHERE id = ?1").bind(who.id).run();
     expect((await call("/t/document/paid-notice", { body: { ...notice({}), token: t2 } })).status).toBe(404);
+  });
+
+  it("early check 2, finding 4: a link revoked, or whose contact's address changed, between its open and the write is the 404, with no notice, no audit row and no p:fail: count", async () => {
+    const f = await fixtures();
+    for (const change of ["revoke", "email"] as const) {
+      const doc = await payableDoc(f.a.id);
+      const who = await extraContact(f.a.id, { finance: true });
+      const token = await linkFor(who, doc);
+      const ip = `192.0.2.${change === "revoke" ? 201 : 202}`;
+      // The address change is not in the insert's own contact join: only the link's live check (linkLiveSql) refuses it.
+      const apply = () =>
+        change === "revoke"
+          ? env.DB.prepare("UPDATE doc_access_tokens SET revoked_at = ?1 WHERE document_id = ?2")
+              .bind(Date.now(), doc)
+              .run()
+          : env.DB.prepare("UPDATE contacts SET email = ?2 WHERE id = ?1")
+              .bind(who.id, `moved-${who.id.slice(-12)}@example.test`)
+              .run();
+      const res = await call(
+        "/t/document/paid-notice",
+        { body: { ...notice({}), token }, ip, headers: { "cf-ray": `ray-live-${change}` } },
+        withDb(beforeBatch(env.DB, 2, apply)),
+      );
+      expect(res.status, change).toBe(404);
+      expect(((await bodyOf(res)).error as { code: string }).code, change).toBe("not_found");
+      expect(await rows("SELECT id FROM payment_notices WHERE document_id = ?1", doc), change).toEqual([]);
+      expect(
+        await rows(
+          "SELECT id FROM audit_log WHERE action = 'payment.notice' AND json_extract(summary, '$.documentId') = ?1",
+          doc,
+        ),
+        change,
+      ).toEqual([]);
+      expect(
+        await rows(`SELECT status FROM access_log WHERE request_id = 'ray-live-${change}'`),
+        change,
+      ).toEqual([{ status: 404 }]);
+      expect(await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip)), change).toBeNull();
+    }
+  });
+
+  it("early check 2, finding 4: a notice (portal or link) and a request for a live contact of an anonymised client write nothing, in SQL alone", async () => {
+    const clientId = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, 'Lock Test Pvt Ltd', 'Lock Test', 'business', 'IN', 'unregistered', '19', 'INR')",
+    )
+      .bind(clientId, `LCK-${clientId.slice(-6)}`)
+      .run();
+    const who = await extraContact(clientId, { finance: true });
+    const doc = await payableDoc(clientId);
+    const token = await linkFor(who, doc);
+    const hash = await tokenHash(token);
+    const now = Date.now();
+    // A new reference each time (an open duplicate would refuse the insert for another reason).
+    const noticeParams = (via: "portal" | "link", ref = `UTRLCK${++seq}`) => [
+      clientId,
+      doc,
+      uuidv7(),
+      via,
+      1000,
+      today(),
+      ref,
+      ref,
+      null,
+      now,
+      who.id,
+      today(),
+      via === "link" ? hash : "",
+    ];
+    const requestParams = () => [clientId, who.id, uuidv7(), "data_access", null, now];
+    // Live client: each insert writes (the control), then the client is anonymised and none does.
+    expect((await bound(env.DB, NOTICE_INSERT_SQL, noticeParams("portal")).run()).meta.changes).toBe(1);
+    expect((await bound(env.DB, REQUEST_INSERT_SQL, requestParams()).run()).meta.changes).toBe(1);
+    await env.DB.prepare("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1").bind(clientId, now).run();
+    for (const via of ["portal", "link"] as const)
+      expect((await bound(env.DB, NOTICE_INSERT_SQL, noticeParams(via)).run()).meta.changes, via).toBe(0);
+    expect(
+      (await bound(env.DB, REQUEST_INSERT_SQL, [clientId, who.id, uuidv7(), "grievance", "x", now]).run())
+        .meta.changes,
+    ).toBe(0);
   });
 });
 

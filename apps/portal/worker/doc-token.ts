@@ -78,7 +78,7 @@ export const DOC_READ = `SELECT ${SUMMARY_COLS}, t.contact_id AS link_contact_id
  * M7.1 L13 (the proforma-withdraw re-check): the link is still live NOW, for this document (`d`): not revoked, not expired, bound to its live contact with
  * portal access and finance at the same address, of a client not anonymised, and not past paid + 30 days (L12). `h` the token hash, `n` now.
  */
-const linkLiveSql = (h: string, n: string) =>
+export const linkLiveSql = (h: string, n: string) =>
   `EXISTS (SELECT 1 FROM doc_access_tokens lt
      JOIN contacts lc ON lc.id = lt.contact_id AND lc.client_id = lt.client_id AND lc.portal_access = 1 AND lc.can_see_finance = 1 AND lc.anonymised_at IS NULL AND lower(lc.email) = lt.email
      JOIN clients lcl ON lcl.id = lt.client_id AND lcl.anonymised_at IS NULL
@@ -118,7 +118,7 @@ type PdfState = {
 export const LINK_VIEW_PDF_SQL = `${VIEW_PDF_SQL} AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND ${linkLiveSql("?4", "?3")})`;
 
 export type Found = SummaryRow & { link_contact_id: string; link_client_id: string };
-export type Opened = { doc: Found; failKey: string };
+export type Opened = { doc: Found; failKey: string; hash: string };
 
 /** The address lock and the link in ONE batch: a Response (429 or 404) or the live document the link opens. */
 export async function open(c: Ctx, token: string): Promise<Opened | Response> {
@@ -126,9 +126,10 @@ export async function open(c: Ctx, token: string): Promise<Opened | Response> {
   const t = Date.now();
   const failKey = await portalFailKey(c.env.PORTAL_KEY_PEPPER, callerAddress(c));
   // A token of the wrong shape is just a failed check: its hash matches nothing, and it counts like any other.
+  const hash = await tokenHash(token);
   const [lock, found] = await db.batch([
     db.prepare(IP_READ).bind(failKey),
-    db.prepare(DOC_READ).bind(await tokenHash(token), t),
+    db.prepare(DOC_READ).bind(hash, t),
   ]);
   const until = (lock?.results[0] as { locked_until: number | null } | undefined)?.locked_until;
   if (until && until > t) {
@@ -142,7 +143,7 @@ export async function open(c: Ctx, token: string): Promise<Opened | Response> {
     ]);
     return err(c, NOT_FOUND, 404);
   }
-  return { doc, failKey };
+  return { doc, failKey, hash };
 }
 
 export const docToken = new Hono<AppEnv>()

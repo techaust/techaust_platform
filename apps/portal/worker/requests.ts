@@ -1,7 +1,8 @@
 // A contact's requests from the Profile page (M7.1; POR-09, POR-11; run file C, L8, L9, L16): `POST /requests {kind, details}`. Five kinds: adding, removing or
 // changing a person's access, and a channel for each of the DPDP Act's rights of the data principal (access, Researched 2026-10-29, DPDP Act s.11(1) and
-// Rule 14 (08-C RB-36); correction and erasure, Researched 2026-10-29, DPDP Act s.8(7) and s.12(3) (08-C RB-37); OPEN (08-C RB-44) for whether the self-edit
-// of name and phone also counts as a correction; a grievance, Researched 2026-10-28, SPDI Rules 2011 Rule 5(9) (08-C RB-13)). Identity is the signed-in
+// Rule 14 (08-C RB-36); correction and erasure, Researched 2026-10-29, DPDP Act s.8(7) and s.12(3) (08-C RB-37); OPEN (08-C RB-44): does a portal self-edit
+// of name and phone, plus a `data_correction` request for anything else, meet s.12's duty to correct, or must every correction be logged as a request? Until
+// the lead researches it, both channels exist and both are audited; a grievance, Researched 2026-10-28, SPDI Rules 2011 Rule 5(9) (08-C RB-13)). Identity is the signed-in
 // session (L8): the insert takes the client, the contact and `contact_ref` from the session (the trigger holds `contact_ref IS contact_id`).
 //
 // ONE batch, every rule in the INSERT's WHERE: the contact is live, it has no open request of this kind (409 `request_open`; the partial unique index
@@ -26,10 +27,12 @@ const OPEN_OF_KIND =
 
 /**
  * ?1 client, ?2 contact (both from the session), ?3 the new id, ?4 kind, ?5 details, ?6 now. The contact must be the session's live contact of this client;
- * no open request of the kind; fewer than `REQUESTS_PER_DAY` since 00:00 IST.
+ * no open request of the kind; fewer than `REQUESTS_PER_DAY` since 00:00 IST. Early check 2, finding 4: the client is joined not anonymised, so the insert
+ * holds the anonymised-client lock itself (not only through the guard's session read).
  */
 export const REQUEST_INSERT_SQL = `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, status, created_at, updated_at)
    SELECT ?3, c.client_id, c.id, c.id, ?4, ?5, 'open', ?6, ?6 FROM contacts c
+     JOIN clients k ON k.id = c.client_id AND k.anonymised_at IS NULL
    WHERE c.client_id = ?1 AND c.id = ?2 AND c.portal_access = 1 AND c.anonymised_at IS NULL
      AND NOT EXISTS (${OPEN_OF_KIND}) AND ${REQUESTS_TODAY_SQL("?2", "?6")} < ${REQUESTS_PER_DAY}`;
 

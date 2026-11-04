@@ -1018,15 +1018,16 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
       `SELECT id, at, realm, actor_id, method, route, status, ip, user_agent FROM access_log WHERE actor_id = ?1${cur ? " AND (at, id) > (?4, ?5)" : ""} ORDER BY at, id LIMIT 51`,
     time: true,
   },
-  // M7.1 (ADM-CLI-05; Researched 2026-10-29, DPDP s.11(1) (08-C RB-36)): the requests this person sent from the portal (their own words, the outcome; never
-  // the staff's close note) and the "I've paid" notices they sent (amounts, days and references as they gave them).
+  // M7.1 (ADM-CLI-05; Researched 2026-10-29, DPDP s.11(1) (08-C RB-36)): the requests this person sent from the portal (their own words, the outcome) and the
+  // "I've paid" notices they sent (amounts, days and references as they gave them). Early check 2, finding 5: the staff's close note of each is data about
+  // the request or notice the person made, so it is part of their export too (RB-36), though never shown on a portal screen.
   client_requests: {
     sql: (cur) =>
-      `SELECT id, kind, details, status, outcome, closed_at, created_at FROM client_requests WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+      `SELECT id, kind, details, status, outcome, close_note, closed_at, created_at FROM client_requests WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
   payment_notices: {
     sql: (cur) =>
-      `SELECT id, document_id, via, amount_minor, currency, paid_on, reference, note, status, created_at FROM payment_notices WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+      `SELECT id, document_id, via, amount_minor, currency, paid_on, reference, note, status, close_note, closed_at, created_at FROM payment_notices WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
   // The client's notes and file records, only where the erase would delete them: the contact is an individual client's last live
   // contact (`LAST_LIVE_INDIVIDUAL`; the manifest lists these two parts only then, and the SQL repeats the condition). Metadata only:
@@ -1398,10 +1399,16 @@ async function eraseBatch(
       //     not a record, and it names the document. Same conditions; a business client's bells stay.
       //     M6.1 (early check 2, finding 4; L31, L38): its payments' bells (`payment.verify`, `payment.decided`, which name the client) go in the same
       //     statement, folded here to keep T7's budget of 45 D1 statements per request.
+      //     M7.1 (early check 2, finding 2; Researched 2026-10-28, DPDP Act s.8(7) and s.12(3) (08-C RB-11)): the bells of this contact's portal
+      //     requests name the person ("{name} at {client} sent a request"), so they go for ANY client type (on `client_requests_contact`); the bells
+      //     of the client's "I've paid" notices name the client only, so they go with an individual's last live contact (on `payment_notices_client`)
+      //     and a business client's stay. Folded into this statement too (T7's 45).
       db
         .prepare(
           `DELETE FROM notifications WHERE ((entity_type = 'document' AND entity_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")}))
-             OR (entity_type = 'payment' AND entity_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}))) AND ${g.sql(2)}`,
+             OR (entity_type = 'payment' AND entity_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}))
+             OR (entity_type = 'client_request' AND entity_id IN (SELECT id FROM client_requests WHERE contact_id = ?1))
+             OR (entity_type = 'payment_notice' AND entity_id IN (SELECT id FROM payment_notices WHERE ${LAST_LIVE_INDIVIDUAL("payment_notices.client_id")}))) AND ${g.sql(2)}`,
         )
         .bind(id, ...g.params),
       db
