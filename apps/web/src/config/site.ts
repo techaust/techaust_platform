@@ -26,7 +26,7 @@ export const site = {
    */
   phone: { display: "+91 98830 23931", dial: "+919883023931" } as { display: string; dial: string },
   /** OWNER: LinkedIn company page URL. Empty = hidden. */
-  linkedinCompany: "",
+  linkedinCompany: "https://www.linkedin.com/company/techaust-technologies" as string,
   /** OWNER: founder's LinkedIn URL. Empty = hidden. */
   linkedinFounder: "https://www.linkedin.com/in/r4rupak1997",
   /** OWNER: Cal.com booking URL. When set, "Book a Discovery Sprint" goes there (owner, 2026-10-22). */
