@@ -16,7 +16,7 @@
 // Every side statement is idempotent anyway (rank, `INSERT OR IGNORE`, `coalesce`, the bell's unique key).
 import type { SesEvent } from "@techaust/core/email-events";
 import { EVENT_STATUS, SES_BELLS, suppressionOf } from "@techaust/core/email-events";
-import { emailRankSql } from "./triggers.ts";
+import { emailRankSql } from "./email-rank.ts";
 
 type Db = Pick<D1Database, "prepare">;
 

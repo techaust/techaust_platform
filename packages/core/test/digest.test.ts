@@ -5,10 +5,10 @@ import { fromIst } from "../src/dates.ts";
 import {
   type DigestFigures,
   digestDataOf,
-  digestMessage,
   digestMessageOf,
   digestWeekOf,
   isDigestKind,
+  parseDigestMessage,
   previousMonday,
 } from "../src/digest.ts";
 
@@ -42,12 +42,17 @@ describe("digestMessage", () => {
   it("carries the version, the kind and a Monday; anything else is refused", () => {
     const m = digestMessageOf(at(2026, 11, 2));
     expect(m).toEqual({ v: 1, kind: "digest.weekly", weekStart: "2026-11-02" });
-    expect(digestMessage.safeParse(m).success).toBe(true);
-    expect(digestMessage.safeParse({ ...m, weekStart: "2026-11-03" }).success).toBe(false);
-    expect(digestMessage.safeParse({ ...m, weekStart: "2026-13-02" }).success).toBe(false);
-    expect(digestMessage.safeParse({ ...m, weekStart: "2 Nov" }).success).toBe(false);
-    expect(digestMessage.safeParse({ ...m, v: 2 }).success).toBe(false);
-    expect(digestMessage.safeParse({ ...m, userId: "x" }).success).toBe(false);
+    expect(parseDigestMessage(m)).toEqual(m);
+    expect(parseDigestMessage(null)).toBeNull();
+    expect(parseDigestMessage([])).toBeNull();
+    expect(parseDigestMessage({ v: 1, kind: "digest.weekly" })).toBeNull();
+    expect(parseDigestMessage({ ...m, kind: "staff.notify" })).toBeNull();
+    expect(parseDigestMessage({ ...m, weekStart: 7 })).toBeNull();
+    expect(parseDigestMessage({ ...m, weekStart: "2026-11-03" })).toBeNull();
+    expect(parseDigestMessage({ ...m, weekStart: "2026-13-02" })).toBeNull();
+    expect(parseDigestMessage({ ...m, weekStart: "2 Nov" })).toBeNull();
+    expect(parseDigestMessage({ ...m, v: 2 })).toBeNull();
+    expect(parseDigestMessage({ ...m, userId: "x" })).toBeNull();
     expect(isDigestKind(m)).toBe(true);
     expect(isDigestKind({ kind: "staff.notify" })).toBe(false);
     expect(isDigestKind(null)).toBe(false);

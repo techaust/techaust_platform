@@ -7,9 +7,9 @@ import {
   isStaffNotifyKind,
   PREF_DEFAULTS,
   PREF_GROUPS,
+  parseStaffNotify,
   prefsOf,
   staffNotify,
-  staffNotifyMessage,
   wantsEmail,
 } from "../src/notifications.ts";
 
@@ -72,13 +72,17 @@ describe("staff.notify", () => {
   it("carries the bell kind and the entity id only; extra keys, unknown kinds and bad ids are refused", () => {
     const m = staffNotify("email.hook_token", "ses:1800000000000");
     expect(m).toEqual({ kind: "staff.notify", bell: "email.hook_token", entityId: "ses:1800000000000" });
-    expect(staffNotifyMessage.safeParse(m).success).toBe(true);
-    expect(staffNotifyMessage.safeParse({ ...m, to: "a@example.test" }).success).toBe(false);
-    expect(staffNotifyMessage.safeParse({ ...m, title: "x" }).success).toBe(false);
-    expect(staffNotifyMessage.safeParse({ ...m, bell: "email.bounced" }).success).toBe(false);
-    expect(staffNotifyMessage.safeParse({ ...m, entityId: "" }).success).toBe(false);
-    expect(staffNotifyMessage.safeParse({ ...m, entityId: "x".repeat(129) }).success).toBe(false);
-    expect(staffNotifyMessage.safeParse({ ...m, kind: "staff.alert" }).success).toBe(false);
+    expect(parseStaffNotify(m)).toEqual(m);
+    expect(parseStaffNotify(null)).toBeNull();
+    expect(parseStaffNotify([])).toBeNull();
+    expect(parseStaffNotify({ kind: "staff.notify", bell: "email.hook_token" })).toBeNull();
+    expect(parseStaffNotify({ ...m, entityId: 5 })).toBeNull();
+    expect(parseStaffNotify({ ...m, to: "a@example.test" })).toBeNull();
+    expect(parseStaffNotify({ ...m, title: "x" })).toBeNull();
+    expect(parseStaffNotify({ ...m, bell: "email.bounced" })).toBeNull();
+    expect(parseStaffNotify({ ...m, entityId: "" })).toBeNull();
+    expect(parseStaffNotify({ ...m, entityId: "x".repeat(129) })).toBeNull();
+    expect(parseStaffNotify({ ...m, kind: "staff.alert" })).toBeNull();
     expect(isStaffNotifyKind(m)).toBe(true);
     expect(isStaffNotifyKind({ kind: "staff.alert" })).toBe(false);
     expect(isStaffNotifyKind(null)).toBe(false);

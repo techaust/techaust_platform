@@ -151,6 +151,9 @@ export const BUDGETS = {
       { name: "pdf-lib (PDFs are rendered with Browser Run)", re: /node_modules\/(?:.*\/)?pdf-lib\// },
       { name: "@cloudflare/puppeteer", re: /@cloudflare[+/]puppeteer/ },
       { name: "@techaust/core/gst (SPA only, LD16)", re: /packages\/core\/src\/gst\// },
+      // M7.2 early check (measured): the trigger generator brings drizzle and the whole schema (about 92 KB); the SES hook's batch imports the rank from
+      // `email-rank.ts` instead.
+      { name: "packages/db/src/triggers.ts (drizzle and the schema)", re: /packages\/db\/src\/triggers\.ts$/ },
     ],
   },
 };

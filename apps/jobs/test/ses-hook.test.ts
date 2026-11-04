@@ -4,7 +4,7 @@
 // stops the address, a delivery after a bounce staying bounced, a duplicate with no effect, and logs with no body, token, address or message id. The tokens are
 // made-up values built at run time (never a secret-looking literal in the repo).
 import { exports, env as realEnv } from "cloudflare:workers";
-import { staffNotifyMessage } from "@techaust/core/notifications";
+import { parseStaffNotify } from "@techaust/core/notifications";
 import { describe, expect, it } from "vitest";
 import { SES_TOKEN_HEADER, sesHook, tokenMatches, WARM_SES_TOKEN, warmSesHook } from "../src/hooks/ses.ts";
 import { HOOK_MAX_BYTES } from "../src/hooks/shared.ts";
@@ -209,7 +209,7 @@ describe("POST /ses: the token [JOB-HOOK-01, L1]", () => {
     expect(fakes.email.map((s) => s.body)).toEqual([
       { kind: "staff.notify", bell: "email.hook_token", entityId: key },
     ]);
-    expect(staffNotifyMessage.safeParse(fakes.email[0]?.body).success).toBe(true);
+    expect(parseStaffNotify(fakes.email[0]?.body)).not.toBeNull();
     for (let i = 6; i <= 52; i++) await wrong();
     expect(await failureCount(now)).toBe(50);
     expect(fakes.email).toHaveLength(1);

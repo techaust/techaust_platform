@@ -1,7 +1,6 @@
 // The owners' weekly digest (M7.2; JOB-CRON-03, ADM-DASH-02; run file docs/runs/m7.2-notifications.md B, D, L7). Pure: the IST week, the queue message and the
 // figures turned into the template's strings (amounts only through money.ts, integers only). The figures are read by `@techaust/db/digest` with the dashboard's
 // own SQL (one source; M7.3's dashboard v2 builds on the same module). The words of the email are 07 §8 (subject "Your week at TecHaust: {{week_label}}").
-import * as z from "zod/mini";
 import { addDays, formatDate, istDate, parseIsoDate, toIsoDate } from "./dates.ts";
 import { type Currency, formatMoney } from "./money.ts";
 import { weekOf } from "./time.ts";
@@ -25,20 +24,30 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * The cron's message (L7): one per hourly tick at 09:00, 10:00 and 11:00 IST on Mondays; the consumer's email entity `digest:<userId>:<weekStart>` makes a
- * repeat tick send nothing twice. Strict: only the version, the kind and the week's Monday.
+ * repeat tick send nothing twice.
  */
-export const digestMessage = z.strictObject({
-  v: z.literal(1),
-  kind: z.literal("digest.weekly"),
-  weekStart: z.string().check(
-    z.regex(ISO_DATE),
-    z.refine((s) => {
-      const d = parseIsoDate(s);
-      return d !== null && new Date(Date.UTC(d.year, d.month - 1, d.day)).getUTCDay() === 1;
-    }, "not_a_monday"),
-  ),
-});
-export type DigestMessage = z.infer<typeof digestMessage>;
+export type DigestMessage = { v: 1; kind: "digest.weekly"; weekStart: string };
+
+/**
+ * The consumer's reader of a digest body: exactly the version, the kind and the week's Monday (an ISO date that is a Monday), else null. A plain reader, not a zod
+ * schema: the jobs Worker carries classic zod only, and `zod/mini` would add about 100 KB and 35 ms of start-up to it (measured at the M7.2 early check).
+ */
+export function parseDigestMessage(body: unknown): DigestMessage | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  const o = body as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (keys.length !== 3 || !keys.every((k) => k === "v" || k === "kind" || k === "weekStart")) return null;
+  if (
+    o.v !== 1 ||
+    o.kind !== "digest.weekly" ||
+    typeof o.weekStart !== "string" ||
+    !ISO_DATE.test(o.weekStart)
+  )
+    return null;
+  const d = parseIsoDate(o.weekStart);
+  if (!d || new Date(Date.UTC(d.year, d.month - 1, d.day)).getUTCDay() !== 1) return null;
+  return { v: 1, kind: "digest.weekly", weekStart: o.weekStart };
+}
 
 /** The message of the week `ms` falls in. */
 export const digestMessageOf = (ms: number): DigestMessage => ({

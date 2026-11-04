@@ -5,6 +5,7 @@
 import { INVOICE_FAMILY_SQL, QUOTE_DOCUMENT_TYPES } from "@techaust/core/clients";
 import { getTableColumns } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
+import { EMAIL_EVENT_RANK_0074, emailRankSql } from "./email-rank.ts";
 import {
   acceptanceCertificates,
   documentLines,
@@ -2381,14 +2382,8 @@ export const EMAIL_EVENT_OUTCOMES_0074 = [
 ] as const;
 export const SUPPRESSION_REASONS_0074 = ["hard_bounce", "complaint", "manual"] as const;
 export const DIGEST_OFF_VIA_0074 = ["settings", "one_click"] as const;
-/** The event statuses of `email_log` by rank (core `EMAIL_EVENT_RANK`, twin-tested): an event only ever moves a row up. `sent` is the floor an event starts from. */
-export const EMAIL_EVENT_RANK_0074 = { sent: 1, delivered: 2, bounced: 3, complained: 4 } as const;
-
-/** The rank of `col` (an `email_log.status` expression) as SQL: 1 to 4 for the event statuses, 0 for every other status. */
-export const emailRankSql = (col: string): string =>
-  `(CASE ${col} ${Object.entries(EMAIL_EVENT_RANK_0074)
-    .map(([s, r]) => `WHEN '${s}' THEN ${r}`)
-    .join(" ")} ELSE 0 END)`;
+// The rank and its SQL live in `email-rank.ts` (imported by the jobs Worker's hook batch without this file).
+export { EMAIL_EVENT_RANK_0074, emailRankSql };
 
 /**
  * M7.2 notifications and digest (ADM-MAIL-02, JOB-HOOK-01..03; run file docs/runs/m7.2-notifications.md A.5, A.6, L3, L4, L15): the trigger set

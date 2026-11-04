@@ -1,7 +1,6 @@
 // Staff notification emails (M7.2; ADM-G-09; run file docs/runs/m7.2-notifications.md B, D, L9, L10, L11; owner's answers Q1 A and Q2 A, 2026-11-01). Pure.
 // A bell row of an emailed kind becomes one email to its member when that member's switch for the kind's group is on. The emails are expanded in jobs from a
 // `staff.notify` message that carries ids only (the M2.4b rule: never an address, a name or a title), and today's emails stay as they are (L10).
-import * as z from "zod/mini";
 
 /** The switch groups, each a column of `staff_notification_prefs` (the Notifications page's toggles). */
 export const PREF_GROUPS = ["offerViewed", "paymentReceived", "approvals", "hookFailed"] as const;
@@ -64,16 +63,23 @@ export function prefsOf(row: PrefsRow | null, role: string): Prefs {
 export const wantsEmail = (prefs: Prefs, kind: string): boolean =>
   isEmailedBell(kind) && prefs[EMAILED_BELLS[kind]];
 
+/** The `staff.notify` message on the email queue (L9): the bell's kind and the entity id its rows carry (`notifications.entity_id`), nothing else. */
+export type StaffNotifyMessage = { kind: "staff.notify"; bell: EmailedBell; entityId: string };
+
 /**
- * The `staff.notify` message on the email queue (L9): the bell's kind and the entity id its rows carry (`notifications.entity_id`), nothing else. Strict, so a
- * producer that adds an address or a title is refused by the consumer.
+ * The consumer's reader of a `staff.notify` body: exactly the three keys, an emailed bell kind and an entity id of 1 to 128 characters, else null (a producer that
+ * adds an address or a title is refused). A plain reader, not a zod schema: the jobs Worker carries classic zod only, and `zod/mini` would add about 100 KB and
+ * 35 ms of start-up to it (measured at the M7.2 early check; worker-budget).
  */
-export const staffNotifyMessage = z.strictObject({
-  kind: z.literal("staff.notify"),
-  bell: z.enum(EMAILED_BELL_KINDS),
-  entityId: z.string().check(z.minLength(1), z.maxLength(128)),
-});
-export type StaffNotifyMessage = z.infer<typeof staffNotifyMessage>;
+export function parseStaffNotify(body: unknown): StaffNotifyMessage | null {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
+  const o = body as Record<string, unknown>;
+  const keys = Object.keys(o);
+  if (keys.length !== 3 || !keys.every((k) => k === "kind" || k === "bell" || k === "entityId")) return null;
+  if (o.kind !== "staff.notify" || !isEmailedBell(o.bell)) return null;
+  if (typeof o.entityId !== "string" || o.entityId.length < 1 || o.entityId.length > 128) return null;
+  return { kind: "staff.notify", bell: o.bell, entityId: o.entityId };
+}
 
 /** Builds the message (the shape the consumer parses). */
 export const staffNotify = (bell: EmailedBell, entityId: string): StaffNotifyMessage => ({
