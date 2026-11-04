@@ -512,6 +512,20 @@
       "when": 1793805037032,
       "tag": "0072_client_portal_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "6",
+      "when": 1793831014877,
+      "tag": "0073_email_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "6",
+      "when": 1793831215449,
+      "tag": "0074_email_event_triggers",
+      "breakpoints": true
     }
   ]
 }

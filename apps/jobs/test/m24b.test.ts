@@ -518,7 +518,7 @@ describe("the sign-in link email [POR-01]", () => {
   it("is skipped for a suppressed address and, on staging, for one not on the allow-list", async () => {
     const { sent, transport } = recorder();
     await realEnv.DB.prepare(
-      "INSERT INTO email_suppressions (email, reason, at) VALUES ('blocked@example.test', 'bounce', ?1)",
+      "INSERT INTO email_suppressions (email, reason, at) VALUES ('blocked@example.test', 'hard_bounce', ?1)",
     )
       .bind(AT)
       .run();

@@ -160,7 +160,7 @@ describe("POST /contacts/:id/export [ADM-CLI-05]", () => {
     const o = await owner();
     const biz = await mkClient();
     const c = await mkContact(biz, { phone: "+91 90000 44444", portal_access: 1 });
-    await insert("email_suppressions", { email: c.email, reason: "bounce", at: 5 });
+    await insert("email_suppressions", { email: c.email, reason: "hard_bounce", at: 5 });
     const out = await json(await exportPart(o.cookie, c.id));
     expect(out.contact).toMatchObject({
       id: c.id,
@@ -169,7 +169,7 @@ describe("POST /contacts/:id/export [ADM-CLI-05]", () => {
       portal_access: 1,
     });
     expect(Object.keys(out.client).sort()).toEqual(["code", "display_name"]); // a business client: code and name only
-    expect(out.suppression).toMatchObject({ email: c.email, reason: "bounce" });
+    expect(out.suppression).toMatchObject({ email: c.email, reason: "hard_bounce" });
     // a business client: every part except the notes and files that go only with an individual client's last contact
     expect(out.manifest).toEqual(Object.keys(EXPORT_PARTS).filter((p) => p !== "notes" && p !== "files"));
     // An individual client's own record is the person's data: the full row.
@@ -450,7 +450,7 @@ describe("POST /contacts/:id/erase: erase and anonymise [ADM-CLI-05; owner answe
     const leadA = await mkLead(email, { client_id: A });
     const leadB = await mkLead(email, { client_id: B });
     const other = await mkLead("unrelated@example.test");
-    await insert("email_suppressions", { email, reason: "bounce", at: 3 });
+    await insert("email_suppressions", { email, reason: "hard_bounce", at: 3 });
     await insert("email_log", { id: uuidv7(), to_email: email, template: "portal.link", status: "sent" });
     const keep = async () => ({
       untouched: JSON.stringify([

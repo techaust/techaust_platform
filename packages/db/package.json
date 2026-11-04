@@ -12,6 +12,7 @@
     "./advices": "./src/advices.ts",
     "./deeds": "./src/deeds.ts",
     "./documents": "./src/documents.ts",
+    "./email-events": "./src/email-events.ts",
     "./gateway": "./src/gateway.ts",
     "./issue": "./src/issue.ts",
     "./lead-stage": "./src/lead-stage.ts",

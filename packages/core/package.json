@@ -20,6 +20,7 @@
     "./expiry": "./src/expiry.ts",
     "./hash": "./src/hash.ts",
     "./email-templates": "./src/email-templates.ts",
+    "./email-events": "./src/email-events.ts",
     "./gstin": "./src/gstin.ts",
     "./gateway-rpc": "./src/gateway-rpc.ts",
     "./gst": "./src/gst/index.ts",

@@ -2369,6 +2369,84 @@ export function clientPortalTriggerStatements(): string[] {
   ];
 }
 
+/** The values `email_event_triggers` (0074) accepts; frozen here so the generated migration never changes (the schema's lists: a db test pins them). */
+export const EMAIL_EVENT_TYPES_0074 = ["delivery", "bounce", "complaint", "other"] as const;
+export const BOUNCE_TYPES_0074 = ["permanent", "transient", "undetermined"] as const;
+export const EMAIL_EVENT_OUTCOMES_0074 = [
+  "applied",
+  "stale",
+  "unknown_message",
+  "wrong_env",
+  "ignored_type",
+] as const;
+export const SUPPRESSION_REASONS_0074 = ["hard_bounce", "complaint", "manual"] as const;
+export const DIGEST_OFF_VIA_0074 = ["settings", "one_click"] as const;
+/** The event statuses of `email_log` by rank (core `EMAIL_EVENT_RANK`, twin-tested): an event only ever moves a row up. `sent` is the floor an event starts from. */
+export const EMAIL_EVENT_RANK_0074 = { sent: 1, delivered: 2, bounced: 3, complained: 4 } as const;
+
+/** The rank of `col` (an `email_log.status` expression) as SQL: 1 to 4 for the event statuses, 0 for every other status. */
+export const emailRankSql = (col: string): string =>
+  `(CASE ${col} ${Object.entries(EMAIL_EVENT_RANK_0074)
+    .map(([s, r]) => `WHEN '${s}' THEN ${r}`)
+    .join(" ")} ELSE 0 END)`;
+
+/**
+ * M7.2 notifications and digest (ADM-MAIL-02, JOB-HOOK-01..03; run file docs/runs/m7.2-notifications.md A.5, A.6, L3, L4, L15): the trigger set
+ * `email_event_triggers`. No table is rebuilt. Every abort message starts with the trigger's name. In this order:
+ *   1. `email_log_event_flow` guards ONLY the event statuses (L15): a move into `delivered`, `bounced` or `complained` comes only from `sent`, `delivered` or
+ *      `bounced`; a row in one of them never goes back to a status outside them, nor to a lower rank (sent 1 < delivered 2 < bounced 3 < complained 4). Every
+ *      existing move (Step 0.7: queued → sending, sending → sent | skipped | failed | queued, an abandoned sending claimed again, a dead letter → failed from a
+ *      pre-event status) keeps working, because none of them touches an event status. `email_log_bounce_type` holds the new column's values;
+ *   2. `email_events`: the values and lengths at insert (no address column exists to check; the id is the EventBridge event id, 1 to 128 characters; bounce
+ *      fields only on a bounce); never updated (`email_events_no_update`); DELETE stays allowed for M7.4's pruning (Researched 2026-10-28, DPDP Rules 2025
+ *      Rule 8(3) (08-C RB-09): kept no shorter than `emailLogMonths`);
+ *   3. `email_suppressions`: a known reason and a lower-cased address (the consumer looks the address up lower-cased), at insert and when the reason changes;
+ *      the shape is unchanged (A.4), so rows written before 0074 stay as they are;
+ *   4. `staff_notification_prefs`: 0/1 flags and a known `digest_off_via`, set only while the digest is off.
+ */
+export function emailEventTriggerStatements(): string[] {
+  const named = (name: string, message: string) => abort(`${name}: ${message}`);
+  const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
+  const events = ["delivered", "bounced", "complained"] as const;
+  // 1. email_log
+  const flowBad = `(NEW.status IN (${q(events)}) AND NEW.status IS NOT OLD.status AND OLD.status NOT IN ('sent', 'delivered', 'bounced'))
+    OR (OLD.status IN (${q(events)}) AND (NEW.status NOT IN (${q(events)}) OR ${emailRankSql("NEW.status")} < ${emailRankSql("OLD.status")}))`;
+  const bounceTypeBad = `NEW.bounce_type IS NOT NULL AND NEW.bounce_type NOT IN (${q(BOUNCE_TYPES_0074)})`;
+  // 2. email_events
+  const eventBad = `NEW.type NOT IN (${q(EMAIL_EVENT_TYPES_0074)}) OR NEW.outcome NOT IN (${q(EMAIL_EVENT_OUTCOMES_0074)})
+    OR typeof(NEW.id) <> 'text' OR length(NEW.id) NOT BETWEEN 1 AND 128
+    OR typeof(NEW.ses_message_id) <> 'text' OR length(NEW.ses_message_id) NOT BETWEEN 1 AND 128
+    OR (NEW.bounce_type IS NOT NULL AND (NEW.type <> 'bounce' OR NEW.bounce_type NOT IN (${q(BOUNCE_TYPES_0074)})))
+    OR (NEW.bounce_sub_type IS NOT NULL AND (NEW.type <> 'bounce' OR typeof(NEW.bounce_sub_type) <> 'text' OR length(NEW.bounce_sub_type) NOT BETWEEN 1 AND 64))
+    OR (NEW.type = 'bounce' AND NEW.bounce_type IS NULL)
+    OR (NEW.email_log_id IS NOT NULL AND (typeof(NEW.email_log_id) <> 'text' OR length(NEW.email_log_id) NOT BETWEEN 1 AND 128))
+    OR typeof(NEW.received_at) <> 'integer'`;
+  // 3. email_suppressions
+  const suppressionBad = `NEW.reason NOT IN (${q(SUPPRESSION_REASONS_0074)}) OR NEW.email IS NOT lower(NEW.email)`;
+  // 4. staff_notification_prefs
+  const flags = [
+    "digest_weekly",
+    "email_offer_viewed",
+    "email_payment_received",
+    "email_approvals",
+    "email_hook_failed",
+  ];
+  const prefsBad = `${flags.map((f) => `NEW.${f} NOT IN (0, 1)`).join(" OR ")}
+    OR (NEW.digest_off_via IS NOT NULL AND (NEW.digest_off_via NOT IN (${q(DIGEST_OFF_VIA_0074)}) OR NEW.digest_weekly <> 0))`;
+  const prefsMsg =
+    "the switches are 0 or 1, and how the digest went off is known and kept only while it is off";
+  return [
+    `CREATE TRIGGER \`email_log_event_flow\` BEFORE UPDATE OF status ON \`email_log\` WHEN ${flowBad} BEGIN ${named("email_log_event_flow", "a delivery event moves only a sent email, and an email delivered, bounced or marked as spam only moves up (delivered, bounced, marked as spam)")} END;`,
+    `CREATE TRIGGER \`email_log_bounce_type\` BEFORE UPDATE OF bounce_type ON \`email_log\` WHEN ${bounceTypeBad} BEGIN ${named("email_log_bounce_type", "a bounce type is permanent, transient or undetermined")} END;`,
+    `CREATE TRIGGER \`email_events_values_insert\` BEFORE INSERT ON \`email_events\` WHEN ${eventBad} BEGIN ${named("email_events_values_insert", "an email event has a known type and outcome, ids of 1 to 128 characters, and bounce details only on a bounce")} END;`,
+    `CREATE TRIGGER \`email_events_no_update\` BEFORE UPDATE ON \`email_events\` BEGIN ${named("email_events_no_update", "an email event is never changed")} END;`,
+    `CREATE TRIGGER \`email_suppressions_reason\` BEFORE INSERT ON \`email_suppressions\` WHEN ${suppressionBad} BEGIN ${named("email_suppressions_reason", "a stopped address is lower-cased and stopped for a hard bounce, a complaint or by hand")} END;`,
+    `CREATE TRIGGER \`email_suppressions_reason_update\` BEFORE UPDATE OF email, reason ON \`email_suppressions\` WHEN ${suppressionBad} BEGIN ${named("email_suppressions_reason_update", "a stopped address is lower-cased and stopped for a hard bounce, a complaint or by hand")} END;`,
+    `CREATE TRIGGER \`staff_notification_prefs_values\` BEFORE INSERT ON \`staff_notification_prefs\` WHEN ${prefsBad} BEGIN ${named("staff_notification_prefs_values", prefsMsg)} END;`,
+    `CREATE TRIGGER \`staff_notification_prefs_values_update\` BEFORE UPDATE ON \`staff_notification_prefs\` WHEN ${prefsBad} BEGIN ${named("staff_notification_prefs_values_update", prefsMsg)} END;`,
+  ];
+}
+
 /** The trigger sets, by the name the migration is created with (`drizzle-kit generate --custom --name <set>`). */
 export const TRIGGER_SETS = {
   triggers: { what: "integrity triggers (docs/05 §5.3)", statements: triggerStatements },
@@ -2482,6 +2560,10 @@ export const TRIGGER_SETS = {
   client_portal_triggers: {
     what: "M7.1 full client portal: client requests and payment notices (values, insert state, status flows, fixed columns, no delete), unlinked from a deleted lead or contact and their words cleared on an erase or anonymise",
     statements: clientPortalTriggerStatements,
+  },
+  email_event_triggers: {
+    what: "M7.2 notifications and digest: the email log's event statuses only move up from sent, SES email events (values, never changed), suppression reasons and lower-cased addresses, and the staff notification switches",
+    statements: emailEventTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;
