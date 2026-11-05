@@ -204,10 +204,11 @@ describe("every ROUTES row has one owner", () => {
     // M7.1: the "I've paid" notices list and dismiss on finance (48); the client requests on the API.
     // M7.2 (changed on purpose): "Send receipt again" on finance (49); the notification switches, the email log and the two unsuppress routes on the API.
     // M7.3 (changed on purpose, run file L12): revenue (by month, category or kind), revenue per client and the ageing on the invoices Worker with the other
-    // reports (38); the pipeline and care plan hours on the API, beside the leads and care plans they read.
-    expect(INVOICES_ROWS.length).toBe(38);
+    // reports (38); the pipeline and care plan hours on the API, beside the leads and care plans they read. M7.3 B2 (C6, changed on purpose): the two CSV
+    // twins of revenue per client and the ageing, beside them (40).
+    expect(INVOICES_ROWS.length).toBe(40);
     expect(FINANCE_ROWS.length).toBe(49);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 38 - 49);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 40 - 49);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...INVOICES_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(
       ROUTES.length,
     );

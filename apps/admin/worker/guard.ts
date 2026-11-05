@@ -191,6 +191,10 @@ export const ROUTES: readonly RouteDef[] = [
   I("GET", "/reports/revenue", "reports.finance"),
   I("GET", "/reports/revenue/clients", "reports.finance"),
   I("GET", "/reports/ageing", "reports.finance"),
+  // M7.3 C6 (L6): the per-client CSVs of C2 and C9, the registers' rule (a fresh code on every page, one `report.export` audit row per page; a refused request
+  // writes nothing), through the same handlers as the screens' rows.
+  I("GET", "/reports/revenue/export", "exports.gst", { audit: "report.export" }),
+  I("GET", "/reports/ageing/export", "exports.gst", { audit: "report.export" }),
   // M7.3 (ADM-REP-03, -05; C3, C4): the pipeline and win rate (Owner, Sales) and care plan hours (Owner, Staff), on the API Worker with the leads and care plans.
   R("GET", "/reports/pipeline", "reports.pipeline"),
   R("GET", "/reports/care-hours", "reports.delivery"),

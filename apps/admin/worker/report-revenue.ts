@@ -36,7 +36,7 @@ import {
 } from "@techaust/db/reports";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
-import { type ApiError, type AppEnv, BAD_REQUEST, type Ctx, err } from "./context.ts";
+import { type ApiError, type AppEnv, BAD_REQUEST, type Ctx, err, mutate } from "./context.ts";
 import { query } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
 
@@ -245,4 +245,35 @@ export const revenueReports = new Hono<AppEnv>()
   .get("/ageing", query(ageingQuery), async (c) => {
     const page = await ageingPage(c, c.req.valid("query"));
     return page === "cursor" ? err(c, BAD_REQUEST, 400) : c.json(page);
+  })
+  // C6 (L6): the CSV twins of C2 and C9, the registers' rule: `exports.gst` (Owner and Accountant with a fresh code on every page, the guard's step-up) and one
+  // `report.export` audit row per page with what was exported, never the rows' contents. The page is read first; a refused query or cursor writes nothing.
+  .get("/revenue/export", query(revenueClientsQuery), async (c) => {
+    const page = await revenueClientsPage(c, c.req.valid("query"));
+    if (page === "period") return err(c, PERIOD_INVALID, 400);
+    if (page === "cursor") return err(c, BAD_REQUEST, 400);
+    const written = await mutate(c, {
+      action: "report.export",
+      entityType: "report",
+      entityId: null,
+      summary: {
+        report: "revenue_clients",
+        fy: page.fy,
+        currency: page.currency,
+        rows: page.rows.length,
+        firstPage: c.req.valid("query").after === undefined,
+      },
+    });
+    return written ? c.json(page) : err(c, BAD_REQUEST, 400);
+  })
+  .get("/ageing/export", query(ageingQuery), async (c) => {
+    const page = await ageingPage(c, c.req.valid("query"));
+    if (page === "cursor") return err(c, BAD_REQUEST, 400);
+    const written = await mutate(c, {
+      action: "report.export",
+      entityType: "report",
+      entityId: null,
+      summary: { report: "ageing", asOf: page.asOf, rows: page.rows.length, firstPage: page.totals !== null },
+    });
+    return written ? c.json(page) : err(c, BAD_REQUEST, 400);
   });

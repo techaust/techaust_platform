@@ -76,6 +76,8 @@ const LEAD_CLIENT_MISMATCH: ApiError = {
 
 const QUOTE_STATUSES = ["draft", "sent", "viewed", "accepted", "rejected", "expired", "revised"] as const;
 const idText = z.string().check(z.minLength(1), z.maxLength(64));
+/** The longest search text (C7). */
+export const SEARCH_MAX = 40;
 
 export const listQuery = z.object({
   type: z.optional(z.enum(["proposal", "estimate"])),
@@ -83,6 +85,8 @@ export const listQuery = z.object({
   clientId: z.optional(idText),
   limit: z.optional(z.enum(["25", "50"])),
   after: z.optional(z.string().check(z.maxLength(400))),
+  /** M7.3 C7 (ADM-G-05): a number prefix, or a client's code or name prefix; 1 to 40 characters once trimmed. */
+  q: z.optional(z.string().check(z.maxLength(SEARCH_MAX))),
 });
 
 type ListRow = {
@@ -110,17 +114,66 @@ type ListRow = {
   custom_taxable_minor: number;
 };
 
-/** The latest version of each group only: no newer version exists (probed through `documents_version`). */
-export const LIST_SQL = (filters: { status: boolean; client: boolean; cursor: boolean }) =>
-  `SELECT d.id, d.type, d.version, d.status, d.title, d.number_display, (SELECT v.number_display FROM documents v WHERE v.version_group_id = d.version_group_id AND v.version = 1) AS group_number, d.client_id, cl.code AS client_code, cl.display_name AS client_name, d.currency, d.taxable_minor, d.total_minor, d.valid_until, d.content_sha256, d.frozen_at, d.created_at, d.updated_at,
+const LIST_COLUMNS = `d.id, d.type, d.version, d.status, d.title, d.number_display, (SELECT v.number_display FROM documents v WHERE v.version_group_id = d.version_group_id AND v.version = 1) AS group_number, d.client_id, cl.code AS client_code, cl.display_name AS client_name, d.currency, d.taxable_minor, d.total_minor, d.valid_until, d.content_sha256, d.frozen_at, d.created_at, d.updated_at,
      (SELECT a.status FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_status,
      (SELECT a.content_sha256 FROM approvals a WHERE a.document_id = d.id AND a.kind = 'discount' ORDER BY a.created_at DESC, a.id DESC LIMIT 1) AS approval_sha,
      (SELECT count(*) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NULL) AS custom_lines,
-     (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NULL) AS custom_taxable_minor
+     (SELECT coalesce(sum(l.taxable_minor), 0) FROM document_lines l WHERE l.document_id = d.id AND l.catalogue_item_id IS NULL) AS custom_taxable_minor`;
+const LATEST_ONLY =
+  "NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version)";
+
+/** The latest version of each group only: no newer version exists (probed through `documents_version`). */
+export const LIST_SQL = (filters: { status: boolean; client: boolean; cursor: boolean }) =>
+  `SELECT ${LIST_COLUMNS}
    FROM documents d JOIN clients cl ON cl.id = d.client_id
    WHERE d.type = ?1${filters.status ? " AND d.status = ?2" : ""}${filters.client ? ` AND d.client_id = ?${filters.status ? 3 : 2}` : ""}${filters.cursor ? ` AND ${keysetSql("d.created_at", "d.id", false, "after", 1 + (filters.status ? 1 : 0) + (filters.client ? 1 : 0) + 1).where}` : ""}
-     AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version)
+     AND ${LATEST_ONLY}
    ORDER BY d.created_at DESC, d.id DESC LIMIT`;
+
+/** The end of a prefix range: every text that starts with the prefix sorts below `prefix || U+10FFFF` (the highest code point). */
+const PREFIX_END = "\u{10FFFF}";
+
+/**
+ * M7.3 C7 (ADM-G-05; L15): the latest versions of one type (`?1`) whose group was numbered with a prefix (`by: "number"`: the upper-cased text over
+ * `documents_number_display`, offers only, so an invoice number never matches) or whose client's code (upper-cased, `clients_code`) or name (no case,
+ * `clients_name_nocase`) starts with it (`by: "client"`; an anonymised client's name is "Anonymised client", so its old name finds nothing). Each match drives
+ * the read: the matching groups through `documents_version`, the matching clients through `documents_client_type_status`; then the list's own filters, keyset and
+ * order. Returns the SQL and its values in order.
+ */
+export function searchStatement(
+  by: "number" | "client",
+  type: string,
+  needle: string,
+  f: {
+    status?: string | undefined;
+    clientId?: string | undefined;
+    cursor?: { k: number; id: string } | null;
+  },
+): { sql: string; binds: unknown[] } {
+  const binds: unknown[] = [type];
+  const p = (v: unknown) => {
+    binds.push(v);
+    return `?${binds.length}`;
+  };
+  const up = needle.toUpperCase();
+  const match =
+    by === "number"
+      ? `d.version_group_id IS NOT NULL AND d.version_group_id IN (SELECT v.version_group_id FROM documents v INDEXED BY documents_number_display
+           WHERE v.number_display >= ${p(up)} AND v.number_display < ${p(up + PREFIX_END)} AND v.type IN ('proposal', 'estimate'))`
+      : `d.client_id IN (SELECT z.id FROM clients z INDEXED BY clients_name_nocase WHERE z.display_name >= ${p(needle)} COLLATE NOCASE AND z.display_name < ${p(needle + PREFIX_END)} COLLATE NOCASE
+           UNION SELECT y.id FROM clients y INDEXED BY clients_code WHERE y.code >= ${p(up)} AND y.code < ${p(up + PREFIX_END)})`;
+  const status = f.status !== undefined ? ` AND d.status = ${p(f.status)}` : "";
+  const client = f.clientId !== undefined ? ` AND d.client_id = ${p(f.clientId)}` : "";
+  const cursor = f.cursor ? ` AND (d.created_at, d.id) < (${p(f.cursor.k)}, ${p(f.cursor.id)})` : "";
+  return {
+    // the planner would rather walk the type's newest-first index (`documents_type_created`) and test each row: every offer of the type read
+    sql: `SELECT ${LIST_COLUMNS}
+   FROM documents d INDEXED BY ${by === "number" ? "documents_version" : "documents_client_type_status"} JOIN clients cl ON cl.id = d.client_id
+   WHERE ${match} AND d.type = ?1${status}${client}${cursor} AND ${LATEST_ONLY}
+   ORDER BY d.created_at DESC, d.id DESC LIMIT`,
+    binds,
+  };
+}
 
 export const listRow = (r: ListRow) => ({
   id: r.id,
@@ -164,25 +217,50 @@ export async function listDocuments(
     clientId?: string | undefined;
     limit?: string | undefined;
     after?: string | undefined;
+    q?: string | undefined;
   },
 ) {
   const limit = limitOf(q.limit);
   const dir: Direction = "after";
   const cur = q.after === undefined ? null : decodeCursor(q.after);
   if (q.after !== undefined && (!cur || typeof cur.k !== "number")) return err(c, BAD_REQUEST, 400);
+  const needle = q.q?.trim();
+  if (needle !== undefined && (needle.length < 1 || needle.length > SEARCH_MAX))
+    return err(c, BAD_REQUEST, 400);
   const types = q.type ? [q.type] : (["proposal", "estimate"] as const);
   const filters = { status: q.status !== undefined, client: q.clientId !== undefined, cursor: cur !== null };
-  const stmts = types.map((t) =>
-    c.env.DB.prepare(`${LIST_SQL(filters)} ${limit + 1}`).bind(
-      t,
-      ...(q.status !== undefined ? [q.status] : []),
-      ...(q.clientId !== undefined ? [q.clientId] : []),
-      ...(cur ? [cur.k, cur.id] : []),
-    ),
-  );
+  const keyset = cur ? { k: cur.k as number, id: cur.id } : null;
+  // C7: a search reads, per type, the documents whose group's number starts with the text and those whose client's code or name does (two statements, each
+  // driven by its own index); a document found both ways is one row.
+  const stmts =
+    needle === undefined
+      ? types.map((t) =>
+          c.env.DB.prepare(`${LIST_SQL(filters)} ${limit + 1}`).bind(
+            t,
+            ...(q.status !== undefined ? [q.status] : []),
+            ...(q.clientId !== undefined ? [q.clientId] : []),
+            ...(cur ? [cur.k, cur.id] : []),
+          ),
+        )
+      : types.flatMap((t) =>
+          (["number", "client"] as const).map((by) => {
+            const s = searchStatement(by, t, needle, {
+              status: q.status,
+              clientId: q.clientId,
+              cursor: keyset,
+            });
+            return c.env.DB.prepare(`${s.sql} ${limit + 1}`).bind(...s.binds);
+          }),
+        );
   const results = await c.env.DB.batch<ListRow>(stmts);
+  const seen = new Set<string>();
   const merged = results
     .flatMap((r) => r.results)
+    .filter((r) => {
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
+    })
     .sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1))
     .slice(0, limit + 1);
   const page = pageOf(merged, limit, dir, cur !== null, (r) => ({ k: r.created_at, id: r.id }));
