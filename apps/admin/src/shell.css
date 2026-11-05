@@ -1685,7 +1685,7 @@ body:has(.shell) {
 }
 
 /* M7.3: the rows that close a list (a period's totals), as a ledger's total stands: a rule above, a double rule below (the reports' one device). */
-.dtable__table .dtable__total > * {
+.dtable__table tfoot tr.dtable__total > * {
   padding: var(--space-3) var(--space-4);
   border-top: 1px solid var(--color-text);
   border-bottom: 3px double var(--color-text);

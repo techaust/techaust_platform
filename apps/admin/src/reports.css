@@ -920,12 +920,12 @@
   white-space: nowrap;
 }
 
-.m73-table--wide .dtable__table :is(th, td) {
+.m73-table.m73-table--wide .dtable__table :is(th, td) {
   padding-inline: var(--space-3);
 }
 
 /* Inside a box that scrolls sideways a sticky header would stick to the box, not the page (shell.css's users list does the same). */
-.m73-table .dtable__table thead th {
+.m73-table > .dtable .dtable__table thead th {
   position: static;
 }
 
@@ -1044,7 +1044,7 @@
   font-size: var(--text-sm);
 }
 
-.m73-inr__figures dd {
+.m73-inr__figures .m73-inr__value {
   margin: 0;
   font-weight: 600;
 }
@@ -1082,7 +1082,7 @@
   font-size: var(--text-sm);
 }
 
-.m73-facts dd {
+.m73-facts .m73-facts__value {
   margin: 0;
   font-weight: 600;
 }

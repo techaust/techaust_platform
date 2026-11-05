@@ -315,13 +315,13 @@ function InrLines({ data, currency }: { data: RevenueByMonth; currency: Currency
             {invInr !== null && (
               <div>
                 <dt>{R.invoicedWith}</dt>
-                <dd className="tnum">{moneyText(invInr, "INR")}</dd>
+                <dd className="tnum m73-inr__value">{moneyText(invInr, "INR")}</dd>
               </div>
             )}
             {colInr !== null && (
               <div>
                 <dt>{R.collected}</dt>
-                <dd className="tnum">{moneyText(colInr, "INR")}</dd>
+                <dd className="tnum m73-inr__value">{moneyText(colInr, "INR")}</dd>
               </div>
             )}
           </dl>

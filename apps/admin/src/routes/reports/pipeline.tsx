@@ -358,7 +358,7 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt>{label}</dt>
-      <dd className="tnum">{value}</dd>
+      <dd className="tnum m73-facts__value">{value}</dd>
     </div>
   );
 }
