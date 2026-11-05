@@ -3,14 +3,20 @@
 // tiles, not charts (dataviz: a handful of headline figures per currency is a number's job, and rupees and dollars are never added together); the
 // figures are the API's, formatted through core, in text colours; a stage carries its reserved status colour only with its icon and words. The page
 // asks once when it opens (no polling; reload to refresh). Collected figures arrive with payments (M6).
+// M7.3 (C5, dashboard v2): the Invoiced and Collected tiles say how this month compares with the previous IST month in words (C22, per currency, the difference
+// made in SQL); the Overdue tile draws each currency's overdue buckets as a thin segmented bar (the ageing report's form, with its legend) and links to the
+// report when the role may read it.
 import "./dashboard-finance.css";
+import type { DashboardReportLinks } from "@techaust/core/reports";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import type { Currency, FinanceTile, OwedByCurrency } from "../api.ts";
+import type { AgeingByCurrency, Currency, FinanceTile, OwedByCurrency } from "../api.ts";
+import { Legend, SegmentedBar } from "../components/chart/index.ts";
 import { StatusPill } from "../components/display.tsx";
 import { AlertTriangle, CheckCircle, Clock, FileText, Receipt, Wallet } from "../components/icons.tsx";
 import { DASH_COPY } from "../lib/dashboard.ts";
 import { moneyText } from "../lib/documents.ts";
+import { AGEING_LABELS, deltaText, M73_TITLES, monthName } from "../lib/m73-reports.ts";
 import { PAY_COPY, PAY_UI } from "../lib/payments.ts";
 import {
   documentHref,
@@ -20,6 +26,9 @@ import {
   STAGE_LABELS,
   STAGE_PILLS,
 } from "../lib/reports.ts";
+
+/** The previous IST month's name ("October 2026"), the period of C22's comparison; null for an answer before v2. */
+const periodOf = (tile: FinanceTile) => (tile.previousMonth ? monthName(tile.previousMonth.from) : null);
 
 /** One currency's amount in display figures, with its code beside it when the tile holds more than one currency. */
 function Money(props: { minor: number; currency: Currency; showCode: boolean; size?: "lg" }) {
@@ -84,8 +93,37 @@ function OwedFigures({ rows, countText }: { rows: OwedByCurrency[]; countText: (
   );
 }
 
-export function FinanceTiles({ tile }: { tile: FinanceTile }) {
+/** C22: this month against the previous IST month, in words under a figure (never an arrow alone); nothing when the API sent no comparison. */
+function Delta({ minor, currency, period }: { minor: number | undefined; currency: Currency; period: string | null }) {
+  if (minor === undefined || period === null) return null;
+  return <span className="fin-figure__sub fin-delta">{deltaText(minor, currency, period)}</span>;
+}
+
+/** The overdue buckets of one currency (C5 (a)) as a thin segmented bar: the ageing report's form, in the Overdue tile. */
+const OVERDUE_BUCKETS = ["d1_30", "d31_60", "d61_90", "d90_plus"] as const;
+function OverdueBar({ ageing, currency }: { ageing: AgeingByCurrency | undefined; currency: Currency }) {
+  if (!ageing) return null;
+  return (
+    <SegmentedBar
+      size="thin"
+      label={`${F.overdue}, ${currency}`}
+      parts={OVERDUE_BUCKETS.map((b) => ({
+        key: b,
+        label: AGEING_LABELS[b],
+        tone: OVERDUE_TONES[b],
+        value: ageing.buckets[b].balanceMinor,
+        valueText: moneyText(ageing.buckets[b].balanceMinor, currency),
+      }))}
+    />
+  );
+}
+const OVERDUE_TONES = { d1_30: "s1", d31_60: "s2", d61_90: "s3", d90_plus: "s4" } as const;
+
+export function FinanceTiles({ tile, reports }: { tile: FinanceTile; reports?: DashboardReportLinks | undefined }) {
   const exportsOk = "counts" in tile.exports;
+  const ageing = new Map((tile.overdue.ageing ?? []).map((a) => [a.currency, a]));
+  const overdueShown = tile.overdue.byCurrency.filter((r) => ageing.get(r.currency));
+  const many = tile.overdue.byCurrency.length > 1;
   return (
     <div className="dash__finance">
       <InvoicedTile tile={tile} />
@@ -106,8 +144,26 @@ export function FinanceTiles({ tile }: { tile: FinanceTile }) {
         emptyText={F.noneOverdue}
         icon={<CheckCircle size={20} />}
         className="fin-tile--overdue"
+        link={reports?.ageing ? { to: "/reports/ageing", text: M73_TITLES.ageing } : undefined}
       >
-        <OwedFigures rows={tile.overdue.byCurrency} countText={F.documents} />
+        <ul className="fin-figures">
+          {tile.overdue.byCurrency.map((r) => (
+            <li key={r.currency} className="fin-figure">
+              <Money minor={r.balanceMinor} currency={r.currency} showCode={many} size="lg" />
+              <span className="fin-figure__sub">{F.documents(r.count)}</span>
+              <OverdueBar ageing={ageing.get(r.currency)} currency={r.currency} />
+            </li>
+          ))}
+        </ul>
+        {overdueShown.length > 0 && (
+          <div className="fin-ageing-legend">
+            <Legend
+              items={OVERDUE_BUCKETS.filter((b) =>
+                overdueShown.some((r) => (ageing.get(r.currency)?.buckets[b].balanceMinor ?? 0) > 0),
+              ).map((b) => ({ tone: OVERDUE_TONES[b], label: AGEING_LABELS[b] }))}
+            />
+          </div>
+        )}
         {tile.overdue.oldest.length > 0 && (
           <div className="fin-list">
             <h3 className="fin-list__h">{F.oldest}</h3>
@@ -147,7 +203,7 @@ export function FinanceTiles({ tile }: { tile: FinanceTile }) {
         </FinTile>
       )}
       {tile.collected.available ? (
-        <CollectedTile collected={tile.collected} />
+        <CollectedTile collected={tile.collected} period={periodOf(tile)} />
       ) : (
         <p className="panel-empty fin-arrives">
           <Wallet size={20} />
@@ -163,8 +219,15 @@ export function FinanceTiles({ tile }: { tile: FinanceTile }) {
  * M6.1 (07-ZH line 16): "Collected this month", confirmed payments received this IST month, one figure per currency (rupees and dollars are never added
  * together), the count under it and this financial year beside it, as the Invoiced tile reads.
  */
-function CollectedTile({ collected }: { collected: Extract<FinanceTile["collected"], { available: true }> }) {
+function CollectedTile({
+  collected,
+  period,
+}: {
+  collected: Extract<FinanceTile["collected"], { available: true }>;
+  period: string | null;
+}) {
   const fy = new Map(collected.fy.map((r) => [r.currency, r]));
+  const change = new Map((collected.change ?? []).map((r) => [r.currency, r.collectedMinor]));
   const many = collected.month.length > 1;
   return (
     <FinTile
@@ -182,6 +245,7 @@ function CollectedTile({ collected }: { collected: Extract<FinanceTile["collecte
             <li key={r.currency} className="fin-figure">
               <Money minor={r.collectedMinor} currency={r.currency} showCode={many} size="lg" />
               <span className="fin-figure__sub">{PAY_UI.paymentsCount(r.count)}</span>
+              <Delta minor={change.get(r.currency)} currency={r.currency} period={period} />
               {y && (
                 <span className="fin-figure__sub">{`${F.thisFy}: ${moneyText(y.collectedMinor, r.currency)}`}</span>
               )}
@@ -216,6 +280,8 @@ function ToCheckTile({ count }: { count: number }) {
 function InvoicedTile({ tile }: { tile: FinanceTile }) {
   const fy = tile.invoiced.fy;
   const month = new Map(tile.invoiced.month.map((m) => [m.currency, m]));
+  const change = new Map((tile.invoiced.change ?? []).map((c) => [c.currency, c.taxableMinor]));
+  const period = periodOf(tile);
   const many = fy.length > 1;
   return (
     <FinTile
@@ -255,6 +321,7 @@ function InvoicedTile({ tile }: { tile: FinanceTile }) {
                       {F.inrEquivalent(moneyText(m.inrTaxableMinor, "INR"))}
                     </span>
                   )}
+                  <Delta minor={change.get(r.currency)} currency={r.currency} period={period} />
                 </td>
                 <td>
                   <span className="fin-money__value fin-money--lg">

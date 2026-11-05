@@ -26,18 +26,42 @@ const docs = (n: number) => `${n} ${n === 1 ? "document" : "documents"}`;
 
 // ---- 07-V §1 navigation ------------------------------------------------------------------------------------------------------------------------
 
-export type ReportKey = "gst" | "sales-register" | "edf" | "realisation" | "payments" | "refunds";
+export type ReportKey =
+  | "revenue"
+  | "ageing"
+  | "pipeline"
+  | "care-hours"
+  | "gst"
+  | "sales-register"
+  | "edf"
+  | "realisation"
+  | "payments"
+  | "refunds";
 
-/** The four reports, in 07-V §1's order, with their address under /reports. */
-export const REPORTS: readonly { key: ReportKey; path: string; label: string }[] = [
-  { key: "gst", path: "/reports/gst", label: "GST exports" },
-  { key: "sales-register", path: "/reports/sales-register", label: "Sales register" },
-  { key: "edf", path: "/reports/edf", label: "EDF list" },
-  { key: "realisation", path: "/reports/realisation", label: "Export realisation" },
+/**
+ * The reports, with their address under /reports and the matrix action that opens each (docs/04 §9). M7.3's four management reports come first (C1 to C4: the
+ * names; ADM-REP-01 to -03, -05), in two groups the index draws apart: the management reports, then the registers and files of 07-V §1's order. `/reports`
+ * opens the first one a role may read (the Owner and the Accountant: Revenue and collections; Sales: Pipeline and win rate; Staff: Care plan hours).
+ */
+export const REPORTS: readonly {
+  key: ReportKey;
+  path: string;
+  label: string;
+  action: "reports.finance" | "reports.pipeline" | "reports.delivery";
+  group: "management" | "registers";
+}[] = [
+  { key: "revenue", path: "/reports/revenue", label: "Revenue and collections", action: "reports.finance", group: "management" },
+  { key: "ageing", path: "/reports/ageing", label: "Outstanding and ageing", action: "reports.finance", group: "management" },
+  { key: "pipeline", path: "/reports/pipeline", label: "Pipeline and win rate", action: "reports.pipeline", group: "management" },
+  { key: "care-hours", path: "/reports/care-hours", label: "Care plan hours", action: "reports.delivery", group: "management" },
+  { key: "gst", path: "/reports/gst", label: "GST exports", action: "reports.finance", group: "registers" },
+  { key: "sales-register", path: "/reports/sales-register", label: "Sales register", action: "reports.finance", group: "registers" },
+  { key: "edf", path: "/reports/edf", label: "EDF list", action: "reports.finance", group: "registers" },
+  { key: "realisation", path: "/reports/realisation", label: "Export realisation", action: "reports.finance", group: "registers" },
   // M6.1 (07-ZH line 20, approved by the owner 2026-10-31).
-  { key: "payments", path: "/reports/payments", label: "Payments and TDS register" },
+  { key: "payments", path: "/reports/payments", label: "Payments and TDS register", action: "reports.finance", group: "registers" },
   // M6.5 (B4; 07-ZO "Staff lines", lead under the delegation).
-  { key: "refunds", path: "/reports/refunds", label: "Refunds register" },
+  { key: "refunds", path: "/reports/refunds", label: "Refunds register", action: "reports.finance", group: "registers" },
 ];
 
 /**

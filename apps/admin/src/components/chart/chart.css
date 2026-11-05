@@ -1,0 +1,597 @@
+/* M7.3 charts (L14; docs/06 §2, §4.3, §4.5). Tokens only (@techaust/ui). Loaded with the reports and the dashboard chunks, never on sign-in.
+
+   The palette is computed, not eyeballed (the dataviz validator, run 2026-11-06 on the chart surfaces: white in light, ink-800 in dark; every chart sits on a
+   surface panel, never on the page's stone, where the light end would fall under 2:1):
+   - a pair (invoiced against collected), one hue in two steps: light verdigris-700 / -300, dark verdigris-300 / -700 (ordinal checks pass both ways; the
+     light end is 2.07:1 in light and 2.61:1 in dark, so the pair always has its legend and its table);
+   - one series: the accent (verdigris-700 light, -300 dark);
+   - a ramp of three (kinds of work) and of four (the overdue buckets): light 800 / 500 / 300 and 300 / 500 / 700 / 900; dark 200 / 500 / 700 and
+     700 / 500 / 300 / 100 (monotone, every step ≥ 0.06 apart, light end ≥ 2:1); "not yet due" is the neutral control grey, apart from the ramp;
+   - no two-hue pair of the brand tokens passes the categorical checks, so identity never rests on hue: a legend, words and the table always come with it.
+   Status colours stay reserved for status (with their icon and words). Text never wears a series colour. */
+
+:root {
+  --chart-a: var(--color-verdigris-700);
+  --chart-b: var(--color-verdigris-300);
+  --chart-s1: var(--color-verdigris-300);
+  --chart-s2: var(--color-verdigris-500);
+  --chart-s3: var(--color-verdigris-700);
+  --chart-s4: var(--color-verdigris-900);
+  --chart-k1: var(--color-verdigris-800);
+  --chart-k2: var(--color-verdigris-500);
+  --chart-k3: var(--color-verdigris-300);
+  --chart-n: var(--color-stone-500);
+  --chart-on-dark: var(--color-white);
+  --chart-on-light: var(--color-ink-900);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --chart-a: var(--color-verdigris-300);
+    --chart-b: var(--color-verdigris-700);
+    --chart-s1: var(--color-verdigris-700);
+    --chart-s2: var(--color-verdigris-500);
+    --chart-s3: var(--color-verdigris-300);
+    --chart-s4: var(--color-verdigris-100);
+    --chart-k1: var(--color-verdigris-200);
+    --chart-k2: var(--color-verdigris-500);
+    --chart-k3: var(--color-verdigris-700);
+    --chart-n: var(--color-ink-500);
+  }
+}
+
+:root[data-theme="dark"] {
+  --chart-a: var(--color-verdigris-300);
+  --chart-b: var(--color-verdigris-700);
+  --chart-s1: var(--color-verdigris-700);
+  --chart-s2: var(--color-verdigris-500);
+  --chart-s3: var(--color-verdigris-300);
+  --chart-s4: var(--color-verdigris-100);
+  --chart-k1: var(--color-verdigris-200);
+  --chart-k2: var(--color-verdigris-500);
+  --chart-k3: var(--color-verdigris-700);
+  --chart-n: var(--color-ink-500);
+}
+
+/* ---------- Tones (fills for SVG marks and HTML blocks alike) ---------- */
+
+.chart-tone--a {
+  fill: var(--chart-a);
+  background-color: var(--chart-a);
+}
+.chart-tone--b {
+  fill: var(--chart-b);
+  background-color: var(--chart-b);
+}
+.chart-tone--s1 {
+  fill: var(--chart-s1);
+  background-color: var(--chart-s1);
+}
+.chart-tone--s2 {
+  fill: var(--chart-s2);
+  background-color: var(--chart-s2);
+}
+.chart-tone--s3 {
+  fill: var(--chart-s3);
+  background-color: var(--chart-s3);
+}
+.chart-tone--s4 {
+  fill: var(--chart-s4);
+  background-color: var(--chart-s4);
+}
+.chart-tone--k1 {
+  fill: var(--chart-k1);
+  background-color: var(--chart-k1);
+}
+.chart-tone--k2 {
+  fill: var(--chart-k2);
+  background-color: var(--chart-k2);
+}
+.chart-tone--k3 {
+  fill: var(--chart-k3);
+  background-color: var(--chart-k3);
+}
+.chart-tone--n {
+  fill: var(--chart-n);
+  background-color: var(--chart-n);
+}
+
+.chart-stroke--a {
+  stroke: var(--chart-a);
+}
+.chart-stroke--n {
+  stroke: var(--color-text-muted);
+}
+
+/* ---------- The frame: a figure on a surface panel ---------- */
+
+.chart {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-5) var(--space-6) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+@media (max-width: 29.99rem) {
+  .chart {
+    padding: var(--space-4) var(--space-3) var(--space-3);
+  }
+}
+
+.chart__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-6);
+  margin-bottom: var(--space-4);
+}
+
+.chart__title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+}
+
+.chart__note {
+  margin: var(--space-3) 0 0;
+  max-width: var(--container-prose);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* The plot box: the readout is positioned against it. */
+.chart-plot {
+  position: relative;
+  min-width: 0;
+}
+
+.chart-svg {
+  display: block;
+  overflow: visible;
+}
+
+/* ---------- Legend and line keys ---------- */
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text);
+}
+
+.chart-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chart-key {
+  display: inline-block;
+  flex: none;
+}
+
+.chart-key--rect {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.chart-key--line {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+}
+
+/* ---------- Axes and grid: hairlines, solid, recessive ---------- */
+
+.chart-grid {
+  stroke: var(--color-border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.chart-axis {
+  stroke: var(--color-border-control);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.chart-tick {
+  fill: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-cap {
+  fill: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Marks and their targets ---------- */
+
+.chart-hit {
+  outline: none;
+}
+
+.chart-hit__band {
+  fill: transparent;
+}
+
+.chart-hit__ring {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+/* The mark under the pointer or the keyboard lifts: its band takes a ghost wash; a keyboard focus also draws the focus ring around the band. */
+.chart-hit:hover .chart-hit__band,
+.chart-hit:focus .chart-hit__band {
+  fill: var(--color-fill-subtle);
+  fill-opacity: 0.6;
+}
+
+.chart-hit:focus-visible .chart-hit__ring {
+  stroke: var(--color-focus);
+}
+
+.chart-area {
+  fill-opacity: 0.1;
+}
+
+.chart-line__path {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-dot {
+  stroke: var(--color-surface);
+  stroke-width: 2;
+}
+
+.chart-cross {
+  stroke: var(--color-border-control);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.chart-line {
+  border-radius: var(--radius-sm);
+}
+
+.chart-line:focus {
+  outline: none;
+}
+
+.chart-line:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 4px;
+}
+
+/* ---------- Ranked bars (HTML rows, one shared scale) ---------- */
+
+.chart-bars {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart-bars__item {
+  min-width: 0;
+}
+
+.chart-bars__row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 14rem) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--target-min);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.chart-bars__row:hover,
+.chart-bars__row:focus {
+  background: var(--color-fill-subtle);
+}
+
+.chart-bars__row:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.chart-bars__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chart-bars__track {
+  display: block;
+  min-width: 0;
+  height: 16px;
+}
+
+.chart-bars__bar {
+  display: block;
+  min-width: 2px;
+  height: 16px;
+  border-radius: 0 4px 4px 0;
+}
+
+.chart-bars__value {
+  justify-self: end;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* A phone: the name above its bar and figure. */
+@media (max-width: 29.99rem) {
+  .chart-bars__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name value" "bar bar";
+    gap: var(--space-1) var(--space-3);
+    padding-block: var(--space-2);
+  }
+
+  .chart-bars__name {
+    grid-area: name;
+  }
+
+  .chart-bars__value {
+    grid-area: value;
+  }
+
+  .chart-bars__track {
+    grid-area: bar;
+  }
+}
+
+/* ---------- Segmented bar: thin (8 px) or tall (28 px) ---------- */
+
+.chart-seg__bar {
+  position: relative;
+  width: 100%;
+}
+
+.chart-seg--thin .chart-seg__bar {
+  height: 8px;
+}
+
+.chart-seg--tall .chart-seg__bar {
+  height: 28px;
+}
+
+/* Each part is a target taller than its paint: the 8 px bar is hit across 24 px. */
+.chart-seg__part {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.chart-seg--thin .chart-seg__part {
+  border-radius: 999px;
+}
+
+.chart-seg--thin .chart-seg__part::before {
+  content: "";
+  position: absolute;
+  inset: -8px 0;
+}
+
+.chart-seg--tall .chart-seg__part {
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  padding-inline-start: var(--space-2);
+}
+
+.chart-seg__part:hover,
+.chart-seg__part:focus {
+  filter: brightness(1.12);
+}
+
+.chart-seg__part:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
+/* A share printed inside a tall block: white on the darker steps, ink on the lighter ones, the same two in both themes. */
+.chart-seg__share {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--chart-on-dark);
+}
+
+.chart-tone--k3 .chart-seg__share {
+  color: var(--chart-on-light);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chart-tone--k1 .chart-seg__share {
+    color: var(--chart-on-light);
+  }
+
+  :root:not([data-theme="light"]) .chart-tone--k3 .chart-seg__share {
+    color: var(--chart-on-dark);
+  }
+}
+
+:root[data-theme="dark"] .chart-tone--k1 .chart-seg__share {
+  color: var(--chart-on-light);
+}
+
+:root[data-theme="dark"] .chart-tone--k3 .chart-seg__share {
+  color: var(--chart-on-dark);
+}
+
+/* ---------- The readout ---------- */
+
+.chart-tip {
+  position: absolute;
+  z-index: 2;
+  min-width: 10rem;
+  max-width: 18rem;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  transform: translateY(-100%);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.chart-tip__title {
+  margin: 0 0 var(--space-1);
+  color: var(--color-text-muted);
+}
+
+.chart-tip__rows {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart-tip__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.chart-tip__value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.chart-tip__label {
+  color: var(--color-text-muted);
+}
+
+/* ---------- Stat tiles and meters ---------- */
+
+.chart-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.chart-stat {
+  display: grid;
+  align-content: start;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.chart-stat__label {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.chart-stat__value {
+  margin: 0;
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h3);
+  line-height: var(--text-h3--line-height);
+  font-weight: 560;
+  font-variant-numeric: proportional-nums lining-nums;
+}
+
+.chart-stat__sub {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* The meter: an 8 px track a light step of the fill's own hue, the fill the accent. */
+.chart-meter {
+  position: relative;
+  height: 8px;
+  margin: var(--space-2) 0 0;
+  border-radius: 999px;
+  background: var(--color-verdigris-100);
+  overflow: hidden;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .chart-meter {
+    background: var(--color-verdigris-900);
+  }
+}
+
+:root[data-theme="dark"] .chart-meter {
+  background: var(--color-verdigris-900);
+}
+
+.chart-meter__fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: 999px;
+  background: var(--chart-a);
+}
+
+/* ---------- The sparkline ---------- */
+
+.chart-spark {
+  min-width: 0;
+  height: 40px;
+}
+
+.chart-spark svg {
+  display: block;
+  overflow: visible;
+}
+
+/* Forced colours: marks take the system's text colour, so a part is still a shape; its words and the table carry the rest. */
+@media (forced-colors: active) {
+  .chart-seg__part,
+  .chart-bars__bar,
+  .chart-meter__fill {
+    forced-color-adjust: none;
+    background-color: CanvasText;
+  }
+
+  .chart-mark {
+    fill: CanvasText;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chart-seg__part,
+  .chart-bars__row {
+    transition: none;
+  }
+}

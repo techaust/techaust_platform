@@ -1684,6 +1684,34 @@ body:has(.shell) {
   font-variant-numeric: tabular-nums;
 }
 
+/* M7.3: the rows that close a list (a period's totals), as a ledger's total stands: a rule above, a double rule below (the reports' one device). */
+.dtable__total > * {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-text);
+  border-bottom: 3px double var(--color-text);
+  font-weight: 600;
+  text-align: start;
+  vertical-align: middle;
+}
+
+.dtable__total + .dtable__total > * {
+  border-top: 0;
+}
+
+.dtable__total:last-child > :first-child {
+  border-end-start-radius: var(--radius-md);
+}
+
+.dtable__total:last-child > :last-child {
+  border-end-end-radius: var(--radius-md);
+}
+
+.dcard--total {
+  border-top: 1px solid var(--color-text);
+  border-bottom: 3px double var(--color-text);
+  font-weight: 600;
+}
+
 .dtable__sort {
   display: inline-flex;
   align-items: center;

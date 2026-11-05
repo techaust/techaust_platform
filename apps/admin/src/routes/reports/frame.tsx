@@ -1,8 +1,12 @@
-// The frame every report shares (M5.5b): the title and lede under the "Reports" crumb, then the section's own index of the four reports.
+// The frame every report shares (M5.5b): the title and lede under the "Reports" crumb, then the section's own index of the reports the role may read.
+// M7.3: the index holds the management reports (C1 to C4) and, for the Owner and the Accountant, the registers and files after them; the two groups sit apart
+// on a wide screen (a hairline between them), and a role with a single report gets no index at all (a one-link index says nothing).
 import { type ReactNode, useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router";
 import { PageHeader } from "../../components/display.tsx";
+import { allowed } from "../../lib/access.ts";
 import { nearestScrollLeft, REPORTS, REPORTS_COPY } from "../../lib/reports.ts";
+import { useUser } from "../../session.tsx";
 
 export const CRUMBS = [{ label: REPORTS_COPY.group, to: "/reports" }];
 
@@ -10,6 +14,11 @@ export const CRUMBS = [{ label: REPORTS_COPY.group, to: "/reports" }];
 export function ReportFrame(props: { title: string; lede: ReactNode; children: ReactNode }) {
   const nav = useRef<HTMLElement>(null);
   const { pathname } = useLocation();
+  const user = useUser();
+  const mine = REPORTS.filter((r) => allowed(user.role, r.action));
+  const groups = (["management", "registers"] as const)
+    .map((g) => mine.filter((r) => r.group === g))
+    .filter((g) => g.length > 0);
   // On a narrow screen the index scrolls sideways: bring the open report into view (only the row moves, never the page). Runs again when the
   // report changes, which is why `pathname` is a dependency.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the effect reads the DOM, which changes with the path
@@ -23,17 +32,21 @@ export function ReportFrame(props: { title: string; lede: ReactNode; children: R
   return (
     <div className="report">
       <PageHeader title={props.title} crumbs={CRUMBS} lede={props.lede} />
-      <nav ref={nav} className="report-nav" aria-label={REPORTS_COPY.group}>
-        <ul>
-          {REPORTS.map((r) => (
-            <li key={r.key}>
-              <NavLink to={r.path} className="report-nav__link">
-                {r.label}
-              </NavLink>
-            </li>
+      {mine.length > 1 && (
+        <nav ref={nav} className="report-nav" aria-label={REPORTS_COPY.group}>
+          {groups.map((g) => (
+            <ul key={g[0]?.group} className="report-nav__group">
+              {g.map((r) => (
+                <li key={r.key}>
+                  <NavLink to={r.path} className="report-nav__link">
+                    {r.label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
           ))}
-        </ul>
-      </nav>
+        </nav>
+      )}
       {props.children}
     </div>
   );

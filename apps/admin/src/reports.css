@@ -6,6 +6,7 @@
 /* ---------- The section index (four reports) ---------- */
 
 .report-nav {
+  display: flex;
   margin: calc(-1 * var(--space-2)) 0 var(--space-6);
   border-bottom: 1px solid var(--color-border);
   overflow-x: auto;
@@ -15,10 +16,31 @@
 
 .report-nav ul {
   display: flex;
+  flex: none;
   gap: var(--space-1);
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* M7.3: the registers and files after the management reports, a hairline between the two groups. */
+.report-nav__group + .report-nav__group {
+  margin-inline-start: var(--space-3);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 1px solid var(--color-border);
+}
+
+/* A wide screen: the index wraps rather than scrolls, every report in view; each group keeps its own row when both don't fit. */
+@media (min-width: 64rem) {
+  .report-nav {
+    flex-wrap: wrap;
+    row-gap: var(--space-1);
+    overflow: visible;
+  }
+
+  .report-nav ul {
+    flex-wrap: wrap;
+  }
 }
 
 .report-nav__link {
@@ -802,4 +824,316 @@
 
 .statement-more {
   justify-self: start;
+}
+
+/* ---------- M7.3: the management reports (revenue, ageing, pipeline, care hours) ----------
+   The filters in one row above everything they scope; each chart on its surface panel with its table under it; a figure that closes a table stands on the
+   double rule (DataTable's totals). The one memorable thing is the year in twelve paired columns; everything around it stays quiet. */
+
+.m73-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3) var(--space-5);
+  margin-bottom: var(--space-6);
+}
+
+.m73-filters__field {
+  margin: 0;
+  min-width: 12rem;
+}
+
+.m73-filters__switch {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.m73-filters__legend {
+  margin-bottom: var(--space-1);
+  padding: 0;
+}
+
+.m73-filters__end {
+  margin-inline-start: auto;
+}
+
+.m73-filters--range {
+  display: block;
+}
+
+@media (max-width: 29.99rem) {
+  .m73-filters__field,
+  .m73-filters__switch {
+    flex: 1 1 100%;
+  }
+
+  .m73-filters__end {
+    margin-inline-start: 0;
+  }
+}
+
+.m73-stack {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.m73-stack > * {
+  min-width: 0;
+}
+
+.m73-block {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.m73-block__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.m73-block__head--end {
+  justify-content: flex-end;
+}
+
+.m73-table {
+  min-width: 0;
+}
+
+.m73-table > .dtable {
+  margin-top: 0;
+}
+
+.m73-grid {
+  display: grid;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+@media (min-width: 64rem) {
+  .m73-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* An amount, and a USD amount's INR equivalent under it (muted, smaller, never broken). */
+.m73-money {
+  display: inline-grid;
+  justify-items: end;
+}
+
+.m73-money__value {
+  white-space: nowrap;
+}
+
+.m73-money__inr {
+  display: block;
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.m73-zero {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.m73-client {
+  display: grid;
+  min-width: 0;
+}
+
+.m73-client__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  font-weight: 560;
+}
+
+.m73-client__code {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+}
+
+.m73-statement {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  white-space: nowrap;
+}
+
+.m73-note {
+  margin: 0;
+  max-width: var(--container-prose);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.m73-note--error {
+  color: var(--color-danger);
+}
+
+/* "Total in INR": a quiet line of figures under the months, its own heading first. */
+.m73-inr {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.m73-inr__figures {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+}
+
+.m73-inr__head {
+  font-weight: 600;
+}
+
+.m73-inr__figures > div:not(.m73-inr__head) {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.m73-inr__figures dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.m73-inr__figures dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* The ageing: the currency's total above its thin bar. */
+.m73-ageing__total {
+  margin: 0 0 var(--space-3);
+}
+
+.m73-ageing__figure {
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h3);
+  line-height: var(--text-h3--line-height);
+  font-weight: 560;
+  white-space: nowrap;
+}
+
+/* Pipeline: decided offers as small facts. */
+.m73-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+}
+
+.m73-facts > div {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.m73-facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.m73-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* "Show as a table" under a chart: a 44 px summary, the table below it when open. */
+.m73-tableview {
+  margin-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.m73-tableview__summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+  width: fit-content;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.m73-tableview__summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.m73-tableview__body > .dtable {
+  margin-top: var(--space-2);
+}
+
+/* Care hours: the meter and its flag side by side; the billed state and its overage line. */
+.m73-care-used {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-width: 12rem;
+}
+
+.m73-care-used .hours {
+  flex: 1 1 9rem;
+}
+
+.m73-billed {
+  display: grid;
+}
+
+.m73-nowrap-dates {
+  white-space: nowrap;
+}
+
+/* Export: the button, its progress line and any refusal under it. */
+.m73-export {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+}
+
+.m73-export__line {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.m73-more {
+  display: flex;
+  justify-content: center;
+}
+
+/* The loading frame: the chart's box and three rows. */
+.m73-skeleton {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.m73-skeleton__plot {
+  height: 13.75rem;
+  margin-top: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--color-fill-subtle);
+}
+
+.m73-skeleton__rows {
+  display: grid;
+  gap: var(--space-3);
 }
