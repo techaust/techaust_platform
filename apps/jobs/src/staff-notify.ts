@@ -3,8 +3,8 @@
 //   - `staff.notify {bell, entityId}` (ids only, the M2.4b rule): ONE read of that bell's rows with their members and switches (index `notifications_entity`),
 //     then one `staff.notification` email per bell row whose member is active and has the kind's group on, entity `{type: "notification", id: <bell row id>}`,
 //     so a redelivery or a second expansion sends nothing twice. The subject is the bell's own approved title; the button is `ADMIN_URL` + the bell's link.
-//   - `bells.sweep {since}` (the hourly tick, on the leads queue): the emailed bells written since `since` (at most 50 distinct bells, one seek of
-//     `notifications_user_created` per active member), each queued again as `staff.notify`. The safety net for a producer whose send was lost (a route's
+//   - `bells.sweep {since}` (the hourly tick, on the leads queue): the emailed bells written since `since` and not yet expanded (at most 50 distinct bells, one
+//     seek of `notifications_user_created` per active member; review 1 finding 9: a bell with an emailed row is skipped), each queued again as `staff.notify`. The safety net for a producer whose send was lost (a route's
 //     `waitUntil`) or that has none (a PayPal capture on the portal's return, a hook-signature window).
 //   - `notifyRecentBells`: the same read for the bells a just-finished gateway RPC wrote (jobs' gateway consumer), so a webhook's payment or review emails go at once.
 // Nothing here reads an address from a message, and nothing is logged but kinds and counts.
@@ -44,10 +44,18 @@ export const NOTIFY_ROWS_SQL = `SELECT n.id, n.title, n.link, u.email, u.name, u
    WHERE n.entity_type = ?1 AND n.entity_id = ?2 AND n.kind = ?3
    ORDER BY n.id LIMIT ${NOTIFY_ROWS_MAX}`;
 
-/** The emailed bells written since `?1` (one seek of `notifications_user_created` per active member), distinct by kind and entity. */
+/**
+ * The emailed bells written since `?1` (one seek of `notifications_user_created` per active member), distinct by kind and entity, that have not been expanded
+ * yet (review 1, finding 9): a bell any of whose rows already has its `staff.notification` email logged (`email_log_entity`, entity `notification:<row id>`)
+ * is skipped, so the hourly sweep and a gateway call's `notifyRecentBells` don't queue the same bell's `staff.notify` again and again. A bell nobody wants
+ * emailed has no logged row and is listed until it leaves the window (at most two sweeps); the consumer's switches decide, and sends nothing.
+ */
 export const RECENT_BELLS_SQL = `SELECT DISTINCT n.kind, n.entity_id FROM staff_users u
    JOIN notifications n INDEXED BY notifications_user_created ON n.user_id = u.id AND n.created_at >= ?1
    WHERE u.status = 'active' AND n.kind IN (${EMAILED_BELL_KINDS.map((k) => `'${k}'`).join(", ")})
+     AND NOT EXISTS (SELECT 1 FROM notifications n2 INDEXED BY notifications_entity
+                     JOIN email_log e ON e.entity_type = 'notification' AND e.entity_id = n2.id
+                     WHERE n2.entity_type = n.entity_type AND n2.entity_id = n.entity_id AND n2.kind = n.kind)
    LIMIT ${SWEEP_BELLS_MAX}`;
 
 type NotifyRow = PrefsRow & {

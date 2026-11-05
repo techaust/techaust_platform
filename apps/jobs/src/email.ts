@@ -275,9 +275,16 @@ async function sendClaimed(
 export const DEAD_LETTER_SQL =
   "UPDATE email_log SET status = 'failed', error = 'dead-lettered', updated_at = ?2 WHERE id = ?1 AND status IN ('queued', 'sending')";
 
-/** The owners' `job.failed` bell (`?1` `<queue>:<IST day>`, `?2` the title): one per owner, queue and IST day (the unique `(user_id, kind, entity_id)`). */
+/**
+ * The owners' `job.failed` bell (`?1` `<queue>:<IST day>`, `?2` the title, `?3` the link): one per owner, queue and IST day (the unique `(user_id, kind,
+ * entity_id)`).
+ */
 export const JOB_FAILED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
-  SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'job.failed', 'queue', ?1, ?2, '/' FROM staff_users o WHERE o.role = 'owner' AND o.status = 'active'`;
+  SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'job.failed', 'queue', ?1, ?2, ?3 FROM staff_users o WHERE o.role = 'owner' AND o.status = 'active'`;
+
+/** Where the `job.failed` bell opens (the lead's answer to review 1): the email queue's on the email log's failed emails; the others on the dashboard. */
+export const jobFailedLink = (queue: string): string =>
+  queue.endsWith("-email-dlq") ? "/emails?status=failed" : "/";
 
 /**
  * A dead-lettered message: one log line without personal data and an alert to LEAD_ALERT_TO, sent directly through the
@@ -337,7 +344,7 @@ export async function processDeadLetter(
   rendered ??= dlqAlert({ queue, admin_url: env.ADMIN_URL }, opts);
   // M7.2 (run file D, L13): the owners' bell `job.failed`, once per queue per IST day (best effort; the alert email below is the record).
   await env.DB.prepare(JOB_FAILED_BELL_SQL)
-    .bind(`${queue}:${toIsoDate(istDate(Date.now()))}`, jobFailedTitle(queue))
+    .bind(`${queue}:${toIsoDate(istDate(Date.now()))}`, jobFailedTitle(queue), jobFailedLink(queue))
     .run()
     .catch(() => logEvent("queue.dead_letter_bell_failed", { queue }));
 

@@ -6,7 +6,10 @@
 //   document its payment's checkout was for, else the payment's receipt's), the credit note that records it (issued only), the terms row (the send window); and the client's live contacts with portal access AND
 //   "can see finance" (Researched 2026-10-28, RB-31: finance emails only to finance contacts), the contact's `client_id` the refund's own
 //   -> outside the window (default 09:00 to 19:00 IST; Q48: a system email waits) the same message again with `delaySeconds`;
-//   -> else one `refund.sent` per contact, entity `{type: "refund", id}`, so a second producer (route and RPC both) or a redelivery sends once.
+//   -> else one `refund.sent` per contact, entity `{type: "refund", id}`, so a second producer (route and RPC both) or a redelivery sends once; its button opens
+//      the refunded invoice in the portal (review 1, finding 13), else the invoice list.
+// Not emailed (review 1, finding 13, kept): a refund from credit of a payment confirmed before M6.5 names no document (no invoice, no checkout, no receipt), so
+// the consumer answers `none` (`no_document`); the run file records it.
 // While 07-ZQ's client lines are unapproved no refund email leaves "local" (`refundCopyGate`, the M6.5 receipt gate's pattern): the message is acknowledged.
 import type { EmailMessage } from "@techaust/core";
 import { APPROVED_07ZQ } from "@techaust/core/copy-zq";
@@ -27,7 +30,7 @@ export const refundCopyGate = { approved: (): boolean => APPROVED_07ZQ };
 
 /** The refund, only when it may be emailed: every rule in the WHERE (a row that fails one reads as nothing). */
 export const REFUND_ROW_SQL = `SELECT r.id, r.client_id, r.amount_minor, r.currency, r.settled_on, r.settled_at,
-     coalesce(d.number_display, cd.number_display, rc.number_display) AS document_number,
+     coalesce(d.number_display, cd.number_display, rc.number_display) AS document_number, coalesce(d.id, cd.id) AS invoice_id,
      CASE WHEN cn.status <> 'draft' AND cn.number_display IS NOT NULL THEN cn.number_display END AS credit_note_number
    FROM payment_refunds r
    JOIN clients k ON k.id = r.client_id AND k.anonymised_at IS NULL
@@ -53,6 +56,7 @@ type RefundRow = {
   settled_on: string | null;
   settled_at: number | null;
   document_number: string | null;
+  invoice_id: string | null;
   credit_note_number: string | null;
 };
 
@@ -96,7 +100,11 @@ export async function processRefundNotify(
   }
   const day = row.settled_on ? parseIsoDate(row.settled_on) : null;
   const date = day ? formatDate(day) : (row.settled_on ?? "");
-  const url = `${portalBase(env)}/invoices`;
+  // Review 1, finding 13: "View invoice" opens the refunded invoice (its excess, or the document its payment's checkout was for); a refund from credit named
+  // only by the payment's receipt opens the invoice list, where the receipt is shown on the invoice it paid.
+  const url = row.invoice_id
+    ? `${portalBase(env)}/invoices/${encodeURIComponent(row.invoice_id)}`
+    : `${portalBase(env)}/invoices`;
   const amount = formatMoney(money(row.amount_minor, row.currency));
   const messages: EmailMessage[] = contacts.map((c) => ({
     template: "refund.sent",
@@ -114,4 +122,16 @@ export async function processRefundNotify(
   await sendChunked(env.EMAIL_QUEUE, messages);
   logEvent("refund_notify.queued", { emails: messages.length });
   return "queued";
+}
+
+/**
+ * Queue the client's refund email for a refund an RPC just moved to succeeded (M7.2, producers 3 and 4). Review 1, finding 8: a failed send is logged and never
+ * thrown: the RPC's work is done and its redelivery answers nothing more (the refund is settled), so `refund.sweep` (`REFUNDS_UNMAILED_SQL`) sends it within the hour.
+ */
+export async function sendRefundNotify(env: Pick<Env, "EMAIL_QUEUE">, refundId: string): Promise<void> {
+  try {
+    await env.EMAIL_QUEUE.send(refundNotify(refundId));
+  } catch (e) {
+    logEvent("refund.notify_send_failed", { error: e instanceof Error ? e.name : "unknown" });
+  }
 }
