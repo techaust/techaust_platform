@@ -4,7 +4,7 @@ import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { type Currency, ensureStepUp } from "../../api.ts";
 import { Skeleton } from "../../components/display.tsx";
-import { Download } from "../../components/icons.tsx";
+import { ChevronRight, Download } from "../../components/icons.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { moneyText } from "../../lib/documents.ts";
 import { PIPELINE_COPY, REVENUE_COPY } from "../../lib/m73-reports.ts";
@@ -93,8 +93,10 @@ export function FilterSwitch<V extends string>(props: {
 export function Money(props: { minor: number; currency: Currency; inr?: number | null | undefined }) {
   return (
     <span className="m73-money">
-      <span className="tnum m73-money__value">{moneyText(props.minor, props.currency)}</span>
-      {props.currency !== "INR" && props.inr != null && (
+      <span className={props.minor === 0 ? "tnum m73-money__value m73-zero" : "tnum m73-money__value"}>
+        {moneyText(props.minor, props.currency)}
+      </span>
+      {props.currency !== "INR" && props.inr != null && props.minor !== 0 && (
         <span className="m73-money__inr">{FINANCE_COPY.inrEquivalent(moneyText(props.inr, "INR"))}</span>
       )}
     </span>
@@ -105,7 +107,10 @@ export function Money(props: { minor: number; currency: Currency; inr?: number |
 export function TableView({ children }: { children: ReactNode }) {
   return (
     <details className="m73-tableview">
-      <summary className="m73-tableview__summary">{PIPELINE_COPY.asTable}</summary>
+      <summary className="m73-tableview__summary">
+        <ChevronRight size={16} />
+        {PIPELINE_COPY.asTable}
+      </summary>
       <div className="m73-tableview__body">{children}</div>
     </details>
   );

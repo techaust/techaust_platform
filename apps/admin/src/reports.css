@@ -910,6 +910,25 @@
   margin-top: 0;
 }
 
+/* A wide list (the ageing's nine columns, care hours): it scrolls sideways inside its own box, never the page (the box is then a named keyboard stop,
+   DataTable's scroll region); the cells sit closer and the client's name keeps a readable width. */
+.m73-table--wide > .dtable {
+  overflow-x: auto;
+}
+
+.m73-table--wide .dtable__table :is(th, td) {
+  padding-inline: var(--space-3);
+}
+
+/* Inside a box that scrolls sideways a sticky header would stick to the box, not the page (shell.css's users list does the same). */
+.m73-table--wide .dtable__table thead th {
+  position: static;
+}
+
+.m73-table--wide .dtable__table :is(thead th, tbody th, tfoot th):first-child {
+  min-width: 11rem;
+}
+
 .m73-grid {
   display: grid;
   gap: var(--space-6);
@@ -919,6 +938,7 @@
 @media (min-width: 64rem) {
   .m73-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
   }
 }
 
@@ -997,10 +1017,18 @@
 }
 
 .m73-inr__head {
+  margin: 0;
   font-weight: 600;
 }
 
-.m73-inr__figures > div:not(.m73-inr__head) {
+.m73-inr__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+  margin: 0;
+}
+
+.m73-inr__list > div {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
@@ -1069,6 +1097,29 @@
   font-size: var(--text-sm);
   font-weight: 560;
   cursor: pointer;
+}
+
+.m73-tableview__summary {
+  gap: var(--space-1);
+  list-style: none;
+}
+
+.m73-tableview__summary::-webkit-details-marker {
+  display: none;
+}
+
+.m73-tableview__summary svg {
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.m73-tableview[open] > .m73-tableview__summary svg {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m73-tableview__summary svg {
+    transition: none;
+  }
 }
 
 .m73-tableview__summary:focus-visible {

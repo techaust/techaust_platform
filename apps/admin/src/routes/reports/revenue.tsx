@@ -307,21 +307,25 @@ function InrLines({ data, currency }: { data: RevenueByMonth; currency: Currency
   return (
     <div className="m73-inr">
       {has("INR") && (invInr !== null || colInr !== null || missing > 0) && (
-        <dl className="m73-inr__figures" aria-label={R.totalInInr}>
-          <div className="m73-inr__head">{R.totalInInr}</div>
-          {invInr !== null && (
-            <div>
-              <dt>{R.invoicedWith}</dt>
-              <dd className="tnum">{moneyText(invInr, "INR")}</dd>
-            </div>
-          )}
-          {colInr !== null && (
-            <div>
-              <dt>{R.collected}</dt>
-              <dd className="tnum">{moneyText(colInr, "INR")}</dd>
-            </div>
-          )}
-        </dl>
+        <div className="m73-inr__figures">
+          <p className="m73-inr__head" id="rev-inr-h">
+            {R.totalInInr}
+          </p>
+          <dl className="m73-inr__list" aria-labelledby="rev-inr-h">
+            {invInr !== null && (
+              <div>
+                <dt>{R.invoicedWith}</dt>
+                <dd className="tnum">{moneyText(invInr, "INR")}</dd>
+              </div>
+            )}
+            {colInr !== null && (
+              <div>
+                <dt>{R.collected}</dt>
+                <dd className="tnum">{moneyText(colInr, "INR")}</dd>
+              </div>
+            )}
+          </dl>
+        </div>
       )}
       {missing > 0 && <p className="m73-note">{R.inrMissing(missing)}</p>}
       {(currency === "USD" || has("INR")) && <p className="m73-note">{R.inrNote}</p>}

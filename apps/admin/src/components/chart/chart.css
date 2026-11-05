@@ -528,6 +528,15 @@
   font-variant-numeric: proportional-nums lining-nums;
 }
 
+.chart-stat__value--words {
+  font-family: var(--font-sans);
+  font-stretch: normal;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
 .chart-stat__sub {
   margin: 0;
   color: var(--color-text-muted);

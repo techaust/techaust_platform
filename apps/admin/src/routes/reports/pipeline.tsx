@@ -127,17 +127,20 @@ function Body({ r }: { r: Report }) {
         <StatTile
           label={P.conversion}
           value={L.conversionBp === null ? P.noConversion : rateText(L.conversionBp)}
+          words={L.conversionBp === null}
           sub={L.conversionBp === null ? undefined : P.ofLeads(L.won, L.created)}
           meterBp={L.conversionBp}
         />
         <StatTile
           label={P.winRate}
           value={O.winRateBp === null ? P.noRate : rateText(O.winRateBp)}
+          words={O.winRateBp === null}
           sub={O.winRateBp === null ? undefined : P.ofDecided(O.accepted, decided)}
           meterBp={O.winRateBp}
         />
         <StatTile
           label={P.medianToWin}
+          words={O.timeToWin.medianDays === null}
           value={O.timeToWin.medianDays === null ? P.noMedian : P.days(O.timeToWin.medianDays)}
           sub={O.timeToWin.count > 0 ? P.wins(O.timeToWin.count) : undefined}
         />

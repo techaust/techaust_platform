@@ -148,10 +148,13 @@ for (const theme of ["light", "dark"] as const)
         await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
         // the data has arrived (no skeleton left)
         await expect(page.locator("[aria-busy='true']")).toHaveCount(0);
+        // the dashboard's skeleton is hidden from assistive technology: wait for a tile's heading instead
+        if (name === "dashboard")
+          await expect(page.getByRole("heading", { name: "Reports", level: 2 })).toBeVisible();
         expect(await page.locator("html").getAttribute("data-theme")).toBe(theme);
-        await noSideways(page);
-        expect(await axe(page), `${name} at ${width} (${theme})`).toEqual([]);
         if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}-${width}-${theme}.png`, fullPage: true });
+        await noSideways(page);
+        expect.soft(await axe(page), `${name} at ${width} (${theme})`).toEqual([]);
       }
     });
 
