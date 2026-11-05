@@ -1,0 +1,1 @@
+CREATE INDEX `email_log_template_created` ON `email_log` (`template`,`created_at`,`id`);

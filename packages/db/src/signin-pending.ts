@@ -36,7 +36,6 @@ export type SigninPendingRow = {
   at: number;
   email: string;
   name: string;
-  role: string;
   status: string;
 };
 
@@ -48,7 +47,7 @@ export function signinScanStatements(db: Db, now: number, ttlMs: number): D1Prep
   return [
     db
       .prepare(
-        `SELECT p.id, p.user_id, p.at, u.email, u.name, u.role, u.status
+        `SELECT p.id, p.user_id, p.at, u.email, u.name, u.status
          FROM staff_signin_pending p JOIN staff_users u ON u.id = p.user_id
          WHERE p.notified_at IS NULL AND p.at < ?1 ORDER BY p.at, p.id LIMIT ${SIGNIN_SCAN_LIMIT}`,
       )

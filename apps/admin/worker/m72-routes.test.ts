@@ -7,6 +7,8 @@ import { CHALLENGE_TTL_MS } from "@techaust/auth";
 import { uuidv7 } from "@techaust/core/ids";
 import { SIGNIN_CHALLENGE_TTL_MS } from "@techaust/db/signin-pending";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DELIVERY_SQL } from "./document-offer.ts";
+import { emailListStatement } from "./emails.ts";
 import { setStubTransport } from "./gateway/config.ts";
 import { issueReceipt } from "./receipt-issue.ts";
 import { mkClient, mkContact } from "./test-clients.ts";
@@ -116,6 +118,45 @@ describe("the email log (emails.read: Owner and Staff)", () => {
       expect(r.status, q).toBe(200);
     }
     expect((await call("/emails?status=nope", { cookie: st.cookie })).status).toBe(400);
+  });
+
+  it("each filter reaches its rows by its own index, the template filter by email_log_template_created (finding 4); M4.5's delivery read stays on its entity index", async () => {
+    const plan = async (sql: string, binds: unknown[]) =>
+      (await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .bind(...binds)
+        .all<{ detail: string }>()).results
+        .map((r) => r.detail)
+        .join(" | ");
+    const cases: [Parameters<typeof emailListStatement>[0], RegExp][] = [
+      [{ template: "invoice.sent" }, /SEARCH email_log USING INDEX email_log_template_created \(template=\?\)/],
+      [{ template: "invoice.sent", since: "5" }, /SEARCH email_log USING INDEX email_log_template_created \(template=\?/],
+      [{ status: "bounced", template: "invoice.sent" }, /SEARCH email_log USING INDEX email_log_status_created \(status=\?\)/],
+      [{ to: "a@example.test", template: "invoice.sent" }, /SEARCH email_log USING INDEX email_log_to \(to_email=\?\)/],
+      [{}, /email_log USING INDEX email_log_created/],
+    ];
+    for (const [q, re] of cases) {
+      const s = emailListStatement(q, { k: 9, id: "z" });
+      const p = await plan(s.sql, s.binds);
+      expect(p, JSON.stringify(q)).toMatch(re);
+      expect(p, JSON.stringify(q)).not.toMatch(/USE TEMP B-TREE/);
+    }
+    const delivery = await plan(DELIVERY_SQL, ["no-such-id"]);
+    expect(delivery).toContain("email_log_entity");
+    expect(delivery).not.toContain("email_log_template_created");
+    // the template filter returns that template's rows only
+    const o = await sessionFor("owner");
+    const id = await logRow(`tpl-${uuidv7().slice(-8)}@example.test`, { status: "sent" });
+    await env.DB.prepare(
+      "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at) VALUES (?1, 'tpl@example.test', 'receipt.sent', 'receipt', ?1, 'sent', ?2, ?2)",
+    )
+      .bind(`log-${uuidv7()}`, Date.now())
+      .run();
+    const listed = (await json(await call("/emails?template=invoice.sent", { cookie: o.cookie }))).emails as {
+      id: string;
+      template: string;
+    }[];
+    expect(listed.map((e) => e.id)).toContain(id);
+    expect(new Set(listed.map((e) => e.template))).toEqual(new Set(["invoice.sent"]));
   });
 
   it("a page holds at most 50, with a cursor to the next", async () => {

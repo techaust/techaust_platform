@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   APPROVED_07ZQ,
+  DIGEST_LABEL,
   DIGEST_COPY,
   EMAIL_STATUS_LABELS,
   jobFailedTitle,
@@ -11,8 +12,10 @@ import {
   PREF_GROUP_LABELS,
   REFUND_EMAIL_COPY,
   SIGNIN_UNFINISHED_COPY,
+  UNSUBSCRIBE_DONE_LINE,
   UNSUBSCRIBE_GET_LINE,
 } from "../src/copy-zq.ts";
+import { SUPPRESSION_REASON_LABELS, SUPPRESSION_REASON_OTHER } from "../src/email-events.ts";
 import { EMAIL_TEMPLATES, NON_TRANSACTIONAL_TEMPLATES } from "../src/email-templates.ts";
 import {
   BELL_ENTITY_TYPES,
@@ -122,18 +125,41 @@ describe("07-ZQ (H)", () => {
     ]);
   });
 
-  it("the builder's drafts carry the mark", () => {
-    for (const v of [
-      ...Object.values(PREF_GROUP_LABELS),
-      ...Object.values(M72_TEMPLATE_NAMES),
-      SIGNIN_UNFINISHED_COPY.subject,
-      SIGNIN_UNFINISHED_COPY.body("Asha", "5 Nov 2026, 10:00 IST"),
-      SIGNIN_UNFINISHED_COPY.advice,
-      SIGNIN_UNFINISHED_COPY.bell("Asha Rao"),
-      DIGEST_COPY.invoiced,
-      DIGEST_COPY.overdue,
-    ])
-      expect(v).toMatch(/^\[Placeholder\] /);
+  it("the staff lines are approved by the lead and placed word for word, unmarked (review 1 triage)", () => {
+    expect(PREF_GROUP_LABELS).toEqual({
+      offerViewed: "proposal and estimate opened",
+      paymentReceived: "online payment",
+      approvals: "payment check",
+      hookFailed: "connection failure",
+    });
+    expect(DIGEST_LABEL).toBe("weekly digest");
+    expect(M72_TEMPLATE_NAMES).toEqual({
+      "digest.weekly": "Weekly digest (team)",
+      "staff.notification": "Notification email (team)",
+      "refund.sent": "Refund sent (client)",
+      "staff.signin_unfinished": "Unfinished sign-in alert",
+    });
+    expect(UNSUBSCRIBE_DONE_LINE).toBe("The weekly digest is switched off.");
+    expect(DIGEST_COPY.invoiced).toBe("Invoiced this month");
+    expect(DIGEST_COPY.overdue).toBe("Overdue invoices");
+    expect(DIGEST_COPY.newLeads).toBe("New leads (last 7 days)");
+    expect(DIGEST_COPY.remindersDue).toBe("Reminders due (next 7 days)");
+    expect(SIGNIN_UNFINISHED_COPY.subject).toBe("Your TecHaust admin password was used");
+    expect(SIGNIN_UNFINISHED_COPY.body("Asha", "5 Nov 2026, 10:00 IST")).toBe(
+      "Hi Asha, your TecHaust admin password was used to start a sign-in on 5 Nov 2026, 10:00 IST, but the 6-digit code was never entered, so the sign-in wasn't finished.",
+    );
+    expect(SIGNIN_UNFINISHED_COPY.advice).toBe(
+      "If this wasn't you, someone else may know your password: ask an owner to reset it under Settings › Users (if you are the only owner, follow the break-glass steps in the security runbook). If it was you, for example a code page you closed, you can ignore this email.",
+    );
+    expect(SIGNIN_UNFINISHED_COPY.bell("Asha Rao")).toBe(
+      "Asha Rao's password was used, but the sign-in wasn't finished.",
+    );
+    expect(SUPPRESSION_REASON_LABELS).toEqual({
+      hard_bounce: "The address bounced",
+      complaint: "Marked as spam",
+      manual: "Stopped by hand",
+    });
+    expect(SUPPRESSION_REASON_OTHER).toBe("Emails stopped");
   });
 
   it("the designer placed the approved words where they exist (S1 from the dashboard, the house emails' button)", () => {

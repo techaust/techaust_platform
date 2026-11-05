@@ -4,15 +4,13 @@
 //     jobs Worker sends no `refund.sent` outside "local" while `APPROVED_07ZQ` is false (the M6.5 receipt gate's pattern, `refundCopyGate`);
 //   - the STAFF lines the brief gives word for word (S2 to S5, S7 to S12, and the lead's two "isn't a client contact" lines in `@techaust/core/email-events`),
 //     drafted by the lead under the owner's delegation, are plain;
-//   - the staff lines the brief names but doesn't word (S1, S6, S13, S14, S15, the template labels) are the builder's drafts for the lead and carry the mark
-//     (`draft`) until the lead places its own words.
+//   - the staff lines the brief names but doesn't word (S1, S6, S13, S15, the template labels, the `/u` line) were drafted by the builder and the designer
+//     and approved by the lead under the owner's delegation (run file "Lead triage of review 1", 2026-11-05), plain; S15's advice is the lead's own words.
 // No line is legal wording (none is invented); 07-A §3.5's "Banks and card networks may take longer" is reused as approved.
 
 /** The owner's approval of the client lines C1 to C4 (not yet asked; run file "Asked later"). */
 export const APPROVED_07ZQ: boolean = false;
 const zq = (line: string): string => (APPROVED_07ZQ ? line : `[Placeholder] ${line}`);
-/** A builder's draft of a staff line, marked until the lead approves it. */
-const draft = (line: string): string => `[Placeholder] ${line}`;
 
 // ---- the refund email (C1 to C4; Q4 A: every completed refund except chargebacks) ----------------------------------------------------------------------------
 
@@ -40,15 +38,15 @@ export const DIGEST_COPY = {
   /** 07 §8's core text (approved), the email's first paragraph: what the figures below are. */
   intro: "Pipeline, invoiced and collected, overdue invoices, new leads and upcoming reminders.",
   /**
-   * S1: the section labels. The designer placed the dashboard's own approved words where the dashboard has them: "Pipeline" (the tile, 07-O §7) and
-   * "Collected this month" (the Payments tile, 07-ZH); the other four stay the builder's drafts for the lead.
+   * S1: the section labels. "Pipeline" (the dashboard tile, 07-O §7) and "Collected this month" (the Payments tile, 07-ZH) are the dashboard's approved
+   * words; the other four are the builder's drafts, approved by the lead (2026-11-05).
    */
   pipeline: "Pipeline",
-  invoiced: draft("Invoiced this month"),
+  invoiced: "Invoiced this month",
   collected: "Collected this month",
-  overdue: draft("Overdue invoices"),
-  newLeads: draft("New leads (last 7 days)"),
-  remindersDue: draft("Reminders due (next 7 days)"),
+  overdue: "Overdue invoices",
+  newLeads: "New leads (last 7 days)",
+  remindersDue: "Reminders due (next 7 days)",
   /** S2 */
   why: "Why you're receiving this: you're an owner of TecHaust admin and the weekly digest is on.",
   /** S3 */
@@ -57,14 +55,14 @@ export const DIGEST_COPY = {
 
 // ---- staff notification emails (S4, S6, S7) ----------------------------------------------------------------------------------------------------------------------
 
-/** S6: the switch groups' names, as the footer sentence (S4) and the Notifications page use them (the builder's drafts). */
+/** S6: the switch groups' names, as the footer sentence (S4) and the Notifications page use them (the builder's drafts, approved by the lead). */
 export const PREF_GROUP_LABELS = {
-  offerViewed: draft("proposal and estimate opened"),
-  paymentReceived: draft("online payment"),
-  approvals: draft("payment check"),
-  hookFailed: draft("connection failure"),
+  offerViewed: "proposal and estimate opened",
+  paymentReceived: "online payment",
+  approvals: "payment check",
+  hookFailed: "connection failure",
 } as const;
-export const DIGEST_LABEL = draft("weekly digest");
+export const DIGEST_LABEL = "weekly digest";
 
 export const NOTIFICATION_COPY = {
   /** S4 */
@@ -86,8 +84,8 @@ export const jobFailedTitle = (queue: string): string =>
 
 /** S5: the only line `GET /u` answers (it never changes anything). */
 export const UNSUBSCRIBE_GET_LINE = "To change your email settings, open Notifications in TecHaust admin.";
-/** The line `POST /u` answers after switching the digest off (the builder's draft). */
-export const UNSUBSCRIBE_DONE_LINE = draft("The weekly digest is switched off.");
+/** The line `POST /u` answers after switching the digest off (the builder's draft, approved by the lead). */
+export const UNSUBSCRIBE_DONE_LINE = "The weekly digest is switched off.";
 
 /** S12 (word for word): the email log's status labels. */
 export const EMAIL_STATUS_LABELS = {
@@ -101,26 +99,24 @@ export const EMAIL_STATUS_LABELS = {
   skipped: "Not sent",
 } as const;
 
-// ---- the unfinished sign-in (Q3 A; S15, the builder's drafts) ---------------------------------------------------------------------------------------------------
+// ---- the unfinished sign-in (Q3 A; S15, approved by the lead) ------------------------------------------------------------------------------------------------------
 
 export const SIGNIN_UNFINISHED_COPY = {
-  subject: draft("Your TecHaust admin password was used"),
+  subject: "Your TecHaust admin password was used",
   body: (firstName: string, time: string) =>
-    draft(
-      `Hi ${firstName}, your TecHaust admin password was used to start a sign-in on ${time}, but the 6-digit code was never entered, so the sign-in wasn't finished.`,
-    ),
-  advice: draft(
-    "If this wasn't you, change your password now: someone else may know it. If it was you, you can ignore this email.",
-  ),
+    `Hi ${firstName}, your TecHaust admin password was used to start a sign-in on ${time}, but the 6-digit code was never entered, so the sign-in wasn't finished.`,
+  /** The lead's words (review 1, finding 2): no route lets a member change their own password, so the advice names the owner's reset and break-glass. */
+  advice:
+    "If this wasn't you, someone else may know your password: ask an owner to reset it under Settings › Users (if you are the only owner, follow the break-glass steps in the security runbook). If it was you, for example a code page you closed, you can ignore this email.",
   /** The owners' bell (named by the member's name). */
-  bell: (memberName: string) => draft(`${memberName}'s password was used, but the sign-in wasn't finished.`),
+  bell: (memberName: string) => `${memberName}'s password was used, but the sign-in wasn't finished.`,
 } as const;
 
-// ---- the template names in Settings › Email (TEMPLATE_NAMES; the builder's drafts) -----------------------------------------------------------------------------
+// ---- the template names in Settings › Email (TEMPLATE_NAMES; approved by the lead) ------------------------------------------------------------------------------
 
 export const M72_TEMPLATE_NAMES = {
-  "digest.weekly": draft("Weekly digest (team)"),
-  "staff.notification": draft("Notification email (team)"),
-  "refund.sent": draft("Refund sent (client)"),
-  "staff.signin_unfinished": draft("Unfinished sign-in alert"),
+  "digest.weekly": "Weekly digest (team)",
+  "staff.notification": "Notification email (team)",
+  "refund.sent": "Refund sent (client)",
+  "staff.signin_unfinished": "Unfinished sign-in alert",
 } as const;

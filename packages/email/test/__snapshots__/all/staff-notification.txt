@@ -1,6 +1,6 @@
 Open in admin: https://example.test/sample
 
 --
-You get this email because [Placeholder] proposal and estimate opened emails are on in your notification settings. Change notification settings: https://example.test/sample
+You get this email because proposal and estimate opened emails are on in your notification settings. Change notification settings: https://example.test/sample
 
 TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

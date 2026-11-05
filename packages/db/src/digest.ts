@@ -5,6 +5,7 @@
 
 import { fyOfDate, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import type { CurrencyFigure, DigestFigures } from "@techaust/core/digest";
+import { REMINDER_LIVE_STATUSES, REMINDER_TYPES } from "@techaust/core/invoices";
 import type { Currency } from "@techaust/core/money";
 import { COLLECTED_TILE_SQL } from "./ledger.ts";
 import { INVOICED_SQL, OWED_SQL } from "./reports.ts";
@@ -24,9 +25,20 @@ export const PIPELINE_SQL =
 /** Leads created since `?1` (the dashboard's "new in the last 7 days"; index `leads_created`). */
 export const NEW_LEADS_SQL = "SELECT count(*) AS n FROM leads WHERE created_at >= ?1";
 
-/** Payment reminders still waiting (not sent, not skipped) and due in `[?1, ?2)` (the partial index `reminders_pending`). */
-export const REMINDERS_DUE_SQL =
-  "SELECT count(*) AS n FROM reminders INDEXED BY reminders_pending WHERE sent_at IS NULL AND skipped_reason IS NULL AND due_at >= ?1 AND due_at < ?2";
+const quoted = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
+
+/**
+ * Payment reminders still waiting (not sent, not skipped) and due in `[?1, ?2)` (the partial index `reminders_pending`) whose document would still be reminded
+ * (review 1, finding 1): the document and client rules of M5.4's claim (`REMINDER_CLAIM_SQL` in `./billing.ts`): an issued (frozen), not void invoice, proforma or
+ * debit note that still owes money, of a client not anonymised and with reminders on. A paid, voided or fully credited document's reminder waits in the table until
+ * its due time (the claim then skips it), so without the join the digest counted it. The recipient rule is left to the claim (a send can still be made before then).
+ */
+export const REMINDERS_DUE_SQL = `SELECT count(*) AS n FROM reminders r INDEXED BY reminders_pending
+   JOIN documents d ON d.id = r.document_id JOIN clients c ON c.id = d.client_id
+   WHERE r.sent_at IS NULL AND r.skipped_reason IS NULL AND r.due_at >= ?1 AND r.due_at < ?2
+     AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.type IN (${quoted(REMINDER_TYPES)})
+     AND (d.status IN (${quoted(REMINDER_LIVE_STATUSES)}) OR (d.type = 'proforma' AND d.status = 'converted')) AND d.balance_minor > 0
+     AND c.anonymised_at IS NULL AND coalesce(json_extract(c.reminder_policy, '$.enabled'), 1) <> 0`;
 
 /** The digest's dates, as the dashboard computes them for the same moment: today (IST), this FY and this IST month. */
 export type DigestWindow = { now: number; today: string; fyFrom: string; fyTo: string; monthFrom: string };
