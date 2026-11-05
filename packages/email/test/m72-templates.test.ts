@@ -57,7 +57,7 @@ describe("the M7.2 templates", () => {
     expect(r.subject).not.toMatch(/[\r\n]/);
   });
 
-  it("the unfinished sign-in email gives one instruction, the lead's advice, and no 07-G \"Not you?\" block for any role (review 1, finding 2)", () => {
+  it('the unfinished sign-in email gives one instruction, the lead\'s advice, and no 07-G "Not you?" block for any role (review 1, finding 2)', () => {
     const advice =
       "If this wasn't you, someone else may know your password: ask an owner to reset it under Settings › Users (if you are the only owner, follow the break-glass steps in the security runbook). If it was you, for example a code page you closed, you can ignore this email.";
     for (const role of ["owner", "staff", "accountant"]) {
@@ -75,11 +75,16 @@ describe("the M7.2 templates", () => {
   it("the staff lines are approved and placed unmarked; only the client's refund lines keep the mark", () => {
     for (const t of ["digest.weekly", "staff.notification", "staff.signin_unfinished"] as const) {
       const r = renderEmail(t, sampleData(t, who, "x"), opts);
-      expect(`${r.subject}
+      expect(
+        `${r.subject}
 ${r.text}
-${r.html}`, t).not.toContain("[Placeholder");
+${r.html}`,
+        t,
+      ).not.toContain("[Placeholder");
     }
     for (const name of Object.values(TEMPLATE_NAMES)) expect(name).not.toContain("[Placeholder");
-    expect(renderEmail("refund.sent", sampleData("refund.sent", who, "x"), opts).subject).toMatch(/^\[Placeholder\] /);
+    expect(renderEmail("refund.sent", sampleData("refund.sent", who, "x"), opts).subject).toMatch(
+      /^\[Placeholder\] /,
+    );
   });
 });
