@@ -158,13 +158,14 @@
       // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
       "preview_urls": false,
       // Staging sends only to EMAIL_ALLOWED_RECIPIENTS (SES sandbox, docs/13 2026-10-23); any other recipient is logged
-      // `skipped`. LEAD_ALERT_TO and the allow-list hold the owner's verified test inbox: CONFIRM with the owner.
+      // `skipped`. LEAD_ALERT_TO and the allow-list hold the owner's verified test inbox: CONFIRM with the owner. M7.2 (run file F, H4)
+      // adds SES's mailbox-simulator addresses for the bounce/complaint/delivery check (they never reach a person; exact match, no +labels).
       "vars": {
         "ENVIRONMENT": "staging",
         "PAYMENTS_LIVE_ALLOWED": "false",
         "EMAIL_TRANSPORT": "ses",
         "LEAD_ALERT_TO": "admin@techaust.com",
-        "EMAIL_ALLOWED_RECIPIENTS": "admin@techaust.com",
+        "EMAIL_ALLOWED_RECIPIENTS": "admin@techaust.com,success@simulator.amazonses.com,bounce@simulator.amazonses.com,complaint@simulator.amazonses.com",
         "SES_REGION": "ap-south-1",
         "SES_CONFIGURATION_SET": "techaust-transactional",
         "ADMIN_URL": "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev/",
