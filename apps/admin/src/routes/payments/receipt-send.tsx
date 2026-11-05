@@ -149,7 +149,7 @@ export function ReceiptSendDialog(props: {
                       id={`${groupId}-${i}`}
                       type="checkbox"
                       checked={picked.has(c.id)}
-                      disabled={c.block !== null || busy || full}
+                      disabled={c.block !== null || busy || full || stopped !== null}
                       aria-invalid={bad || undefined}
                       aria-describedby={described || undefined}
                       onChange={(e) => {
