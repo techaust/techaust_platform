@@ -195,6 +195,12 @@ export const ACTION_LABELS: Record<string, string> = {
   "client_request.close": Y("closed a client's request"),
   // T11, the deed of assignment: 07-ZJ line 33 (staff-only; marked until the lead approves it).
   ...DEED_AUDIT,
+  // M7.2 (S14, builder's drafts for the lead; marked until approved): the notification switches, the one-click switch-off, the suppression list, the receipt resend.
+  "notification.prefs": Y("changed their notification settings"),
+  "notification.unsubscribe": Y("switched off the weekly digest from its email"),
+  "email.unsuppress": Y("allowed emails to an address again"),
+  "contact.unsuppress": Y("allowed emails to a contact again"),
+  "receipt.send": Y("sent a payment receipt again"),
 };
 
 /**
@@ -209,6 +215,8 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
   { label: "Users and invites", prefixes: ["user."] },
   { label: "Settings", prefixes: ["settings."] },
   { label: "Notifications", prefixes: ["notification."] },
+  // M7.2 (builder's draft label): the email log's suppression changes.
+  { label: "Emails", prefixes: ["email."] },
   { label: "Leads", prefixes: ["lead."] },
   { label: "Clients", prefixes: ["client."] },
   { label: "Contacts", prefixes: ["contact."] },
@@ -280,6 +288,8 @@ export const ENTITY_LABELS: Record<string, string> = {
   payment_notice: "Payment notices",
   // T11: 07-ZJ line 33.
   deed: DEED_RECORD_TYPE,
+  // M7.2 (builder's draft for the lead): an email log row (the unsuppress from the email log).
+  email_log: "Emails",
   report: "Reports",
   audit_log: "Audit log",
 };

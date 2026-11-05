@@ -108,7 +108,8 @@ describe("what the admin and portal Workers import (CPU budget: the Free plan's 
     it(`${app}: no @techaust/email, and @techaust/core only as types (the zod schemas stay out of the bundle)`, () => {
       expect(sources.length).toBeGreaterThan(3);
       for (const [file, text] of sources) {
-        expect(text, `${app}/worker/${file}`).not.toMatch(/from\s+["']@techaust\/email/);
+        // M7.2 (L17): only the pure sample-data subpath `@techaust/email/fixtures` (the Settings test send), never the templates or the SES client.
+        expect(text, `${app}/worker/${file}`).not.toMatch(/from\s+["']@techaust\/email(?!\/fixtures["'])/);
         // a value import is `import …` that is not `import type …`
         const valueImports = [
           ...text.matchAll(/^import(?!\s+type\s)\s[^;]*?from\s+["']@techaust\/core["']/gm),

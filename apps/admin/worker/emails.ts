@@ -1,8 +1,8 @@
 // The email log and the suppression list (M7.2; ADM-MAIL-01, ADM-MAIL-02; run file docs/runs/m7.2-notifications.md C.1, G2, G3; early check findings 1, 5, 7).
 // Tier A ground: the suppression list. Every route is a ROUTES row (guard.ts); every change is one `mutate` batch with its guards in the WHERE.
 //   GET  /emails              `emails.read` (Owner, Staff): keyset pages of <= 50, newest first; filters `status`, `template`, `since` (ms), `to` (an exact address,
-//                             lower-cased). One filter picks its index: `to` → `email_log_to`; `template` → `email_log_template_created`; `status` →
-//                             `email_log_status_created`; none → `email_log_created` (0075).
+//                             lower-cased). One filter picks its index: `to` → `email_log_to`; `status` → `email_log_status_created`; else `email_log_created`
+//                             (0075); a template filter narrows the chosen index's range (`+template`; no template index, see the schema).
 //   GET  /emails/:id          `emails.read`: the row, its SES events read by `ses_message_id` (index `email_events_message`; finding 5: an event stored before the
 //                             row was linked still shows) and the address's suppression with a label (an older or unknown reason reads generically, finding 7).
 //   POST /emails/:id/unsuppress      `emails.unsuppress` (Owner; finding 1: a staff or lead address can be cleared too): deletes the suppression of THAT row's
@@ -86,17 +86,13 @@ export const emails = new Hono<AppEnv>()
       index = "email_log_to";
       binds.push(q.to.toLowerCase());
       where.push(`to_email = ?${binds.length}`);
-    } else if (q.template !== undefined) {
-      index = "email_log_template_created";
-      binds.push(q.template);
-      where.push(`template = ?${binds.length}`);
     } else if (q.status !== undefined) {
       index = "email_log_status_created";
       binds.push(q.status);
       where.push(`status = ?${binds.length}`);
     }
     // The other filters narrow the same index range (never a second index).
-    if (q.template !== undefined && index !== "email_log_template_created") {
+    if (q.template !== undefined) {
       binds.push(q.template);
       where.push(`+template = ?${binds.length}`);
     }

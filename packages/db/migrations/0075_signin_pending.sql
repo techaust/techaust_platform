@@ -8,5 +8,4 @@ CREATE TABLE `staff_signin_pending` (
 --> statement-breakpoint
 CREATE INDEX `staff_signin_pending_scan` ON `staff_signin_pending` (`notified_at`,`at`);--> statement-breakpoint
 CREATE INDEX `email_log_created` ON `email_log` (`created_at`,`id`);--> statement-breakpoint
-CREATE INDEX `email_log_status_created` ON `email_log` (`status`,`created_at`,`id`);--> statement-breakpoint
-CREATE INDEX `email_log_template_created` ON `email_log` (`template`,`created_at`,`id`);
+CREATE INDEX `email_log_status_created` ON `email_log` (`status`,`created_at`,`id`);

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "569cc4e9-187b-43c4-ae58-01b7aed7d464",
+  "id": "7e7c2f86-1171-4b74-b9f5-b352014accba",
   "prevId": "2c1ce6c7-54f0-406e-a3f9-668d56542dc4",
   "tables": {
     "catalogue_items": {
@@ -5849,11 +5849,6 @@
         "email_log_status_created": {
           "name": "email_log_status_created",
           "columns": ["status", "created_at", "id"],
-          "isUnique": false
-        },
-        "email_log_template_created": {
-          "name": "email_log_template_created",
-          "columns": ["template", "created_at", "id"],
           "isUnique": false
         }
       },

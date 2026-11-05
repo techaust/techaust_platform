@@ -363,7 +363,7 @@ describe("refund events [L7, L36]", () => {
       currency: "INR",
       ourRefundId: body.id,
     });
-    expect(await processEvent(env, e1)).toEqual({ result: "processed" });
+    expect(await processEvent(env, e1)).toEqual({ result: "processed", refundNotify: body.id }); // M7.2: the refund email (producer 3)
     expect(await refundRow(body.id)).toMatchObject({
       status: "succeeded",
       provider_refund_id: "rfnd_EVT00001",

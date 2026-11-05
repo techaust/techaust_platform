@@ -55,11 +55,11 @@ export const emailLog = sqliteTable(
     check("email_log_status", oneOf(t.status, EMAIL_STATUSES)),
     // M7.2: the SES hook finds the row of an event by SES's message id (else it scans the table); only sent rows carry one.
     index("email_log_ses_message").on(t.sesMessageId).where(sql`${t.sesMessageId} is not null`),
-    // M7.2 (C.1, migration 0075): the email log's keyset pages, newest first, all rows or by status or template (`GET /emails`; the address filter uses
-    // `email_log_to`). Indexes only: `email_log` is unreferenced and never rebuilt.
+    // M7.2 (C.1, migration 0075): the email log's keyset pages, newest first, all rows or by status (`GET /emails`; the address filter uses `email_log_to`,
+    // a template filter narrows the time range). No (template, created_at) index: the planner took it for the offer delivery panel's correlated read
+    // (`template = ? ORDER BY created_at`), a scan of every row of the template (offers-send.test.ts EXPLAIN). Indexes only: `email_log` is never rebuilt.
     index("email_log_created").on(t.createdAt, t.id),
     index("email_log_status_created").on(t.status, t.createdAt, t.id),
-    index("email_log_template_created").on(t.template, t.createdAt, t.id),
   ],
 );
 
