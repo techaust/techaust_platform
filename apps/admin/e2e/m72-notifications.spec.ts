@@ -213,10 +213,15 @@ test("the Sent column shows a time only once an email left: Queued before, nothi
   const heads = await page.locator("thead th").allTextContents();
   const sent = heads.findIndex((h) => h.trim() === "Sent");
   expect(sent, "the Sent column").toBeGreaterThanOrEqual(0);
-  const cell = (hasText: string) => page.locator("tbody tr", { hasText }).locator("td").nth(sent);
+  // the row's cells in column order (the address is the row's header cell)
+  const cell = (hasText: string) =>
+    page.locator("tbody tr", { hasText }).locator(":scope > th, :scope > td").nth(sent);
   await expect(cell("for.layout@")).toHaveText("Queued");
   await expect(cell(BOUNCE_TO)).toContainText("IST");
-  await expect(cell(NOT_SENT_TO)).toHaveText(/^—\s*Not sent$/);
+  await expect(cell(BOUNCE_TO)).not.toContainText("Last update");
+  // a dash on screen (hidden from screen readers), "Not sent" for them
+  await expect(cell(NOT_SENT_TO).locator('[aria-hidden="true"]')).toHaveText("—");
+  await expect(cell(NOT_SENT_TO)).toContainText("Not sent");
   await expect(cell(NOT_SENT_TO)).not.toContainText("IST");
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/e2e-emails-sent-column-1280.png`, fullPage: true });
 });
