@@ -38,7 +38,9 @@ function Stop-With([string]$why) { Write-Host "RESULT: FAILED ($Gateway): $why. 
 
 # M6.4 (early check 2 finding 7): each PayPal mode stores its values on exactly one Worker, so a wrong -Configs can never put PayPal's keys on the
 # internet-facing jobs Worker or the webhook ID on the finance Worker: the API keys only on the admin finance Worker, the webhook ID only on jobs.
-$onlyConfig = @{ "paypal" = "apps\admin\wrangler.finance.jsonc"; "paypal-webhook" = "apps\jobs\wrangler.jsonc"; "ses-events" = "apps\jobs\wrangler.jsonc"; "unsubscribe-key" = "apps\jobs\wrangler.jsonc" }
+$onlyConfig = @{ "paypal" = "apps\admin\wrangler.finance.jsonc"; "paypal-webhook" = "apps\jobs\wrangler.jsonc" }
+# M7.2: the SES events token and the one-click key live on the jobs Worker only.
+foreach ($k in @("ses-events", "unsubscribe-key")) { $onlyConfig[$k] = "apps\jobs\wrangler.jsonc" }
 if ($onlyConfig.ContainsKey($Gateway)) {
   $given = @($Configs | ForEach-Object { ($_ -replace '/', '\') -replace '^\.\\', '' })
   if ($given.Count -ne 1 -or $given[0] -ine $onlyConfig[$Gateway]) {

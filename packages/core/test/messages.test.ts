@@ -134,6 +134,11 @@ describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
       "realisation.alert",
       "deed.signed",
       "receipt.sent", // M6.5
+      // M7.2 (changed on purpose): the digest, the staff notification, the refund email and the unfinished sign-in alert
+      "digest.weekly",
+      "staff.notification",
+      "refund.sent",
+      "staff.signin_unfinished",
     ]);
     for (const template of EMAIL_TEMPLATES)
       expect(
