@@ -2,6 +2,12 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-05 [#182](https://github.com/techaust/techaust_platform/pull/182) feat(portal): M7.1 the full client portal
+- 2026-11-05 [#181](https://github.com/techaust/techaust_platform/pull/181) feat(web): LinkedIn line icon in the footer contact rows and on About
+- 2026-11-05 [#180](https://github.com/techaust/techaust_platform/pull/180) feat(web): the company LinkedIn page in the footer
+- 2026-11-05 [#179](https://github.com/techaust/techaust_platform/pull/179) test(admin): bank-number leak check ignores runs inside hex ids
+- 2026-11-05 [#178](https://github.com/techaust/techaust_platform/pull/178) feat(web): the founder's headshot on About
+- 2026-11-04 [#177](https://github.com/techaust/techaust_platform/pull/177) docs(m6.5): owner's sandbox refund on staging; M6.5 approved
 - 2026-11-04 [#176](https://github.com/techaust/techaust_platform/pull/176) chore(claude): switch off the app's account plugins by their real names
 - 2026-11-04 [#175](https://github.com/techaust/techaust_platform/pull/175) chore(claude): turn off the tools this project doesn't use (and the record of the day)
 - 2026-11-04 [#174](https://github.com/techaust/techaust_platform/pull/174) docs: record of 2026-11-04 (PC restored, wrangler 4.156.2)
