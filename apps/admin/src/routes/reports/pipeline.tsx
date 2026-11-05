@@ -3,8 +3,7 @@
 // lost reasons and sources, a one-hue histogram of the time to win, the open leads by day from the nightly counts, the pages leads came from, and the offers
 // sent in the range (USD offers in USD: Q1 A). Counts and paths only; no lead's name, email or company reaches this screen (DPDP minimisation). The range is
 // in the URL; "Export CSV" writes the figures on screen (L6: no code asked).
-import { TIME_TO_WIN_BANDS, type PipelineReport as Report } from "@techaust/core/reports";
-import { pipelineEarliest } from "@techaust/core/reports";
+import { pipelineEarliest, type PipelineReport as Report, TIME_TO_WIN_BANDS } from "@techaust/core/reports";
 import type { ReactNode } from "react";
 import type { Currency } from "../../api.ts";
 import { ChartFrame, ColumnChart, LineChart, RankedBars, StatTile } from "../../components/chart/index.ts";
@@ -12,8 +11,7 @@ import { type Column, DataTable } from "../../components/data-table.tsx";
 import { EmptyState } from "../../components/display.tsx";
 import { Inbox } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
-import { STATUS_LABELS } from "../../lib/documents.ts";
-import { moneyText } from "../../lib/documents.ts";
+import { moneyText, STATUS_LABELS } from "../../lib/documents.ts";
 import { LOST_REASON_LABELS, SOURCE_LABELS, STAGE_LABELS } from "../../lib/leads.ts";
 import { m73Api } from "../../lib/m73-api.ts";
 import { BAND_LABELS, M73_TITLES, PIPELINE_COPY as P, pipelineCsv, rateText } from "../../lib/m73-reports.ts";
@@ -80,7 +78,11 @@ function Body({ r }: { r: Report }) {
     [P.conversion, "", L.conversionBp === null ? "" : rateText(L.conversionBp)],
     [P.winRate, "", O.winRateBp === null ? "" : rateText(O.winRateBp)],
     [P.medianToWin, "", O.timeToWin.medianDays === null ? "" : String(O.timeToWin.medianDays)],
-    ...STAGE_ORDER.map((s): [string, string, string] => [P.byStage, STAGE_LABELS[s], String(L.byStage[s] ?? 0)]),
+    ...STAGE_ORDER.map((s): [string, string, string] => [
+      P.byStage,
+      STAGE_LABELS[s],
+      String(L.byStage[s] ?? 0),
+    ]),
     ...Object.entries(L.lostByReason).map(([k, v]): [string, string, string] => [
       P.lostReasons,
       LOST_REASON_LABELS[k as keyof typeof LOST_REASON_LABELS] ?? k,
@@ -91,8 +93,16 @@ function Body({ r }: { r: Report }) {
       SOURCE_LABELS[k as keyof typeof SOURCE_LABELS] ?? k,
       String(v),
     ]),
-    ...L.topPaths.map((p): [string, string, string] => [P.topPaths, p.path ?? P.noPage, `${p.created} / ${p.won}`]),
-    ...TIME_TO_WIN_BANDS.map((b): [string, string, string] => [P.timeToWin, BAND_LABELS[b], String(O.timeToWin.bands[b])]),
+    ...L.topPaths.map((p): [string, string, string] => [
+      P.topPaths,
+      p.path ?? P.noPage,
+      `${p.created} / ${p.won}`,
+    ]),
+    ...TIME_TO_WIN_BANDS.map((b): [string, string, string] => [
+      P.timeToWin,
+      BAND_LABELS[b],
+      String(O.timeToWin.bands[b]),
+    ]),
     ...O.sent.map((s): [string, string, string] => [
       P.offersSent,
       `${STATUS_LABELS[s.status as keyof typeof STATUS_LABELS] ?? s.status} (${s.currency})`,
@@ -151,7 +161,11 @@ function Body({ r }: { r: Report }) {
             title={P.lostReasons}
             rows={Object.entries(L.lostByReason)
               .filter(([, n]) => n > 0)
-              .map(([k, n]) => ({ key: k, label: LOST_REASON_LABELS[k as keyof typeof LOST_REASON_LABELS] ?? k, n }))}
+              .map(([k, n]) => ({
+                key: k,
+                label: LOST_REASON_LABELS[k as keyof typeof LOST_REASON_LABELS] ?? k,
+                n,
+              }))}
           />
           <Counted
             id="pipe-source"
@@ -268,7 +282,12 @@ function TopPaths({ r }: { r: Report }) {
       card: "title",
       cell: (p) => (p.path ? <span className="docno break">{p.path}</span> : P.noPage),
     },
-    { key: "created", header: P.created, align: "end", cell: (p) => <span className="tnum">{p.created}</span> },
+    {
+      key: "created",
+      header: P.created,
+      align: "end",
+      cell: (p) => <span className="tnum">{p.created}</span>,
+    },
     { key: "won", header: P.won, align: "end", cell: (p) => <span className="tnum">{p.won}</span> },
   ];
   return (
@@ -277,7 +296,12 @@ function TopPaths({ r }: { r: Report }) {
         {P.topPaths}
       </h2>
       <div className="m73-table">
-        <DataTable caption={P.topPaths} columns={columns} rows={r.leads.topPaths} rowKey={(p) => p.path ?? "-"} />
+        <DataTable
+          caption={P.topPaths}
+          columns={columns}
+          rows={r.leads.topPaths}
+          rowKey={(p) => p.path ?? "-"}
+        />
       </div>
     </section>
   );

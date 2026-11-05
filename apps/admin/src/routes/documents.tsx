@@ -4,8 +4,7 @@
 // global search's own index, so it stays one D1 call). Each row shows the custom lines' count and value: the discount guard ignores them,
 // and the owner reviews them (O-Q1).
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
-import { api } from "../api.ts";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { DataTable, FilterBar, Pager } from "../components/data-table.tsx";
 import { EmptyState, PageHeader } from "../components/display.tsx";
 import { FileText, Plus, Search } from "../components/icons.tsx";
@@ -33,6 +32,9 @@ export function Component() {
   );
 }
 
+/** The longest search the API takes (worker/documents.ts SEARCH_MAX). */
+const SEARCH_MAX_CHARS = 40;
+
 const isStatus = (v: string | null): v is QuoteStatus => QUOTE_STATUSES.includes(v as QuoteStatus);
 
 function DocumentList() {
@@ -47,8 +49,11 @@ function DocumentList() {
   const client = params.get("client") ?? "";
   const size = params.get("size") === "50" ? 50 : 25;
   const after = params.get("after");
-  const [q, setQ] = useState("");
-  const term = useDebounced(q.trim().length >= 2 ? q.trim() : "");
+  // M7.3 C7 (ADM-G-05): the search is a filter of the list itself (`GET /documents?q=`): a number prefix, or a client's code or name prefix, offers only; in the
+  // URL like the other filters, sent a moment after typing stops.
+  const qParam = params.get("q") ?? "";
+  const [q, setQ] = useState(qParam);
+  const term = useDebounced(q.trim());
   const [trail, setTrail] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const canDraft = allowed(user.role, "proposals.draft");
@@ -75,23 +80,25 @@ function DocumentList() {
     clientId: client || undefined,
     limit: size === 50 ? ("50" as const) : undefined,
     after: after ?? undefined,
+    q: qParam.trim() || undefined,
   };
   const list = useLoad(() => documentsApi.list(query), JSON.stringify(query));
-  const found = useLoad(() => (term ? api.search(term) : Promise.resolve(null)), term);
   const rows = list.state === "ready" ? list.data.documents : [];
   const loading = list.state === "loading";
-  const filtered = !!status || !!client;
+  const filtered = !!status || !!client || !!query.q;
   const offset = trail.length * size;
   const clear = () => {
     setQ("");
-    set({ status: null, client: null, type: null });
+    set({ status: null, client: null, type: null, q: null });
   };
+  // The typed text reaches the URL once typing stops (a new search starts from the first page).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the settled text moves the URL
+  useEffect(() => {
+    if (term !== qParam.trim()) set({ q: term || null });
+  }, [term]);
   // A new filter starts from the first page.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the trail belongs to one filter set
-  useEffect(() => setTrail([]), [type, status, client, size]);
-
-  const hits =
-    found.state === "ready" ? (found.data?.groups.find((g) => g.type === "document")?.items ?? []) : [];
+  useEffect(() => setTrail([]), [type, status, client, size, qParam]);
 
   return (
     <>
@@ -108,9 +115,9 @@ function DocumentList() {
       />
       <FilterBar
         className="filters--clients filters--docs"
-        searchLabel={DOC_PENDING.searchNumber}
+        searchLabel={DOC_PENDING.searchNumberOrClient}
         query={q}
-        onQuery={setQ}
+        onQuery={(v) => setQ(v.slice(0, SEARCH_MAX_CHARS))}
         groups={[
           {
             key: "type",
@@ -143,23 +150,17 @@ function DocumentList() {
         extraOn={client ? 1 : 0}
         onClear={clear}
         result={
-          term
-            ? found.state === "loading"
-              ? "Loading…"
-              : `${hits.length === 1 ? "1 match" : `${hits.length} matches`}`
-            : loading
-              ? "Loading…"
-              : list.state === "ready"
-                ? rows.length === 0
-                  ? ""
-                  : `${rows.length === 1 ? "1 document" : `${rows.length} documents`} on this page`
-                : ""
+          loading
+            ? "Loading…"
+            : list.state === "ready"
+              ? rows.length === 0
+                ? ""
+                : `${rows.length === 1 ? "1 document" : `${rows.length} documents`} on this page`
+              : ""
         }
       />
 
-      {term ? (
-        <NumberResults state={found.state} error={found.error} hits={hits} retry={() => found.reload()} />
-      ) : list.state === "failed" ? (
+      {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
       ) : (
         <div className="clients-table docs-table">
@@ -200,7 +201,7 @@ function DocumentList() {
         </div>
       )}
 
-      {!term && list.state === "ready" && rows.length > 0 && (
+      {list.state === "ready" && rows.length > 0 && (
         <Pager
           noun="documents"
           from={offset + 1}
@@ -233,39 +234,5 @@ function DocumentList() {
         />
       )}
     </>
-  );
-}
-
-/** The search by number: the documents whose number starts with what was typed (latest version of each). */
-function NumberResults(props: {
-  state: "loading" | "ready" | "failed";
-  error: unknown;
-  hits: { id: string; title: string; subtitle: string; link: string }[];
-  retry: () => void;
-}) {
-  if (props.state === "failed") return <LoadFailed error={props.error} onRetry={props.retry} />;
-  if (props.state === "loading")
-    return (
-      <p className="hint" role="status">
-        Loading…
-      </p>
-    );
-  if (props.hits.length === 0)
-    return (
-      <EmptyState icon={<Search />} title={DOC_PENDING.searchNoMatch}>
-        <p>{DOC_COPY.listNoMatch}</p>
-      </EmptyState>
-    );
-  return (
-    <ul className="lead-panel doc-hits">
-      {props.hits.map((h) => (
-        <li key={h.id} className="doc-hits__row">
-          <Link to={h.link} className="doc-hits__link">
-            {h.title}
-          </Link>
-          <span className="doc-hits__sub">{h.subtitle}</span>
-        </li>
-      ))}
-    </ul>
   );
 }

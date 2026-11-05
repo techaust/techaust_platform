@@ -348,6 +348,8 @@ export const DOC_PENDING = {
   /** 07-O §9 ends it with a full stop; as an empty state's heading it goes without (the M3.4 pattern). */
   listNoMatchTitle: "No proposals or estimates match these filters",
   searchNumber: "Search by number",
+  /** M7.3 C23 (ADM-G-05): the list's search, by a number or a client's code or name. */
+  searchNumberOrClient: "Search by number or client",
   searchNoMatch: "No proposal or estimate has a number starting with that.",
   customLinesCount: (n: number) => (n === 1 ? "1 custom line" : `${n} custom lines`),
   customLinesHint: "Custom lines don't count towards the discount limit.",

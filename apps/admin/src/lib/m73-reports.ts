@@ -41,7 +41,8 @@ export const REVENUE_COPY = {
   tds: "TDS deducted",
   refunded: "Refunded",
   /** C6 (M6.1 L15; RA-21: the invoice's frozen INR, never converted again) */
-  inrNote: "INR equivalent: invoices at the rate on the invoice; payments at the INR amount on the bank advice.",
+  inrNote:
+    "INR equivalent: invoices at the rate on the invoice; payments at the INR amount on the bank advice.",
   /** C7 */
   inrMissing: (n: number) => `${n} USD payments have no INR amount recorded, so the INR total is not shown.`,
   /** C10 */
@@ -235,8 +236,7 @@ export function deltaText(minor: number, currency: Currency, period: string): st
   return minor > 0 ? `${amount} more than ${period}` : `${amount} less than ${period}`;
 }
 
-/** C23 */
-export const SEARCH_PLACEHOLDER = "Search by number or client";
+/** C23 lives with the offer list's words (lib/documents.ts `DOC_PENDING.searchNumberOrClient`), so that chunk doesn't carry this module. */
 
 export const DASH_M73 = {
   /** DRAFT: the sparkline's accessible name. */
@@ -369,11 +369,16 @@ export function billedText(b: CareBilled | null, day: (iso: string) => string): 
 
 const line = (cells: readonly string[]) => cells.map(csvCell).join(",");
 const csv = (rows: readonly (readonly string[])[]) => `${rows.map(line).join("\r\n")}\r\n`;
-const amount = (minor: number | null, currency: Currency) => (minor === null ? "" : plainAmount(minor, currency));
+const amount = (minor: number | null, currency: Currency) =>
+  minor === null ? "" : plainAmount(minor, currency);
 
 /** The revenue-per-client CSV (C6's export twin): one row per client, in the API's order; the INR column empty where the value is unknown. */
 export function revenueClientsCsv(
-  rows: readonly { client: { code: string; name: string }; invoiced: InvoicedFigures; collected: CollectedFigures }[],
+  rows: readonly {
+    client: { code: string; name: string };
+    invoiced: InvoicedFigures;
+    collected: CollectedFigures;
+  }[],
   currency: Currency,
 ): string {
   return csv([

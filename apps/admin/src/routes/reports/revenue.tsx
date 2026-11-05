@@ -8,14 +8,21 @@ import { REVENUE_KINDS } from "@techaust/core/reports";
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
-import { ChartFrame, ColumnChart, Legend, RankedBars, SegmentedBar, type Tone } from "../../components/chart/index.ts";
+import {
+  ChartFrame,
+  ColumnChart,
+  Legend,
+  RankedBars,
+  SegmentedBar,
+  type Tone,
+} from "../../components/chart/index.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
 import { EmptyState } from "../../components/display.tsx";
 import { BarChart, Receipt } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { CATEGORY_LABELS } from "../../lib/catalogue.ts";
 import { moneyText } from "../../lib/documents.ts";
-import { type RevenueView, m73Api, readPages } from "../../lib/m73-api.ts";
+import { m73Api, type RevenueView, readPages } from "../../lib/m73-api.ts";
 import {
   CATEGORY_ORDER,
   categoryLabel,
@@ -34,7 +41,15 @@ import {
 import { fyChoices, PAY_UI } from "../../lib/payments.ts";
 import { reportErrorText } from "../../lib/reports.ts";
 import { ReportFrame } from "./frame.tsx";
-import { ExportButton, FilterRow, FilterSelect, FilterSwitch, Money, ReportSkeleton, useFilters } from "./m73-parts.tsx";
+import {
+  ExportButton,
+  FilterRow,
+  FilterSelect,
+  FilterSwitch,
+  Money,
+  ReportSkeleton,
+  useFilters,
+} from "./m73-parts.tsx";
 
 const VIEWS: readonly RevenueView[] = ["month", "category", "kind"];
 /** An axis figure in whole units (the ticks are whole units: `minStep` 100), through core. */
@@ -51,7 +66,11 @@ export function RevenueReport() {
   const present = report.state === "ready" ? currenciesOf(report.data) : [];
   const curParam = params.get("currency");
   const currency: Currency =
-    curParam === "USD" || curParam === "INR" ? curParam : present.includes("INR") || present.length === 0 ? "INR" : "USD";
+    curParam === "USD" || curParam === "INR"
+      ? curParam
+      : present.includes("INR") || present.length === 0
+        ? "INR"
+        : "USD";
   const both = present.length > 1 || curParam === "USD";
 
   return (
@@ -126,7 +145,11 @@ function currenciesOf(d: RevenueByMonth | RevenueByKey<string>): Currency[] {
 function NothingIn({ currency, fy }: { currency: Currency; fy: string }) {
   return (
     <div className="report-empty">
-      <EmptyState icon={<Receipt />} title={R.emptyCurrency(currency, fyLabel(fy)).replace(/\.$/, "")} headingLevel={3}>
+      <EmptyState
+        icon={<Receipt />}
+        title={R.emptyCurrency(currency, fyLabel(fy)).replace(/\.$/, "")}
+        headingLevel={3}
+      >
         {null}
       </EmptyState>
     </div>
@@ -185,13 +208,17 @@ function MonthsView({ data, currency, fy }: { data: RevenueByMonth; currency: Cu
       key: "before",
       header: R.invoicedBefore,
       align: "end",
-      cell: (r) => <Money minor={r.inv.taxableMinor} currency={currency} inr={usd ? r.inv.inrTaxableMinor : null} />,
+      cell: (r) => (
+        <Money minor={r.inv.taxableMinor} currency={currency} inr={usd ? r.inv.inrTaxableMinor : null} />
+      ),
     },
     {
       key: "with",
       header: R.invoicedWith,
       align: "end",
-      cell: (r) => <Money minor={r.inv.totalMinor} currency={currency} inr={usd ? r.inv.inrTotalMinor : null} />,
+      cell: (r) => (
+        <Money minor={r.inv.totalMinor} currency={currency} inr={usd ? r.inv.inrTotalMinor : null} />
+      ),
     },
     {
       key: "collected",
@@ -201,7 +228,12 @@ function MonthsView({ data, currency, fy }: { data: RevenueByMonth; currency: Cu
         <Money minor={r.col.collectedMinor} currency={currency} inr={usd ? r.col.inrCollectedMinor : null} />
       ),
     },
-    { key: "tds", header: R.tds, align: "end", cell: (r) => <Money minor={r.col.tdsMinor} currency={currency} /> },
+    {
+      key: "tds",
+      header: R.tds,
+      align: "end",
+      cell: (r) => <Money minor={r.col.tdsMinor} currency={currency} />,
+    },
     {
       key: "refunded",
       header: R.refunded,
@@ -254,13 +286,20 @@ function MonthsView({ data, currency, fy }: { data: RevenueByMonth; currency: Cu
  * USD figure has its INR value; collected with USD payments lacking one says C7 instead.
  */
 function InrLines({ data, currency }: { data: RevenueByMonth; currency: Currency }) {
-  const has = (c: Currency) => data.months.some((m) => m.invoiced.some((i) => i.currency === c) || m.collected.some((x) => x.currency === c));
+  const has = (c: Currency) =>
+    data.months.some(
+      (m) => m.invoiced.some((i) => i.currency === c) || m.collected.some((x) => x.currency === c),
+    );
   if (!has("USD")) return null;
   const inv = data.months.flatMap((m) =>
     m.invoiced.map((i) => ({ currency: i.currency, minor: i.totalMinor, inrMinor: i.inrTotalMinor })),
   );
   const col = data.months.flatMap((m) =>
-    m.collected.map((c) => ({ currency: c.currency, minor: c.collectedMinor, inrMinor: c.inrCollectedMinor })),
+    m.collected.map((c) => ({
+      currency: c.currency,
+      minor: c.collectedMinor,
+      inrMinor: c.inrCollectedMinor,
+    })),
   );
   const missing = data.months.reduce((n, m) => n + m.collected.reduce((k, c) => k + c.inrMissing, 0), 0);
   const invInr = totalInInr(inv);
@@ -294,7 +333,12 @@ function InrLines({ data, currency }: { data: RevenueByMonth; currency: Currency
 
 type KeyRow = { key: string; label: string; inv: InvoicedFigures; round?: boolean };
 
-function keyedRows(data: RevenueByKey<string>, currency: Currency, label: (k: string) => string, order: readonly string[]) {
+function keyedRows(
+  data: RevenueByKey<string>,
+  currency: Currency,
+  label: (k: string) => string,
+  order: readonly string[],
+) {
   return data.rows
     .map((r) => ({ key: r.key, label: label(r.key), inv: invoicedOf(r.invoiced, currency) }))
     .filter((r) => r.inv.count > 0)
@@ -334,18 +378,32 @@ function keyColumns(first: string, countHeader: string, currency: Currency): Col
       header: R.invoicedBefore,
       align: "end",
       cell: (r) =>
-        r.round ? "" : <Money minor={r.inv.taxableMinor} currency={currency} inr={usd ? r.inv.inrTaxableMinor : null} />,
+        r.round ? (
+          ""
+        ) : (
+          <Money minor={r.inv.taxableMinor} currency={currency} inr={usd ? r.inv.inrTaxableMinor : null} />
+        ),
     },
     {
       key: "with",
       header: R.invoicedWith,
       align: "end",
-      cell: (r) => <Money minor={r.inv.totalMinor} currency={currency} inr={usd ? r.inv.inrTotalMinor : null} />,
+      cell: (r) => (
+        <Money minor={r.inv.totalMinor} currency={currency} inr={usd ? r.inv.inrTotalMinor : null} />
+      ),
     },
   ];
 }
 
-function CategoryView({ data, currency, fy }: { data: RevenueByKey<string>; currency: Currency; fy: string }) {
+function CategoryView({
+  data,
+  currency,
+  fy,
+}: {
+  data: RevenueByKey<string>;
+  currency: Currency;
+  fy: string;
+}) {
   const rows = keyedRows(data, currency, (k) => categoryLabel(k, CATEGORY_LABELS), CATEGORY_ORDER);
   if (rows.length === 0) return <NothingIn currency={currency} fy={fy} />;
   const round = data.roundOff?.find((r) => r.currency === currency);
@@ -399,7 +457,12 @@ function CategoryView({ data, currency, fy }: { data: RevenueByKey<string>; curr
 const KIND_TONES: Record<string, Tone> = { recurring: "k1", project: "k2", other: "k3" };
 
 function KindView({ data, currency, fy }: { data: RevenueByKey<string>; currency: Currency; fy: string }) {
-  const rows = keyedRows(data, currency, (k) => KIND_LABELS[k as keyof typeof KIND_LABELS] ?? k, REVENUE_KINDS);
+  const rows = keyedRows(
+    data,
+    currency,
+    (k) => KIND_LABELS[k as keyof typeof KIND_LABELS] ?? k,
+    REVENUE_KINDS,
+  );
   if (rows.length === 0) return <NothingIn currency={currency} fy={fy} />;
   const title = R.chartKinds(currency);
   const negative = rows.some((r) => r.inv.taxableMinor < 0);
@@ -491,23 +554,44 @@ function ClientsBlock({ fy, currency }: { fy: string; currency: Currency }) {
       key: "before",
       header: R.invoicedBefore,
       align: "end",
-      cell: (r) => <Money minor={r.invoiced.taxableMinor} currency={currency} inr={usd ? r.invoiced.inrTaxableMinor : null} />,
+      cell: (r) => (
+        <Money
+          minor={r.invoiced.taxableMinor}
+          currency={currency}
+          inr={usd ? r.invoiced.inrTaxableMinor : null}
+        />
+      ),
     },
     {
       key: "with",
       header: R.invoicedWith,
       align: "end",
-      cell: (r) => <Money minor={r.invoiced.totalMinor} currency={currency} inr={usd ? r.invoiced.inrTotalMinor : null} />,
+      cell: (r) => (
+        <Money
+          minor={r.invoiced.totalMinor}
+          currency={currency}
+          inr={usd ? r.invoiced.inrTotalMinor : null}
+        />
+      ),
     },
     {
       key: "collected",
       header: R.collected,
       align: "end",
       cell: (r) => (
-        <Money minor={r.collected.collectedMinor} currency={currency} inr={usd ? r.collected.inrCollectedMinor : null} />
+        <Money
+          minor={r.collected.collectedMinor}
+          currency={currency}
+          inr={usd ? r.collected.inrCollectedMinor : null}
+        />
       ),
     },
-    { key: "tds", header: R.tds, align: "end", cell: (r) => <Money minor={r.collected.tdsMinor} currency={currency} /> },
+    {
+      key: "tds",
+      header: R.tds,
+      align: "end",
+      cell: (r) => <Money minor={r.collected.tdsMinor} currency={currency} />,
+    },
     {
       key: "refunded",
       header: R.refunded,
@@ -525,7 +609,11 @@ function ClientsBlock({ fy, currency }: { fy: string; currency: Currency }) {
         {rows.length > 0 && (
           <ExportButton<RevenueClientRow>
             read={async (onProgress, stopped) => {
-              const r = await readPages((after) => m73Api.revenueExport(fy, currency, after), onProgress, stopped);
+              const r = await readPages(
+                (after) => m73Api.revenueExport(fy, currency, after),
+                onProgress,
+                stopped,
+              );
               return r ? r.rows : null;
             }}
             build={(all) => revenueClientsCsv(all, currency)}
@@ -546,7 +634,11 @@ function ClientsBlock({ fy, currency }: { fy: string; currency: Currency }) {
             loading={first.state === "loading"}
             skeletonRows={3}
             empty={
-              <EmptyState icon={<BarChart />} title={R.empty(fyLabel(fy)).replace(/\.$/, "")} headingLevel={3}>
+              <EmptyState
+                icon={<BarChart />}
+                title={R.empty(fyLabel(fy)).replace(/\.$/, "")}
+                headingLevel={3}
+              >
                 {null}
               </EmptyState>
             }
@@ -555,12 +647,22 @@ function ClientsBlock({ fy, currency }: { fy: string; currency: Currency }) {
       )}
       {next && (
         <div className="m73-more">
-          <button type="button" className="btn btn--secondary" onClick={showMore} disabled={loadingMore} aria-busy={loadingMore || undefined}>
+          <button
+            type="button"
+            className="btn btn--secondary"
+            onClick={showMore}
+            disabled={loadingMore}
+            aria-busy={loadingMore || undefined}
+          >
             {R.showMore}
           </button>
         </div>
       )}
-      {moreError && <p className="m73-note m73-note--error" role="alert">{moreError}</p>}
+      {moreError && (
+        <p className="m73-note m73-note--error" role="alert">
+          {moreError}
+        </p>
+      )}
     </section>
   );
 }

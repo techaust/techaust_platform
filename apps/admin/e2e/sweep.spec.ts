@@ -36,6 +36,11 @@ const LISTS = [
   "/catalogue?tab=templates",
   "/catalogue?tab=publish",
   "/catalogue/new",
+  // M7.3: the management reports
+  "/reports/revenue",
+  "/reports/ageing",
+  "/reports/pipeline",
+  "/reports/care-hours",
   "/reports/gst",
   "/reports/sales-register",
   "/reports/edf",

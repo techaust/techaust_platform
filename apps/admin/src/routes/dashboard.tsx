@@ -71,7 +71,10 @@ function Tiles({ data }: { data: DashboardData }) {
         {t.careBurn && <CareTile tile={t.careBurn} />}
         {t.activity && <ActivityTile tile={t.activity} />}
       </div>
-      {(t.milestones || t.pipelineValue || reportLinks.length > 0 || (t.finance && !isFinanceTile(t.finance))) && (
+      {(t.milestones ||
+        t.pipelineValue ||
+        reportLinks.length > 0 ||
+        (t.finance && !isFinanceTile(t.finance))) && (
         <div className="dash__side">
           {reportLinks.length > 0 && <ReportsTile links={reportLinks} />}
           {t.milestones && <MilestonesTile tile={t.milestones} today={data.today} />}
@@ -100,7 +103,8 @@ function Tiles({ data }: { data: DashboardData }) {
 function reportLinksOf(r: DashboardData["reports"]): { to: string; text: string }[] {
   if (!r) return [];
   const out: { to: string; text: string }[] = [];
-  if (r.revenue) out.push({ to: `/reports/revenue?fy=${encodeURIComponent(r.revenue.fy)}`, text: M73_TITLES.revenue });
+  if (r.revenue)
+    out.push({ to: `/reports/revenue?fy=${encodeURIComponent(r.revenue.fy)}`, text: M73_TITLES.revenue });
   if (r.ageing) out.push({ to: "/reports/ageing", text: M73_TITLES.ageing });
   if (r.pipeline)
     out.push({
@@ -108,7 +112,10 @@ function reportLinksOf(r: DashboardData["reports"]): { to: string; text: string 
       text: M73_TITLES.pipeline,
     });
   if (r.careHours)
-    out.push({ to: `/reports/care-hours?month=${encodeURIComponent(r.careHours.month)}`, text: M73_TITLES.careHours });
+    out.push({
+      to: `/reports/care-hours?month=${encodeURIComponent(r.careHours.month)}`,
+      text: M73_TITLES.careHours,
+    });
   return out;
 }
 

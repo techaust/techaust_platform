@@ -78,7 +78,6 @@ export function LineChart(props: {
   return (
     <div className="chart-plot" ref={box}>
       {width > 0 && (
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: the plot is one keyboard stop; the arrow keys walk its days (the readout is the table's twin)
         <svg
           className="chart-svg chart-line"
           width={width}
@@ -156,7 +155,11 @@ export function Sparkline(props: { points: readonly LinePoint[]; label: string }
   const max = Math.max(1, ...pts.map((p) => p.value));
   const x = linear(0, n, 4, Math.max(4, width - 6));
   const y = linear(0, max, h - 5, 5);
-  const xy = pts.map((p) => ({ i: dayIndex(first.date, p.date), x: x(dayIndex(first.date, p.date)), y: y(p.value) }));
+  const xy = pts.map((p) => ({
+    i: dayIndex(first.date, p.date),
+    x: x(dayIndex(first.date, p.date)),
+    y: y(p.value),
+  }));
   const end = xy.at(-1) as (typeof xy)[number];
   return (
     <div className="chart-spark" ref={box}>

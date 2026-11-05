@@ -359,6 +359,8 @@ export type ListQuery = {
   clientId?: string | undefined;
   limit?: "25" | "50" | undefined;
   after?: string | undefined;
+  /** M7.3 C7 (ADM-G-05): a number prefix, or a client's code or name prefix; 1 to 40 characters once trimmed. */
+  q?: string | undefined;
 };
 
 export type ApprovalRow = {

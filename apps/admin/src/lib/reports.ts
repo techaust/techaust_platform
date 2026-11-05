@@ -50,18 +50,66 @@ export const REPORTS: readonly {
   action: "reports.finance" | "reports.pipeline" | "reports.delivery";
   group: "management" | "registers";
 }[] = [
-  { key: "revenue", path: "/reports/revenue", label: "Revenue and collections", action: "reports.finance", group: "management" },
-  { key: "ageing", path: "/reports/ageing", label: "Outstanding and ageing", action: "reports.finance", group: "management" },
-  { key: "pipeline", path: "/reports/pipeline", label: "Pipeline and win rate", action: "reports.pipeline", group: "management" },
-  { key: "care-hours", path: "/reports/care-hours", label: "Care plan hours", action: "reports.delivery", group: "management" },
+  {
+    key: "revenue",
+    path: "/reports/revenue",
+    label: "Revenue and collections",
+    action: "reports.finance",
+    group: "management",
+  },
+  {
+    key: "ageing",
+    path: "/reports/ageing",
+    label: "Outstanding and ageing",
+    action: "reports.finance",
+    group: "management",
+  },
+  {
+    key: "pipeline",
+    path: "/reports/pipeline",
+    label: "Pipeline and win rate",
+    action: "reports.pipeline",
+    group: "management",
+  },
+  {
+    key: "care-hours",
+    path: "/reports/care-hours",
+    label: "Care plan hours",
+    action: "reports.delivery",
+    group: "management",
+  },
   { key: "gst", path: "/reports/gst", label: "GST exports", action: "reports.finance", group: "registers" },
-  { key: "sales-register", path: "/reports/sales-register", label: "Sales register", action: "reports.finance", group: "registers" },
+  {
+    key: "sales-register",
+    path: "/reports/sales-register",
+    label: "Sales register",
+    action: "reports.finance",
+    group: "registers",
+  },
   { key: "edf", path: "/reports/edf", label: "EDF list", action: "reports.finance", group: "registers" },
-  { key: "realisation", path: "/reports/realisation", label: "Export realisation", action: "reports.finance", group: "registers" },
+  {
+    key: "realisation",
+    path: "/reports/realisation",
+    label: "Export realisation",
+    action: "reports.finance",
+    group: "registers",
+  },
   // M6.1 (07-ZH line 20, approved by the owner 2026-10-31).
-  { key: "payments", path: "/reports/payments", label: "Payments and TDS register", action: "reports.finance", group: "registers" },
+  {
+    key: "payments",
+    path: "/reports/payments",
+    label: "Payments and TDS register",
+    action: "reports.finance",
+    group: "registers",
+  },
   // M6.5 (B4; 07-ZO "Staff lines", lead under the delegation).
-  { key: "refunds", path: "/reports/refunds", label: "Refunds register", action: "reports.finance", group: "registers" },
+  {
+    key: "refunds",
+    path: "/reports/refunds",
+    label: "Refunds register",
+    action: "reports.finance",
+    group: "registers",
+  },
 ];
 
 /**

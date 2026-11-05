@@ -187,7 +187,9 @@ export function DataTable<T>(props: {
                     {title?.cell(r)}
                     {props.cardSub && <div className="dcard__sub">{props.cardSub(r)}</div>}
                   </div>
-                  {props.actions && i < rows.length && <div className="dcard__actions">{props.actions(r)}</div>}
+                  {props.actions && i < rows.length && (
+                    <div className="dcard__actions">{props.actions(r)}</div>
+                  )}
                 </div>
                 <dl className="dcard__facts">
                   {facts.map((c) => (

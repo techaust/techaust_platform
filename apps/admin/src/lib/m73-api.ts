@@ -49,12 +49,12 @@ export const m73Api = {
 };
 
 /** Every page of an export, in order; `onProgress` hears the running count; `stopped` ends it quietly (the screen closed). */
-export async function readPages<R, P extends { rows: R[]; next: string | null }>(
+export async function readPages<P extends { rows: unknown[]; next: string | null }>(
   page: (after?: string) => Promise<P>,
   onProgress: (count: number) => void,
   stopped: () => boolean = () => false,
-): Promise<{ rows: R[]; first: P } | null> {
-  const rows: R[] = [];
+): Promise<{ rows: P["rows"]; first: P } | null> {
+  const rows: P["rows"] = [];
   let first: P | null = null;
   let after: string | undefined;
   do {

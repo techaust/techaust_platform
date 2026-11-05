@@ -2,8 +2,9 @@
 // between parts, no baseline. Thin (8 px, rounded ends, no text: the ageing beside its table and in the dashboard's Overdue tile) or tall (28 px, each part
 // its own block with 4 px corners and its share printed inside where it fits: the kinds of work). Every part is in the chart's roving focus and named with
 // its name, figure and share; the legend lists the names in block order and repeats no figure.
-import { ChartTip, type Tone, tipAt, useRoving, useTip, useWidth } from "./core.tsx";
+
 import { rateText } from "../../lib/m73-reports.ts";
+import { ChartTip, type Tone, tipAt, useRoving, useTip, useWidth } from "./core.tsx";
 
 export type Segment = { key: string; label: string; tone: Tone; value: number; valueText: string };
 
@@ -25,6 +26,7 @@ export function SegmentedBar(props: {
   return (
     <div className={`chart-plot chart-seg chart-seg--${props.size}`} ref={box} onPointerLeave={hide}>
       {width > 0 && (
+        // biome-ignore lint/a11y/useSemanticElements: a figure's parts, not form controls (no fieldset)
         <div className="chart-seg__bar" role="group" aria-label={props.label}>
           {parts.map((p, i) => {
             const w = whole > 0 ? (p.value / whole) * room : 0;
@@ -34,7 +36,6 @@ export function SegmentedBar(props: {
             const content = { title: p.label, rows: [{ tone: p.tone, value: p.valueText, label: share }] };
             const fits = props.size === "tall" && w >= share.length * 8 + 16;
             return (
-              // biome-ignore lint/a11y/useSemanticElements: a chart mark (an image of its figure), named and in the chart's roving focus
               <div
                 key={p.key}
                 className={`chart-seg__part chart-hit chart-tone--${p.tone}`}

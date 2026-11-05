@@ -53,7 +53,9 @@ export function CareHoursReport() {
       setMore((x) => [...x, ...p.rows]);
       setNext(p.next);
     } catch (e) {
-      setMoreError(e instanceof RequestError && e.code === "month_invalid" ? C.monthInvalid : reportErrorText(e));
+      setMoreError(
+        e instanceof RequestError && e.code === "month_invalid" ? C.monthInvalid : reportErrorText(e),
+      );
     } finally {
       setLoadingMore(false);
     }
@@ -77,7 +79,9 @@ export function CareHoursReport() {
       cell: (r) => (
         <span className="tnum">
           {hoursText(r.includedMinutes)}
-          {r.rolloverInMinutes > 0 && <span className="m73-money__inr">+{hoursText(r.rolloverInMinutes)}</span>}
+          {r.rolloverInMinutes > 0 && (
+            <span className="m73-money__inr">+{hoursText(r.rolloverInMinutes)}</span>
+          )}
         </span>
       ),
     },
@@ -87,7 +91,12 @@ export function CareHoursReport() {
       cell: (r) => (
         <div className="m73-care-used">
           <HoursBar
-            usage={{ used: r.usedMinutes, available: r.availableMinutes, flag: r.flag, overageMinutes: r.overageMinutes }}
+            usage={{
+              used: r.usedMinutes,
+              available: r.availableMinutes,
+              flag: r.flag,
+              overageMinutes: r.overageMinutes,
+            }}
             label={r.client.name}
           />
           <FlagPill flag={r.flag} />

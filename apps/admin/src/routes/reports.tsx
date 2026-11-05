@@ -34,7 +34,8 @@ export function Component() {
   if (report === undefined) return <Navigate to={first.path} replace />;
   const entry = REPORTS.find((r) => r.key === report);
   if (!entry) return <NotFound />;
-  if (!allowed(user.role, entry.action)) return <NoAccess what={entry.label} crumbs={[{ label: REPORTS_COPY.group, to: "/reports" }]} />;
+  if (!allowed(user.role, entry.action))
+    return <NoAccess what={entry.label} crumbs={[{ label: REPORTS_COPY.group, to: "/reports" }]} />;
   const screens: Record<ReportKey, () => ReactNode> = {
     revenue: () => <RevenueReport />,
     ageing: () => <AgeingReport />,

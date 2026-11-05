@@ -8,8 +8,8 @@ import { Download } from "../../components/icons.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { moneyText } from "../../lib/documents.ts";
 import { PIPELINE_COPY, REVENUE_COPY } from "../../lib/m73-reports.ts";
-import { csvBlob, saveFile } from "../../lib/reports-api.ts";
 import { FINANCE_COPY, reportErrorText } from "../../lib/reports.ts";
+import { csvBlob, saveFile } from "../../lib/reports-api.ts";
 
 /** The URL's filters: read one, set several (replacing the history entry, so Back leaves the report rather than undoing a filter). */
 export function useFilters() {

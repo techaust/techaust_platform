@@ -15,7 +15,13 @@ import { CheckCircle } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { moneyText } from "../../lib/documents.ts";
 import { type AgeingTotals, m73Api, readPages } from "../../lib/m73-api.ts";
-import { AGEING_COPY as A, AGEING_LABELS, ageingCsv, M73_TITLES, REVENUE_COPY } from "../../lib/m73-reports.ts";
+import {
+  AGEING_COPY as A,
+  AGEING_LABELS,
+  ageingCsv,
+  M73_TITLES,
+  REVENUE_COPY,
+} from "../../lib/m73-reports.ts";
 import { todayIst } from "../../lib/payments.ts";
 import { isoDayText, reportErrorText } from "../../lib/reports.ts";
 import { ReportFrame } from "./frame.tsx";
@@ -159,13 +165,20 @@ function CurrencyBlock(props: { currency: Currency; rows: AgeingRow[]; total: Ag
           ),
       }),
     ),
-    { key: "total", header: A.total, align: "end", cell: (r) => <Money minor={r.totalMinor} currency={currency} /> },
+    {
+      key: "total",
+      header: A.total,
+      align: "end",
+      cell: (r) => <Money minor={r.totalMinor} currency={currency} />,
+    },
     {
       key: "credit",
       header: A.creditHeld,
       align: "end",
       cell: (r) =>
-        r.isTotal ? "" : r.creditHeldMinor === 0 ? (
+        r.isTotal ? (
+          ""
+        ) : r.creditHeldMinor === 0 ? (
           <span className="m73-zero">{moneyText(0, currency)}</span>
         ) : (
           <Money minor={r.creditHeldMinor} currency={currency} />
@@ -178,10 +191,7 @@ function CurrencyBlock(props: { currency: Currency; rows: AgeingRow[]; total: Ag
         r.isTotal ? (
           ""
         ) : (
-          <Link
-            to={`/clients/${encodeURIComponent(r.client.id)}?tab=statement`}
-            className="m73-statement"
-          >
+          <Link to={`/clients/${encodeURIComponent(r.client.id)}?tab=statement`} className="m73-statement">
             {A.openStatement}
             <span className="visually-hidden">: {r.client.name}</span>
           </Link>

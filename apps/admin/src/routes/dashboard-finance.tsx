@@ -94,7 +94,15 @@ function OwedFigures({ rows, countText }: { rows: OwedByCurrency[]; countText: (
 }
 
 /** C22: this month against the previous IST month, in words under a figure (never an arrow alone); nothing when the API sent no comparison. */
-function Delta({ minor, currency, period }: { minor: number | undefined; currency: Currency; period: string | null }) {
+function Delta({
+  minor,
+  currency,
+  period,
+}: {
+  minor: number | undefined;
+  currency: Currency;
+  period: string | null;
+}) {
   if (minor === undefined || period === null) return null;
   return <span className="fin-figure__sub fin-delta">{deltaText(minor, currency, period)}</span>;
 }
@@ -119,7 +127,13 @@ function OverdueBar({ ageing, currency }: { ageing: AgeingByCurrency | undefined
 }
 const OVERDUE_TONES = { d1_30: "s1", d31_60: "s2", d61_90: "s3", d90_plus: "s4" } as const;
 
-export function FinanceTiles({ tile, reports }: { tile: FinanceTile; reports?: DashboardReportLinks | undefined }) {
+export function FinanceTiles({
+  tile,
+  reports,
+}: {
+  tile: FinanceTile;
+  reports?: DashboardReportLinks | undefined;
+}) {
   const exportsOk = "counts" in tile.exports;
   const ageing = new Map((tile.overdue.ageing ?? []).map((a) => [a.currency, a]));
   const overdueShown = tile.overdue.byCurrency.filter((r) => ageing.get(r.currency));

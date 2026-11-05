@@ -2,7 +2,17 @@
 // stronger and the lighter step of one hue (invoiced against collected: the analyst's validated ordinal pair); a single series has no legend (the title names
 // it). Columns are at most 24 px wide with a 4 px rounded data end and a square base; touching columns keep a 2 px surface gap. Gridlines are 1 px hairlines,
 // solid. Each category is one mark for the keyboard and the pointer (the whole band is the target), named with every value it holds.
-import { ChartTip, labelWidth, linear, niceTicks, type Tone, tipAt, useRoving, useTip, useWidth } from "./core.tsx";
+import {
+  ChartTip,
+  labelWidth,
+  linear,
+  niceTicks,
+  type Tone,
+  tipAt,
+  useRoving,
+  useTip,
+  useWidth,
+} from "./core.tsx";
 
 export type ColumnDatum = {
   key: string;
@@ -77,6 +87,7 @@ export function ColumnChart(props: {
   return (
     <div className="chart-plot" ref={box}>
       {width > 0 && (
+        // biome-ignore lint/a11y/useSemanticElements: an SVG plot groups its marks; a fieldset can't live in SVG
         <svg
           className="chart-svg"
           width={width}
@@ -86,6 +97,7 @@ export function ColumnChart(props: {
           onPointerLeave={hide}
         >
           {/* gridlines and the axis' figures: hairlines, recessive; the zero line a step stronger */}
+          {/* biome-ignore lint/a11y/noAriaHiddenOnFocusable: the axis holds no focusable element; its figures repeat the marks' names */}
           <g aria-hidden="true">
             {ticks.map((t) => (
               <g key={t}>
@@ -106,7 +118,7 @@ export function ColumnChart(props: {
             const x0 = left + band * i;
             const gx = x0 + (band - groupW) / 2;
             return (
-              // biome-ignore lint/a11y/useSemanticElements: an SVG mark has no HTML equivalent; it is named and takes the roving focus
+              // biome-ignore lint/a11y/noInteractiveElementToNoninteractiveRole: a chart mark is an image of its figures (named), in the chart's roving focus
               <g
                 key={d.key}
                 className="chart-hit"
@@ -119,10 +131,19 @@ export function ColumnChart(props: {
                 }}
                 onBlur={hide}
                 onPointerEnter={(e) =>
-                  show({ ...tipAt(e.currentTarget.firstElementChild ?? e.currentTarget, box.current), content: content(d) })
+                  show({
+                    ...tipAt(e.currentTarget.firstElementChild ?? e.currentTarget, box.current),
+                    content: content(d),
+                  })
                 }
               >
-                <rect className="chart-hit__band" x={x0} y={TOP} width={band} height={HEIGHT - BOTTOM - TOP} />
+                <rect
+                  className="chart-hit__band"
+                  x={x0}
+                  y={TOP}
+                  width={band}
+                  height={HEIGHT - BOTTOM - TOP}
+                />
                 {d.values.map((v, j) => {
                   const s = props.series[j];
                   if (!s || v === 0) return null;

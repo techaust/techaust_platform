@@ -22,7 +22,7 @@ export function RankedBars(props: {
   /** the value's name in the readout ("Invoiced (before GST)", "Leads") */
   valueLabel: string;
   /** keep the caller's order (stages in their own order) instead of ranking */
-  keepOrder?: boolean;
+  keepOrder?: boolean | undefined;
 }) {
   const [box, width] = useWidth<HTMLDivElement>();
   const { tip, show, hide } = useTip();
@@ -41,7 +41,6 @@ export function RankedBars(props: {
           };
           return (
             <li key={r.key} className="chart-bars__item">
-              {/* biome-ignore lint/a11y/useSemanticElements: a chart mark (an image of its figure), named and in the chart's roving focus */}
               <div
                 className="chart-bars__row chart-hit"
                 role="img"
