@@ -352,48 +352,95 @@ const signed = (col: string): string => `CASE d.type WHEN 'credit_note' THEN -d.
 const inrTaxableOf = (c: string): string =>
   c === "INR" ? "d.taxable_minor" : "json_extract(d.computed, '$.inr.taxableMinor')";
 
+/** The ageing bucket of due date `due` as at `today` (SQL expressions; ISO dates): the twin of core `ageingBucket` (a db test compares them day by day). */
+export const ageingBucketSql = (due: string, today: string): string =>
+  `(CASE WHEN ${due} IS NULL OR ${due} >= ${today} THEN 'not_due' WHEN ${due} >= date(${today}, '-30 days') THEN 'd1_30' WHEN ${due} >= date(${today}, '-60 days') THEN 'd31_60' WHEN ${due} >= date(${today}, '-90 days') THEN 'd61_90' ELSE 'd90_plus' END)`;
+/** The ageing buckets in order (core `AGEING_BUCKETS`; a test compares the two). */
+export const SQL_AGEING_BUCKETS = ["not_due", "d1_30", "d31_60", "d61_90", "d90_plus"] as const;
+export type SqlAgeingBucket = (typeof SQL_AGEING_BUCKETS)[number];
+
 /**
- * Invoiced in the financial year `?1` to `?2` and in the month from `?3` (to `?2`'s month: the caller passes the month's first day), by currency. Credit
- * notes count negative; voided documents and proformas never. `taxable` is before GST, `total` with it, `inr_taxable` the INR value of the taxable amount
- * (a USD document's `computed.inr`); NULL when a USD document lacks it, never zero. One pass over the FY's entries of `documents_issued_on`, no GROUP BY
- * (L33): one row read per document. The twin of `INVOICED_GROUPED_SQL`.
+ * The first day of the IST month before the month that starts on `?3` (C5, previous-month deltas): in April it is in the previous FY, so the dashboard's passes
+ * start there, one month earlier, in April only (`min(?1, …)`); every other month it is on or after the FY's first day and the range is the FY's.
+ */
+const PREVIOUS_MONTH = "date(?3, '-1 month')";
+
+/**
+ * Invoiced in the financial year `?1` to `?2`, in the month from `?3` (to `?2`'s month: the caller passes the month's first day) and (C5, M7.3) in the IST
+ * month before it (`pm_*`, from `PREVIOUS_MONTH` to the day before `?3`), by currency, with this month less the previous one (`delta_*`). Credit notes count
+ * negative; voided documents and proformas never. `taxable` is before GST, `total` with it, `inr_taxable` the INR value of the taxable amount (a USD
+ * document's `computed.inr`); NULL when a USD document lacks it, never zero. One pass over the FY's entries of `documents_issued_on` (in April from the
+ * previous month's first day: that month is in the previous FY), no GROUP BY (L33): one row read per document. A currency is a row when it has a document in
+ * the FY or in the previous month (in April a row can have `fy_documents` 0). The twin of `INVOICED_GROUPED_SQL`.
  */
 export const INVOICED_SQL = /* @__PURE__ */ (() => {
   const sgn = "CASE d.type WHEN 'credit_note' THEN -1 ELSE 1 END";
   const cols = (c: string): string[] => {
     const is = `d.currency = '${c}'`;
+    const fy = `${is} AND d.issue_date >= ?1`;
     const month = `${is} AND d.issue_date >= ?3`;
+    const prev = `${is} AND d.issue_date >= ${PREVIOUS_MONTH} AND d.issue_date < ?3`;
     const inr = inrTaxableOf(c);
     return [
-      `count(CASE WHEN ${is} THEN 1 END) AS fyd_${c}`,
-      `sum(CASE WHEN ${is} THEN ${signed("taxable_minor")} END) AS fyt_${c}`,
-      `sum(CASE WHEN ${is} THEN ${signed("total_minor")} END) AS fyg_${c}`,
-      `count(CASE WHEN ${is} THEN ${inr} END) AS fyic_${c}`,
-      `sum(CASE WHEN ${is} THEN ${sgn} * ${inr} END) AS fyi_${c}`,
+      `count(CASE WHEN ${is} THEN 1 END) AS any_${c}`,
+      `count(CASE WHEN ${fy} THEN 1 END) AS fyd_${c}`,
+      `sum(CASE WHEN ${fy} THEN ${signed("taxable_minor")} END) AS fyt_${c}`,
+      `sum(CASE WHEN ${fy} THEN ${signed("total_minor")} END) AS fyg_${c}`,
+      `count(CASE WHEN ${fy} THEN ${inr} END) AS fyic_${c}`,
+      `sum(CASE WHEN ${fy} THEN ${sgn} * ${inr} END) AS fyi_${c}`,
       `count(CASE WHEN ${month} THEN 1 END) AS md_${c}`,
       `coalesce(sum(CASE WHEN ${month} THEN ${signed("taxable_minor")} END), 0) AS mt_${c}`,
       `coalesce(sum(CASE WHEN ${month} THEN ${signed("total_minor")} END), 0) AS mg_${c}`,
       `count(CASE WHEN ${month} THEN ${inr} END) AS mic_${c}`,
       `coalesce(sum(CASE WHEN ${month} THEN ${sgn} * ${inr} END), 0) AS mi_${c}`,
+      `count(CASE WHEN ${prev} THEN 1 END) AS pd_${c}`,
+      `coalesce(sum(CASE WHEN ${prev} THEN ${signed("taxable_minor")} END), 0) AS pt_${c}`,
+      `coalesce(sum(CASE WHEN ${prev} THEN ${signed("total_minor")} END), 0) AS pg_${c}`,
+      `count(CASE WHEN ${prev} THEN ${inr} END) AS pic_${c}`,
+      `coalesce(sum(CASE WHEN ${prev} THEN ${sgn} * ${inr} END), 0) AS pi_${c}`,
     ];
   };
   const select = `${pickCurrency("fyd")} AS fy_documents, ${pickCurrency("fyt")} AS fy_taxable, ${pickCurrency("fyg")} AS fy_total,
        CASE WHEN ${pickCurrency("fyic")} < ${pickCurrency("fyd")} THEN NULL ELSE ${pickCurrency("fyi")} END AS fy_inr_taxable,
        ${pickCurrency("md")} AS month_documents, ${pickCurrency("mt")} AS month_taxable, ${pickCurrency("mg")} AS month_total,
-       CASE WHEN ${pickCurrency("mic")} < ${pickCurrency("md")} THEN NULL ELSE ${pickCurrency("mi")} END AS month_inr_taxable`;
+       CASE WHEN ${pickCurrency("mic")} < ${pickCurrency("md")} THEN NULL ELSE ${pickCurrency("mi")} END AS month_inr_taxable,
+       ${pickCurrency("pd")} AS pm_documents, ${pickCurrency("pt")} AS pm_taxable, ${pickCurrency("pg")} AS pm_total,
+       CASE WHEN ${pickCurrency("pic")} < ${pickCurrency("pd")} THEN NULL ELSE ${pickCurrency("pi")} END AS pm_inr_taxable,
+       ${pickCurrency("mt")} - ${pickCurrency("pt")} AS delta_taxable, ${pickCurrency("mg")} - ${pickCurrency("pg")} AS delta_total`;
   return byCurrency(
     cols,
     select,
     `FROM documents d INDEXED BY documents_issued_on
-         WHERE ${ISSUED_GST} AND d.voided_at IS NULL AND d.issue_date >= ?1 AND d.issue_date <= ?2`,
-    "fyd",
+         WHERE ${ISSUED_GST} AND d.voided_at IS NULL AND d.issue_date >= min(?1, ${PREVIOUS_MONTH}) AND d.issue_date <= ?2`,
+    "any",
   );
 })();
+
+/** One row of `INVOICED_SQL` as D1 returns it. */
+export type InvoicedSqlRow = {
+  currency: "INR" | "USD";
+  fy_documents: number;
+  fy_taxable: number | null;
+  fy_total: number | null;
+  fy_inr_taxable: number | null;
+  month_documents: number;
+  month_taxable: number;
+  month_total: number;
+  month_inr_taxable: number | null;
+  pm_documents: number;
+  pm_taxable: number;
+  pm_total: number;
+  pm_inr_taxable: number | null;
+  delta_taxable: number;
+  delta_total: number;
+};
 
 /**
  * What clients owe, and how much of it is overdue, by currency, in ONE read (`?1` today, IST): the open tax invoices, export invoices and debit notes with a balance
  * (count and amount, tax included), and of those the ones past their due date. The due date is the last day to pay, so overdue is strictly before today.
- * One pass over the open statuses of `documents_status_due`, no GROUP BY (L33). The twin of `OWED_GROUPED_SQL`.
+ * C5 and C9 (M7.3): the same rows by ageing bucket (`ageingBucketSql`, as at `?1`; `n_<bucket>`, `b_<bucket>`), so the dashboard's Overdue tile and the ageing
+ * report's totals are this one statement (`AGEING_TOTALS_SQL`); the four overdue buckets add up to `overdue_n` and `overdue_balance`. One pass over the open
+ * statuses of `documents_status_due`, no GROUP BY (L33). The twin of `OWED_GROUPED_SQL`.
  */
 export const OWED_SQL = /* @__PURE__ */ (() =>
   byCurrency(
@@ -404,36 +451,71 @@ export const OWED_SQL = /* @__PURE__ */ (() =>
         `sum(CASE WHEN ${is} THEN d.balance_minor END) AS b_${c}`,
         `sum(CASE WHEN ${is} THEN CASE WHEN d.due_date < ?1 THEN 1 ELSE 0 END END) AS on_${c}`,
         `sum(CASE WHEN ${is} THEN CASE WHEN d.due_date < ?1 THEN d.balance_minor ELSE 0 END END) AS ob_${c}`,
+        ...SQL_AGEING_BUCKETS.flatMap((b) => {
+          const at = `${is} AND ${ageingBucketSql("d.due_date", "?1")} = '${b}'`;
+          return [
+            `count(CASE WHEN ${at} THEN 1 END) AS n${b}_${c}`,
+            `coalesce(sum(CASE WHEN ${at} THEN d.balance_minor END), 0) AS b${b}_${c}`,
+          ];
+        }),
       ];
     },
-    `${pickCurrency("n")} AS n, ${pickCurrency("b")} AS balance, ${pickCurrency("on")} AS overdue_n, ${pickCurrency("ob")} AS overdue_balance`,
+    [
+      `${pickCurrency("n")} AS n, ${pickCurrency("b")} AS balance, ${pickCurrency("on")} AS overdue_n, ${pickCurrency("ob")} AS overdue_balance`,
+      ...SQL_AGEING_BUCKETS.map(
+        (b) => `${pickCurrency(`n${b}`)} AS n_${b}, ${pickCurrency(`b${b}`)} AS b_${b}`,
+      ),
+    ].join(", "),
     `FROM documents d INDEXED BY documents_status_due
          WHERE d.status IN ${OPEN_STATUSES} AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL`,
     "n",
   ))();
 
-/** The reference twin of `INVOICED_SQL` (tests only): the grouped statement of M5.5b. */
-export const INVOICED_GROUPED_SQL = `SELECT d.currency,
-       count(*) AS fy_documents,
-       sum(CASE d.type WHEN 'credit_note' THEN -d.taxable_minor ELSE d.taxable_minor END) AS fy_taxable,
-       sum(CASE d.type WHEN 'credit_note' THEN -d.total_minor ELSE d.total_minor END) AS fy_total,
-       CASE WHEN count(CASE d.currency WHEN 'INR' THEN d.taxable_minor ELSE json_extract(d.computed, '$.inr.taxableMinor') END) < count(*) THEN NULL
-            ELSE sum(CASE d.type WHEN 'credit_note' THEN -1 ELSE 1 END * CASE d.currency WHEN 'INR' THEN d.taxable_minor ELSE json_extract(d.computed, '$.inr.taxableMinor') END) END AS fy_inr_taxable,
-       coalesce(sum(CASE WHEN d.issue_date >= ?3 THEN 1 END), 0) AS month_documents,
-       coalesce(sum(CASE WHEN d.issue_date >= ?3 THEN CASE d.type WHEN 'credit_note' THEN -d.taxable_minor ELSE d.taxable_minor END END), 0) AS month_taxable,
-       coalesce(sum(CASE WHEN d.issue_date >= ?3 THEN CASE d.type WHEN 'credit_note' THEN -d.total_minor ELSE d.total_minor END END), 0) AS month_total,
-       CASE WHEN count(CASE WHEN d.issue_date >= ?3 THEN CASE d.currency WHEN 'INR' THEN d.taxable_minor ELSE json_extract(d.computed, '$.inr.taxableMinor') END END) < coalesce(sum(CASE WHEN d.issue_date >= ?3 THEN 1 END), 0) THEN NULL
-            ELSE coalesce(sum(CASE WHEN d.issue_date >= ?3 THEN CASE d.type WHEN 'credit_note' THEN -1 ELSE 1 END * CASE d.currency WHEN 'INR' THEN d.taxable_minor ELSE json_extract(d.computed, '$.inr.taxableMinor') END END), 0) END AS month_inr_taxable
-   FROM documents d INDEXED BY documents_issued_on
-   WHERE ${ISSUED_GST} AND d.voided_at IS NULL AND d.issue_date >= ?1 AND d.issue_date <= ?2
-   GROUP BY d.currency ORDER BY d.currency`;
+/** One row of `OWED_SQL` as D1 returns it. */
+export type OwedSqlRow = {
+  currency: "INR" | "USD";
+  n: number;
+  balance: number;
+  overdue_n: number;
+  overdue_balance: number;
+} & Record<`n_${SqlAgeingBucket}` | `b_${SqlAgeingBucket}`, number>;
 
-/** The reference twin of `OWED_SQL` (tests only): the grouped statement of M5.5b. */
-export const OWED_GROUPED_SQL = `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance,
-       sum(CASE WHEN d.due_date < ?1 THEN 1 ELSE 0 END) AS overdue_n, sum(CASE WHEN d.due_date < ?1 THEN d.balance_minor ELSE 0 END) AS overdue_balance
+/** The reference twin of `INVOICED_SQL` (tests only): the grouped statement of M5.5b, with the previous month of C5. */
+export const INVOICED_GROUPED_SQL = /* @__PURE__ */ (() => {
+  const fy = "d.issue_date >= ?1";
+  const month = "d.issue_date >= ?3";
+  const prev = `d.issue_date >= ${PREVIOUS_MONTH} AND d.issue_date < ?3`;
+  const inr =
+    "CASE d.currency WHEN 'INR' THEN d.taxable_minor ELSE json_extract(d.computed, '$.inr.taxableMinor') END";
+  const sgn = "CASE d.type WHEN 'credit_note' THEN -1 ELSE 1 END";
+  const taxable = "CASE d.type WHEN 'credit_note' THEN -d.taxable_minor ELSE d.taxable_minor END";
+  const total = "CASE d.type WHEN 'credit_note' THEN -d.total_minor ELSE d.total_minor END";
+  const part = (w: string, p: string, coalesced: boolean) => {
+    const z = (x: string) => (coalesced ? `coalesce(${x}, 0)` : x);
+    return `count(CASE WHEN ${w} THEN 1 END) AS ${p}_documents,
+       ${z(`sum(CASE WHEN ${w} THEN ${taxable} END)`)} AS ${p}_taxable,
+       ${z(`sum(CASE WHEN ${w} THEN ${total} END)`)} AS ${p}_total,
+       CASE WHEN count(CASE WHEN ${w} THEN ${inr} END) < count(CASE WHEN ${w} THEN 1 END) THEN NULL
+            ELSE ${z(`sum(CASE WHEN ${w} THEN ${sgn} * ${inr} END)`)} END AS ${p}_inr_taxable`;
+  };
+  return `SELECT d.currency, ${part(fy, "fy", false)}, ${part(month, "month", true)}, ${part(prev, "pm", true)},
+       coalesce(sum(CASE WHEN ${month} THEN ${taxable} END), 0) - coalesce(sum(CASE WHEN ${prev} THEN ${taxable} END), 0) AS delta_taxable,
+       coalesce(sum(CASE WHEN ${month} THEN ${total} END), 0) - coalesce(sum(CASE WHEN ${prev} THEN ${total} END), 0) AS delta_total
+   FROM documents d INDEXED BY documents_issued_on
+   WHERE ${ISSUED_GST} AND d.voided_at IS NULL AND d.issue_date >= min(?1, ${PREVIOUS_MONTH}) AND d.issue_date <= ?2
+   GROUP BY d.currency ORDER BY d.currency`;
+})();
+
+/** The reference twin of `OWED_SQL` (tests only): the grouped statement of M5.5b, with C5's buckets. */
+export const OWED_GROUPED_SQL = /* @__PURE__ */ (() => {
+  const bucket = ageingBucketSql("d.due_date", "?1");
+  return `SELECT d.currency, count(*) AS n, sum(d.balance_minor) AS balance,
+       sum(CASE WHEN d.due_date < ?1 THEN 1 ELSE 0 END) AS overdue_n, sum(CASE WHEN d.due_date < ?1 THEN d.balance_minor ELSE 0 END) AS overdue_balance,
+       ${SQL_AGEING_BUCKETS.map((b) => `sum(CASE WHEN ${bucket} = '${b}' THEN 1 ELSE 0 END) AS n_${b}, sum(CASE WHEN ${bucket} = '${b}' THEN d.balance_minor ELSE 0 END) AS b_${b}`).join(",\n       ")}
    FROM documents d INDEXED BY documents_status_due
    WHERE d.status IN ${OPEN_STATUSES} AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL
    GROUP BY d.currency ORDER BY d.currency`;
+})();
 
 /**
  * The five oldest overdue ones (`?1` today). One ordered read of five rows per open status (the index is `(status, due_date)`, so a single read with the three
@@ -719,13 +801,6 @@ export type RefundsRegisterRow = {
 // management only); a missing one makes the INR figure NULL with a count, never 0. TDS is apart from collected (Settled by the lead on the safest reading,
 // 2026-10-30 (08-C RA-30)); money counts on the day it was received (Researched 2026-10-28 (08-C RA-17, RA-36)). Reports are not tax documents (08-C RA-28).
 // D1 allows at most 100 result columns and 32 arguments per SQL function: every aggregate row below stays under both (a test runs each statement).
-
-/** The ageing bucket of due date `due` as at `today` (SQL expressions; ISO dates): the twin of core `ageingBucket` (a db test compares them day by day). */
-export const ageingBucketSql = (due: string, today: string): string =>
-  `(CASE WHEN ${due} IS NULL OR ${due} >= ${today} THEN 'not_due' WHEN ${due} >= date(${today}, '-30 days') THEN 'd1_30' WHEN ${due} >= date(${today}, '-60 days') THEN 'd31_60' WHEN ${due} >= date(${today}, '-90 days') THEN 'd61_90' ELSE 'd90_plus' END)`;
-/** The ageing buckets in order (core `AGEING_BUCKETS`; a test compares the two). */
-export const SQL_AGEING_BUCKETS = ["not_due", "d1_30", "d31_60", "d61_90", "d90_plus"] as const;
-export type SqlAgeingBucket = (typeof SQL_AGEING_BUCKETS)[number];
 
 /**
  * A document's kind of revenue (L9; core `revenueKind`): its own care plan, or (a note, a tax invoice made from a proforma) its parent's, is recurring; else a
@@ -1058,35 +1133,11 @@ export type AgeingSqlRow = {
 } & Record<`n_${SqlAgeingBucket}` | `b_${SqlAgeingBucket}`, number>;
 
 /**
- * C9's first page totals (`?1` today): per currency and bucket over every open document, in one pass of `documents_status_due` (the `OWED_SQL` read with the
- * buckets as columns). Σ buckets = `OWED_SQL`'s balance; Σ of the four overdue buckets = its overdue figure (a test holds both).
+ * C9's first page totals (`?1` today): per currency and bucket over every open document. They are `OWED_SQL` itself (C5, L11: the dashboard's Overdue tile and
+ * the ageing report read one statement), so Σ buckets = its balance and Σ of the four overdue buckets = its overdue figure by construction (a test holds both).
  */
-export const AGEING_TOTALS_SQL = /* @__PURE__ */ (() =>
-  byCurrency(
-    (c) => [
-      `count(CASE WHEN d.currency = '${c}' THEN 1 END) AS n_${c}`,
-      `coalesce(sum(CASE WHEN d.currency = '${c}' THEN d.balance_minor END), 0) AS t_${c}`,
-      ...SQL_AGEING_BUCKETS.flatMap((b) => {
-        const is = `d.currency = '${c}' AND ${ageingBucketSql("d.due_date", "?1")} = '${b}'`;
-        return [
-          `count(CASE WHEN ${is} THEN 1 END) AS n${b}_${c}`,
-          `coalesce(sum(CASE WHEN ${is} THEN d.balance_minor END), 0) AS b${b}_${c}`,
-        ];
-      }),
-    ],
-    SQL_AGEING_BUCKETS.flatMap((b) => [
-      `${pickCurrency(`n${b}`)} AS n_${b}`,
-      `${pickCurrency(`b${b}`)} AS b_${b}`,
-    ])
-      .concat(`${pickCurrency("t")} AS total`)
-      .join(", "),
-    `FROM documents d INDEXED BY documents_status_due WHERE d.status IN ${OPEN_STATUSES} AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL`,
-    "n",
-  ))();
-export type AgeingTotalsSqlRow = { currency: "INR" | "USD"; total: number } & Record<
-  `n_${SqlAgeingBucket}` | `b_${SqlAgeingBucket}`,
-  number
->;
+export const AGEING_TOTALS_SQL = OWED_SQL;
+export type AgeingTotalsSqlRow = OwedSqlRow;
 /** The reference twin of the ageing figures (tests only): grouped by currency and bucket. */
 export const AGEING_GROUPED_SQL = /* @__PURE__ */ (() =>
   `SELECT d.currency, ${ageingBucketSql("d.due_date", "?1")} AS bucket, count(*) AS n, sum(d.balance_minor) AS balance

@@ -12,6 +12,7 @@ import {
   ageingBucket,
   carePeriodDay,
   NO_CATEGORY,
+  previousMonthOf,
   REVENUE_KINDS,
   revenueKind,
   SOURCE_PATH_MAX,
@@ -389,6 +390,18 @@ describe("the SQL twins equal their core rules", () => {
     expect(got.map((r) => r.p)).toEqual(pages.map((x) => sourcePath(x)));
     expect(await first(`SELECT ${sourcePathSql("NULL")} AS p`)).toEqual({ p: null });
     expect(SQL_SOURCE_PATH_MAX).toBe(SOURCE_PATH_MAX);
+  });
+
+  it("the dashboard's previous month in SQL (`date(?3, '-1 month')` over the month's first day) = core previousMonthOf, every month of 2026 to 2029", async () => {
+    const firsts = Array.from(
+      { length: 48 },
+      (_, i) => `${2026 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}-01`,
+    );
+    const got = await all<{ from: string; to: string }>(
+      "SELECT date(j.value, '-1 month') AS \"from\", date(j.value, '-1 day') AS \"to\" FROM json_each(?1) j ORDER BY j.key",
+      JSON.stringify(firsts),
+    );
+    expect(got).toEqual(firsts.map((f) => previousMonthOf(f)));
   });
 
   it("carePeriodDaySql = carePeriodDay for every billing day and start dates around the month", async () => {

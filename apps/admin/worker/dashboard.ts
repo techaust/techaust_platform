@@ -3,6 +3,10 @@
 // the answer (never an "unavailable" stub), and its statements are never run. The finance tile arrives with M5/M6, the usage tile with
 // M7.5; the pipeline-value tile is live since M4.3. The activity feed lists exact action names per role (core/dashboard.ts) and never carries the
 // audit summary, the IP address or the user agent.
+// M7.3 (C5, dashboard v2; run file docs/runs/m7.3-reports.md, L11): the finance tile's existing passes also give the ageing buckets (`OWED_SQL`, which is C9's
+// totals) and the previous IST month with this month less it (`INVOICED_SQL`, `COLLECTED_TILE_SQL`; in April those passes start at March, the FY before); the
+// leads tile gains the open-leads trend of the last 30 days (`OPEN_TREND_SQL`, the pipeline report's); `reports` holds where each report the role may read
+// opens, with its period. No new money calculation (Tier B): every sum and difference is made in SQL, per currency, never rupees and dollars together.
 import { CARE_NEAR_BP, CARE_REACHED_BP, termsOn } from "@techaust/core/care";
 import {
   ACTIVITY_ACTIONS,
@@ -16,6 +20,13 @@ import {
 import { addDays, daysBetween, fyOfDate, istDate, parseIsoDate, toIsoDate } from "@techaust/core/dates";
 import { realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { LEAD_STAGES } from "@techaust/core/lead-lifecycle";
+import { decide } from "@techaust/core/permissions";
+import {
+  AGEING_BUCKETS,
+  type DashboardReportLinks,
+  LEADS_TREND_DAYS,
+  previousMonthOf,
+} from "@techaust/core/reports";
 import { DAY_MS, weekOf } from "@techaust/core/time";
 import {
   assembleCare,
@@ -29,31 +40,41 @@ import {
   type UsageRaw,
 } from "@techaust/db/care";
 import { NEW_LEADS_SQL, PIPELINE_SQL } from "@techaust/db/digest";
-import { COLLECTED_TILE_SQL, PENDING_PAYMENTS_COUNT_SQL } from "@techaust/db/ledger";
+import {
+  COLLECTED_TILE_SQL,
+  type CollectedTileSqlRow,
+  PENDING_PAYMENTS_COUNT_SQL,
+} from "@techaust/db/ledger";
 import {
   EXPORT_NEXT_SQL,
   EXPORT_STAGE_COUNTS_SQL,
   INVOICED_SQL,
+  type InvoicedSqlRow,
   OVERDUE_OLDEST_SQL,
   OWED_SQL,
+  type OwedSqlRow,
   PROFORMAS_AWAITING_SQL,
   SETTINGS_TAX_SQL,
 } from "@techaust/db/reports";
+import { OPEN_TREND_SQL } from "@techaust/db/reports-delivery";
 import { Hono } from "hono/tiny";
 import { LIST_PERIODS_BACK, usageWindow } from "./care.ts";
 import { type AppEnv, actor } from "./context.ts";
 
-type InvoicedRow = {
-  currency: string;
-  fy_documents: number;
-  fy_taxable: number;
-  fy_total: number;
-  fy_inr_taxable: number | null;
-  month_documents: number;
-  month_taxable: number;
-  month_total: number;
-  month_inr_taxable: number | null;
-};
+/**
+ * C5 (e): where each report opens from the dashboard, with the role's period filled in, for the reports the role may read (the matrix, docs/04 §9): revenue for
+ * this FY, the ageing as at today, the pipeline for this IST month to today, care plan hours for this month. Parameters only; the SPA builds its own URL.
+ */
+export function reportLinksFor(role: Parameters<typeof decide>[0], today: string): DashboardReportLinks {
+  const fy = fyOfDate(parseIsoDate(today) as NonNullable<ReturnType<typeof parseIsoDate>>);
+  const can = (action: "reports.finance" | "reports.pipeline" | "reports.delivery") =>
+    decide(role, action) === "allow";
+  return {
+    ...(can("reports.finance") ? { revenue: { fy: fy.token }, ageing: {} } : {}),
+    ...(can("reports.pipeline") ? { pipeline: { from: `${today.slice(0, 7)}-01`, to: today } } : {}),
+    ...(can("reports.delivery") ? { careHours: { month: today.slice(0, 7) } } : {}),
+  };
+}
 
 const OPEN_STAGES = LEAD_STAGES.filter((s) => s !== "won" && s !== "lost");
 const STAGE_LIST = OPEN_STAGES.map((s) => `'${s}'`).join(", ");
@@ -115,6 +136,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
   const now = Date.now();
   const today = toIsoDate(istDate(now));
   const todayDate = parseIsoDate(today) as NonNullable<ReturnType<typeof parseIsoDate>>;
+  const trendFrom = toIsoDate(addDays(todayDate, 1 - LEADS_TREND_DAYS));
   const stmts: D1PreparedStatement[] = [];
   const slot: Record<string, number> = {};
   const add = (name: string, ...s: D1PreparedStatement[]) => {
@@ -137,6 +159,8 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
           `SELECT id, ref, contact_name, next_action_at FROM leads INDEXED BY leads_next_action WHERE next_action_at IS NOT NULL AND next_action_at < ?1 AND stage IN (${STAGE_LIST}) ORDER BY next_action_at, id LIMIT 5`,
         )
         .bind(now),
+      // C5 (c): the open leads of the last 30 IST days from the nightly `leads.open` counts (the pipeline report's statement; a row per open stage and day)
+      db.prepare(OPEN_TREND_SQL).bind(trendFrom, today),
     );
   }
   if (tiles.has("pipelineValue")) add("pipeline", db.prepare(PIPELINE_SQL).bind(today));
@@ -243,6 +267,12 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
           dueAt: r.next_action_at,
         })),
       },
+      // C5 (c): a day with no nightly count (the job did not run) is absent, never a zero
+      trend: {
+        from: trendFrom,
+        to: today,
+        points: rows<{ date: string; open: number }>("leads", 4).map((r) => ({ date: r.date, open: r.open })),
+      },
     };
   }
   if (tiles.has("pipelineValue")) {
@@ -256,8 +286,8 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     };
   }
   if (tiles.has("finance")) {
-    type Owed = { currency: string; n: number; balance: number; overdue_n: number; overdue_balance: number };
-    const owed = rows<Owed>("finance", 1);
+    const owed = rows<OwedSqlRow>("finance", 1);
+    const invoiced = rows<InvoicedSqlRow>("finance", 0);
     const byCur = (name: string, at: number) =>
       rows<{ currency: string; n: number; balance: number }>(name, at).map((r) => ({
         currency: r.currency,
@@ -274,13 +304,7 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
     // The export statements read the tax row's own values in SQL; if the row is not valid (the no-zod reader says so) their figures are withheld, never guessed.
     const rulesOk = taxJson !== null && realisationParamsFromStoredTax(taxJson).ok;
     const stageCount = new Map(rows<{ stage: string; n: number }>("finance", 5).map((r) => [r.stage, r.n]));
-    const collected = rows<{
-      currency: string;
-      fy_collected: number;
-      fy_n: number;
-      month_collected: number;
-      month_n: number;
-    }>("finance", 7);
+    const collected = rows<CollectedTileSqlRow>("finance", 7);
     out.finance = {
       today,
       month: {
@@ -297,8 +321,10 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
         ),
       },
       fy: { label: fy.label, from: fyFrom, to: fyTo },
+      // C5 (b): the IST month before this one, the period of every `previousMonth` figure and `change` below
+      previousMonth: previousMonthOf(today),
       invoiced: {
-        month: rows<InvoicedRow>("finance", 0)
+        month: invoiced
           .filter((r) => r.month_documents > 0)
           .map((r) => ({
             currency: r.currency,
@@ -307,19 +333,42 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
             totalMinor: r.month_total,
             inrTaxableMinor: r.month_inr_taxable,
           })),
-        fy: rows<InvoicedRow>("finance", 0).map((r) => ({
-          currency: r.currency,
-          documents: r.fy_documents,
-          taxableMinor: r.fy_taxable,
-          totalMinor: r.fy_total,
-          inrTaxableMinor: r.fy_inr_taxable,
-        })),
+        // in April a currency invoiced only in March (the previous FY) is a row with no FY documents: it is not an FY figure
+        fy: invoiced
+          .filter((r) => r.fy_documents > 0)
+          .map((r) => ({
+            currency: r.currency,
+            documents: r.fy_documents,
+            taxableMinor: r.fy_taxable,
+            totalMinor: r.fy_total,
+            inrTaxableMinor: r.fy_inr_taxable,
+          })),
+        previousMonth: invoiced
+          .filter((r) => r.pm_documents > 0)
+          .map((r) => ({
+            currency: r.currency,
+            documents: r.pm_documents,
+            taxableMinor: r.pm_taxable,
+            totalMinor: r.pm_total,
+            inrTaxableMinor: r.pm_inr_taxable,
+          })),
+        // this month less the previous one, per currency (made in SQL: never rupees and dollars together)
+        change: invoiced
+          .filter((r) => r.month_documents > 0 || r.pm_documents > 0)
+          .map((r) => ({ currency: r.currency, taxableMinor: r.delta_taxable, totalMinor: r.delta_total })),
       },
       outstanding: owed.map((r) => ({ currency: r.currency, count: r.n, balanceMinor: r.balance })),
       overdue: {
         byCurrency: owed
           .filter((r) => r.overdue_n > 0)
           .map((r) => ({ currency: r.currency, count: r.overdue_n, balanceMinor: r.overdue_balance })),
+        // C5 (a): what is owed by ageing bucket as at today, from the same pass (the four overdue buckets add up to `byCurrency`; the ageing report's totals)
+        ageing: owed.map((r) => ({
+          currency: r.currency,
+          buckets: Object.fromEntries(
+            AGEING_BUCKETS.map((b) => [b, { count: r[`n_${b}`], balanceMinor: r[`b_${b}`] }]),
+          ),
+        })),
         oldest: rows<{
           id: string;
           number_display: string;
@@ -375,7 +424,15 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
         month: collected
           .filter((r) => r.month_n > 0)
           .map((r) => ({ currency: r.currency, collectedMinor: r.month_collected, count: r.month_n })),
-        fy: collected.map((r) => ({ currency: r.currency, collectedMinor: r.fy_collected, count: r.fy_n })),
+        fy: collected
+          .filter((r) => r.fy_rows > 0)
+          .map((r) => ({ currency: r.currency, collectedMinor: r.fy_collected, count: r.fy_n })),
+        previousMonth: collected
+          .filter((r) => r.pm_n > 0)
+          .map((r) => ({ currency: r.currency, collectedMinor: r.pm_collected, count: r.pm_n })),
+        change: collected
+          .filter((r) => r.month_n > 0 || r.pm_n > 0)
+          .map((r) => ({ currency: r.currency, collectedMinor: r.delta_collected })),
       },
       // The Owner's tile only (the check is the Owner's): Staff and the Accountant get no figure, not a zero.
       paymentsToVerify:
@@ -555,5 +612,5 @@ export const dashboard = new Hono<AppEnv>().get("/", async (c) => {
       })),
     };
   }
-  return c.json({ asOf: now, today, tiles: out });
+  return c.json({ asOf: now, today, tiles: out, reports: reportLinksFor(me.role, today) });
 });

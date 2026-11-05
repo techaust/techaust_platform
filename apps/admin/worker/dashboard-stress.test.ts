@@ -6,6 +6,8 @@ import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { longSession, mkLog, today } from "./test-care.ts";
 import { call, pinClock, withDb } from "./test-helpers.ts";
+import type { J } from "./test-invoices.ts";
+import { computeFor, line } from "./test-reports.ts";
 
 /**
  * One pinned clock for the fixture and the dashboard. The rows read grow with the day of the month (each care plan's current period
@@ -246,5 +248,83 @@ describe("GET /dashboard on the stress fixture", () => {
       ),
     ];
     if (SHOW_REPORT) throw new Error(["LOCAL CPU PROXY (wall, upper bound)", ...lines].join("\n"));
+  });
+
+  // M7.3 C5 (b), run file J: the previous-month deltas are read in the finance tile's own passes, which add no row except in April, when the previous month
+  // (March) is in the FY before and the passes start there. Budgeted here: in April the owner's call reads at most the limit plus March's documents, payments
+  // and refunds, and the invoiced and collected passes read exactly one more row per March document or payment (no other FY's row).
+  it("April: the previous month (March, the FY before) is read once, and only it", {
+    timeout: HEAVY_MS,
+  }, async () => {
+    const MARCH_DOCS = 300;
+    const MARCH_PAYMENTS = 200;
+    const APRIL_DOCS = 100;
+    const computed = computeFor({ clientId: "cl-stress", issueDate: "2026-03-10", lines: [line(1_000_00)] });
+    const docs = (n: number, prefix: string, first: string, fy: string) =>
+      env.DB.prepare(
+        `${RECURSIVE(n)} INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date,
+           content_sha256, snapshot_sha256, balance_minor, updated_at, recipient, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor,
+           round_off_minor, total_minor, supply_type, place_of_supply_code, computed)
+         SELECT '${prefix}' || i, 'tax_invoice', 'issued', 'cl-stress', 'INR', 'invoice', '${fy}', i, '${prefix}/' || i, 1000, date(?1, '+' || (i % 28) || ' days'),
+           date(?1, '+60 days'), ?2, ?2, ?3, 7000, '{"legalName":"Stress Co","country":"IN","gstStatus":"registered"}', ?4, 0, ?4, ?5, ?6, 0, ?7, ?3, ?8, '19', ?9 FROM n`,
+      )
+        .bind(
+          first,
+          "p".repeat(64),
+          computed.totalMinor,
+          computed.taxableMinor,
+          computed.cgstMinor,
+          computed.sgstMinor,
+          computed.roundOffMinor,
+          computed.supply.type,
+          JSON.stringify(computed),
+        )
+        .run();
+    await docs(MARCH_DOCS, "M26", "2026-03-01", "2526");
+    await docs(APRIL_DOCS, "A26", "2026-04-01", "2627");
+    await run(`${RECURSIVE(MARCH_PAYMENTS)}
+      INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, reference_norm, recorded_by, recorded_at, verified_by, verified_at)
+      SELECT 'pm-' || i, 'cl-stress', 'payment', 'manual', 'confirmed', 'INR', 1000 + i, date('2026-03-01', '+' || (i % 28) || ' days'), 'neft', 'UTRMARCH' || i,
+             'ow-stress', 1000, 'ow-stress', 1000 FROM n`);
+    const april = Date.parse("2026-04-15T12:00:00.000+05:30");
+    const measure = async (at: number) => {
+      pinClock(at);
+      const owner = await longSession("owner");
+      const rec = recording();
+      const res = await call("/dashboard", { cookie: owner.cookie }, withDb(rec.db));
+      expect(res.status).toBe(200);
+      const of = (needle: string) => rec.seen.find((q) => q.sql.includes(needle))?.rows ?? -1;
+      return {
+        total: rec.rowsRead(),
+        invoiced: of("AS fy_documents"),
+        collected: of("AS fy_collected"),
+        body: (await res.json()) as { tiles: { finance: J } },
+      };
+    };
+    try {
+      const inApril = await measure(april);
+      // the same call a month later (May: the previous month is April, in the same FY) reads no March row
+      const inMay = await measure(Date.parse("2026-05-15T12:00:00.000+05:30"));
+      // D1 counts the probe that ends an index range as a row read when it lands on a row, so each difference is the month's rows give or take that one probe
+      expect(
+        Math.abs(inApril.invoiced - inMay.invoiced - MARCH_DOCS),
+        "invoiced: March's documents once",
+      ).toBeLessThanOrEqual(1);
+      expect(
+        Math.abs(inApril.collected - inMay.collected - MARCH_PAYMENTS),
+        "collected: March's payments once",
+      ).toBeLessThanOrEqual(1);
+      expect(inApril.total).toBeLessThanOrEqual(ROWS_READ_LIMIT + MARCH_DOCS + MARCH_PAYMENTS);
+      const f = inApril.body.tiles.finance;
+      expect(f.invoiced.previousMonth).toEqual([
+        expect.objectContaining({ currency: "INR", documents: MARCH_DOCS }),
+      ]);
+      expect(f.invoiced.fy).toEqual([expect.objectContaining({ currency: "INR", documents: APRIL_DOCS })]);
+      expect(f.collected.previousMonth).toEqual([
+        expect.objectContaining({ currency: "INR", count: MARCH_PAYMENTS }),
+      ]);
+    } finally {
+      pinClock(PINNED_MS);
+    }
   });
 });

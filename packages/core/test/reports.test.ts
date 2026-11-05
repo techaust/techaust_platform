@@ -8,9 +8,11 @@ import {
   carePeriodDay,
   fyBounds,
   fyMonths,
+  LEADS_TREND_DAYS,
   monthBounds,
   pipelineEarliest,
   pipelineRange,
+  previousMonthOf,
   rate,
   revenueKind,
   SOURCE_PATH_MAX,
@@ -206,5 +208,31 @@ describe("carePeriodDay [C4, L13]", () => {
   it("refuses a bad month or billing day", () => {
     expect(() => carePeriodDay("2026-13", 5, "2026-01-01")).toThrow(RangeError);
     expect(() => carePeriodDay("2026-10", 29, "2026-01-01")).toThrow(RangeError);
+  });
+});
+
+describe("previousMonthOf [C5 (b)]", () => {
+  it("the IST month before today's: in April it is March of the previous FY; January gives December", () => {
+    expect(previousMonthOf("2026-11-06")).toEqual({ from: "2026-10-01", to: "2026-10-31" });
+    expect(previousMonthOf("2026-04-01")).toEqual({ from: "2026-03-01", to: "2026-03-31" });
+    expect(previousMonthOf("2027-01-31")).toEqual({ from: "2026-12-01", to: "2026-12-31" });
+    expect(previousMonthOf("2028-03-15")).toEqual({ from: "2028-02-01", to: "2028-02-29" });
+    expect(() => previousMonthOf("2026-02-30")).toThrow(RangeError);
+  });
+
+  it("always ends the day before today's month starts (property)", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 20_000 }), (n) => {
+        const today = toIsoDate(addDays({ year: 2000, month: 1, day: 1 }, n));
+        const p = previousMonthOf(today);
+        expect(toIsoDate(addDays(parseIsoDate(p.to) as never, 1))).toBe(`${today.slice(0, 7)}-01`);
+        expect(p.from.slice(8)).toBe("01");
+        expect(p.from.slice(0, 7)).toBe(p.to.slice(0, 7));
+      }),
+    );
+  });
+
+  it("the trend covers 30 days", () => {
+    expect(LEADS_TREND_DAYS).toBe(30);
   });
 });

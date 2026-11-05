@@ -442,8 +442,29 @@ describe("early check 2, finding 6: the Collected tile in one pass", () => {
       .bind("2031-04-01", "2032-03-31", "2031-10-01", "2031-10-31")
       .all();
     expect(tile.results).toEqual([
-      { currency: "INR", fy_collected: 3_000, fy_n: 2, month_collected: 2_000, month_n: 1 },
-      { currency: "USD", fy_collected: 700, fy_n: 2, month_collected: 0, month_n: 0 },
+      // M7.3 C5: the previous IST month (September) and this month less it, in the same pass
+      {
+        currency: "INR",
+        fy_collected: 3_000,
+        fy_n: 2,
+        month_collected: 2_000,
+        month_n: 1,
+        pm_collected: 0,
+        pm_n: 0,
+        delta_collected: 2_000,
+        fy_rows: 2,
+      },
+      {
+        currency: "USD",
+        fy_collected: 700,
+        fy_n: 2,
+        month_collected: 0,
+        month_n: 0,
+        pm_collected: 300,
+        pm_n: 1,
+        delta_collected: -300,
+        fy_rows: 2,
+      },
     ]);
     const twin = await env.DB.prepare(COLLECTED_SQL).bind("2031-04-01", "2032-03-31").all();
     expect(twin.results).toEqual([
@@ -458,6 +479,28 @@ describe("early check 2, finding 6: the Collected tile in one pass", () => {
           .all()
       ).results,
     ).toEqual([]);
+    // M7.3 C5: in April the previous month is March of the FY before; the pass starts there, and a currency paid only then is a row with no FY figure
+    const april = await env.DB.prepare(COLLECTED_TILE_SQL)
+      .bind("2032-04-01", "2033-03-31", "2032-04-01", "2032-04-15")
+      .all();
+    expect(april.results).toEqual([
+      {
+        currency: "USD",
+        fy_collected: 0,
+        fy_n: 0,
+        month_collected: 0,
+        month_n: 0,
+        pm_collected: 400,
+        pm_n: 1,
+        delta_collected: -400,
+        fy_rows: 0,
+      },
+    ]);
+    // the April pass reads the previous month's one payment more than a pass over an empty FY, and nothing older
+    const empty = await env.DB.prepare(COLLECTED_TILE_SQL)
+      .bind("2040-04-01", "2041-03-31", "2040-10-01", "2040-10-31")
+      .all();
+    expect(april.meta.rows_read).toBeLessThanOrEqual(empty.meta.rows_read + 1);
     const plan = (
       await env.DB.prepare(`EXPLAIN QUERY PLAN ${COLLECTED_TILE_SQL}`)
         .bind("2031-04-01", "2032-03-31", "2031-10-01", "2031-10-31")

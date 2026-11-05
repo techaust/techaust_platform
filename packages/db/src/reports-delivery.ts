@@ -1,6 +1,7 @@
 // M7.3 (ADM-REP-03, -05; run file docs/runs/m7.3-reports.md C3, C4, L10, L13): the pipeline and care plan hours statements, read by the admin API Worker only. Kept
 // apart from `reports.ts` (early check 7: a bundler keeps a top-level template that calls a function, so in `reports.ts` they rode into every Worker that reads
-// a finance figure). Plain SQL text, bound by the caller; EXPLAIN-tested in `packages/db/test/reports-v2.test.ts`.
+// a finance figure). Every top-level constant here is a pure expression too, so the invoices Worker's dashboard, which reads only `OPEN_TREND_SQL` (C5 (c)),
+// carries only that. Plain SQL text, bound by the caller; EXPLAIN-tested in `packages/db/test/reports-v2.test.ts`.
 // The pipeline answers counts and page paths only, never a lead's name, email or company (DPDP minimisation, RB-31 pattern); leads are deleted 12 months after
 // their last activity (Researched 2026-10-28 (08-C RB-10)). USD offers stay in USD (Q1 A). Care hours give hours only, never an amount (L13).
 import { keyRows, pickKey, REPORT_PAGE_SIZE } from "./reports.ts";
@@ -39,14 +40,15 @@ export const SQL_LEAD_SOURCES = ["web", "manual"] as const;
 export const SQL_OFFER_STATUSES = ["sent", "viewed", "accepted", "rejected", "expired", "revised"] as const;
 const OFFER_TYPES = "('proposal', 'estimate')";
 
-const COHORT_COUNTS = [
+const COHORT_COUNTS = /* @__PURE__ */ (() => [
   "count(*) AS created",
   ...SQL_LEAD_STAGES.map((s) => `count(CASE l.stage WHEN '${s}' THEN 1 END) AS st_${s}`),
   ...SQL_LOST_REASONS.map((r) => `count(CASE l.lost_reason WHEN '${r}' THEN 1 END) AS lr_${r}`),
   ...SQL_LEAD_SOURCES.map((s) => `count(CASE l.source WHEN '${s}' THEN 1 END) AS src_${s}`),
-];
+])();
 /** The names of the cohort's counts (`created`, `st_<stage>`, `lr_<reason>`, `src_<source>`); each row of `LEAD_COHORT_SQL` has `all_<name>`. */
-export const COHORT_COUNT_NAMES = COHORT_COUNTS.map((x) => x.split(" AS ")[1] as string);
+export const COHORT_COUNT_NAMES = /* @__PURE__ */ (() =>
+  COHORT_COUNTS.map((x) => x.split(" AS ")[1] as string))();
 
 /**
  * The lead cohort (`?1` the range's first instant, `?2` the first instant after it; UTC ms): the leads created in the range (`leads_created`) grouped by the page they
@@ -54,16 +56,17 @@ export const COHORT_COUNT_NAMES = COHORT_COUNTS.map((x) => x.split(" AS ")[1] as
  * then won, then path), each row also carrying the cohort's totals (window sums over every path, `all_*`). One read of the range and one GROUP BY of it; no row
  * when the range has no lead.
  */
-export const LEAD_COHORT_SQL = `SELECT g.path, g.created, g.st_won AS won, ${COHORT_COUNT_NAMES.map((n) => `sum(g.${n}) OVER () AS all_${n}`).join(", ")}
+export const LEAD_COHORT_SQL = /* @__PURE__ */ (() =>
+  `SELECT g.path, g.created, g.st_won AS won, ${COHORT_COUNT_NAMES.map((n) => `sum(g.${n}) OVER () AS all_${n}`).join(", ")}
    FROM (SELECT ${sourcePathSql("l.source_page")} AS path, ${COHORT_COUNTS.join(", ")}
          FROM leads l INDEXED BY leads_created WHERE l.created_at >= ?1 AND l.created_at < ?2 GROUP BY path) g
-   ORDER BY g.created DESC, g.st_won DESC, g.path LIMIT 10`;
+   ORDER BY g.created DESC, g.st_won DESC, g.path LIMIT 10`)();
 
 /** The open-leads trend (`?1` to `?2`, IST dates): the nightly `leads.open` counts (a row per open stage) summed per day, read in `stats_daily_metric` order. */
 export const OPEN_TREND_SQL = `SELECT s.date, sum(s.value) AS open FROM stats_daily s INDEXED BY stats_daily_metric
    WHERE s.metric = 'leads.open' AND s.date >= ?1 AND s.date <= ?2 GROUP BY s.date ORDER BY s.date`;
 
-const OFFER_STATUS_KEYS = [...SQL_OFFER_STATUSES, "other"] as const;
+const OFFER_STATUS_KEYS = /* @__PURE__ */ (() => [...SQL_OFFER_STATUSES, "other"] as const)();
 /**
  * Offers sent in the range (`?1`, `?2` as the cohort): per version group, its newest version sent in the range (no later version of the group sent before the
  * range's end), counted with its taxable value by its status today and currency (Q1 A: USD in USD, never converted). One read of `documents_offer_sent`'s range
@@ -88,19 +91,21 @@ export const OFFERS_SENT_SQL = /* @__PURE__ */ (() => {
    WHERE ${pick("n")} > 0`;
 })();
 /** The reference twin of `OFFERS_SENT_SQL` (tests only). */
-export const OFFERS_SENT_GROUPED_SQL = `SELECT d.status, d.currency, count(*) AS n, sum(d.taxable_minor) AS taxable FROM documents d
+export const OFFERS_SENT_GROUPED_SQL = /* @__PURE__ */ (() =>
+  `SELECT d.status, d.currency, count(*) AS n, sum(d.taxable_minor) AS taxable FROM documents d
    WHERE d.sent_at IS NOT NULL AND d.type IN ${OFFER_TYPES} AND d.sent_at >= ?1 AND d.sent_at < ?2
      AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.sent_at IS NOT NULL AND n.sent_at < ?2)
-   GROUP BY d.status, d.currency ORDER BY d.status, d.currency`;
+   GROUP BY d.status, d.currency ORDER BY d.status, d.currency`)();
 
 /**
  * The accepted offers decided in the range (`?1`, `?2` UTC ms; `documents_offer_decided`), each with its time to win in whole days: from the lead converted into the
  * group's first version (`leads.proposal_id`), else from that first version's creation, to the acceptance.
  */
-const ACCEPTED_DAYS = `SELECT (a.accepted_at - coalesce((SELECT min(l.created_at) FROM leads l INDEXED BY leads_proposal WHERE l.proposal_id = d.version_group_id),
+const ACCEPTED_DAYS = /* @__PURE__ */ (() =>
+  `SELECT (a.accepted_at - coalesce((SELECT min(l.created_at) FROM leads l INDEXED BY leads_proposal WHERE l.proposal_id = d.version_group_id),
          (SELECT f.created_at FROM documents f WHERE f.id = d.version_group_id))) / 86400000 AS days
      FROM documents d INDEXED BY documents_offer_decided JOIN acceptances a INDEXED BY acceptances_document ON a.document_id = d.id
-     WHERE d.decided_at IS NOT NULL AND d.type IN ${OFFER_TYPES} AND d.decided_at >= ?1 AND d.decided_at < ?2 AND d.status = 'accepted'`;
+     WHERE d.decided_at IS NOT NULL AND d.type IN ${OFFER_TYPES} AND d.decided_at >= ?1 AND d.decided_at < ?2 AND d.status = 'accepted'`)();
 /**
  * A rejected or expired version that a later version of its group was sent after is not the group's outcome (early check 1, lead's triage: a group counts once,
  * by its outcome): a rejected v1 followed by an accepted v2 is one win, not a win and a loss. Any later sent version counts, whenever it was sent, so a group
@@ -112,7 +117,8 @@ const SUPERSEDED = `EXISTS (SELECT 1 FROM documents n INDEXED BY documents_versi
  * no `decided_at`, M4.5; `documents_status_valid_until`), a rejected or expired version counted only when no later version of its group was sent (`SUPERSEDED`),
  * and the accepted ones in the time-to-win bands of core `TIME_TO_WIN_BANDS`. One row.
  */
-export const OFFERS_DECIDED_SQL = `SELECT
+export const OFFERS_DECIDED_SQL = /* @__PURE__ */ (() =>
+  `SELECT
      (SELECT count(*) FROM documents d INDEXED BY documents_offer_decided
        WHERE d.decided_at IS NOT NULL AND d.type IN ${OFFER_TYPES} AND d.decided_at >= ?1 AND d.decided_at < ?2 AND d.status = 'rejected' AND NOT ${SUPERSEDED}) AS rejected,
      (SELECT count(*) FROM documents d INDEXED BY documents_status_valid_until
@@ -120,7 +126,7 @@ export const OFFERS_DECIDED_SQL = `SELECT
      w.accepted, w.d0_7, w.d8_30, w.d31_90, w.d90_plus
    FROM (SELECT count(*) AS accepted, count(CASE WHEN x.days <= 7 THEN 1 END) AS d0_7, count(CASE WHEN x.days BETWEEN 8 AND 30 THEN 1 END) AS d8_30,
                 count(CASE WHEN x.days BETWEEN 31 AND 90 THEN 1 END) AS d31_90, count(CASE WHEN x.days > 90 THEN 1 END) AS d90_plus
-         FROM (${ACCEPTED_DAYS} LIMIT -1) x) w`;
+         FROM (${ACCEPTED_DAYS} LIMIT -1) x) w`)();
 export type OffersDecidedSqlRow = {
   rejected: number;
   expired: number;
@@ -131,8 +137,9 @@ export type OffersDecidedSqlRow = {
   d90_plus: number;
 };
 /** The median time to win in days (`?1`, `?2`): the middle one by ORDER BY (the lower of the two middle ones for an even count); no row when none was accepted. */
-export const TIME_TO_WIN_MEDIAN_SQL = `SELECT x.days FROM (${ACCEPTED_DAYS}) x ORDER BY x.days
-   LIMIT 1 OFFSET (SELECT (count(*) - 1) / 2 FROM (${ACCEPTED_DAYS}) y)`;
+export const TIME_TO_WIN_MEDIAN_SQL = /* @__PURE__ */ (() =>
+  `SELECT x.days FROM (${ACCEPTED_DAYS}) x ORDER BY x.days
+   LIMIT 1 OFFSET (SELECT (count(*) - 1) / 2 FROM (${ACCEPTED_DAYS}) y)`)();
 
 // ---- C4: care plan hours (L13; the API Worker) ------------------------------------------------------------------------------------------------------------
 

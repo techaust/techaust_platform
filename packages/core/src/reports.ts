@@ -171,6 +171,34 @@ export function carePeriodDay(month: string, billingDay: number, startDate: stri
   return at > b.to ? null : at;
 }
 
+// ---- the dashboard v2 (C5) ------------------------------------------------------------------------------------------------------------------------------
+
+/** The days of the dashboard's open-leads trend, today included (C5 (c)). */
+export const LEADS_TREND_DAYS = 30;
+
+/**
+ * The IST month before the one `todayIso` is in (C5 (b), the previous-month deltas): its first and last days. The SQL twin is `date(?3, '-1 month')` over the
+ * month's first day (`INVOICED_SQL`, `COLLECTED_TILE_SQL`); a db test compares them.
+ */
+export function previousMonthOf(todayIso: string): { from: string; to: string } {
+  const today = parseIsoDate(todayIso);
+  if (!today) throw new RangeError(`Not a date: ${todayIso}`);
+  const first = { year: today.year, month: today.month, day: 1 };
+  const to = addDays(first, -1);
+  return { from: toIsoDate({ ...to, day: 1 }), to: toIsoDate(to) };
+}
+
+/**
+ * Where the dashboard opens each report from (C5 (e)): the reports the role may read, each with the role's period filled in (revenue: this FY's token; the
+ * pipeline: this IST month to today; care plan hours: this month; the ageing: as at today, no parameter). An absent key is a report the role can't read.
+ */
+export type DashboardReportLinks = {
+  revenue?: { fy: string };
+  ageing?: Record<string, never>;
+  pipeline?: { from: string; to: string };
+  careHours?: { month: string };
+};
+
 // ---- the JSON of the report routes --------------------------------------------------------------------------------------------------------------------
 
 /**

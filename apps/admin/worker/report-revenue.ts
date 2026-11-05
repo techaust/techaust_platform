@@ -224,7 +224,7 @@ export async function ageingPage(c: Ctx, q: z.infer<typeof ageingQuery>): Promis
         ? ((totalsRes?.results ?? []) as AgeingTotalsSqlRow[]).map((t) => ({
             currency: t.currency,
             buckets: bucketsOf(t),
-            totalMinor: t.total,
+            totalMinor: t.balance,
           }))
         : null,
     next: clients.length > REPORT_PAGE_SIZE && last ? encodeCursor({ k: "c", id: last }) : null,
