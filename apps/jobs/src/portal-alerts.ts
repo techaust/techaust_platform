@@ -35,7 +35,7 @@ export const OFFER_OF_AUDIT_SQL = `SELECT d.id, d.number_display FROM documents 
  */
 export const OFFER_VIEW_BELLS_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
    SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'offer.viewed', 'document', ?1, ?2, ?3 FROM staff_users u
-   WHERE u.status = 'active' AND (u.role = 'owner' OR u.id IN (SELECT s.created_by FROM document_sends s WHERE s.document_id = ?1))
+   WHERE u.status = 'active' AND (u.role = 'owner' OR u.id IN (SELECT s.created_by FROM document_sends s WHERE s.document_id = ?1))`;
 
 /** S3 (draft for the lead): the kind of a request as a bell names it. */
 export const REQUEST_KIND_WORDS: Record<RequestKind, string> = {

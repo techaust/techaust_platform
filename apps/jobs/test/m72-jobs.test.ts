@@ -11,8 +11,11 @@ import { describe, expect, it } from "vitest";
 import { hourlyMessages } from "../src/billing.ts";
 import { processDigest } from "../src/digest.ts";
 import { DEAD_LETTER_SQL, emailLogId, processDeadLetter, processEmail } from "../src/email.ts";
+import { processGateway } from "../src/gateway.ts";
+import { processPortalAlert } from "../src/portal-alerts.ts";
 import { handleQueue } from "../src/queue.ts";
 import { processRefundNotify, refundCopyGate } from "../src/refund-notify.ts";
+import { processRefundFamily } from "../src/refunds.ts";
 import { istHourKey, processSigninUnfinished } from "../src/signin-unfinished.ts";
 import { processStaffNotify } from "../src/staff-notify.ts";
 import {
@@ -30,6 +33,7 @@ import {
   mkClient,
   mkContact,
   mkDoc,
+  mkSend,
   one,
   run,
   staff,
@@ -577,5 +581,89 @@ describe("the M3.3 follow-up: a sign-in link whose token row is gone", () => {
     ).toBe("token_gone");
     expect(await processEmail(makeEnv(), link(live), transport)).toBe("sent");
     expect(sent).toHaveLength(1);
+  });
+});
+
+describe("the offer-viewed bell through portal.alert (E, Q2 A)", () => {
+  it("a contact's first view rings the owners and the sender (named by the number), then queues staff.notify; a repeat adds nothing", async () => {
+    const owner = await staff("owner");
+    const sender = await staff("staff");
+    const bystander = await staff("staff");
+    const clientId = await mkClient();
+    const contact = await mkContact(clientId);
+    const doc = await mkDoc(clientId, null, { type: "proposal", status: "viewed" });
+    await mkSend(doc, clientId, contact, { createdBy: sender.id, queued: true });
+    const auditId = uuidv7();
+    await run(
+      "INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id) VALUES (?1, 'contact', ?2, 'document.view', 'document', ?3)",
+      auditId,
+      contact.id,
+      doc.id,
+    );
+    const e = makeEnv();
+    expect(await processPortalAlert(e, { kind: "portal.alert", auditId })).toBe("belled");
+    const bells = await all<{ user_id: string; title: string; link: string }>(
+      "SELECT user_id, title, link FROM notifications WHERE kind = 'offer.viewed' AND entity_id = ?1 ORDER BY user_id",
+      doc.id,
+    );
+    const users = bells.map((b) => b.user_id);
+    expect(users).toContain(owner.id);
+    expect(users).toContain(sender.id);
+    expect(users).not.toContain(bystander.id);
+    expect(bells[0]?.title).toBe(`${doc.numberDisplay} was opened by the client`);
+    expect(bells[0]?.link).toBe(`/documents/${doc.id}`);
+    expect(fakes.email.map((s) => s.body)).toEqual([staffNotify("offer.viewed", doc.id)]);
+    const n = bells.length;
+    await processPortalAlert(e, { kind: "portal.alert", auditId });
+    expect(
+      (await all("SELECT 1 FROM notifications WHERE kind = 'offer.viewed' AND entity_id = ?1", doc.id))
+        .length,
+    ).toBe(n);
+    // a staff member's audit row of the same action is not a client's view
+    const staffAudit = uuidv7();
+    await run(
+      "INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id) VALUES (?1, 'staff', ?2, 'document.view', 'document', ?3)",
+      staffAudit,
+      owner.id,
+      doc.id,
+    );
+    expect(await processPortalAlert(e, { kind: "portal.alert", auditId: staffAudit })).toBe("ignored");
+  });
+});
+
+describe("the refund email's RPC producers (D, producers 3 and 4)", () => {
+  it("processEvent answering next refund.notify queues it on the email queue", async () => {
+    const e = makeEnv({
+      ADMIN_GATEWAY: {
+        processEvent: async () => ({
+          result: "processed",
+          next: { kind: "refund.notify", refundId: "rf_1" },
+        }),
+      },
+    });
+    expect(await processGateway(e, { kind: "gateway.event", eventId: uuidv7() }, 1)).toBe("ack");
+    expect(fakes.email.map((s) => s.body)).toContainEqual({ kind: "refund.notify", refundId: "rf_1" });
+  });
+
+  it("the sweep's checkRefund answering succeeded queues refund.notify; any other answer queues nothing", async () => {
+    for (const [result, n] of [
+      ["succeeded", 1],
+      ["unchanged", 0],
+      ["failed", 0],
+    ] as const) {
+      fakes.email.length = 0;
+      const e = makeEnv({
+        ADMIN_GATEWAY: {
+          processEvent: async () => ({ result: "processed" }),
+          checkRefund: async () => ({ result }),
+        },
+      });
+      const refundId = uuidv7();
+      await processRefundFamily(e, { kind: "refund.check", refundId } as never, 1);
+      expect(
+        fakes.email.filter((s) => (s.body as { kind?: string }).kind === "refund.notify"),
+        result,
+      ).toHaveLength(n);
+    }
   });
 });
