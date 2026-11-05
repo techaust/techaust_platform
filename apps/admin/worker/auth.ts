@@ -108,6 +108,9 @@ export const json = <S extends Parameters<typeof sValidator>[1]>(schema: S) =>
 
 const now = () => Date.now();
 
+/** The start-up dry run's made-up challenge id (22 characters, the shape of `newChallengeId`). */
+export const WARM_CHALLENGE_ID = "warmupchallengeid00000";
+
 // ---- lockout SQL --------------------------------------------------------------------------------------------
 
 // FAIL_SQL, RESERVE_SQL and IP_READ moved to @techaust/auth in M1.6 (the portal reuses them); re-exported under the same names.
@@ -393,16 +396,21 @@ export const auth = new Hono<AppEnv>()
     // M7.2 (Q3 A): the unfinished sign-in marker, keyed by this challenge's own id, written ONLY here (the password was right). One awaited statement, never
     // `waitUntil`, riding in the same D1 call as this request's access row (so the route keeps its 2 calls, NFR-2). A failed write is logged (no value in
     // the line), the access row is left to the middleware, and the sign-in still goes on: the marker drives a courtesy email, never a gate.
-    const jti = newChallengeId();
+    // The start-up dry run draws no random value (global scope refuses one, and the access row's id is random): a fixed made-up id and no write at all.
+    const jti = c.var.warm ? WARM_CHALLENGE_ID : newChallengeId();
     const issuedAt = now();
-    try {
-      await logBatch(c, 200, [db.prepare(SIGNIN_PENDING_INSERT_SQL).bind(jti, row.id, issuedAt)]);
-    } catch (e) {
-      c.set("accessDone", false);
-      console.log(
-        JSON.stringify({ ev: "signin.pending_write_failed", error: e instanceof Error ? e.name : "unknown" }),
-      );
-    }
+    if (!c.var.warm)
+      try {
+        await logBatch(c, 200, [db.prepare(SIGNIN_PENDING_INSERT_SQL).bind(jti, row.id, issuedAt)]);
+      } catch (e) {
+        c.set("accessDone", false);
+        console.log(
+          JSON.stringify({
+            ev: "signin.pending_write_failed",
+            error: e instanceof Error ? e.name : "unknown",
+          }),
+        );
+      }
     const challenge = await signChallenge(c.env.SESSION_HMAC_KEY, {
       purpose: "login_totp",
       sub: row.id,

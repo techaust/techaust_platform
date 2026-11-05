@@ -7,23 +7,23 @@ import type { WarmFixture } from "../warm-routes.ts";
 
 export const FINANCE_WARM: WarmFixture = {
   calls: [
-    { method: "GET", path: "/invoices/01a1a75a-9be0-72be-bf70-a291b563d91a/payments" },
+    { method: "GET", path: "/invoices/01a1a930-0af9-7157-b646-3db4db9244ac/payments" },
     { method: "GET", path: "/payments/review" },
-    { method: "POST", path: "/payments/review/5a0df347-37da-4052-8108-1bafdd6f13c7/retry", body: {} },
+    { method: "POST", path: "/payments/review/856d4cc7-5b3a-4902-a0b5-bad46d52bd71/retry", body: {} },
   ],
   rows: {
     ba056e5e: [
       {
         r: [
           {
-            last_seen_at: 1793809104036,
+            last_seen_at: 1793839866513,
             idle_expires_at: 4102444800000,
             abs_expires_at: 4102444800000,
             revoked_at: null,
             step_up_until: 4102444800000,
-            id: "01a1a75a-9a5c-7b03-aaaa-27803bc2c299",
+            id: "01a1a930-098e-798f-abc8-409d182897c5",
             name: "Probe Owner (sample)",
-            email: "probe-mw2bmc69@example.test",
+            email: "probe-mw2txqhq@example.test",
             role: "owner",
           },
         ],
@@ -34,21 +34,21 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "01a1a75a-9be0-72be-bf70-a291b563d91a",
+            id: "01a1a930-0af9-7157-b646-3db4db9244ac",
             type: "tax_invoice",
             status: "partially_credited",
-            client_id: "eb74292e-8ce9-4fc0-b77d-214b9bb956d3",
+            client_id: "4ee10eb5-3f69-44b6-ae12-d02b504ad484",
             currency: "INR",
-            frozen_at: 1793809095668,
+            frozen_at: 1793839860492,
             voided_at: null,
-            issue_date: "2026-11-04",
+            issue_date: "2026-11-05",
             number_display: "TH/INV/2627/0001",
             total_minor: 10620000,
             paid_minor: 0,
             credited_minor: 590000,
             tds_minor: 0,
             balance_minor: 10030000,
-            updated_at: 1793809095708,
+            updated_at: 1793839860530,
             supply_type: "intra",
             fx_rate_micros: null,
             fx_date: null,
@@ -98,19 +98,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "5a0df347-37da-4052-8108-1bafdd6f13c7",
+            id: "856d4cc7-5b3a-4902-a0b5-bad46d52bd71",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a1a75a-9f2d-7b51-9765-6ad21f5d7783",
-            client_id: "75c65695-a0b3-43b4-a4e2-515ef6e840fa",
+            document_id: "01a1a930-0dc2-726f-9c35-75cb3820845e",
+            client_id: "b1312244-93c6-4ac8-a932-6a865a3e21b6",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793809096579,
+            created_at: 1793839861244,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
@@ -128,19 +128,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "5a0df347-37da-4052-8108-1bafdd6f13c7",
+            id: "856d4cc7-5b3a-4902-a0b5-bad46d52bd71",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a1a75a-9f2d-7b51-9765-6ad21f5d7783",
-            client_id: "75c65695-a0b3-43b4-a4e2-515ef6e840fa",
+            document_id: "01a1a930-0dc2-726f-9c35-75cb3820845e",
+            client_id: "b1312244-93c6-4ac8-a932-6a865a3e21b6",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793809096579,
+            created_at: 1793839861244,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
