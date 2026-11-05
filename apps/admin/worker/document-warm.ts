@@ -8,7 +8,7 @@ import { resendBody } from "./document-links.ts";
 import { patchBody } from "./document-save.ts";
 import { sendBody } from "./document-send.ts";
 import { startBody } from "./document-start.ts";
-import { createBody, listQuery } from "./documents.ts";
+import { createBody, listQuery, searchStatement } from "./documents.ts";
 
 export function warmDocuments(): number {
   try {
@@ -29,6 +29,10 @@ export function warmDocuments(): number {
       convertBody.safeParse({ to: "invoice" }).success,
       convertBody.safeParse({ to: "care_plan", startDate: "2026-11-01", billingDay: 1 }).success,
       listQuery.safeParse({ type: "proposal", limit: "25" }).success,
+      // M7.3 C7: the search query and both of its statements built once
+      listQuery.safeParse({ q: "PR/26", after: "x" }).success &&
+        searchStatement("number", "proposal", "PR/26", { cursor: { k: 1, id: "x" } }).binds.length === 5 &&
+        searchStatement("client", "estimate", "Ac", { status: "sent", clientId: "c" }).binds.length === 7,
     ];
     return samples.filter(Boolean).length;
   } catch {

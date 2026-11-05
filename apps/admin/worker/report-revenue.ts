@@ -9,6 +9,7 @@ import type { Currency } from "@techaust/core/money";
 import {
   AGEING_BUCKETS,
   type AgeingRow,
+  ageingBucket,
   type CollectedFigures,
   fyBounds,
   fyMonths,
@@ -229,6 +230,55 @@ export async function ageingPage(c: Ctx, q: z.infer<typeof ageingQuery>): Promis
         : null,
     next: clients.length > REPORT_PAGE_SIZE && last ? encodeCursor({ k: "c", id: last }) : null,
   };
+}
+
+/**
+ * Start-up warm-up (run file J; warm-invoices.ts): the three query schemas parsed once, the ageing bucket rule and the row mappers run on made-up rows, so the
+ * first metered revenue, ageing or export request compiles none of them. Pure of `env`; the count of samples that worked is pinned (warm-split.test.ts).
+ * Never throws.
+ */
+export function warmRevenueReports(): number {
+  try {
+    const money: RevenueSqlRow = {
+      currency: "INR",
+      documents: 1,
+      taxable: 100,
+      total: 118,
+      inr_taxable: 100,
+      inr_total: 118,
+      payments: 1,
+      received: 118,
+      refunds: 0,
+      refunded: 0,
+      collected: 118,
+      tds_n: 0,
+      tds: 0,
+      inr_missing: 0,
+      inr_collected: 118,
+    };
+    const owed = {
+      currency: "INR",
+      ...Object.fromEntries(
+        AGEING_BUCKETS.flatMap((b) => [
+          [`n_${b}`, 1],
+          [`b_${b}`, 10],
+        ]),
+      ),
+    } as AgeingTotalsSqlRow;
+    const samples = [
+      revenueQuery.safeParse({ fy: "2627", by: "category" }).success,
+      revenueClientsQuery.safeParse({ fy: "2627", currency: "USD", after: "x" }).success,
+      ageingQuery.safeParse({ after: "x" }).success,
+      ageingBucket("2026-08-01", "2026-10-15") === "d61_90",
+      invoicedOf(money).count === 1 && collectedOf(money).collectedMinor === 118 && hasCollected(money),
+      bucketsOf(owed).d90_plus.balanceMinor === 10,
+      clientOf({ client_id: "c", client_code: "C", client_name: "N", anonymised_at: 1 }).name ===
+        ANONYMISED_CLIENT,
+    ];
+    return samples.filter(Boolean).length;
+  } catch {
+    return 0; // never stop a Worker from starting
+  }
 }
 
 export const revenueReports = new Hono<AppEnv>()

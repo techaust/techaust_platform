@@ -10,6 +10,9 @@ import { warmCatalogue } from "@techaust/core/catalogue";
 import { warmSettings } from "@techaust/core/settings";
 import { warmCare } from "./care.ts";
 import { warmDocuments } from "./document-warm.ts";
+import { warmDeliveryReports } from "./report-delivery.ts";
 import { warmTime } from "./time-logs.ts";
 
-export const apiWarm: number = warmSettings() + warmCatalogue() + warmCare() + warmDocuments() + warmTime();
+// M7.3 (run file J): the pipeline and care plan hours reports (`warmDeliveryReports`); the offer search is in `warmDocuments`.
+export const apiWarm: number =
+  warmSettings() + warmCatalogue() + warmCare() + warmDocuments() + warmTime() + warmDeliveryReports();

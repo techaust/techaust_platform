@@ -166,12 +166,14 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
         "GET /invoices/:id/payments 200",
         "GET /payments/review 200",
         "POST /payments/review/:id/retry 200",
+        "GET /payments 200",
       ]
     `);
     // Fix round decision 1c: the issue call carries a content hash that is not the draft's, so it reads, recomputes the invoice and answers 409
     // `content_changed` before its first new id; PATCH and the advance invoice are not dry-run (they would reach a new id). No refused operation at all.
     // The fourth admin Worker (brief D.7): finance's "Try again" answers 200 through the made-up env's ADMIN_ADVANCE stub, which never calls out.
-    expect([invoices.count, finance.count]).toEqual([4, 3]);
+    // M7.3 C8 (changed on purpose): "All payments" (`payments_received`) joins finance's dry run.
+    expect([invoices.count, finance.count]).toEqual([4, 4]);
     expect(invoices.refused + finance.refused).toBe(0);
   });
 
@@ -264,7 +266,7 @@ describe("the start-up dry run [CPU warm-up (b)1]", () => {
       FRONT_WARM_SECRETS,
       late,
     );
-    expect([invoices.count, finance.count, api.count, front.count]).toEqual([4, 3, 5, 9]);
+    expect([invoices.count, finance.count, api.count, front.count]).toEqual([4, 4, 5, 9]);
     expect(invoices.refused + finance.refused + api.refused + front.refused).toBe(0);
   });
 

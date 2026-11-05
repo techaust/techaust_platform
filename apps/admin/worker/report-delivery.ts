@@ -14,6 +14,7 @@ import {
   pipelineEarliest,
   pipelineRange,
   rate,
+  sourcePath,
   TIME_TO_WIN_BANDS,
 } from "@techaust/core/reports";
 import { assembleCare, careStatements, currentUsage } from "@techaust/db/care";
@@ -214,6 +215,79 @@ export async function careHoursPage(
     });
   }
   return { month: q.month, today, rows, next };
+}
+
+/**
+ * Start-up warm-up (run file J; warm-api.ts): the two query schemas parsed once, the range, rate, path and period rules and the billed-state mapper run on
+ * made-up values, so the first metered pipeline or care-hours request compiles none of them. Pure of `env`; the count of samples that worked is pinned
+ * (warm-split.test.ts). Never throws.
+ */
+export function warmDeliveryReports(): number {
+  try {
+    const range = pipelineRange("2026-09-01", "2026-09-30", "2026-10-15");
+    // the care loader's assembly and a period's usage on one made-up plan (C4 runs them per row; the dry run can't: its clock reads 0, so every month is
+    // after the current one and C4 refuses it before reading)
+    const care = assembleCare({
+      plans: [
+        {
+          id: "p",
+          client_id: "c",
+          client_code: "C",
+          client_name: "Client (sample)",
+          currency: "INR",
+          start_date: "2026-01-01",
+          billing_day: 1,
+          status: "active",
+          tier: "essential",
+          price_minor: 100,
+          included_minutes: 120,
+          ai_ops_minor: null,
+          overage_rate_minor: 10,
+          rollover: "none",
+          paused_at: null,
+          cancelled_at: null,
+          created_at: 1,
+          updated_at: 1,
+        },
+      ],
+      terms: [
+        {
+          id: "t",
+          care_plan_id: "p",
+          effective_from: "2026-01-01",
+          created_at: 1,
+          tier: "essential",
+          price_minor: 100,
+          included_minutes: 120,
+          ai_ops_minor: null,
+          overage_rate_minor: 10,
+          rollover: "none",
+        },
+      ],
+      status: [{ id: "s", care_plan_id: "p", effective_on: "2026-01-01", created_at: 1, status: "active" }],
+      usage: [{ plan_id: "p", ps: "2026-10-01", billable: 60, non_billable: 0 }],
+    }).plans.get("p");
+    const samples = [
+      care !== undefined && currentUsage(care, "2026-10-05")?.used === 60,
+      pipelineQuery.safeParse({ from: "2026-09-01", to: "2026-09-30" }).success,
+      careHoursQuery.safeParse({ month: "2026-10", after: "x" }).success,
+      typeof range !== "string" && rate(1, 3) === 3_333 && rate(1, 0) === null,
+      sourcePath("/contact?x=1") === "/contact" && carePeriodDay("2026-10", 5, "2026-01-01") === "2026-10-05",
+      billedOf({
+        care_plan_id: "p",
+        period_start: "2026-10-01",
+        overage_period_start: null,
+        document_id: null,
+        number_display: null,
+        issue_date: null,
+        status: null,
+        voided_at: null,
+      })?.status === "discarded",
+    ];
+    return samples.filter(Boolean).length;
+  } catch {
+    return 0; // never stop a Worker from starting
+  }
 }
 
 export const deliveryReports = new Hono<AppEnv>()

@@ -7,6 +7,7 @@
 import { warmSettings } from "@techaust/core/settings";
 import { decideBody } from "./approvals.ts";
 import { warmInvoices } from "./invoice-warm.ts";
+import { warmRevenueReports } from "./report-revenue.ts";
 
 /** The approval decision body parsed once on a made-up sample: 1 when it parsed. Never throws. */
 export function warmApprovals(): number {
@@ -17,5 +18,8 @@ export function warmApprovals(): number {
   }
 }
 
-/** The number of samples that parsed (warm-split.test.ts pins it): the settings (8), the invoices and notes (19) and the approval decision (1). */
-export const invoicesWarm: number = warmSettings() + warmInvoices() + warmApprovals();
+/**
+ * The number of samples that parsed (warm-split.test.ts pins it): the settings (8), the invoices and notes (19), the approval decision (1) and (M7.3, run
+ * file J) the revenue, ageing and export reports (7).
+ */
+export const invoicesWarm: number = warmSettings() + warmInvoices() + warmApprovals() + warmRevenueReports();
