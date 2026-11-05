@@ -159,6 +159,8 @@ export const payments = sqliteTable(
     index("payments_pending").on(t.recordedAt, t.id).where(sql`${t.status} = 'pending_verification'`),
     // The payments register and "collected": only the confirmed rows.
     index("payments_confirmed").on(t.receivedOn, t.id).where(sql`${t.status} = 'confirmed'`),
+    // M7.3 (C8, ADM-PAY-01; CREATE INDEX only): "All payments" (every status) by the day the money arrived, newest first (keyset `(received_on, id)`).
+    index("payments_received").on(t.receivedOn, t.id),
     // The duplicate-reference check (L12).
     index("payments_reference").on(t.referenceNorm).where(sql`${t.referenceNorm} is not null`),
     uniqueIndex("payments_advance_receipt")

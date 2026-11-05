@@ -60,6 +60,7 @@
     "./refund-gateways": "./src/refund-gateways.ts",
     "./refunds": "./src/refunds.ts",
     "./reply-templates": "./src/reply-templates.ts",
+    "./reports": "./src/reports.ts",
     "./settings": "./src/schemas/settings.ts",
     "./statement": "./src/statement.ts",
     "./stripe": "./src/stripe.ts",

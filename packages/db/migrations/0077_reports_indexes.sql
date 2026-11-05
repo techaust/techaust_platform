@@ -1,0 +1,3 @@
+CREATE INDEX `documents_offer_sent` ON `documents` (`sent_at`,`id`) WHERE "documents"."sent_at" is not null and "documents"."type" in ('proposal', 'estimate');--> statement-breakpoint
+CREATE INDEX `documents_offer_decided` ON `documents` (`decided_at`,`id`) WHERE "documents"."decided_at" is not null and "documents"."type" in ('proposal', 'estimate');--> statement-breakpoint
+CREATE INDEX `payments_received` ON `payments` (`received_on`,`id`);

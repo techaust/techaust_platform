@@ -332,6 +332,14 @@ export const documents = sqliteTable(
     index("documents_client_receipts")
       .on(t.clientId, t.issueDate, t.id)
       .where(sql`${t.frozenAt} is not null and ${t.type} in ('receipt', 'credit_note')`),
+    // M7.3 (C3, ADM-REP-03; CREATE INDEX only): the pipeline report reads the offers sent in a range and those decided (accepted or rejected) in it. Partial,
+    // so only proposals and estimates are in them; without them both reads would scan every offer ever made (EXPLAIN-tested in packages/db/test/reports-v2.test.ts).
+    index("documents_offer_sent")
+      .on(t.sentAt, t.id)
+      .where(sql`${t.sentAt} is not null and ${t.type} in ('proposal', 'estimate')`),
+    index("documents_offer_decided")
+      .on(t.decidedAt, t.id)
+      .where(sql`${t.decidedAt} is not null and ${t.type} in ('proposal', 'estimate')`),
     // M4.4: the PDF sweep reads only frozen documents that have no PDF yet (a small set), oldest first. M5.1 (LD9) widens the predicate to
     // the invoice family (receipts and vouchers have no PDF of their own yet); the type stays in it so a frozen row of any other type
     // never keeps the sweep busy.

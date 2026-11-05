@@ -60,6 +60,8 @@ const MONEY_FILES = [
   "src/recon.ts",
   // M7.2: the weekly digest's figures (amounts through money.ts only)
   "src/digest.ts",
+  // M7.3: the management reports (integer sums only, made in SQL; the JSON shapes)
+  "src/reports.ts",
   // M7.1: the portal's notice rules (the amount against the balance) and the notice bodies (amounts in minor units)
   "src/portal.ts",
   "src/schemas/portal.ts",

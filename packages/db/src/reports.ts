@@ -701,3 +701,501 @@ export type RefundsRegisterRow = {
   payment_provider_ref: string | null;
   payment_reference: string | null;
 };
+
+// ---- M7.3: the management reports (ADM-REP-01, -02, -03, -05; run file docs/runs/m7.3-reports.md C, L1 to L13) ----------------------------------------
+// Every report is an aggregate made here, in SQL, and the Worker only renames columns (L2): no money arithmetic beyond integer sums, no rate, no split of a
+// payment, no balance at a past date (L1, Tier B). A grouping is never a GROUP BY b-tree over the ledger (L33 of M6.1: D1 counts every row such a tree takes
+// in and gives back): per-month figures are one correlated aggregate per month, each reading only its month of the index; categories and kinds are one
+// aggregate row with a column set per key and currency, turned into rows by a join with their constant rows. Each has a grouped twin that only tests run
+// (`*_GROUPED_SQL`). INR equivalents come only from frozen values (L4): a document's `computed.inr` / `total_inr_minor` (Researched 2026-10-28, Rule 34 CGST
+// Rules (08-C RA-21): the time-of-supply rate, never converted again), a payment's `inr_received_minor` and a refund's `inr_refunded_minor` (M6.1 L15:
+// management only); a missing one makes the INR figure NULL with a count, never 0. TDS is apart from collected (Settled by the lead on the safest reading,
+// 2026-10-30 (08-C RA-30)); money counts on the day it was received (Researched 2026-10-28 (08-C RA-17, RA-36)). Reports are not tax documents (08-C RA-28).
+// D1 allows at most 100 result columns and 32 arguments per SQL function: every aggregate row below stays under both (a test runs each statement).
+
+/** The ageing bucket of due date `due` as at `today` (SQL expressions; ISO dates): the twin of core `ageingBucket` (a db test compares them day by day). */
+export const ageingBucketSql = (due: string, today: string): string =>
+  `(CASE WHEN ${due} IS NULL OR ${due} >= ${today} THEN 'not_due' WHEN ${due} >= date(${today}, '-30 days') THEN 'd1_30' WHEN ${due} >= date(${today}, '-60 days') THEN 'd31_60' WHEN ${due} >= date(${today}, '-90 days') THEN 'd61_90' ELSE 'd90_plus' END)`;
+/** The ageing buckets in order (core `AGEING_BUCKETS`; a test compares the two). */
+export const SQL_AGEING_BUCKETS = ["not_due", "d1_30", "d31_60", "d61_90", "d90_plus"] as const;
+export type SqlAgeingBucket = (typeof SQL_AGEING_BUCKETS)[number];
+
+/** The page a lead came from without its query string or fragment (`s` an SQL expression): the twin of core `sourcePath`. NULL stays NULL. */
+export const sourcePathSql = (s: string): string =>
+  `substr(${s}, 1, min(CASE WHEN instr(${s}, '?') > 0 THEN instr(${s}, '?') ELSE length(${s}) + 1 END, CASE WHEN instr(${s}, '#') > 0 THEN instr(${s}, '#') ELSE length(${s}) + 1 END) - 1)`;
+
+/**
+ * A document's kind of revenue (L9; core `revenueKind`): its own care plan, or (a note, a tax invoice made from a proforma) its parent's, is recurring; else a
+ * project's; else other. The parent is read only for a row with no care plan of its own and a parent (one seek of the primary key).
+ */
+export const revenueKindSql = (d: string): string =>
+  `(CASE WHEN ${d}.care_plan_id IS NOT NULL THEN 'recurring' WHEN ${d}.parent_id IS NOT NULL AND (SELECT kp.care_plan_id FROM documents kp WHERE kp.id = ${d}.parent_id) IS NOT NULL THEN 'recurring' WHEN ${d}.project_id IS NOT NULL THEN 'project' ELSE 'other' END)`;
+export const SQL_REVENUE_KINDS = ["recurring", "project", "other"] as const;
+
+/** The catalogue's categories (the schema's `CATEGORIES`, a test pins them) and "Not from the catalogue" (core `NO_CATEGORY`), in report order. */
+export const SQL_CATEGORY_KEYS = ["advise", "build", "automate", "connect", "run", "none"] as const;
+
+/**
+ * C4 (L13): the day inside the billing period that starts in month `month` (`YYYY-MM`, an SQL expression) for a plan row `p`: its billing day of the month, or its
+ * start date when that is later (the twin of core `carePeriodDay`, without the "after the month" test, which the caller writes against the month's last day).
+ */
+export const carePeriodDaySql = (month: string, p: string): string =>
+  `max(${month} || '-' || printf('%02d', ${p}.billing_day), ${p}.start_date)`;
+
+const SIGN = "CASE d.type WHEN 'credit_note' THEN -1 ELSE 1 END";
+/** The INR value of a document's taxable amount and of its total, for currency `c` (an SQL expression: a literal or a bound parameter). */
+const inrDocTaxable = (c: string) =>
+  `CASE ${c} WHEN 'INR' THEN d.taxable_minor ELSE json_extract(d.computed, '$.inr.taxableMinor') END`;
+const inrDocTotal = (c: string) => `CASE ${c} WHEN 'INR' THEN d.total_minor ELSE d.total_inr_minor END`;
+const inrPaid = (c: string) => `CASE ${c} WHEN 'INR' THEN p.amount_minor ELSE p.inr_received_minor END`;
+const inrRefunded = (c: string) => `CASE ${c} WHEN 'INR' THEN f.amount_minor ELSE f.inr_refunded_minor END`;
+
+/**
+ * `[count, taxable, total, inr count, inr taxable, inr total]` of the documents `d` that match `is` (an SQL condition) in currency `c` (6 arguments, under D1's 32).
+ * `inr count` counts the documents with both INR values.
+ */
+const invoicedJson = (is: string, c: string) =>
+  `json_array(count(CASE WHEN ${is} THEN 1 END), coalesce(sum(CASE WHEN ${is} THEN ${SIGN} * d.taxable_minor END), 0), coalesce(sum(CASE WHEN ${is} THEN ${SIGN} * d.total_minor END), 0), count(CASE WHEN ${is} AND (${inrDocTaxable(c)}) IS NOT NULL AND (${inrDocTotal(c)}) IS NOT NULL THEN 1 END), coalesce(sum(CASE WHEN ${is} THEN ${SIGN} * (${inrDocTaxable(c)}) END), 0), coalesce(sum(CASE WHEN ${is} THEN ${SIGN} * (${inrDocTotal(c)}) END), 0))`;
+/** `[payments, received, tds rows, tds, inr received, inr missing]` of the confirmed rows `p` that match `is` in currency `c` (TDS apart: RA-30). */
+const collectedJson = (is: string, c: string) => {
+  const pay = `${is} AND p.kind = 'payment'`;
+  const tds = `${is} AND p.kind = 'tds'`;
+  return `json_array(count(CASE WHEN ${pay} THEN 1 END), coalesce(sum(CASE WHEN ${pay} THEN p.amount_minor END), 0), count(CASE WHEN ${tds} THEN 1 END), coalesce(sum(CASE WHEN ${tds} THEN p.amount_minor END), 0), coalesce(sum(CASE WHEN ${pay} THEN ${inrPaid(c)} END), 0), count(CASE WHEN ${pay} AND (${inrPaid(c)}) IS NULL THEN 1 END))`;
+};
+/** `[refunds, refunded, inr refunded, inr missing]` of the succeeded refunds `f` that match `is` in currency `c`. */
+const refundedJson = (is: string, c: string) =>
+  `json_array(count(CASE WHEN ${is} THEN 1 END), coalesce(sum(CASE WHEN ${is} THEN f.amount_minor END), 0), coalesce(sum(CASE WHEN ${is} THEN ${inrRefunded(c)} END), 0), count(CASE WHEN ${is} AND (${inrRefunded(c)}) IS NULL THEN 1 END))`;
+/** One JSON object with a value per currency (`{"INR": [...], "USD": [...]}`), each from `json(<currency test>, <currency literal>)`. */
+const perCurrency = (json: (is: string, c: string) => string, col: string) =>
+  `json_object(${SQL_CURRENCIES.map((c) => `'${c}', ${json(`${col} = '${c}'`, `'${c}'`)}`).join(", ")})`;
+const SUCCEEDED_REFUNDS = "f.status = 'succeeded' AND fp.status = 'confirmed' AND fp.kind = 'payment'";
+
+/**
+ * The columns of one revenue row from three JSON values (`inv`, `pay`, `ref`: `invoicedJson`, `collectedJson`, `refundedJson`) at JSON path `at` (an SQL
+ * expression: `'$'`, or `'$.' || cur.currency`), named as `RevenueSqlRow`; the INR figures are NULL when a value is missing (L4).
+ */
+const revenueColumns = (inv: string, pay: string, ref: string, at: string) => {
+  const j = (v: string, i: number) => `coalesce(json_extract(${v}, ${at} || '[${i}]'), 0)`;
+  return `${j(inv, 0)} AS documents, ${j(inv, 1)} AS taxable, ${j(inv, 2)} AS total,
+       CASE WHEN ${j(inv, 3)} < ${j(inv, 0)} THEN NULL ELSE ${j(inv, 4)} END AS inr_taxable, CASE WHEN ${j(inv, 3)} < ${j(inv, 0)} THEN NULL ELSE ${j(inv, 5)} END AS inr_total,
+       ${j(pay, 0)} AS payments, ${j(pay, 1)} AS received, ${j(ref, 0)} AS refunds, ${j(ref, 1)} AS refunded, ${j(pay, 2)} AS tds_n, ${j(pay, 3)} AS tds,
+       ${j(pay, 5)} + ${j(ref, 3)} AS inr_missing, CASE WHEN ${j(pay, 5)} + ${j(ref, 3)} > 0 THEN NULL ELSE ${j(pay, 4)} - ${j(ref, 2)} END AS inr_collected`;
+};
+
+/** One row of the revenue statements as D1 returns it (C1 by month, C2 per client; collected = `received − refunded`, made by the row mapper). */
+export type RevenueSqlRow = {
+  currency: "INR" | "USD";
+  documents: number;
+  taxable: number;
+  total: number;
+  inr_taxable: number | null;
+  inr_total: number | null;
+  payments: number;
+  received: number;
+  refunds: number;
+  refunded: number;
+  tds_n: number;
+  tds: number;
+  inr_missing: number;
+  inr_collected: number | null;
+};
+
+const ISSUED_IN = (from: string, to: string) =>
+  `${ISSUED_GST} AND d.voided_at IS NULL AND d.issue_date >= ${from} AND d.issue_date <= ${to}`;
+
+/**
+ * C1 by month (`?1` the FY's first day, `2026-04-01`): per IST month and currency, invoiced (issued GST documents by `issue_date`, credit notes negative, voided
+ * never; `documents_issued_on`), money received and TDS (confirmed rows by `received_on`; `payments_confirmed`) and the refunds that went out (succeeded refunds of
+ * confirmed money by `settled_on`; `payment_refunds_settled`). One correlated aggregate per month and source, each reading only that month's range of its index:
+ * the rows read are the FY's documents, payments and refunds, with no GROUP BY. A month and currency with nothing is not a row. `month` is `YYYY-MM`.
+ */
+export const REVENUE_MONTHS_SQL = /* @__PURE__ */ (() => {
+  const months = `SELECT substr(date(?1, '+' || k.column1 || ' months'), 1, 7) AS month, date(?1, '+' || k.column1 || ' months') AS f, date(?1, '+' || (k.column1 + 1) || ' months', '-1 day') AS t
+         FROM (VALUES ${Array.from({ length: 12 }, (_, i) => `(${i})`).join(", ")}) k`;
+  const at = "'$.' || cur.currency";
+  const has = (v: string, i: number) => `coalesce(json_extract(${v}, ${at} || '[${i}]'), 0)`;
+  return `SELECT x.month, cur.currency, ${revenueColumns("x.inv", "x.pay", "x.ref", at)}
+   FROM (SELECT m.month,
+           (SELECT ${perCurrency(invoicedJson, "d.currency")} FROM documents d INDEXED BY documents_issued_on WHERE ${ISSUED_IN("m.f", "m.t")}) AS inv,
+           (SELECT ${perCurrency(collectedJson, "p.currency")} FROM payments p INDEXED BY payments_confirmed
+             WHERE p.status = 'confirmed' AND p.received_on >= m.f AND p.received_on <= m.t) AS pay,
+           (SELECT ${perCurrency(refundedJson, "f.currency")} FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id
+             WHERE ${SUCCEEDED_REFUNDS} AND f.settled_on >= m.f AND f.settled_on <= m.t) AS ref
+         FROM (${months}) m LIMIT -1) x
+   JOIN (${currencyRows}) cur
+   WHERE ${has("x.inv", 0)} + ${has("x.pay", 0)} + ${has("x.pay", 2)} + ${has("x.ref", 0)} > 0
+   ORDER BY x.month, cur.currency`;
+})();
+
+/** One row of `REVENUE_MONTHS_SQL`. */
+export type RevenueMonthSqlRow = RevenueSqlRow & { month: string };
+
+/** The reference twins of `REVENUE_MONTHS_SQL` (tests only): grouped statements over `?1` to `?2` (the FY), keyed by `month` and `currency`. */
+export const REVENUE_MONTHS_GROUPED_SQL = {
+  invoiced: `SELECT substr(d.issue_date, 1, 7) AS month, d.currency, count(*) AS documents, sum(${SIGN} * d.taxable_minor) AS taxable, sum(${SIGN} * d.total_minor) AS total,
+       CASE WHEN count(${inrDocTaxable("d.currency")}) < count(*) OR count(${inrDocTotal("d.currency")}) < count(*) THEN NULL ELSE sum(${SIGN} * (${inrDocTaxable("d.currency")})) END AS inr_taxable,
+       CASE WHEN count(${inrDocTaxable("d.currency")}) < count(*) OR count(${inrDocTotal("d.currency")}) < count(*) THEN NULL ELSE sum(${SIGN} * (${inrDocTotal("d.currency")})) END AS inr_total
+     FROM documents d WHERE ${ISSUED_IN("?1", "?2")} GROUP BY month, d.currency ORDER BY month, d.currency`,
+  collected: `SELECT substr(p.received_on, 1, 7) AS month, p.currency, count(CASE p.kind WHEN 'payment' THEN 1 END) AS payments,
+       coalesce(sum(CASE p.kind WHEN 'payment' THEN p.amount_minor END), 0) AS received, coalesce(sum(CASE p.kind WHEN 'tds' THEN p.amount_minor END), 0) AS tds
+     FROM payments p WHERE p.status = 'confirmed' AND p.received_on >= ?1 AND p.received_on <= ?2 GROUP BY month, p.currency ORDER BY month, p.currency`,
+  refunded: `SELECT substr(f.settled_on, 1, 7) AS month, f.currency, count(*) AS refunds, sum(f.amount_minor) AS refunded
+     FROM payment_refunds f JOIN payments fp ON fp.id = f.payment_id WHERE ${SUCCEEDED_REFUNDS} AND f.settled_on >= ?1 AND f.settled_on <= ?2
+     GROUP BY month, f.currency ORDER BY month, f.currency`,
+};
+
+/** A pivot's constant rows `(k, currency)` for each key of `keys` and currency, in order. */
+const keyRows = (keys: readonly string[]) =>
+  `SELECT column1 AS k, column2 AS currency FROM (VALUES ${keys.flatMap((k) => SQL_CURRENCIES.map((c) => `('${k}', '${c}')`)).join(", ")})`;
+/** The column `<metric>_<key>_<currency>` of the aggregate row `t` for the constant row `kc`. */
+const pickKey = (keys: readonly string[], metric: string) =>
+  `CASE ${keys.flatMap((k) => SQL_CURRENCIES.map((c) => `WHEN kc.k = '${k}' AND kc.currency = '${c}' THEN t.${metric}_${k}_${c}`)).join(" ")} END`;
+/** The invoiced metrics of key `k` and currency `c` over rows `z` (`z.cu`, `z.k`, `z.sgn`, `z.taxable`, `z.total`, `z.inr_taxable`, `z.inr_total`). */
+const keyedCols = (k: string, c: string) => {
+  const is = `z.k = '${k}' AND z.cu = '${c}'`;
+  return [
+    `count(CASE WHEN ${is} THEN 1 END) AS n_${k}_${c}`,
+    `coalesce(sum(CASE WHEN ${is} THEN z.sgn * z.taxable END), 0) AS tx_${k}_${c}`,
+    `coalesce(sum(CASE WHEN ${is} THEN z.sgn * z.total END), 0) AS tt_${k}_${c}`,
+    `count(CASE WHEN ${is} AND z.inr_taxable IS NOT NULL AND z.inr_total IS NOT NULL THEN 1 END) AS ic_${k}_${c}`,
+    `coalesce(sum(CASE WHEN ${is} THEN z.sgn * z.inr_taxable END), 0) AS ix_${k}_${c}`,
+    `coalesce(sum(CASE WHEN ${is} THEN z.sgn * z.inr_total END), 0) AS it_${k}_${c}`,
+  ];
+};
+/**
+ * One aggregate row over the source `rows` (worked out once: `LIMIT -1` keeps it from being flattened into every column) turned into `(key, currency)` rows with
+ * the columns of `KeyedSqlRow`, the empty ones dropped, in key order.
+ */
+const keyedPivot = (keys: readonly string[], rows: string) => {
+  const p = (m: string) => pickKey(keys, m);
+  return `SELECT kc.k AS key, kc.currency, ${p("n")} AS documents, ${p("tx")} AS taxable, ${p("tt")} AS total,
+       CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("ix")} END AS inr_taxable, CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("it")} END AS inr_total
+   FROM (SELECT ${keys.flatMap((k) => SQL_CURRENCIES.flatMap((c) => keyedCols(k, c))).join(",\n         ")}
+         FROM (${rows} LIMIT -1) z) t
+   JOIN (${keyRows(keys)}) kc
+   WHERE ${p("n")} > 0`;
+};
+
+/** One row of the category and kind statements as D1 returns it (`documents` counts lines for a category). */
+export type KeyedSqlRow = {
+  key: string;
+  currency: "INR" | "USD";
+  documents: number;
+  taxable: number;
+  total: number;
+  inr_taxable: number | null;
+  inr_total: number | null;
+};
+
+const DOC_ROWS = `SELECT d.currency AS cu, ${revenueKindSql("d")} AS k, ${SIGN} AS sgn, d.taxable_minor AS taxable, d.total_minor AS total,
+       ${inrDocTaxable("d.currency")} AS inr_taxable, ${inrDocTotal("d.currency")} AS inr_total
+     FROM documents d INDEXED BY documents_issued_on WHERE ${ISSUED_IN("?1", "?2")}`;
+
+/**
+ * C1 by kind (`?1` to `?2`, one FY): invoiced per kind of revenue (L9, `revenueKindSql`) and currency, in ONE pass over the range of `documents_issued_on` (plus a
+ * parent seek for a note or an advance invoice with no care plan of its own). The twin of `REVENUE_KIND_GROUPED_SQL`.
+ */
+export const REVENUE_KIND_SQL = /* @__PURE__ */ (() => keyedPivot(SQL_REVENUE_KINDS, DOC_ROWS))();
+
+/**
+ * A document line's category (L8: today's category of its catalogue item, `none` when it has none). A credit or debit note's lines carry no catalogue item (M5.3
+ * `noteLines`; M7.3 Step 0 point 5), so a note's line takes its PARENT's line: the note's line at position `n` was made from take `n − 1` of the sealed request
+ * (`header_extras.noteOf.request.takes`, in line order), whose `line` is the parent's computed line index, written at position `line + 1` (M4.3 `lineRows`).
+ * The catalogue is read once (`cat.m`, a JSON object id → category).
+ */
+const LINE_CATEGORY = `coalesce(json_extract(cat.m, '$."' || coalesce(l.catalogue_item_id, pl.catalogue_item_id) || '"'), 'none')`;
+/** A line's INR value of field `f`: an INR document's own column, a USD one's `computed.lines[position − 1].inr` (the line's array index, M4.3 `lineRows`). */
+const lineInr = (f: string, col: string) =>
+  `CASE d.currency WHEN 'INR' THEN l.${col} ELSE json_extract(d.computed, '$.lines[' || (l.position - 1) || '].inr.${f}') END`;
+const LINE_ROWS = (
+  indexed: boolean,
+) => `SELECT d.currency AS cu, ${LINE_CATEGORY} AS k, ${SIGN} AS sgn, l.taxable_minor AS taxable, l.line_total_minor AS total,
+       ${lineInr("taxableMinor", "taxable_minor")} AS inr_taxable, ${lineInr("lineTotalMinor", "line_total_minor")} AS inr_total
+     FROM (SELECT json_group_object(ci.id, ci.category) AS m FROM catalogue_items ci) cat
+       CROSS JOIN documents d${indexed ? " INDEXED BY documents_issued_on" : ""}
+       JOIN document_lines l INDEXED BY document_lines_position ON l.document_id = d.id
+       LEFT JOIN document_lines pl INDEXED BY document_lines_position ON d.type IN ('credit_note', 'debit_note') AND pl.document_id = d.parent_id
+         AND pl.position = json_extract(d.header_extras, '$.noteOf.request.takes[' || (l.position - 1) || '].line') + 1
+     WHERE ${ISSUED_IN("?1", "?2")}`;
+
+/**
+ * C1 by category (`?1` to `?2`): invoiced per catalogue category and currency (Q2 A: invoiced only; L8), from the lines of the range's documents. A line's total is
+ * before the document's round-off, which belongs to no line: `REVENUE_ROUND_OFF_SQL` gives it, so Σ categories + round-off = the invoiced total (a test holds it).
+ */
+export const REVENUE_CATEGORY_SQL = /* @__PURE__ */ (() => keyedPivot(SQL_CATEGORY_KEYS, LINE_ROWS(true)))();
+
+/** The range's round-off per currency, in its own currency and in INR (`computed.inr.roundOffMinor`; NULL when a USD document lacks it). One row per currency with documents. */
+export const REVENUE_ROUND_OFF_SQL = /* @__PURE__ */ (() => {
+  const inr =
+    "CASE d.currency WHEN 'INR' THEN d.round_off_minor ELSE json_extract(d.computed, '$.inr.roundOffMinor') END";
+  return byCurrency(
+    (c) => [
+      `count(CASE WHEN d.currency = '${c}' THEN 1 END) AS n_${c}`,
+      `coalesce(sum(CASE WHEN d.currency = '${c}' THEN ${SIGN} * d.round_off_minor END), 0) AS r_${c}`,
+      `count(CASE WHEN d.currency = '${c}' THEN ${inr} END) AS ic_${c}`,
+      `coalesce(sum(CASE WHEN d.currency = '${c}' THEN ${SIGN} * ${inr} END), 0) AS ir_${c}`,
+    ],
+    `${pickCurrency("r")} AS round_off, CASE WHEN ${pickCurrency("ic")} < ${pickCurrency("n")} THEN NULL ELSE ${pickCurrency("ir")} END AS inr_round_off`,
+    `FROM documents d INDEXED BY documents_issued_on WHERE ${ISSUED_IN("?1", "?2")}`,
+    "n",
+  );
+})();
+export type RoundOffSqlRow = { currency: "INR" | "USD"; round_off: number; inr_round_off: number | null };
+
+/** The reference twins of the kind and category pivots (tests only). */
+export const REVENUE_KIND_GROUPED_SQL = `SELECT x.k AS key, x.cu AS currency, count(*) AS documents, sum(x.sgn * x.taxable) AS taxable, sum(x.sgn * x.total) AS total
+   FROM (${DOC_ROWS.replace(" INDEXED BY documents_issued_on", "")}) x GROUP BY x.k, x.cu ORDER BY x.k, x.cu`;
+export const REVENUE_CATEGORY_GROUPED_SQL = `SELECT x.k AS key, x.cu AS currency, count(*) AS documents, sum(x.sgn * x.taxable) AS taxable, sum(x.sgn * x.total) AS total
+   FROM (${LINE_ROWS(false)}) x GROUP BY x.k, x.cu ORDER BY x.k, x.cu`;
+
+/**
+ * C2, the revenue of each client in one currency (`?1` to `?2` one FY, `?3` the currency; a next page `?4`/`?5` the last row's invoiced total and client id):
+ * invoiced (as C1), collected (money received less the refunds that went out) and TDS, for every client with any of them in the range, by invoiced total (tax
+ * included) high to low, then client id; at most 51 rows. Each client costs a seek of `documents_client_issued`, `payments_client` and `payment_refunds_client`:
+ * the rows read are the clients, the range's documents and payments, the clients' refunds and the sorter's rows (no GROUP BY). The Worker names an anonymised client.
+ */
+export const REVENUE_CLIENTS_SQL = (after: boolean): string =>
+  `SELECT y.id AS client_id, y.code AS client_code, y.display_name AS client_name, y.anonymised_at, ?3 AS currency, ${revenueColumns("y.inv", "y.pay", "y.ref", "'$'")}, y.k
+   FROM (SELECT z.id, z.code, z.display_name, z.anonymised_at, z.inv, z.pay, z.ref, coalesce(json_extract(z.inv, '$[2]'), 0) AS k
+         FROM (SELECT c.id, c.code, c.display_name, c.anonymised_at,
+                 (SELECT ${invoicedJson("1 = 1", "?3")} FROM documents d INDEXED BY documents_client_issued
+                   WHERE d.client_id = c.id AND d.currency = ?3 AND ${ISSUED_IN("?1", "?2")}) AS inv,
+                 (SELECT ${collectedJson("1 = 1", "?3")} FROM payments p INDEXED BY payments_client
+                   WHERE p.client_id = c.id AND p.currency = ?3 AND p.status = 'confirmed' AND p.received_on >= ?1 AND p.received_on <= ?2) AS pay,
+                 (SELECT ${refundedJson("1 = 1", "?3")} FROM payment_refunds f INDEXED BY payment_refunds_client JOIN payments fp ON fp.id = f.payment_id
+                   WHERE f.client_id = c.id AND f.currency = ?3 AND ${SUCCEEDED_REFUNDS} AND f.settled_on >= ?1 AND f.settled_on <= ?2) AS ref
+               FROM clients c LIMIT -1) z
+         WHERE json_extract(z.inv, '$[0]') > 0 OR json_extract(z.pay, '$[0]') > 0 OR json_extract(z.pay, '$[2]') > 0 OR json_extract(z.ref, '$[0]') > 0
+         LIMIT -1) y
+   ${after ? "WHERE (y.k < ?4 OR (y.k = ?4 AND y.id > ?5))" : ""}
+   ORDER BY y.k DESC, y.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
+
+/** One row of `REVENUE_CLIENTS_SQL`: the client, the `RevenueSqlRow` columns, and `k` (the keyset's invoiced total). */
+export type RevenueClientSqlRow = RevenueSqlRow & {
+  client_id: string;
+  client_code: string;
+  client_name: string;
+  anonymised_at: number | null;
+  k: number;
+};
+
+/** The binds of `REVENUE_CLIENTS_SQL` (a numbered parameter not written still counts toward D1's arity, so a first page binds three). */
+export const revenueClientsBinds = (
+  from: string,
+  to: string,
+  currency: string,
+  cursor?: { readonly k: number; readonly id: string },
+): (string | number)[] => (cursor ? [from, to, currency, cursor.k, cursor.id] : [from, to, currency]);
+
+// ---- C9: outstanding and ageing as at today (L7) ----------------------------------------------------------------------------------------------------------
+
+const OWED_ROW = `d.type IN ${DEBIT_DOCS} AND d.status IN ${OPEN_STATUSES} AND d.balance_minor > 0 AND d.voided_at IS NULL`;
+/** `[count, balance]` per bucket of the open documents `d` that match `is`, as at `?1` (10 arguments, under D1's 32). */
+const ageingJson = (is: string) =>
+  `json_array(${SQL_AGEING_BUCKETS.flatMap((b) => {
+    const at = `${is} AND ${ageingBucketSql("d.due_date", "?1")} = '${b}'`;
+    return [
+      `count(CASE WHEN ${at} THEN 1 END)`,
+      `coalesce(sum(CASE WHEN ${at} THEN d.balance_minor END), 0)`,
+    ];
+  }).join(", ")})`;
+
+/**
+ * C9, one page of the ageing (`?1` today, IST; a next page `?2` the last client id): per client with an open balance, by client id, the open tax invoices, export
+ * invoices and debit notes (the `OWED_SQL` set; proformas and receipts never, LD78) in each bucket per currency, and the client's credit held in that currency
+ * (`paymentFreeSql`, M6.5's free money), shown apart and never netted (RA-36, C13). At most 51 clients, a row per client and currency. Each client costs a probe
+ * and a read of its open documents through `documents_client_type_status`; credit is read for the page's clients only.
+ */
+export const AGEING_PAGE_SQL = (after: boolean): string => {
+  const at = (i: number) => `coalesce(json_extract(y.a, '$.' || cur.currency || '[${i}]'), 0)`;
+  return `SELECT y.id AS client_id, y.code AS client_code, y.display_name AS client_name, y.anonymised_at, cur.currency,
+       ${SQL_AGEING_BUCKETS.flatMap((b, i) => [`${at(2 * i)} AS n_${b}`, `${at(2 * i + 1)} AS b_${b}`]).join(", ")},
+       (SELECT coalesce(sum(${paymentFreeSql("p")}), 0) FROM payments p INDEXED BY payments_client
+         WHERE p.client_id = y.id AND p.currency = cur.currency AND p.status = 'confirmed' AND p.kind = 'payment') AS credit
+   FROM (SELECT c.id, c.code, c.display_name, c.anonymised_at,
+           (SELECT ${perCurrency((is) => ageingJson(is), "d.currency")} FROM documents d INDEXED BY documents_client_type_status WHERE d.client_id = c.id AND ${OWED_ROW}) AS a
+         FROM clients c
+         WHERE ${after ? "c.id > ?2 AND " : ""}EXISTS (SELECT 1 FROM documents d INDEXED BY documents_client_type_status WHERE d.client_id = c.id AND ${OWED_ROW})
+         ORDER BY c.id LIMIT ${REPORT_PAGE_SIZE + 1}) y
+   JOIN (${currencyRows}) cur
+   WHERE ${SQL_AGEING_BUCKETS.map((_, i) => at(2 * i)).join(" + ")} > 0
+   ORDER BY y.id, cur.currency`;
+};
+
+/** One row of `AGEING_PAGE_SQL` as D1 returns it. */
+export type AgeingSqlRow = {
+  client_id: string;
+  client_code: string;
+  client_name: string;
+  anonymised_at: number | null;
+  currency: "INR" | "USD";
+  credit: number;
+} & Record<`n_${SqlAgeingBucket}` | `b_${SqlAgeingBucket}`, number>;
+
+/**
+ * C9's first page totals (`?1` today): per currency and bucket over every open document, in one pass of `documents_status_due` (the `OWED_SQL` read with the
+ * buckets as columns). Σ buckets = `OWED_SQL`'s balance; Σ of the four overdue buckets = its overdue figure (a test holds both).
+ */
+export const AGEING_TOTALS_SQL = /* @__PURE__ */ (() =>
+  byCurrency(
+    (c) => [
+      `count(CASE WHEN d.currency = '${c}' THEN 1 END) AS n_${c}`,
+      ...SQL_AGEING_BUCKETS.flatMap((b) => {
+        const is = `d.currency = '${c}' AND ${ageingBucketSql("d.due_date", "?1")} = '${b}'`;
+        return [
+          `count(CASE WHEN ${is} THEN 1 END) AS n${b}_${c}`,
+          `coalesce(sum(CASE WHEN ${is} THEN d.balance_minor END), 0) AS b${b}_${c}`,
+        ];
+      }),
+    ],
+    SQL_AGEING_BUCKETS.flatMap((b) => [
+      `${pickCurrency(`n${b}`)} AS n_${b}`,
+      `${pickCurrency(`b${b}`)} AS b_${b}`,
+    ]).join(", "),
+    `FROM documents d INDEXED BY documents_status_due WHERE d.status IN ${OPEN_STATUSES} AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL`,
+    "n",
+  ))();
+export type AgeingTotalsSqlRow = { currency: "INR" | "USD" } & Record<
+  `n_${SqlAgeingBucket}` | `b_${SqlAgeingBucket}`,
+  number
+>;
+/** The reference twin of the ageing figures (tests only): grouped by currency and bucket. */
+export const AGEING_GROUPED_SQL = `SELECT d.currency, ${ageingBucketSql("d.due_date", "?1")} AS bucket, count(*) AS n, sum(d.balance_minor) AS balance
+   FROM documents d WHERE ${OWED_ROW} GROUP BY d.currency, bucket ORDER BY d.currency, bucket`;
+
+// ---- C3: the pipeline (the API Worker; L10) ---------------------------------------------------------------------------------------------------------------
+
+/** The lead stages, lost reasons and sources (the schema's lists; a test pins them). */
+export const SQL_LEAD_STAGES = ["new", "qualified", "proposal_sent", "won", "lost"] as const;
+export const SQL_LOST_REASONS = [
+  "price",
+  "timing",
+  "scope_fit",
+  "no_response",
+  "competitor",
+  "other",
+] as const;
+export const SQL_LEAD_SOURCES = ["web", "manual"] as const;
+/** The statuses a sent offer can be in (a frozen proposal or estimate); any other counts under `other`. */
+export const SQL_OFFER_STATUSES = ["sent", "viewed", "accepted", "rejected", "expired", "revised"] as const;
+const OFFER_TYPES = "('proposal', 'estimate')";
+
+const COHORT_COUNTS = [
+  "count(*) AS created",
+  ...SQL_LEAD_STAGES.map((s) => `count(CASE l.stage WHEN '${s}' THEN 1 END) AS st_${s}`),
+  ...SQL_LOST_REASONS.map((r) => `count(CASE l.lost_reason WHEN '${r}' THEN 1 END) AS lr_${r}`),
+  ...SQL_LEAD_SOURCES.map((s) => `count(CASE l.source WHEN '${s}' THEN 1 END) AS src_${s}`),
+];
+/** The names of the cohort's counts (`created`, `st_<stage>`, `lr_<reason>`, `src_<source>`); each row of `LEAD_COHORT_SQL` has `all_<name>`. */
+export const COHORT_COUNT_NAMES = COHORT_COUNTS.map((x) => x.split(" AS ")[1] as string);
+
+/**
+ * The lead cohort (`?1` the range's first instant, `?2` the first instant after it; UTC ms): the leads created in the range (`leads_created`) grouped by the page they
+ * came from without its query string (`sourcePathSql`; DPDP minimisation: paths and counts only, never a name, email or company), the ten busiest paths (created,
+ * then won, then path), each row also carrying the cohort's totals (window sums over every path, `all_*`). One read of the range and one GROUP BY of it; no row
+ * when the range has no lead.
+ */
+export const LEAD_COHORT_SQL = `SELECT g.path, g.created, g.st_won AS won, ${COHORT_COUNT_NAMES.map((n) => `sum(g.${n}) OVER () AS all_${n}`).join(", ")}
+   FROM (SELECT ${sourcePathSql("l.source_page")} AS path, ${COHORT_COUNTS.join(", ")}
+         FROM leads l INDEXED BY leads_created WHERE l.created_at >= ?1 AND l.created_at < ?2 GROUP BY path) g
+   ORDER BY g.created DESC, g.st_won DESC, g.path LIMIT 10`;
+
+/** The open-leads trend (`?1` to `?2`, IST dates): the nightly `leads.open` counts (a row per open stage) summed per day, read in `stats_daily_metric` order. */
+export const OPEN_TREND_SQL = `SELECT s.date, sum(s.value) AS open FROM stats_daily s INDEXED BY stats_daily_metric
+   WHERE s.metric = 'leads.open' AND s.date >= ?1 AND s.date <= ?2 GROUP BY s.date ORDER BY s.date`;
+
+const OFFER_STATUS_KEYS = [...SQL_OFFER_STATUSES, "other"] as const;
+/**
+ * Offers sent in the range (`?1`, `?2` as the cohort): per version group, its newest version sent in the range (no later version of the group sent before the
+ * range's end), counted with its taxable value by its status today and currency (Q1 A: USD in USD, never converted). One read of `documents_offer_sent`'s range
+ * and a seek of `documents_version` per row, no GROUP BY.
+ */
+export const OFFERS_SENT_SQL = /* @__PURE__ */ (() => {
+  const statusOf = `CASE WHEN d.status IN (${SQL_OFFER_STATUSES.map((s) => `'${s}'`).join(", ")}) THEN d.status ELSE 'other' END`;
+  const cols = OFFER_STATUS_KEYS.flatMap((s) =>
+    SQL_CURRENCIES.flatMap((c) => [
+      `count(CASE WHEN z.st = '${s}' AND z.cu = '${c}' THEN 1 END) AS n_${s}_${c}`,
+      `coalesce(sum(CASE WHEN z.st = '${s}' AND z.cu = '${c}' THEN z.taxable END), 0) AS tx_${s}_${c}`,
+    ]),
+  );
+  const pick = (m: string) => pickKey(OFFER_STATUS_KEYS, m);
+  return `SELECT kc.k AS status, kc.currency, ${pick("n")} AS n, ${pick("tx")} AS taxable
+   FROM (SELECT ${cols.join(", ")}
+         FROM (SELECT ${statusOf} AS st, d.currency AS cu, d.taxable_minor AS taxable FROM documents d INDEXED BY documents_offer_sent
+               WHERE d.sent_at IS NOT NULL AND d.type IN ${OFFER_TYPES} AND d.sent_at >= ?1 AND d.sent_at < ?2
+                 AND NOT EXISTS (SELECT 1 FROM documents n INDEXED BY documents_version WHERE n.version_group_id = d.version_group_id AND n.version > d.version
+                                   AND n.sent_at IS NOT NULL AND n.sent_at < ?2) LIMIT -1) z) t
+   JOIN (${keyRows(OFFER_STATUS_KEYS)}) kc
+   WHERE ${pick("n")} > 0`;
+})();
+/** The reference twin of `OFFERS_SENT_SQL` (tests only). */
+export const OFFERS_SENT_GROUPED_SQL = `SELECT d.status, d.currency, count(*) AS n, sum(d.taxable_minor) AS taxable FROM documents d
+   WHERE d.sent_at IS NOT NULL AND d.type IN ${OFFER_TYPES} AND d.sent_at >= ?1 AND d.sent_at < ?2
+     AND NOT EXISTS (SELECT 1 FROM documents n WHERE n.version_group_id = d.version_group_id AND n.version > d.version AND n.sent_at IS NOT NULL AND n.sent_at < ?2)
+   GROUP BY d.status, d.currency ORDER BY d.status, d.currency`;
+
+/**
+ * The accepted offers decided in the range (`?1`, `?2` UTC ms; `documents_offer_decided`), each with its time to win in whole days: from the lead converted into the
+ * group's first version (`leads.proposal_id`), else from that first version's creation, to the acceptance.
+ */
+const ACCEPTED_DAYS = `SELECT (a.accepted_at - coalesce((SELECT min(l.created_at) FROM leads l INDEXED BY leads_proposal WHERE l.proposal_id = d.version_group_id),
+         (SELECT f.created_at FROM documents f WHERE f.id = d.version_group_id))) / 86400000 AS days
+     FROM documents d INDEXED BY documents_offer_decided JOIN acceptances a INDEXED BY acceptances_document ON a.document_id = d.id
+     WHERE d.decided_at IS NOT NULL AND d.type IN ${OFFER_TYPES} AND d.decided_at >= ?1 AND d.decided_at < ?2 AND d.status = 'accepted'`;
+/**
+ * The win-rate counts (C3): accepted and rejected by `decided_at` in the range (`?1`, `?2`), expired by `valid_until` (`?3` to `?4`, IST dates; an expired offer has
+ * no `decided_at`, M4.5; `documents_status_valid_until`), and the accepted ones in the time-to-win bands of core `TIME_TO_WIN_BANDS`. One row.
+ */
+export const OFFERS_DECIDED_SQL = `SELECT
+     (SELECT count(*) FROM documents d INDEXED BY documents_offer_decided
+       WHERE d.decided_at IS NOT NULL AND d.type IN ${OFFER_TYPES} AND d.decided_at >= ?1 AND d.decided_at < ?2 AND d.status = 'rejected') AS rejected,
+     (SELECT count(*) FROM documents d INDEXED BY documents_status_valid_until
+       WHERE d.status = 'expired' AND d.valid_until >= ?3 AND d.valid_until <= ?4 AND +d.type IN ${OFFER_TYPES}) AS expired,
+     w.accepted, w.d0_7, w.d8_30, w.d31_90, w.d90_plus
+   FROM (SELECT count(*) AS accepted, count(CASE WHEN x.days <= 7 THEN 1 END) AS d0_7, count(CASE WHEN x.days BETWEEN 8 AND 30 THEN 1 END) AS d8_30,
+                count(CASE WHEN x.days BETWEEN 31 AND 90 THEN 1 END) AS d31_90, count(CASE WHEN x.days > 90 THEN 1 END) AS d90_plus
+         FROM (${ACCEPTED_DAYS} LIMIT -1) x) w`;
+export type OffersDecidedSqlRow = {
+  rejected: number;
+  expired: number;
+  accepted: number;
+  d0_7: number;
+  d8_30: number;
+  d31_90: number;
+  d90_plus: number;
+};
+/** The median time to win in days (`?1`, `?2`): the middle one by ORDER BY (the lower of the two middle ones for an even count); no row when none was accepted. */
+export const TIME_TO_WIN_MEDIAN_SQL = `SELECT x.days FROM (${ACCEPTED_DAYS}) x ORDER BY x.days
+   LIMIT 1 OFFSET (SELECT (count(*) - 1) / 2 FROM (${ACCEPTED_DAYS}) y)`;
+
+// ---- C4: care plan hours (L13; the API Worker) ------------------------------------------------------------------------------------------------------------
+
+/**
+ * One page of the care plans with a billing period starting in month `?1` (`YYYY-MM`; `?2` its last day; a next page `?3` the last plan id): the plans whose period
+ * day (`carePeriodDaySql`) is in the month and whose status on that day was `active` (a plan gives hours in a period only then, M3.5 Q5), by plan id, at most 51.
+ * The hours come from the shared care loader (`careStatements`), as the care list's.
+ */
+export const CARE_HOURS_PAGE_SQL = (after: boolean): string =>
+  `SELECT p.id, ${carePeriodDaySql("?1", "p")} AS day FROM care_plans p
+   WHERE ${after ? "p.id > ?3 AND " : ""}${carePeriodDaySql("?1", "p")} <= ?2
+     AND (SELECT s.status FROM care_plan_status_log s INDEXED BY care_plan_status_log_plan WHERE s.care_plan_id = p.id AND s.effective_on <= ${carePeriodDaySql("?1", "p")}
+          ORDER BY s.effective_on DESC, s.created_at DESC, s.id DESC LIMIT 1) = 'active'
+   ORDER BY p.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
+
+/**
+ * The care invoices of the page's plans (`?1` a JSON array of plan ids) with a period start from `?2` to `?3`: each with its document's number, issue day, status
+ * and void mark (a draft has no number). The Worker matches the period's own invoice (`period_start`) and the one that bills its overage (`overage_period_start`).
+ */
+export const CARE_HOURS_BILLED_SQL = `SELECT ci.care_plan_id, ci.period_start, ci.overage_period_start, ci.document_id, d.number_display, d.issue_date, d.status, d.voided_at
+   FROM care_invoices ci LEFT JOIN documents d ON d.id = ci.document_id
+   WHERE ci.care_plan_id IN (SELECT value FROM json_each(?1)) AND ci.period_start >= ?2 AND ci.period_start <= ?3`;
+export type CareBilledSqlRow = {
+  care_plan_id: string;
+  period_start: string;
+  overage_period_start: string | null;
+  document_id: string | null;
+  number_display: string | null;
+  issue_date: string | null;
+  status: string | null;
+  voided_at: number | null;
+};
