@@ -195,7 +195,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "client_request.close": Y("closed a client's request"),
   // T11, the deed of assignment: 07-ZJ line 33 (staff-only; marked until the lead approves it).
   ...DEED_AUDIT,
-  // M7.2 (S14, builder's drafts for the lead; marked until approved): the notification switches, the one-click switch-off, the suppression list, the receipt resend.
+  // M7.2 (S14, the builder's drafts, shown plain as M7.1's S5; listed in the D2 report for the lead): the notification switches, the one-click switch-off, the
+  // suppression list, the receipt resend.
   "notification.prefs": Y("changed their notification settings"),
   "notification.unsubscribe": Y("switched off the weekly digest from its email"),
   "email.unsuppress": Y("allowed emails to an address again"),

@@ -1,8 +1,12 @@
 // M7.2's screen rules (run file G2 to G5): the email log's status chips, record links and IST day filter, the stopped addresses in both send pickers, the
 // Emails panels' new states, and every refusal worded from its code.
-import { EMAIL_STATUS_LABELS } from "@techaust/core/copy-zq";
+import { DIGEST_LABEL, EMAIL_STATUS_LABELS, PREF_GROUP_LABELS } from "@techaust/core/copy-zq";
+import { SUPPRESSION_REASON_LABELS, SUPPRESSION_REASON_OTHER } from "@techaust/core/email-events";
+import { EMAIL_TEMPLATES } from "@techaust/core/email-templates";
+import { TEMPLATE_NAMES } from "@techaust/email/fixtures";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
+import { ACTION_LABELS } from "./audit.ts";
 import { sentenceStart, ZQ_ERRORS, ZQ_UI, zqErrorText } from "./copy-zq.ts";
 import { emailRecordHref, emailStatusLook, isAddress, logCrumbs, sentShown, sinceOf } from "./emails.ts";
 import { invoiceRecipientChoices } from "./invoice-send.ts";
@@ -103,9 +107,32 @@ describe("the words", () => {
     expect(zqErrorText(new Error("x"))).toMatch(/Try again/);
   });
 
-  it("starts a group name with a capital, keeping a draft's mark", () => {
+  it("starts a group name with a capital", () => {
     expect(sentenceStart("online payment")).toBe("Online payment");
-    expect(sentenceStart("[Placeholder] online payment")).toBe("[Placeholder] Online payment");
+  });
+
+  it("shows every lead-approved staff line unmarked: S6 names, S12 statuses, S13 reasons, the template names, the audit lines (review 1, finding 3)", () => {
+    const shown = [
+      ...Object.values(PREF_GROUP_LABELS),
+      DIGEST_LABEL,
+      ...Object.values(EMAIL_STATUS_LABELS),
+      ...Object.values(SUPPRESSION_REASON_LABELS),
+      SUPPRESSION_REASON_OTHER,
+      ...EMAIL_TEMPLATES.map((t) => TEMPLATE_NAMES[t]),
+      ...[
+        "notification.prefs",
+        "notification.unsubscribe",
+        "email.unsuppress",
+        "contact.unsuppress",
+        "receipt.send",
+      ].map((a) => ACTION_LABELS[a] ?? ""),
+      ...Object.values(ZQ_UI).filter((v): v is string => typeof v === "string"),
+      ...Object.values(ZQ_ERRORS),
+    ];
+    for (const line of shown) {
+      expect(line.length, "a line is missing").toBeGreaterThan(0);
+      expect(line, line).not.toContain("[Placeholder");
+    }
   });
 
   it("counts the receipt sends", () => {

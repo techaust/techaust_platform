@@ -8,12 +8,8 @@ import { RequestError } from "../api.ts";
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
-/** Upper-cases the first letter of a group name ("online payment" → "Online payment"), keeping a "[Placeholder] " mark in front. */
-export const sentenceStart = (s: string): string => {
-  const mark = "[Placeholder] ";
-  const body = s.startsWith(mark) ? s.slice(mark.length) : s;
-  return `${s.startsWith(mark) ? mark : ""}${body.charAt(0).toUpperCase()}${body.slice(1)}`;
-};
+/** Upper-cases the first letter of a group name ("online payment" → "Online payment"); S6's names are approved and unmarked (review 1, finding 3). */
+export const sentenceStart = (s: string): string => `${s.charAt(0).toUpperCase()}${s.slice(1)}`;
 
 export const ZQ_UI = {
   // ---- G1: Your account › Notifications ----
