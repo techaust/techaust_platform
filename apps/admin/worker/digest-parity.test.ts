@@ -125,7 +125,12 @@ describe("digest figures = dashboard figures", () => {
       )
         .bind(crypto.randomUUID(), documentId, now + hours * 3_600_000)
         .run();
-    const live = await addDoc({ clientId: inr, issueDate: istToday(), lines: [line(100_00)], dueDate: plus(3) });
+    const live = await addDoc({
+      clientId: inr,
+      issueDate: istToday(),
+      lines: [line(100_00)],
+      dueDate: plus(3),
+    });
     const paid = await addDoc({
       clientId: inr,
       issueDate: istToday(),
@@ -151,7 +156,12 @@ describe("digest figures = dashboard figures", () => {
       balance: 0,
     });
     const gone = await mkReportClient("INR");
-    const ofGone = await addDoc({ clientId: gone, issueDate: istToday(), lines: [line(100_00)], dueDate: plus(3) });
+    const ofGone = await addDoc({
+      clientId: gone,
+      issueDate: istToday(),
+      lines: [line(100_00)],
+      dueDate: plus(3),
+    });
     await env.DB.prepare("UPDATE clients SET anonymised_at = 1 WHERE id = ?1").bind(gone).run();
     for (const d of [live, paid, voided, credited, ofGone]) await remind(d.id, 24);
     expect(await count()).toBe(before + 1);

@@ -2,8 +2,8 @@
 import { describe, expect, it } from "vitest";
 import {
   APPROVED_07ZQ,
-  DIGEST_LABEL,
   DIGEST_COPY,
+  DIGEST_LABEL,
   EMAIL_STATUS_LABELS,
   jobFailedTitle,
   M72_TEMPLATE_NAMES,
