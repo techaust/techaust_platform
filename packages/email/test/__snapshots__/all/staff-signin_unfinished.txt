@@ -1,0 +1,5 @@
+Hi Sample, your TecHaust admin password was used to start a sign-in on 5 Nov 2026, 10:00 IST, but the 6-digit code was never entered, so the sign-in wasn't finished.
+
+If this wasn't you, someone else may know your password: ask an owner to reset it under Settings › Users (if you are the only owner, follow the break-glass steps in the security runbook). If it was you, for example a code page you closed, you can ignore this email.
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

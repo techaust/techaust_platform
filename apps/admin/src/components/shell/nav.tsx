@@ -16,6 +16,7 @@ import {
   Landmark,
   LayoutDashboard,
   LifeBuoy,
+  Mail,
   Package,
   Receipt,
   Settings,
@@ -143,6 +144,8 @@ export const NAV: NavItem[] = [
     group: 3,
   },
   { key: "audit", label: "Audit log", path: "/audit", icon: <History />, group: 3 },
+  // M7.2 review 1, finding 6: the email log (its page title, ZQ_UI.logTitle), with the other records of what happened
+  { key: "emails", label: "Emails", path: "/emails", icon: <Mail />, group: 3 },
   { key: "settings", label: "Settings", path: "/settings", icon: <Settings />, group: 4 },
 ];
 

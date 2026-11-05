@@ -38,6 +38,9 @@ export const CHECKS = {
     // M6.4: the same for the PayPal webhook (owner's H1 bypass for `/paypal`): a JSON POST with no `PAYPAL-*` headers is 400 `signature_missing`, not counted
     // (no certificate is fetched and nothing is written).
     { path: "/paypal", status: 400, method: "POST", body: "{}", access: false, code: "signature_missing" },
+    // M7.2 (run file F, H1): the SES events hook outside Access: a JSON POST with no Access token and no `x-techaust-ses-token` reaches the Worker and gets its
+    // own JSON 401 `token_missing` (not counted, nothing written); Access's own 401 is not JSON and fails the check. (`/u` answers text, so it is checked by hand.)
+    { path: "/ses", status: 401, method: "POST", body: "{}", access: false, code: "token_missing" },
   ],
   web: [{ path: "/api/geo", status: 200 }],
 };

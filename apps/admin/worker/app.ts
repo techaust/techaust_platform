@@ -101,6 +101,7 @@ export function createApp(
       // Header values are the client's: cut before they reach a log row (audit M2).
       const { iso, n, rid } = requestFacts(warm, c.req.header("cf-ray"));
       c.set("rid", rid);
+      if (warm) c.set("warm", true);
       c.set("ip", clipHeader(c.req.header("CF-Connecting-IP"), HEADER_LIMITS.ip));
       c.set("ua", clipHeader(c.req.header("User-Agent"), HEADER_LIMITS.ua));
       // The row of the handler that ANSWERS: the first matched pattern that is a table row. Hono runs a static path registered before

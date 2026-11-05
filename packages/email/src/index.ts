@@ -1,5 +1,6 @@
 // @techaust/email: templates (HTML + text), header sanitising and the SES v2 client (docs/05 §11.1).
 
+import { isNonTransactional } from "@techaust/core/email-templates";
 import {
   alertProformaDue,
   alertUnbilled,
@@ -11,6 +12,16 @@ import {
 } from "./billing.ts";
 import { deedSigned } from "./deeds.ts";
 import { staffApprovalIssueDecided, staffApprovalIssueRequested } from "./invoices.ts";
+import {
+  DIGEST_KEYS,
+  digestWeekly,
+  REFUND_SENT_KEYS,
+  refundSent,
+  SIGNIN_UNFINISHED_KEYS,
+  STAFF_NOTIFICATION_KEYS,
+  staffNotification,
+  staffSigninUnfinished,
+} from "./notifications.ts";
 import {
   approvalDecided,
   approvalRequested,
@@ -40,6 +51,7 @@ export * from "./billing.ts";
 export * from "./deeds.ts";
 export * from "./headers.ts";
 export * from "./invoices.ts";
+export * from "./notifications.ts";
 export * from "./offers.ts";
 export * from "./receipts.ts";
 export * from "./reports.ts";
@@ -101,6 +113,10 @@ const acceptedData = (get: (k: string) => string) => ({
 
 const who = (get: (k: string) => string) => ({ name: get("name"), first_name: get("first_name") });
 
+/** Exactly the keys a template reads (missing ones are ""). */
+const pick = <K extends string>(get: (k: string) => string, keys: readonly K[]): Record<K, string> =>
+  Object.fromEntries(keys.map((k) => [k, get(k)])) as Record<K, string>;
+
 /**
  * Renders a queued message to its email and picks the sender. A message with `test_name` in its data is a Settings test send
  * (07-H): the subject and a first line say so.
@@ -109,10 +125,12 @@ export function renderEmail(
   template: string,
   data: Data,
   opts: LayoutOptions,
-): Rendered & { from: { name: string; address: string }; replyTo: string } {
+): Rendered & { from: { name: string; address: string }; replyTo: string; nonTransactional: boolean } {
   const r = renderTemplate(template, data, opts);
   const testName = data.test_name;
-  return testName ? { ...r, ...withTestNotice(r, testName) } : r;
+  // M7.2 (C.4, L16): whether the email is non-transactional (the weekly digest only): the consumer then adds the one-click headers and its configuration set.
+  const nonTransactional = isNonTransactional(template);
+  return testName ? { ...r, ...withTestNotice(r, testName), nonTransactional } : { ...r, nonTransactional };
 }
 
 /**
@@ -327,6 +345,15 @@ function renderTemplate(
           opts,
         ),
       };
+    // M7.2: the digest and the staff emails from no-reply@ (Reply-To contact@; docs/05 §11.1), the refund email from billing@ (Q-P3-5, as the receipt).
+    case "digest.weekly":
+      return { ...noReply, ...digestWeekly(pick(get, DIGEST_KEYS), opts) };
+    case "staff.notification":
+      return { ...noReply, ...staffNotification(pick(get, STAFF_NOTIFICATION_KEYS), opts) };
+    case "refund.sent":
+      return { ...billing, ...refundSent(pick(get, REFUND_SENT_KEYS), opts) };
+    case "staff.signin_unfinished":
+      return { ...noReply, ...staffSigninUnfinished(pick(get, SIGNIN_UNFINISHED_KEYS), opts) };
     case "deed.signed":
       // T11: 07-ZJ lines 8 to 11 (approved by the lead under the owner's delegation, 2026-11-01); the sender follows the offer emails (the client's proposal
       // or estimate came from hello@).

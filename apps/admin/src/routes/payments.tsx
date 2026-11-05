@@ -64,6 +64,7 @@ import {
   useDialogState,
 } from "./payments/parts.tsx";
 import { ProofForm } from "./payments/proof-form.tsx";
+import { ReceiptSendDialog } from "./payments/receipt-send.tsx";
 import { RecordPaymentDialog } from "./payments/record-dialog.tsx";
 import { RefundDialog } from "./payments/refund-dialog.tsx";
 import { PaymentReceiptAndRefunds } from "./payments/refund-parts.tsx";
@@ -612,6 +613,7 @@ function EntryDialog(props: {
   const [step, setStep] = useState<Step>(props.act ?? "view");
   // M6.5: what the payment can give back from credit when "Refund" was pressed (read by the entry view)
   const [refundFree, setRefundFree] = useState(0);
+  const [receiptSend, setReceiptSend] = useState<{ id: string; number: string } | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const title =
     step === "confirm"
@@ -647,6 +649,17 @@ function EntryDialog(props: {
       />
     );
   }
+  // M7.2 (G7): "Send receipt again" opens its picker in place of the entry (the certificate dialog's pattern); Cancel comes back to the entry.
+  if (receiptSend && entry.state === "ready")
+    return (
+      <ReceiptSendDialog
+        receiptId={receiptSend.id}
+        number={receiptSend.number}
+        clientId={entry.data.payment.clientId}
+        onClose={() => setReceiptSend(null)}
+        onDone={props.onChanged}
+      />
+    );
   if (step === "certificate")
     return (
       <CertificateDialog
@@ -687,6 +700,7 @@ function EntryDialog(props: {
             setStep("refund");
           }}
           onChanged={props.onChanged}
+          onSendReceipt={setReceiptSend}
           onStep={(s) => {
             setStep(s);
             requestAnimationFrame(() => titleRef.current?.focus());
@@ -726,6 +740,8 @@ function EntryView(props: {
   onRefund: (freeMinor: number) => void;
   onChanged: (toast: string) => void;
   onClose: () => void;
+  /** M7.2 (G7): "Send receipt again". */
+  onSendReceipt: (r: { id: string; number: string }) => void;
 }) {
   const p = props.data.payment;
   const cur = p.currency;
@@ -978,6 +994,7 @@ function EntryView(props: {
           status={p.status}
           role={props.role}
           onChanged={props.onChanged}
+          onSendReceipt={props.onSendReceipt}
         />
       </div>
       <div className="dialog__actions">

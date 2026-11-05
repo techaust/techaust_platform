@@ -49,6 +49,12 @@ describe("what each role sees [ADM-G-01, ADM-G-02]", () => {
     }
   });
 
+  it("the email log is in the rail for the roles that read it, the Owner and Staff (M7.2 review 1, finding 6) [ADM-MAIL-02]", () => {
+    expect(ROLES.filter((r) => canSee(r, "emails"))).toEqual(["owner", "staff"]);
+    expect(sectionOf("/emails")).toBe("emails");
+    expect(sectionOf("/emails/abc")).toBe("emails");
+  });
+
   it("settings groups by role: the owner all ten, the accountant bank, tax and numbering", () => {
     expect(settingsFor("owner").map((p) => p.group)).toHaveLength(10);
     expect(settingsFor("accountant").map((p) => p.group)).toEqual(["bank", "tax", "numbering"]);

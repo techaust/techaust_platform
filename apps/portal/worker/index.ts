@@ -1,4 +1,5 @@
 import { answeringRow, firstRun, hex, randomBytes, warmRouter } from "@techaust/auth";
+import { portalAlertMessage } from "@techaust/core/portal";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
@@ -93,6 +94,10 @@ export function createApp(deps: Deps = {}) {
             ];
             if (stmts.length === 1) await stmts[0]?.run();
             else await c.env.DB.batch(stmts);
+            // M7.2 (E): a first offer view's bell, after its audit row is written (production has no email queue until Phase 7).
+            const alert = c.var.afterAlert;
+            const queue = c.env.EMAIL_QUEUE as Queue | undefined;
+            if (alert && queue) await queue.send(portalAlertMessage(alert));
           } catch (e) {
             // A logging failure never changes the answer.
             console.error(

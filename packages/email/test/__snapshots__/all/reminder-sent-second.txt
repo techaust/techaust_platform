@@ -1,0 +1,9 @@
+Hi Sample, invoice TH/INV/2627/0001 was due on 12 Nov 2026 and ₹23,600.00 is still outstanding. Could you let us know when we can expect payment? If it would help to talk it through, reply and we'll arrange a call.
+
+You can view and download it with the button below or in your client portal.
+
+View invoice: https://example.test/sample/invoice
+
+If you've already paid, thank you, and please ignore this.
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

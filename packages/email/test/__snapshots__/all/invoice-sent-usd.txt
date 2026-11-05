@@ -1,0 +1,7 @@
+Hi Sample, please find invoice TH/EXP/2627/0001 for $1,200.00, issued on 5 Nov 2026 and due on 12 Nov 2026. You can pay by bank transfer; the bank details are on the invoice.
+
+The invoice is attached as a PDF, and it's also in your client portal.
+
+View invoice: https://example.test/sample/invoice
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

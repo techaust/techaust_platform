@@ -1,0 +1,5 @@
+Export invoice TH/EXP/2627/0001 to Sample Company still shows $1,000.00 outstanding. Its FEMA realisation date is 3 Aug 2027. If the payment has arrived, record it when payments are available; if your bank extended the date, keep its letter.
+
+Open export realisation: https://example.test/sample
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

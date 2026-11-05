@@ -18,6 +18,7 @@ export type NavKey =
   | "reports"
   | "approvals"
   | "audit"
+  | "emails"
   | "settings";
 
 export const NAV_KEYS: readonly NavKey[] = [
@@ -36,6 +37,7 @@ export const NAV_KEYS: readonly NavKey[] = [
   "reports",
   "approvals",
   "audit",
+  "emails",
   "settings",
 ];
 
@@ -57,6 +59,8 @@ export const NAV_ACCESS: Record<NavKey, readonly Action[]> = {
   reports: ["reports.finance", "reports.delivery", "reports.pipeline"],
   approvals: ["approvals.decide", "approvals.readOwn"],
   audit: ["audit.readFinance"],
+  // M7.2 review 1, finding 6: the email log for the roles that read it (the Owner and Staff; never the Accountant), beside the audit log
+  emails: ["emails.read"],
   settings: ["settings.read"],
 };
 

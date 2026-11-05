@@ -41,6 +41,7 @@ import {
 } from "./offer-core.ts";
 import { linkAcceptRequest, linkDeclineRequest, linkDocRequest, linkRequest } from "./offer-schemas.ts";
 import type { Refusal } from "./offer-sql.ts";
+import { alertStaff } from "./requests.ts";
 import { json } from "./validate.ts";
 
 /** ?1 token hash, ?2 now. Tests EXPLAIN it (a primary-key lookup, the live contact, and the newest rendered version). */
@@ -144,6 +145,8 @@ export const offerLinks = new Hono<AppEnv>()
       ...found.viewWrites,
       accessStmt(db, accessEntry(c, 200, o.link.contact_id)),
     ]);
+    // M7.2 (E): a first view through the emailed link: the staff bell (jobs reads the audit row this batch wrote).
+    if (found.viewAuditId) alertStaff(c, found.viewAuditId);
     return c.json({
       ...found.body,
       link: {

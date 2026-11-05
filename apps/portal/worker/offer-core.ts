@@ -160,7 +160,7 @@ export async function loadOffer(
   c: Ctx,
   p: Principal,
   docId: string,
-): Promise<{ body: OfferAnswer; viewWrites: D1PreparedStatement[] } | null> {
+): Promise<{ body: OfferAnswer; viewWrites: D1PreparedStatement[]; viewAuditId: string | null } | null> {
   const db = c.env.DB;
   const all = [p.clientId, docId];
   const [doc, acc, cert, latest] = await db.batch([
@@ -176,6 +176,7 @@ export async function loadOffer(
     return {
       body: { superseded: { latestId: newest?.id ?? null, version: newest?.version ?? null } },
       viewWrites: [],
+      viewAuditId: null,
     };
   const viewer = c.var.viewer;
   if (!viewer) throw new Error("offer viewer is not wired");
@@ -217,14 +218,17 @@ export async function loadOffer(
     certificate: { state: a ? (cert?.results[0] ? "ready" : "pending") : "none" },
   };
   const now = Date.now();
+  // M7.2 (E): the view's audit row has a known id, so the staff bell can be asked for once the writes ran (the jobs Worker reads the row; none if it wasn't written).
+  const viewAuditId = d.status === "sent" ? uuidv7() : null;
   const viewWrites =
-    d.status === "sent"
+    viewAuditId !== null
       ? [
           bound(db, VIEW_SQL, [p.clientId, d.id, now, todayIst(now)]),
           auditStmt(
             db,
             {
               ...requestInfo(c),
+              id: viewAuditId,
               actorType: "contact",
               actorId: p.contactId,
               role: null,
@@ -240,7 +244,7 @@ export async function loadOffer(
   // The first open answers with the status as it is after this view ("Viewed", not "Sent"); an offer that reads as expired stays expired.
   if (viewWrites.length > 0 && status === "sent")
     body.document = { ...(body.document as object), status: "viewed" };
-  return { body, viewWrites };
+  return { body, viewWrites, viewAuditId };
 }
 
 /** Streams an R2 object as a download: attachment, no sniffing, sandboxed, never cached. */

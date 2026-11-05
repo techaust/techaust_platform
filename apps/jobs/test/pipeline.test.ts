@@ -342,7 +342,7 @@ describe("email consumer [FRM-07]", () => {
 
   it("a suppressed recipient is skipped and never sent", async () => {
     await realEnv.DB.prepare(
-      "INSERT INTO email_suppressions (email, reason, at) VALUES ('asha@example.com', 'bounce', ?1)",
+      "INSERT INTO email_suppressions (email, reason, at) VALUES ('asha@example.com', 'hard_bounce', ?1)",
     )
       .bind(T0)
       .run();

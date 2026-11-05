@@ -96,6 +96,15 @@ export const paymentRefundedSql = (payment: string, which: "live" | "succeeded" 
   `(SELECT coalesce(sum(prf.amount_minor), 0) FROM payment_refunds prf WHERE prf.payment_id = ${payment} AND prf.status ${which === "live" ? "<> 'failed'" : "= 'succeeded'"})`;
 
 /**
+ * M7.2 (review 1, finding 5): payment row `p` (an SQL table name or alias of `payments`) has given all its money back: it holds nothing net on any document
+ * (`paymentNetSql`) and its live refunds (`paymentRefundedSql`) cover its amount. "Send receipt again" refuses such a payment's receipt (409 `receipt_refunded`,
+ * in the pre-check and the INSERT's WHERE) and the entry's receipt read says so (`refundedInFull`). A payment held as credit (net 0, nothing refunded) or partly
+ * refunded is not refunded in full.
+ */
+export const paymentRefundedInFullSql = (p: string): string =>
+  `(${paymentNetSql(`${p}.id`)} = 0 AND ${paymentRefundedSql(`${p}.id`)} >= ${p}.amount_minor)`;
+
+/**
  * M6.5 (L35; Step 0 point 3): THE free money of payment row `p` (an SQL table name or alias of `payments`): its amount less what it holds net on documents
  * (`paymentNetSql`) and less what it has refunded or is refunding (`paymentRefundedSql`). It is the client's credit from that payment, what a refund from credit
  * may take, and what an allocation may still use. Every reader and trigger from 0070 on uses this one helper (core `unallocated` in `@techaust/core/ledger` is the

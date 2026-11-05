@@ -136,8 +136,11 @@ function button(label: string, url: string): string {
 <p class="mu" style="${textStyle(T.text.sm.size, T.text.sm.lineHeight, C.textMuted, "padding:0 0 16px;word-break:break-all;")}"><a href="${href}" class="lk" style="color:${C.textAccent};text-decoration:underline;">${href}</a></p>`;
 }
 
-/** The brand layout around a body (already HTML). `title` is the document title (the subject). */
-function layout(title: string, inner: string, opts: LayoutOptions): string {
+/**
+ * The brand layout around a body (already HTML). `title` is the document title (the subject). `footer`: lines set in the footer above the 07 §8 line, each
+ * already HTML (06 §6: "why you got this email", and on a non-transactional email the link to switch it off).
+ */
+function layout(title: string, inner: string, opts: LayoutOptions, footer: string[] = []): string {
   const base = opts.assetBase;
   const alt = "TecHaust Technologies";
   const altStyle = `font-family:${FONT};font-size:16px;font-weight:600;color:${C.text};`;
@@ -171,7 +174,7 @@ ${inner}
 </td></tr>
 <tr><td class="px" style="padding:0 ${PAD}px 32px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td class="ln" style="border-top:1px solid ${C.border};padding-top:16px;">
-<p class="mu" style="${textStyle(T.text.caption.size, T.text.caption.lineHeight, C.textMuted)}">${e(FOOTER)}</p>
+${footer.map((f) => `<p class="mu" style="${textStyle(T.text.sm.size, T.text.sm.lineHeight, C.textMuted, "padding:0 0 12px;")}">${f}</p>\n`).join("")}<p class="mu" style="${textStyle(T.text.caption.size, T.text.caption.lineHeight, C.textMuted)}">${e(FOOTER)}</p>
 </td></tr></table>
 </td></tr>
 </table>
@@ -372,6 +375,41 @@ ${rows
 </table>`;
 }
 
+/**
+ * Figures as a ledger (M7.2, the weekly digest): the label on the left in the small muted face, the value on the right in the h2 size with tabular figures,
+ * a hairline between rows. A value of several currencies ("₹4,50,000.00 (3); $2,000.00 (1)", core `digestDataOf`) takes one line per currency, and a
+ * trailing count in brackets is set smaller and muted beside its amount. Presentation only: the words and figures are the data's.
+ */
+function figureTable(rows: [string, string][]): string {
+  const cell = `border-top:1px solid ${C.border};padding:14px 0;vertical-align:baseline;`;
+  const valueLine = (v: string) => {
+    const m = /^(.*\S) (\(\d+\))$/.exec(v);
+    const amount = m ? (m[1] ?? v) : v;
+    const count = m?.[2] ?? "";
+    return `<p class="tx" style="${textStyle(T.text.h2.size, T.text.h2.lineHeight, C.text, "font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap;")}">${e(amount)}${
+      count
+        ? ` <span class="mu" style="font-size:${T.text.sm.size}px;font-weight:400;color:${C.textMuted};">${e(count)}</span>`
+        : ""
+    }</p>`;
+  };
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:8px 0 24px;border-bottom:1px solid ${C.border};" class="ln">
+${rows
+  .map(
+    ([k, v]) => `<tr>
+<td class="ln" style="${cell}padding-right:16px;"><p class="mu" style="${textStyle(T.text.sm.size, T.text.sm.lineHeight, C.textMuted, "font-weight:500;padding-top:4px;")}">${e(k)}</p></td>
+<td class="ln" align="right" style="${cell}text-align:right;">${v.split("; ").map(valueLine).join("")}</td>
+</tr>`,
+  )
+  .join("\n")}
+</table>`;
+}
+
+/** A footer line that ends with a link (06 §6's switch-off link): "lead label" in HTML with the label linked, "lead label: url" in the text. */
+export const footerLink = (lead: string, label: string, url: string): Para => ({
+  text: `${lead}${lead ? " " : ""}${label}: ${url}`,
+  html: `${e(lead)}${lead ? " " : ""}<a href="${e(url)}" class="lk" style="color:${C.textAccent};text-decoration:underline;">${e(label)}</a>`,
+});
+
 /** Text: the paragraphs, a blank line apart, then the footer. */
 const textOf = (parts: string[]) => `${parts.filter(Boolean).join("\n\n")}\n\n${FOOTER}\n`;
 
@@ -408,17 +446,23 @@ export function securityEmail(
     action?: { label: string; url: string };
     /** The button straight after the facts, before the `after` paragraphs (07 §8 offer emails: "[Review and accept]. Questions? …"). */
     actionFirst?: boolean;
+    /** Figures set as a ledger (the weekly digest), after the facts: the label on the left, the value large on the right (`figureTable`). */
+    figures?: { rows: [string, string][]; text: string };
+    /** Lines in the footer, above the 07 §8 line (06 §6: why you got this email; a non-transactional email's switch-off link). */
+    footer?: Para[];
   },
 ): Rendered {
   const after = parts.after ?? [];
   const first = parts.actionFirst === true;
   const actionHtml = parts.action ? button(parts.action.label, parts.action.url) : "";
   const actionText = parts.action ? `${parts.action.label}: ${parts.action.url}` : "";
+  const footer = parts.footer ?? [];
   const html = layout(
     subject,
     heading(e(subject)) +
       parts.before.map((p) => bodyP(p.html)).join("") +
       (parts.facts ? factTable(parts.facts.rows) : "") +
+      (parts.figures ? figureTable(parts.figures.rows) : "") +
       (first ? actionHtml : "") +
       after
         .map((p, i) => bodyP(p.html, i === after.length - 1 && first ? "padding-bottom:0;" : ""))
@@ -426,14 +470,18 @@ export function securityEmail(
       (first ? "" : actionHtml) +
       (parts.notYou ? notYouBlock(parts.notYou) : ""),
     opts,
+    footer.map((p) => p.html),
   );
   const text = textOf([
     ...parts.before.map((p) => p.text),
     parts.facts?.text ?? "",
+    parts.figures?.text ?? "",
     first ? actionText : "",
     ...after.map((p) => p.text),
     first ? "" : actionText,
     parts.notYou ?? "",
+    // The footer lines sit above the 07 §8 line in the text too, a rule of dashes apart from the message.
+    footer.length ? `--\n${footer.map((p) => p.text).join("\n")}` : "",
   ]);
   return { subject, html, text };
 }
@@ -574,7 +622,7 @@ export type LeadReplyData = { subject: string; body: string };
 /**
  * A reply written on the lead page (to the lead, from hello@, Reply-To hello@). The text is the sender's, sent as plain text and
  * escaped in the HTML; blank lines start a new paragraph. It is a reply to an enquiry the person sent, so there is no "Why you're
- * receiving this" line and no unsubscribe link. The designer owns the layout polish; the words are never changed here.
+ * receiving this" line and no unsubscribe link. The words are never changed here.
  */
 export function leadReply(d: LeadReplyData, opts: LayoutOptions): Rendered {
   const subject = headerValue(d.subject);
@@ -582,13 +630,8 @@ export function leadReply(d: LeadReplyData, opts: LayoutOptions): Rendered {
     .split(/\n{2,}|\r\n(?:\r\n)+/)
     .map((p) => p.trim())
     .filter(Boolean);
-  const html = layout(
-    subject,
-    paragraphs
-      .map((p, i) => bodyP(lines(p), i === paragraphs.length - 1 ? "padding-bottom:0;" : ""))
-      .join(""),
-    opts,
-  );
+  // M7.2 (the M3.2 follow-up): in the M4 set, the subject as the email's one heading (06 §6 "real headings"), then the sender's paragraphs.
+  const html = layout(subject, heading(e(subject)) + paragraphs.map((p) => bodyP(lines(p))).join(""), opts);
   return { subject, html, text: `${d.body.trim()}\n\n${FOOTER}\n` };
 }
 

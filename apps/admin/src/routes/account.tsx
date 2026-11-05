@@ -3,11 +3,14 @@
 
 import { describeUserAgent } from "@techaust/core/user-agent";
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
 import { api, errorText, type Session } from "../api.ts";
 import { ConfirmDialog } from "../components/confirm-dialog.tsx";
 import { PageHeader } from "../components/display.tsx";
+import { Bell } from "../components/icons.tsx";
 import { RecoveryCodes } from "../components/recovery-codes.tsx";
 import { Notice, SkeletonRows } from "../components/ui.tsx";
+import { ZQ_UI } from "../lib/copy-zq.ts";
 import { when } from "../lib/format.ts";
 import { useSession, useUser } from "../session.tsx";
 
@@ -131,6 +134,17 @@ export function Component() {
             </button>
           </div>
         )}
+      </section>
+
+      <section className="section" aria-labelledby="notify-h">
+        <div className="section__head">
+          <h2 id="notify-h">{ZQ_UI.accountLink}</h2>
+          <p className="hint">{ZQ_UI.accountLinkHint}</p>
+        </div>
+        <Link to="/account/notifications" className="btn btn--secondary">
+          <Bell size={20} />
+          {ZQ_UI.prefsTitle}
+        </Link>
       </section>
 
       <section className="section" aria-labelledby="codes-h">

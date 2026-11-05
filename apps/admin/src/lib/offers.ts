@@ -343,11 +343,13 @@ export function recipientChoices<
     isBilling: boolean;
     anonymisedAt: number | null;
     isPrimary: boolean;
+    /** M7.2 (G4): emails to the address are stopped: listed with the reason, never ticked or sendable. */
+    suppression?: unknown;
   },
 >(contacts: readonly C[], preferredId: string | null = null): { choices: C[]; ticked: string[] } {
   const live = contacts.filter((c) => c.anonymisedAt === null);
-  const can = live.filter((c) => c.portalAccess);
-  const cannot = live.filter((c) => !c.portalAccess);
+  const can = live.filter((c) => c.portalAccess && !c.suppression);
+  const cannot = live.filter((c) => !c.portalAccess || !!c.suppression);
   if (preferredId && can.some((c) => c.id === preferredId))
     return { choices: [...can, ...cannot], ticked: [preferredId] };
   let ticked = can.filter((c) => c.isBilling).map((c) => c.id);

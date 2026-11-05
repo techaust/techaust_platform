@@ -37,7 +37,11 @@
     // client links point.
     "PDF_RENDERER": "stub",
     "PDF_MIN_SPACING_MS": "10000",
-    "PORTAL_URL": "http://localhost:5174/"
+    "PORTAL_URL": "http://localhost:5174/",
+    // M7.2 (run file C.4, F): this Worker's own public origin (the one-click unsubscribe URL `<PUBLIC_HOOKS_URL>u?t=…` must start with it), and the configuration
+    // set of non-transactional email (the weekly digest; docs/05 §11.1). Production has neither until Phase 7 (hooks.techaust.com).
+    "PUBLIC_HOOKS_URL": "http://localhost:8787/",
+    "SES_MARKETING_CONFIGURATION_SET": "techaust-marketing"
   },
   // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion (JOB-CRON-01) and one message per nightly statistic for the IST day that
   // just ended (M3.5, stats_daily); it enqueues and reads nothing else. Hourly at :30 UTC (= every IST hour, M5.4, LD61): ONE `sendBatch`, no D1 read;
@@ -68,14 +72,18 @@
   // SES keys and (M6.2, L1) the Razorpay webhook secret: names only; values come from `wrangler secret put` (docs/runbooks/ses-and-turnstile.md;
   // tools/set-gateway-keys.ps1 -Gateway razorpay-webhook). RAZORPAY_WEBHOOK_SECRET_PREVIOUS is optional (a rotation) and so not required. M6.3: the Stripe
   // webhook signing secret (`-Gateway stripe-webhook`); STRIPE_WEBHOOK_SECRET_PREVIOUS is optional too. M6.4 (L1): the PayPal webhook's id (`-Gateway
-  // paypal-webhook`; an identifier, not a credential: the signature is checked offline against PayPal's certificate). Not inherited.
+  // paypal-webhook`; an identifier, not a credential: the signature is checked offline against PayPal's certificate). M7.2: the SES events hook's token, the
+  // EventBridge connection's API-key header value (run file F, H2; SES_EVENTS_TOKEN_PREVIOUS is optional, a rotation),
+  // and UNSUBSCRIBE_KEY, the HMAC key of the digest's one-click unsubscribe links (C.5; `-Gateway unsubscribe-key`). Not inherited.
   "secrets": {
     "required": [
       "SES_ACCESS_KEY_ID",
       "SES_SECRET_ACCESS_KEY",
       "RAZORPAY_WEBHOOK_SECRET",
       "STRIPE_WEBHOOK_SECRET",
-      "PAYPAL_WEBHOOK_ID"
+      "PAYPAL_WEBHOOK_ID",
+      "SES_EVENTS_TOKEN",
+      "UNSUBSCRIBE_KEY"
     ]
   },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
@@ -150,13 +158,14 @@
       // Version/Preview URLs would skip Cloudflare Access (docs/runbooks/access-staging.md).
       "preview_urls": false,
       // Staging sends only to EMAIL_ALLOWED_RECIPIENTS (SES sandbox, docs/13 2026-10-23); any other recipient is logged
-      // `skipped`. LEAD_ALERT_TO and the allow-list hold the owner's verified test inbox: CONFIRM with the owner.
+      // `skipped`. LEAD_ALERT_TO and the allow-list hold the owner's verified test inbox: CONFIRM with the owner. M7.2 (run file F, H4)
+      // adds SES's mailbox-simulator addresses for the bounce/complaint/delivery check (they never reach a person; exact match, no +labels).
       "vars": {
         "ENVIRONMENT": "staging",
         "PAYMENTS_LIVE_ALLOWED": "false",
         "EMAIL_TRANSPORT": "ses",
         "LEAD_ALERT_TO": "admin@techaust.com",
-        "EMAIL_ALLOWED_RECIPIENTS": "admin@techaust.com",
+        "EMAIL_ALLOWED_RECIPIENTS": "admin@techaust.com,success@simulator.amazonses.com,bounce@simulator.amazonses.com,complaint@simulator.amazonses.com",
         "SES_REGION": "ap-south-1",
         "SES_CONFIGURATION_SET": "techaust-transactional",
         "ADMIN_URL": "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev/",
@@ -164,7 +173,9 @@
         "LEAD_PURGE_MODE": "dry_run",
         "PDF_RENDERER": "browser",
         "PDF_MIN_SPACING_MS": "10000",
-        "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/"
+        "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/",
+        "PUBLIC_HOOKS_URL": "https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev/",
+        "SES_MARKETING_CONFIGURATION_SET": "techaust-marketing"
       },
       // Browser Run (PDF rendering, M4.4): `env.BROWSER.quickAction("pdf", ...)`. It needs no API token, but it is not inherited and
       // does not work locally, so only staging has it. The owner switches Browser Run on before the M4.4 merge (run file, H2).
@@ -194,7 +205,9 @@
           "SES_SECRET_ACCESS_KEY",
           "RAZORPAY_WEBHOOK_SECRET",
           "STRIPE_WEBHOOK_SECRET",
-          "PAYPAL_WEBHOOK_ID"
+          "PAYPAL_WEBHOOK_ID",
+          "SES_EVENTS_TOKEN",
+          "UNSUBSCRIBE_KEY"
         ]
       },
       "d1_databases": [

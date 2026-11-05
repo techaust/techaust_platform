@@ -24,6 +24,11 @@ export type ProcessEventResult = {
   readonly result: (typeof PROCESS_EVENT_RESULTS)[number];
   /** A proforma paid online: the jobs Worker enqueues `gateway.advance` for this payment (its own message: one unit of work each). */
   readonly next?: { readonly kind: "gateway.advance"; readonly paymentId: string };
+  /**
+   * M7.2 (Q4 A, run file D "Refund email" producer 3): a refund event moved this refund of ours to `succeeded`: the jobs Worker enqueues `refund.notify` for it
+   * (the client's email; its consumer re-checks every rule in SQL).
+   */
+  readonly refundNotify?: string;
 };
 
 /**
@@ -157,6 +162,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 
 export function isProcessEventResult(v: unknown): v is ProcessEventResult {
   if (!isObj(v) || !(PROCESS_EVENT_RESULTS as readonly unknown[]).includes(v.result)) return false;
+  if (v.refundNotify !== undefined && !isRpcId(v.refundNotify)) return false;
   if (v.next === undefined) return true;
   return isObj(v.next) && v.next.kind === "gateway.advance" && isRpcId(v.next.paymentId);
 }

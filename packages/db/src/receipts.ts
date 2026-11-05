@@ -11,6 +11,7 @@
 // document (Researched 2026-11-03, s.31(3)(d) CGST Act and Rule 50 CGST Rules as quoted in the GST Council flyer ch. 6 (08-C RA-39)); the trigger
 // `documents_receipt_insert` (0070) holds the same rules.
 import type { GuardSql } from "./log.ts";
+import { paymentRefundedInFullSql } from "./sql-rules.ts";
 
 export type { GuardSql };
 
@@ -129,8 +130,12 @@ export const RECEIPTS_DUE_SQL = `SELECT p.id FROM payments p INDEXED BY payments
      AND NOT EXISTS (SELECT 1 FROM clients k WHERE k.id = p.client_id AND k.anonymised_at IS NOT NULL)
    ORDER BY p.verified_at, p.id LIMIT 20`;
 
-/** A payment's receipt (`?1` payment): its number, day, status and PDF state (the Payments panel's "Receipt being prepared"). */
-export const RECEIPT_OF_PAYMENT_SQL = `SELECT r.id, r.number_display, r.issue_date, r.status, r.pdf_sha256 IS NOT NULL AS has_pdf, r.voided_at
+/**
+ * A payment's receipt (`?1` payment): its number, day, status and PDF state (the Payments panel's "Receipt being prepared"), and whether the payment has been
+ * refunded in full (M7.2 review 1, finding 5: "Send receipt again" is hidden then; the route refuses it with 409 `receipt_refunded`).
+ */
+export const RECEIPT_OF_PAYMENT_SQL = `SELECT r.id, r.number_display, r.issue_date, r.status, r.pdf_sha256 IS NOT NULL AS has_pdf, r.voided_at,
+     coalesce((SELECT ${paymentRefundedInFullSql("p")} FROM payments p WHERE p.id = ?1), 0) AS refunded_in_full
    FROM documents r WHERE r.id = 'rct_' || ?1 AND r.type = 'receipt'`;
 
 /**

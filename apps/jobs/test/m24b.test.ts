@@ -473,6 +473,15 @@ describe("redelivery, bad input and missing rows [NFR-7]", () => {
 // ---- the sign-in link email ----------------------------------------------------------------------------------------------
 
 describe("the sign-in link email [POR-01]", () => {
+  // M7.2 (the M3.3 follow-up): the consumer sends a sign-in link only while its token row exists, so these links' rows are stored first.
+  beforeEach(async () => {
+    for (const ch of "abcdefghs123")
+      await realEnv.DB.prepare(
+        "INSERT OR IGNORE INTO magic_link_tokens (token_hash, contact_id, expires_at) VALUES (?1, 'contact-m24b', ?2)",
+      )
+        .bind(ch.repeat(64), AT + 900_000)
+        .run();
+  });
   const link = (hash: string, expiresAt: number, to = "client@example.test"): EmailMessage => ({
     template: "portal.magic_link",
     to,
@@ -518,7 +527,7 @@ describe("the sign-in link email [POR-01]", () => {
   it("is skipped for a suppressed address and, on staging, for one not on the allow-list", async () => {
     const { sent, transport } = recorder();
     await realEnv.DB.prepare(
-      "INSERT INTO email_suppressions (email, reason, at) VALUES ('blocked@example.test', 'bounce', ?1)",
+      "INSERT INTO email_suppressions (email, reason, at) VALUES ('blocked@example.test', 'hard_bounce', ?1)",
     )
       .bind(AT)
       .run();

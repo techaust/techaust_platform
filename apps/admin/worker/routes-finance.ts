@@ -15,6 +15,7 @@ import { reconciliation } from "./recon.ts";
 import { reductions } from "./reductions.ts";
 import { refunds, refundsTab } from "./refunds.ts";
 import "./warm-finance.ts"; // start-up warm-up of the settings, payment and gateway schemas
+import { receiptSend } from "./receipt-send.ts";
 
 export function mountFinance(app: App) {
   // M6.2: payment links, "Needs review" and the gateways' status (before `payments`, whose `/:id` would match `/review` and `/gateways`).
@@ -26,6 +27,8 @@ export function mountFinance(app: App) {
   // FEMA reductions.
   app.route("/v1/payments", refunds);
   app.route("/v1/payments", paymentReceipt);
+  // M7.2 (C.2): "Send receipt again".
+  app.route("/v1/receipts", receiptSend);
   // Review part 1, finding 3 (RA-41): credit held at a return period's end (before `payments`, whose `/:id` would match `/credit-held`).
   app.route("/v1/payments", creditHeld);
   // M7.1 (ADM-PAY-05, L10): the clients' "I've paid" notices, before `payments` (its `/:id` would match `/notices`).

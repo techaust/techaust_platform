@@ -1,0 +1,5 @@
+Export invoices without IGST from 1 April need a letter of undertaking for FY 2027-28. File it on the GST portal (Services, User Services, Furnish Letter of Undertaking) and save the ARN in Settings › Tax. We'll remind you each week until it's saved.
+
+Open in admin: https://example.test/sample
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

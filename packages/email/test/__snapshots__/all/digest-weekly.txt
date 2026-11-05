@@ -1,0 +1,16 @@
+Pipeline, invoiced and collected, overdue invoices, new leads and upcoming reminders.
+
+Pipeline: ₹4,50,000.00 (3); $2,000.00 (1)
+Invoiced this month: ₹1,18,000.00 (2)
+Collected this month: ₹59,000.00 (1)
+Overdue invoices: ₹0.00 (0)
+New leads (last 7 days): 4
+Reminders due (next 7 days): 2
+
+Open dashboard: https://example.test/sample
+
+--
+Why you're receiving this: you're an owner of TecHaust admin and the weekly digest is on.
+Switch off the weekly digest: https://example.test/sample
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

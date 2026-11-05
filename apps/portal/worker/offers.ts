@@ -44,6 +44,8 @@ export const offers = new Hono<AppEnv>()
     const found = id ? await loadOffer(c, principal(c), id) : null;
     if (!found) return err(c, NOT_FOUND, 404);
     if (found.viewWrites.length) c.set("after", found.viewWrites);
+    // M7.2 (E): the staff bell of a first view, asked for once the after-write ran (index.ts).
+    if (found.viewAuditId) c.set("afterAlert", found.viewAuditId);
     return c.json(found.body);
   })
   .get("/:id/pdf", async (c) => {

@@ -3,7 +3,9 @@
 // `email_in_use` lands on the email field, a 409 `stale_version` offers the latest. The owner's data tools (export,
 // erase or anonymise, both with step-up) open from each contact's menu (data-tools.tsx). An anonymised contact reads
 // "Removed contact" and can't be changed. Emails are unique per client (the API lower-cases them).
+import { formatDate, istDate } from "@techaust/core/dates";
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
 import {
   api,
   type ClientPage,
@@ -23,8 +25,11 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { lastLiveOfIndividual } from "../../lib/clients.ts";
+import { ZQ_UI } from "../../lib/copy-zq.ts";
 import { sentence } from "../../lib/format.ts";
+import { m72Api } from "../../lib/m72-api.ts";
 import { useUser } from "../../session.tsx";
+import { AllowEmailsDialog } from "../emails/allow-dialog.tsx";
 import { EraseDialog, ExportDialog } from "./data-tools.tsx";
 import { ContactFlags, ContactSwitches } from "./parts.tsx";
 
@@ -36,6 +41,11 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
   const [editing, setEditing] = useState<ContactView | "new" | null>(null);
   const [exporting, setExporting] = useState<ContactView | null>(null);
   const [erasing, setErasing] = useState<ContactView | null>(null);
+  // M7.2 (G3): the Owner's "Allow emails again" for a contact whose address is stopped (not on an anonymised client: the API refuses, 409 `client_anonymised`)
+  const [allowing, setAllowing] = useState<ContactView | null>(null);
+  const canAllow = allowed(user.role, "emails.unsuppress") && !props.data.anonymised;
+  const canReadEmails = allowed(user.role, "emails.read");
+  const toast = useToast();
   const [more, setMore] = useState<{ list: ContactView[]; next: string | null } | null>(null);
   // A reload (after an edit or an erase) starts the list again from the page's first rows, so no stale row stays shown
   // (reset during render when the page data changes, React's pattern for state derived from props).
@@ -110,6 +120,9 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
               onEdit={() => setEditing(c)}
               onExport={() => setExporting(c)}
               onErase={() => setErasing(c)}
+              canAllow={canAllow}
+              canReadEmails={canReadEmails}
+              onAllow={() => setAllowing(c)}
             />
           ))}
         </ul>
@@ -136,6 +149,23 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
           props.reload();
         }}
       />
+      {canAllow && allowing?.suppression && (
+        <AllowEmailsDialog
+          open
+          address={allowing.email}
+          reason={allowing.suppression.label}
+          since={formatDate(istDate(allowing.suppression.at))}
+          onClose={() => setAllowing(null)}
+          onConfirm={async () => {
+            await m72Api.unsuppressContact(allowing.id, allowing.updatedAt);
+            const address = allowing.email;
+            setAllowing(null);
+            toast("success", ZQ_UI.allowed(address));
+            setMore(null);
+            props.reload();
+          }}
+        />
+      )}
       {canExport && <ExportDialog contact={exporting} onClose={() => setExporting(null)} />}
       {canErase && (
         <EraseDialog
@@ -163,6 +193,10 @@ function ContactRow(props: {
   onEdit: () => void;
   onExport: () => void;
   onErase: () => void;
+  /** M7.2: the Owner may allow emails to a stopped address again; Owner and Staff open the email log for it. */
+  canAllow: boolean;
+  canReadEmails: boolean;
+  onAllow: () => void;
 }) {
   const { c } = props;
   const gone = c.anonymisedAt !== null;
@@ -199,10 +233,37 @@ function ContactRow(props: {
               portalAccess={c.portalAccess}
               canSeeFinance={c.canSeeFinance}
             />
-            {c.bouncedAt !== null && (
-              <StatusPill tone="danger" icon="ban">
-                Email bounced
-              </StatusPill>
+            {/* M7.2 (G3): emails to the address are stopped (a hard bounce, a spam report, or by hand), with the reason and day; else M3.3's bounce flag */}
+            {c.suppression ? (
+              <span className="contact__stopped">
+                <StatusPill tone="danger" icon="ban">
+                  {ZQ_UI.stopped}
+                </StatusPill>
+                <span className="contact__consent muted">
+                  {ZQ_UI.stoppedSince(c.suppression.label, formatDate(istDate(c.suppression.at)))}
+                </span>
+                {props.canReadEmails && (
+                  <Link
+                    to={`/emails?to=${encodeURIComponent(c.email)}`}
+                    className="contact__consent contact__stopped-link"
+                  >
+                    {ZQ_UI.settingsLink}
+                    <span className="visually-hidden">{` (${c.name})`}</span>
+                  </Link>
+                )}
+                {props.canAllow && (
+                  <button type="button" className="btn btn--text" onClick={props.onAllow}>
+                    {ZQ_UI.allowAgain}
+                    <span className="visually-hidden">{ZQ_UI.allowAgainFor(c.name)}</span>
+                  </button>
+                )}
+              </span>
+            ) : (
+              c.bouncedAt !== null && (
+                <StatusPill tone="danger" icon="ban">
+                  Email bounced
+                </StatusPill>
+              )
             )}
             {c.legalHold && (
               <StatusPill tone="warning" icon="lock">

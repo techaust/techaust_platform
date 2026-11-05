@@ -1,0 +1,9 @@
+Hi Sample, invoice TH/INV/2627/0001 was due on 12 Nov 2026 and ₹23,600.00 is still outstanding. Please arrange payment, or reply to this email so we can agree a date. You can also contact Rupak Sarkar, the owner, directly at contact@techaust.com.
+
+You can view and download it with the button below or in your client portal.
+
+View invoice: https://example.test/sample/invoice
+
+If you've already paid, thank you, and please ignore this.
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

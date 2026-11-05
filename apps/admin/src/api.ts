@@ -404,6 +404,8 @@ export type ContactView = {
   legalHold: boolean;
   createdAt: number;
   updatedAt: number;
+  /** M7.2 (C.1): the address's suppression (emails to it are stopped), or null; absent from reads that don't select it. */
+  suppression?: { reason: string; label: string; at: number } | null | undefined;
 };
 export type ClientPage = {
   client: ClientView;

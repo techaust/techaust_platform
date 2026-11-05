@@ -24,6 +24,7 @@ import {
   sendErrorText,
   sendState,
   sendStateLabel,
+  sendStateLook,
 } from "./invoice-send.ts";
 import { blockerLine, blockerTarget } from "./invoices.ts";
 import { sendActionOf } from "./invoices-api.ts";
@@ -93,8 +94,13 @@ describe("emails and their status [ADM-INV-15]", () => {
     expect(sendState({ cancelledAt: null, emailStatus: "sending" })).toBe("queued");
     expect(sendState({ cancelledAt: null, emailStatus: "sent" })).toBe("sent");
     expect(sendState({ cancelledAt: null, emailStatus: "delivered" })).toBe("delivered");
-    for (const s of ["failed", "bounced", "complained"])
-      expect(sendState({ cancelledAt: null, emailStatus: s })).toBe("failed");
+    expect(sendState({ cancelledAt: null, emailStatus: "failed" })).toBe("failed");
+    // M7.2 (G5): the SES events' statuses read as themselves, in S12's words
+    expect(sendState({ cancelledAt: null, emailStatus: "bounced" })).toBe("bounced");
+    expect(sendState({ cancelledAt: null, emailStatus: "complained" })).toBe("complained");
+    expect(sendStateLabel("bounced")).toBe("Bounced");
+    expect(sendStateLabel("complained")).toBe("Marked as spam");
+    expect(sendStateLook("complained")).toEqual({ tone: "danger", icon: "alert" });
     expect(sendState({ cancelledAt: null, emailStatus: "skipped" })).toBe("cancelled");
     expect(sendStateLabel("delivered")).toBe(`${M}Delivered`);
   });

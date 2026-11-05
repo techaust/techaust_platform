@@ -10,8 +10,11 @@
 # M6.4: `-Gateway paypal-webhook` stores the sandbox webhook's ID (letters and digits, 10 to 50) as PAYPAL_WEBHOOK_ID on the jobs Worker. It is an identifier,
 # not a credential (the jobs Worker checks PayPal's signature offline against PayPal's certificate). Optionally (answer y) it reads the sandbox Client ID and
 # Secret again (never stored by this run), asks the sandbox for that webhook, and checks its URL is the staging `/paypal` address and its events are subscribed.
+# M7.2 (run file F, H2): `-Gateway ses-events` makes the SES events hook's token (32 random bytes as hex), stores it as SES_EVENTS_TOKEN on the jobs Worker and
+# puts it on the clipboard, to paste into the EventBridge connection's API key value at once (H3a). `-Gateway unsubscribe-key` makes the HMAC key of the weekly
+# digest's one-click links the same way and stores it as UNSUBSCRIBE_KEY on the jobs Worker; it is never shown and NOT copied (nothing outside needs it).
 param(
-  [Parameter(Mandatory = $true)][ValidateSet("razorpay", "razorpay-webhook", "stripe", "stripe-webhook", "paypal", "paypal-webhook")][string]$Gateway,
+  [Parameter(Mandatory = $true)][ValidateSet("razorpay", "razorpay-webhook", "stripe", "stripe-webhook", "paypal", "paypal-webhook", "ses-events", "unsubscribe-key")][string]$Gateway,
   # Wrangler config files (relative to the repository) of the staging Workers that need these keys.
   [Parameter(Mandatory = $true)][string[]]$Configs
 )
@@ -36,6 +39,8 @@ function Stop-With([string]$why) { Write-Host "RESULT: FAILED ($Gateway): $why. 
 # M6.4 (early check 2 finding 7): each PayPal mode stores its values on exactly one Worker, so a wrong -Configs can never put PayPal's keys on the
 # internet-facing jobs Worker or the webhook ID on the finance Worker: the API keys only on the admin finance Worker, the webhook ID only on jobs.
 $onlyConfig = @{ "paypal" = "apps\admin\wrangler.finance.jsonc"; "paypal-webhook" = "apps\jobs\wrangler.jsonc" }
+# M7.2: the SES events token and the one-click key live on the jobs Worker only.
+foreach ($k in @("ses-events", "unsubscribe-key")) { $onlyConfig[$k] = "apps\jobs\wrangler.jsonc" }
 if ($onlyConfig.ContainsKey($Gateway)) {
   $given = @($Configs | ForEach-Object { ($_ -replace '/', '\') -replace '^\.\\', '' })
   if ($given.Count -ne 1 -or $given[0] -ine $onlyConfig[$Gateway]) {
@@ -61,6 +66,17 @@ switch ($Gateway) {
     $bytes = New-Object byte[] 32
     [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     $secrets["RAZORPAY_WEBHOOK_SECRET"] = -join ($bytes | ForEach-Object { $_.ToString("x2") })
+  }
+  "ses-events" {
+    # 32 random bytes from the system's cryptographic generator, as 64 hex characters (the EventBridge connection sends it as the x-techaust-ses-token header).
+    $bytes = New-Object byte[] 32
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $secrets["SES_EVENTS_TOKEN"] = -join ($bytes | ForEach-Object { $_.ToString("x2") })
+  }
+  "unsubscribe-key" {
+    $bytes = New-Object byte[] 32
+    [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $secrets["UNSUBSCRIBE_KEY"] = -join ($bytes | ForEach-Object { $_.ToString("x2") })
   }
   "stripe" {
     # M6.3 (L3): a RESTRICTED sandbox key only; an sk_ key can do everything on the shared account and is refused here and in the Worker.
@@ -188,12 +204,17 @@ try {
     }
   }
   if ($Gateway -eq "razorpay-webhook") { Set-Clipboard -Value $secrets["RAZORPAY_WEBHOOK_SECRET"] }
+  if ($Gateway -eq "ses-events") { Set-Clipboard -Value $secrets["SES_EVENTS_TOKEN"] }
 } finally {
   foreach ($k in @($secrets.Keys)) { $secrets[$k] = $null }
   $id = $null; $secret = $null; $key = $null; $whsec = $null; $wid = $null
 }
 if ($Gateway -eq "razorpay-webhook") {
   Write-Host "RESULT: razorpay-webhook secret made and stored on staging: $($stored -join ', '); it is on your clipboard, paste it into Razorpay's webhook Secret box now"
+} elseif ($Gateway -eq "ses-events") {
+  Write-Host "RESULT: ses-events token made and stored on staging: $($stored -join ', '); it is on your clipboard, paste it into the EventBridge connection's API key value now"
+} elseif ($Gateway -eq "unsubscribe-key") {
+  Write-Host "RESULT: unsubscribe-key made and stored on staging: $($stored -join ', '); nothing to paste anywhere"
 } elseif ($Gateway -eq "stripe-webhook") {
   Write-Host "RESULT: stripe-webhook secret stored on staging: $($stored -join ', '); not checked with Stripe; the first test event proves it"
 } elseif ($Gateway -eq "paypal-webhook") {

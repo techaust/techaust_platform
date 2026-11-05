@@ -491,6 +491,10 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Dismiss a client's "I've paid" notice (`payments.notices`; M7.1, L10; recording the payment from a notice is `payments.record`, the list is `payments.read`) | ✅ | ✅ | — | — |
 | Clients' requests sent from the portal: view (`requests.read`; M7.1, L8) | ✅ | ✅ | — | — |
 | Close a client's request (`requests.close`; M7.1, L8): Staff only a contact change or a grievance; the data-rights kinds (access, correction, erasure, and from M7.4 consent withdrawal and nomination) are the Owner's | ✅ | ✅ contact change, grievance | — | — |
+| Email log: the list and one email with its delivery events (`emails.read`; M7.2, L12) | ✅ | ✅ | — | — |
+| Allow emails to a stopped address again (`emails.unsuppress`; M7.2, L12; audited, no step-up) | ✅ | — | — | — |
+| Own notification emails and the weekly digest switch (`notifications.own`; M7.2, L11; the digest goes to owners only) | ✅ | ✅ | ✅ | ✅ |
+| Send a receipt again to 1 to 5 contacts who can see finance (`invoices.send`; M7.2, ADM-PAY-09) | 📤 | 📤 | — | — |
 | Refunds | ✅ (step-up) | — | — | 👁 |
 | Reports | ✅ | Projects, time, care plans | Pipeline only | ✅ finance + exports |
 | GST/CA exports | ✅ (step-up) | — | — | ✅ (step-up) |

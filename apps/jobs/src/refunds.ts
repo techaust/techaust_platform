@@ -1,6 +1,8 @@
 // M6.5 refunds and reconciliation on the leads queue (ADM-PAY-08, ADM-PAY-10; run file D, L11, L37): routed before the lead fall-through, one unit of work each.
 //   `refund.check {refundId}`  → the finance Worker's `GatewayEvents.checkRefund` (ADMIN_GATEWAY; checked lazily: a finance Worker older than M6.5 has none);
-//   `refund.sweep {asOf}`      → up to 20 `refund.check` for refunds open and idle for 15 minutes (`REFUNDS_IDLE_SQL`, its partial index);
+//   `refund.sweep {asOf}`      → up to 20 `refund.check` for refunds open and idle for 15 minutes (`REFUNDS_IDLE_SQL`, its partial index), and (M7.2 review 1,
+//                                finding 8) up to 20 `refund.notify` for refunds that succeeded in the last 75 minutes with no refund email logged
+//                                (`REFUNDS_UNMAILED_SQL`): a producer's lost queue send is caught within the hour;
 //   `recon.fetch {…, skip}`    → `GatewayEvents.fetchSettlements`; a full page queues the next one (`next.skip`).
 // A dead `refund.check` becomes a `refund_stuck` review item with the owners' bell (once: the item's unique open kind per refund); the sweep and the fetch
 // only log (the next tick lists them again). Crons only enqueue; nothing here reads a gateway itself.
@@ -10,12 +12,20 @@ import {
   refundCheckMessage,
   refundSweepMessage,
 } from "@techaust/core";
+import { istDate, toIsoDate } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
+import { refundNotify } from "@techaust/core/notifications";
 import { reviewBellStatement, reviewItemStatement } from "@techaust/db/gateway";
-import { REFUNDS_IDLE_SQL, refundItemOnceGuard } from "@techaust/db/refunds";
+import {
+  REFUND_MAIL_LOOKBACK_MS,
+  REFUNDS_IDLE_SQL,
+  REFUNDS_UNMAILED_SQL,
+  refundItemOnceGuard,
+} from "@techaust/db/refunds";
 import { type GatewayVerdict, gatewayRetryDelay, REVIEW_LINK } from "./gateway.ts";
 import { adminGateway } from "./gateway-rpc.ts";
 import { logEvent } from "./log.ts";
+import { sendRefundNotify } from "./refund-notify.ts";
 
 const skip = (kind: string): GatewayVerdict => {
   logEvent("refund.invalid_message", { kind });
@@ -24,7 +34,7 @@ const skip = (kind: string): GatewayVerdict => {
 
 /** One body of the refund family (`isRefundKind` already said so). */
 export async function processRefundFamily(
-  env: Pick<Env, "DB" | "LEADS_QUEUE">,
+  env: Pick<Env, "DB" | "LEADS_QUEUE" | "EMAIL_QUEUE">,
   body: { kind: string },
   attempts: number,
 ): Promise<GatewayVerdict> {
@@ -32,20 +42,27 @@ export async function processRefundFamily(
     const m = refundCheckMessage.safeParse(body);
     if (!m.success) return skip(body.kind);
     const r = await adminGateway(env).checkRefund?.({ refundId: m.data.refundId });
+    // M7.2 (Q4 A, producer 4): the sweep's check moved the refund to succeeded: the client's email (its consumer re-checks every rule in SQL). A failed send
+    // is logged, not thrown (review 1, finding 8): a retry would find the refund settled and answer nothing more, so the next `refund.sweep` sends it instead.
+    if (r?.result === "succeeded") await sendRefundNotify(env, m.data.refundId);
     logEvent("refund.check", { r: r?.result ?? "none" });
     return r?.result === "retry" ? { retry: gatewayRetryDelay(attempts) } : "ack";
   }
   if (body.kind === "refund.sweep") {
     const m = refundSweepMessage.safeParse(body);
     if (!m.success) return skip(body.kind);
-    const rows = (
-      await env.DB.prepare(REFUNDS_IDLE_SQL)
-        .bind(m.data.asOf - REFUND_SWEEP_IDLE_MS)
-        .all<{ id: string }>()
-    ).results;
+    const since = m.data.asOf - REFUND_MAIL_LOOKBACK_MS;
+    const [idleR, unmailedR] = await env.DB.batch([
+      env.DB.prepare(REFUNDS_IDLE_SQL).bind(m.data.asOf - REFUND_SWEEP_IDLE_MS),
+      env.DB.prepare(REFUNDS_UNMAILED_SQL).bind(toIsoDate(istDate(since)), since),
+    ]);
+    const rows = (idleR?.results ?? []) as { id: string }[];
+    const unmailed = (unmailedR?.results ?? []) as { id: string }[];
     if (rows.length > 0)
       await env.LEADS_QUEUE.sendBatch(rows.map((r) => ({ body: { kind: "refund.check", refundId: r.id } })));
-    logEvent("refund.sweep", { count: rows.length });
+    if (unmailed.length > 0)
+      await env.EMAIL_QUEUE.sendBatch(unmailed.map((r) => ({ body: refundNotify(r.id) })));
+    logEvent("refund.sweep", { count: rows.length, unmailed: unmailed.length });
     return "ack";
   }
   const m = reconFetchMessage.safeParse(body);

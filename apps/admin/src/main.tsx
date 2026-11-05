@@ -78,6 +78,11 @@ const router = createBrowserRouter([
             lazy: async () => ({ Component: (await import("./routes/dashboard.tsx")).Dashboard }),
           },
           { path: "account", lazy: () => import("./routes/account.tsx") },
+          // M7.2: the member's notification emails (the emails' "Change notification settings" link, core NOTIFICATIONS_PATH)
+          { path: "account/notifications", lazy: () => import("./routes/account-notifications.tsx") },
+          // M7.2: the email log and one email (the bounce and spam bells link to /emails/<email_log id>)
+          { path: "emails", lazy: () => import("./routes/emails.tsx") },
+          { path: "emails/:id", lazy: () => import("./routes/emails/email.tsx") },
           { path: "settings", lazy: async () => ({ Component: (await settings()).SettingsIndex }) },
           { path: "settings/users", lazy: () => import("./routes/users.tsx") },
           { path: "settings/:group", lazy: async () => ({ Component: (await settings()).SettingsGroup }) },

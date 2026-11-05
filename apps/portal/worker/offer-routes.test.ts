@@ -247,6 +247,21 @@ describe("GET /offers/:id: the projected view, view tracking, superseded [POR-05
     expect(res.headers.get("Cache-Control")).toBe("no-store");
   });
 
+  it("M7.2 (E): the first view asks jobs for the staff bell with its own audit row's id (ids only); the second view asks nothing", async () => {
+    const f = await fixtures();
+    const o = await mkOffer(f.a);
+    const cookie = await sign(f.a.finance);
+    const q = queues();
+    expect((await call(`/offers/${o.id}`, { cookie }, q.env)).status).toBe(200);
+    const audit = await one<{ id: string }>(
+      "SELECT id FROM audit_log WHERE action = 'document.view' AND entity_id = ?",
+      o.id,
+    );
+    expect(q.email).toEqual([{ kind: "portal.alert", auditId: audit?.id }]);
+    expect((await call(`/offers/${o.id}`, { cookie }, q.env)).status).toBe(200);
+    expect(q.email).toHaveLength(1);
+  });
+
   it("the first view makes a sent offer viewed, with one audit row; the second view writes nothing", async () => {
     const f = await fixtures();
     const o = await mkOffer(f.a);

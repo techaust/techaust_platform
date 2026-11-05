@@ -1,0 +1,7 @@
+Sample Member's TecHaust admin account was locked for 15 minutes on 5 Nov 2026, 10:00 IST after 10 wrong sign-in attempts within an hour.
+
+If Sample Member doesn't know about this, someone may be trying to guess the password. You can sign them out everywhere or deactivate the account under Users.
+
+Open in admin: https://example.test/sample
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

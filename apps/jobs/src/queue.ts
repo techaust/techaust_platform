@@ -12,13 +12,21 @@ import {
   isRefundKind,
   isReportKind,
 } from "@techaust/core";
+import { isDigestKind } from "@techaust/core/digest";
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
 import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
+import {
+  isBellsSweepKind,
+  isRefundNotifyKind,
+  isSigninUnfinishedKind,
+  isStaffNotifyKind,
+} from "@techaust/core/notifications";
 import { isPdfKind, isPdfMessage, isReceiptKind } from "@techaust/core/pdf-jobs";
 import { isPortalAlertKind } from "@techaust/core/portal";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { processBilling, processBillingDeadLetter } from "./billing.ts";
 import { processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
+import { processDigest } from "./digest.ts";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
 import { processGateway, processGatewayDeadLetter } from "./gateway.ts";
@@ -31,10 +39,13 @@ import { processPdf, processPdfDeadLetter } from "./pdf.ts";
 import { processPortalAlert } from "./portal-alerts.ts";
 import { enqueueDue, processStatementPurge, purgeLead } from "./purge.ts";
 import { processReceipt, processReceiptDeadLetter } from "./receipts.ts";
+import { processRefundNotify } from "./refund-notify.ts";
 import { processRefundDeadLetter, processRefundFamily } from "./refunds.ts";
 import { processReminderSend } from "./reminders.ts";
 import { processEdfReminder, processRealisationScan } from "./reports.ts";
+import { processSigninUnfinished } from "./signin-unfinished.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
+import { processBellsSweep, processStaffNotify } from "./staff-notify.ts";
 import { processStatementDeadLetter, processStatementPdf } from "./statement-pdf.ts";
 import { logStatsDeadLetter, processStats, skipStats } from "./stats.ts";
 
@@ -186,12 +197,33 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         else if (message.body.kind === "edf.reminder") await processEdfReminder(env, message.body);
         else await processStatementPurge(env, message.body);
         message.ack();
+      } else if (queue.endsWith("-leads") && isDigestKind(message.body)) {
+        // M7.2 (JOB-CRON-03, L7): the owners' weekly digest, before the lead fall-through (a body of this family, valid or not, can never become a lead).
+        await processDigest(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-leads") && isSigninUnfinishedKind(message.body)) {
+        // M7.2 (Q3 A): the hourly scan of unfinished staff sign-ins, before the lead fall-through.
+        await processSigninUnfinished(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-leads") && isBellsSweepKind(message.body)) {
+        // M7.2 (L9): the hourly safety net of the staff notification emails, before the lead fall-through.
+        await processBellsSweep(env, message.body);
+        message.ack();
       } else if (queue.endsWith("-leads") && isPdfKind(message.body)) {
         // A PDF body belongs on the PDF queue; here it is logged and dropped, so it can never become a lead.
         logEvent("pdf.wrong_queue", { queue });
         message.ack();
       } else if (queue.endsWith("-leads")) {
         await processLead(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-email") && isStaffNotifyKind(message.body)) {
+        // M7.2 (L9): one bell's staff emails by the members' switches, BEFORE the generic path (a body of this family, valid or not, is never sent as an email;
+        // one that can't be read is acknowledged).
+        await processStaffNotify(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-email") && isRefundNotifyKind(message.body)) {
+        // M7.2 (Q4 A): one refund's client emails, before the generic path (a window wait is a NEW delayed message made inside, never a retry).
+        await processRefundNotify(env, message.body);
         message.ack();
       } else if (queue.endsWith("-email") && isStaffAlert(message.body)) {
         // Expanded into ordinary emails; an alert that cannot be read or has no row is acknowledged (a retry cannot help).

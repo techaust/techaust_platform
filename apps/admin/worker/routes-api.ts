@@ -20,6 +20,7 @@ import { documentSave } from "./document-save.ts";
 import { documentSend } from "./document-send.ts";
 import { documentStart } from "./document-start.ts";
 import { documents } from "./documents.ts";
+import { contactUnsuppress, emails } from "./emails.ts";
 import { files } from "./files.ts";
 import { leads } from "./leads.ts";
 import { notes } from "./notes.ts";
@@ -58,6 +59,9 @@ export function mountApi(app: App) {
   app.route("/v1/time", timeLogs);
   app.route("/v1/notes", notes);
   app.route("/v1/files", files);
+  // M7.2 (C.1): the email log and the suppression list.
+  app.route("/v1/emails", emails);
+  app.route("/v1/contacts", contactUnsuppress);
   app.route("/v1/contacts", contacts);
   app.route("/v1/notifications", notifications);
   // M7.1 (POR-09, POR-11, L8): the requests clients send from the portal.

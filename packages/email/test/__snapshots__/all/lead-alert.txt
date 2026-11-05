@@ -1,0 +1,16 @@
+Reference: L-23456
+Service: Workflow Automation
+Budget: ₹1,00,000 to ₹3,00,000
+Country: India
+Name: Sample Person
+Email: sample.person@example.test
+Company: Sample Company
+Timeline: As soon as possible
+Currency: INR
+Tools: Tally, Excel or Google Sheets
+Message: A made-up enquiry that shows how a lead alert reads.
+Page: /get-a-quote
+
+Open in admin: https://example.test/sample
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

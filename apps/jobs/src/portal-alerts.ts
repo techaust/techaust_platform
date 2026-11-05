@@ -8,9 +8,12 @@
 // Staff lines (lead's delegation, run file H): S3, drafted here for the lead, `{name} at {client} sent a request: {kind}` and
 // `{client} says they paid {amount} for {number}`; the kind words below are part of S3.
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
+import { offerViewedTitle } from "@techaust/core/copy-zq";
 import { formatMoney, money } from "@techaust/core/money";
+import { staffNotify } from "@techaust/core/notifications";
 import {
   isPortalAlertMessage,
+  OFFER_VIEW_ACTION,
   PORTAL_ALERT_ACTIONS,
   type PortalAlertAction,
   type RequestKind,
@@ -19,6 +22,20 @@ import {
 import { logEvent } from "./log.ts";
 
 export type PortalAlertResult = "belled" | "missing" | "ignored" | "invalid";
+
+/**
+ * M7.2 (E, Q2 A): ?1 the audit id. The proposal or estimate a contact's first view names (the portal's `document.view` row), never another document type.
+ */
+export const OFFER_OF_AUDIT_SQL = `SELECT d.id, d.number_display FROM documents d
+   WHERE d.id = (SELECT a.entity_id FROM audit_log a WHERE a.id = ?1 AND a.action = 'document.view' AND a.entity_type = 'document' AND a.actor_type = 'contact')
+     AND d.type IN ('proposal', 'estimate')`;
+/**
+ * ?1 the document, ?2 the title, ?3 the link. `offer.viewed` for every active Owner and the active member who sent this version (`document_sends.created_by`,
+ * index `document_sends_document`); once per member (`notifications_user_event`).
+ */
+export const OFFER_VIEW_BELLS_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+   SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'offer.viewed', 'document', ?1, ?2, ?3 FROM staff_users u
+   WHERE u.status = 'active' AND (u.role = 'owner' OR u.id IN (SELECT s.created_by FROM document_sends s WHERE s.document_id = ?1))`;
 
 /** S3 (draft for the lead): the kind of a request as a bell names it. */
 export const REQUEST_KIND_WORDS: Record<RequestKind, string> = {
@@ -112,17 +129,32 @@ export async function processPortalAlert(env: Env, body: unknown): Promise<Porta
     return "invalid";
   }
   const db = env.DB;
-  const [auditR, requestR, noticeR] = await db.batch([
+  const [auditR, requestR, noticeR, offerR] = await db.batch([
     db
       .prepare("SELECT id, action, entity_type, entity_id, actor_type FROM audit_log WHERE id = ?1")
       .bind(body.auditId),
     db.prepare(REQUEST_OF_AUDIT_SQL).bind(body.auditId),
     db.prepare(NOTICE_OF_AUDIT_SQL).bind(body.auditId),
+    db.prepare(OFFER_OF_AUDIT_SQL).bind(body.auditId),
   ]);
   const row = auditR?.results[0] as AuditRow | undefined;
   if (!row) {
     logEvent("portal_alert.missing"); // acked: a row that is not there now will not be there on a retry either
     return "missing";
+  }
+  if (row.action === OFFER_VIEW_ACTION && row.actor_type === "contact") {
+    // M7.2 (E, Q2 A, S7): the bell named by the document's number, else "Untitled" (13 2026-10-26), then its emails by the members' switches (off by default).
+    const offer = offerR?.results[0] as { id: string; number_display: string | null } | undefined;
+    if (!offer) {
+      logEvent("portal_alert.ignored", { why: "no_offer" });
+      return "ignored";
+    }
+    await db
+      .prepare(OFFER_VIEW_BELLS_SQL)
+      .bind(offer.id, offerViewedTitle(offer.number_display), `/documents/${offer.id}`)
+      .run();
+    await env.EMAIL_QUEUE.send(staffNotify("offer.viewed", offer.id));
+    return "belled";
   }
   if (!(PORTAL_ALERT_ACTIONS as readonly string[]).includes(row.action) || row.actor_type !== "contact") {
     logEvent("portal_alert.ignored", { why: "not_portal" });

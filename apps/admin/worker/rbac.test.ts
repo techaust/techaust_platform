@@ -1502,6 +1502,50 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       await issueReceipt(env, p.id as string);
       return run(s, `/receipts/rct_${p.id}/pdf/retry`, { body: {} });
     },
+    // M7.2: the notification switches, the two unsuppress routes and "Send receipt again".
+    "PUT /api/v1/notifications/prefs": async () => {
+      const s = await sessionFor("staff");
+      return run(s, "/notifications/prefs", {
+        method: "PUT",
+        body: { approvals: false, expectedUpdatedAt: null },
+      });
+    },
+    "POST /api/v1/emails/:id/unsuppress": async () => {
+      const s = await owner();
+      const id = `log-${uuidv7()}`;
+      const to = `rbac-${uuidv7().slice(-8)}@example.test`;
+      await env.DB.batch([
+        env.DB.prepare(
+          "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at) VALUES (?1, ?2, 'lead.acknowledgement', 'lead', ?1, 'bounced', 1, 1)",
+        ).bind(id, to),
+        env.DB.prepare(
+          "INSERT INTO email_suppressions (email, reason, at) VALUES (?1, 'hard_bounce', 1)",
+        ).bind(to),
+      ]);
+      return run(s, `/emails/${id}/unsuppress`, { body: {} });
+    },
+    "POST /api/v1/contacts/:id/unsuppress": async () => {
+      const s = await owner();
+      const clientId = await mkReportClient("INR");
+      const email = `rbac-c-${uuidv7().slice(-8)}@example.test`;
+      const ct = await mkContact(clientId, { email });
+      await env.DB.prepare("INSERT INTO email_suppressions (email, reason, at) VALUES (?1, 'complaint', 1)")
+        .bind(email)
+        .run();
+      const row = await env.DB.prepare("SELECT updated_at FROM contacts WHERE id = ?1")
+        .bind(ct.id)
+        .first<{ updated_at: number }>();
+      return run(s, `/contacts/${ct.id}/unsuppress`, { body: { expectedUpdatedAt: row?.updated_at } });
+    },
+    "POST /api/v1/receipts/:id/send": async () => {
+      const s = await owner();
+      await putCompany();
+      const clientId = await mkReportClient("INR");
+      const p = await recorded(s, recordBody(clientId, 2_000));
+      await issueReceipt(env, p.id as string);
+      const ct = await mkContact(clientId, { portal_access: 1, can_see_finance: 1 });
+      return run(s, `/receipts/rct_${p.id}/send`, { body: { contactIds: [ct.id] } });
+    },
     "PUT /api/v1/invoices/:id/realisation-extensions/:eid/letter": async () => {
       const s = await owner();
       const clientId = await mkReportClient("USD");

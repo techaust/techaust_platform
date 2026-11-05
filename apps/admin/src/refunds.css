@@ -266,6 +266,11 @@
   margin-top: var(--space-4);
 }
 
+/* M7.2 (G7): "Send receipt again" beside the receipt, on the facts' last line */
+.rf-entry-receipt__send {
+  align-self: end;
+}
+
 /* a refund still on its way, under the client's credit: the label with its icon, the amount a link to its payment */
 .rf-inflight__label {
   display: inline-flex;

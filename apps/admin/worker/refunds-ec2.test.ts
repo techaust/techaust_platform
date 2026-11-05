@@ -594,7 +594,10 @@ describe("finding 3: the payment's one open refund of that amount is adopted onl
       kind: "refunded_outside",
     });
     expect(await refundRow(a.id)).toMatchObject({ status: "requested", provider_refund_id: null });
-    expect(await processEvent(env, await ev("rfnd_OURS00002"))).toEqual({ result: "processed" });
+    expect(await processEvent(env, await ev("rfnd_OURS00002"))).toEqual({
+      result: "processed",
+      refundNotify: a.id,
+    }); // M7.2: the refund email (producer 3)
     expect(await refundRow(a.id)).toMatchObject({
       status: "succeeded",
       provider_refund_id: "rfnd_OURS00002",
@@ -798,7 +801,7 @@ describe("finding 9: route-level paths", () => {
       )
       .run();
     stub();
-    expect(await processEvent(env, id)).toEqual({ result: "processed" });
+    expect(await processEvent(env, id)).toEqual({ result: "processed", refundNotify: expect.any(String) }); // M7.2: the refund email (producer 3)
     expect(await refundRow(body.id)).toMatchObject({ status: "succeeded", provider_refund_id: gwId });
   });
 });
@@ -882,7 +885,7 @@ describe("finding 9: Stripe disputes and PayPal's refund of ours", () => {
       status: "COMPLETED",
       checkoutId: body.id,
     });
-    expect(await processEvent(env, ev)).toEqual({ result: "processed" });
+    expect(await processEvent(env, ev)).toEqual({ result: "processed", refundNotify: expect.any(String) }); // M7.2: the refund email (producer 3)
     expect(await refundRow(body.id)).toMatchObject({ status: "succeeded", provider_refund_id: ppId });
     expect(await rows("SELECT kind FROM review_items WHERE webhook_event_id = ?1", ev)).toEqual([]);
   });

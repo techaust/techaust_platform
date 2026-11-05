@@ -201,3 +201,23 @@ export const notifications = sqliteTable(
     index("notifications_user_unread").on(t.userId, t.readAt, t.createdAt, t.id),
   ],
 );
+
+/**
+ * M7.2 (Q3 A, owner 2026-11-01; run file "Lead triage of the early check"): a staff sign-in whose password was right but whose code step never finished. One
+ * row per login challenge, keyed by the challenge's `jti` (never per member: a member's later, finished sign-in must not erase an attacker's unfinished one).
+ * Written by `/login` only after the password check passed (an unknown email or a wrong password writes nothing, so nothing changes for enumeration), deleted
+ * by the session batch of `/totp` and `/recovery` that finishes the same challenge, and read by the jobs `signin.unfinished` consumer (an email to the member
+ * at most once an hour, a bell for the owners), which sets `notified_at` and later deletes the row. Holds no address, IP, user agent, hash or secret.
+ */
+export const staffSigninPending = sqliteTable(
+  "staff_signin_pending",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => staffUsers.id),
+    at: integer("at").notNull(),
+    notifiedAt: integer("notified_at"),
+  },
+  (t) => [index("staff_signin_pending_scan").on(t.notifiedAt, t.at)],
+);

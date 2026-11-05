@@ -202,9 +202,10 @@ describe("every ROUTES row has one owner", () => {
     // M6.5: two receipt PDF rows on the invoices Worker (34); on finance, a payment's receipt, five refund rows, six reconciliation rows and three FEMA
     // reduction rows (44). M6.5 B4: the refunds register on the invoices Worker with the other registers (35).
     // M7.1: the "I've paid" notices list and dismiss on finance (48); the client requests on the API.
+    // M7.2 (changed on purpose): "Send receipt again" on finance (49); the notification switches, the email log and the two unsuppress routes on the API.
     expect(INVOICES_ROWS.length).toBe(35);
-    expect(FINANCE_ROWS.length).toBe(48);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 35 - 48);
+    expect(FINANCE_ROWS.length).toBe(49);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 35 - 49);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...INVOICES_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(
       ROUTES.length,
     );
@@ -224,7 +225,7 @@ describe("every ROUTES row has one owner", () => {
   const INVOICES =
     /^\/api\/v1\/(invoices(\/:id(\/(issue|issue-request|void|withdraw|service-completed|advance-invoice|credit-note|debit-note|ims-status|pdf|pdf\/supplier|pdf\/retry|send|links\/revoke|reminders\/(pause|resume)))?)?$|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|reports\/|approvals(\/|$)|dashboard$|receipts\/:id\/pdf(\/retry)?$)/;
   const FINANCE =
-    /^\/api\/v1\/(payments(\/|$)|refunds(\/|$)|reconciliation\/|clients\/:id\/credit(\/|$)|invoices\/:id\/(payment-link(\/cancel)?|payments|credit\/release|realisation-extensions(\/:eid\/letter)?|realisation-reductions(\/:rid\/letter)?)$)/;
+    /^\/api\/v1\/(payments(\/|$)|refunds(\/|$)|reconciliation\/|clients\/:id\/credit(\/|$)|receipts\/:id\/send$|invoices\/:id\/(payment-link(\/cancel)?|payments|credit\/release|realisation-extensions(\/:eid\/letter)?|realisation-reductions(\/:rid\/letter)?)$)/;
 
   it("the invoices rows are invoices and notes, a client's invoices and statement, reports, approvals and the dashboard (the fourth admin Worker)", () => {
     for (const r of INVOICES_ROWS) expect(r.path, key(r)).toMatch(INVOICES);
