@@ -222,7 +222,8 @@ describe("GET /reports/revenue (C1) [ADM-REP-01]", () => {
     expect(kind.rows.every((r) => ["recurring", "project", "other"].includes(r.key))).toBe(true);
     const cat = await get<RevenueByKey<string>>("/reports/revenue?fy=2627&by=category");
     expect(cat.by).toBe("category");
-    expect(cat.roundOff?.length).toBeGreaterThan(0);
+    // this fixture's documents are inserted without lines, so no category row (the category figures are proved in packages/db/test/reports-v2.test.ts)
+    expect(cat).toMatchObject({ rows: [], roundOff: [] });
     for (const cur of ["INR", "USD"]) {
       const m = months.months
         .flatMap((x) => x.invoiced.filter((y) => y.currency === cur))
