@@ -30,6 +30,7 @@ export const ZQ_UI = {
   },
   prefsOwnerOnly: "Payment and connection alerts go to owners only.",
   digestHeading: "Weekly digest",
+  digestRow: "Send me the weekly digest",
   digestHint:
     "An email every Monday at 09:00 IST with the pipeline, invoices, payments, overdue invoices, new leads and reminders due.",
   digestOffOneClick: "You switched the digest off from its email. Switch it on here to get it again.",
@@ -81,6 +82,7 @@ export const ZQ_UI = {
   eventsHeading: "Delivery updates",
   eventsHint: "What the receiving mail server reported, as Amazon SES passed it on.",
   eventsNone: "No delivery updates yet. They usually arrive within a few minutes of sending.",
+  eventsNotSent: "Nothing reached the mail server, so there are no delivery updates.",
   eventType: {
     delivery: "Delivered",
     bounce: "Bounced",
@@ -106,7 +108,7 @@ export const ZQ_UI = {
   stopped: "Emails stopped",
   stoppedSince: (reason: string, date: string) => `${reason}, since ${date}`,
   stoppedLine: (reason: string, date: string) =>
-    `Emails to this address are stopped. ${reason}, since ${date}. Nothing is sent to it until an owner allows emails again.`,
+    `${reason}, since ${date}. Nothing is sent to this address until an owner allows emails again.`,
   allowAgain: "Allow emails again",
   allowAgainFor: (who: string) => ` to ${who}`,
   allowTitle: "Allow emails to this address again?",

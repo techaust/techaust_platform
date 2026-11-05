@@ -22,6 +22,22 @@ import "../emails.css";
 export const templateName = (t: string): string =>
   Object.hasOwn(TEMPLATE_NAMES, t) ? TEMPLATE_NAMES[t as EmailTemplate] : t;
 
+/** An address that breaks only before its "@" and its dots, never inside a word (so a table column keeps a readable width). */
+export function Address({ value }: { value: string }) {
+  const parts = value.split(/(?=[@.])/);
+  return (
+    <>
+      {parts.map((p, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the pieces of one fixed address, never reordered
+        <span key={i}>
+          {i > 0 && <wbr />}
+          {p}
+        </span>
+      ))}
+    </>
+  );
+}
+
 export function EmailStatus({ status, label }: { status: string; label: string }) {
   const look = emailStatusLook(status);
   return (
@@ -97,10 +113,11 @@ function EmailLog() {
     {
       key: "to",
       header: ZQ_UI.colTo,
+      width: "30%",
       card: "title",
       cell: (r) => (
-        <Link to={`/emails/${encodeURIComponent(r.id)}`} className="break ml-to">
-          {r.to}
+        <Link to={`/emails/${encodeURIComponent(r.id)}`} className="ml-to">
+          <Address value={r.to} />
           <span className="visually-hidden">{`, ${templateName(r.template)}`}</span>
         </Link>
       ),
@@ -117,17 +134,17 @@ function EmailLog() {
     {
       key: "status",
       header: ZQ_UI.colStatus,
-      cell: (r) => <EmailStatus status={r.status} label={r.statusLabel} />,
-    },
-    {
-      key: "event",
-      header: ZQ_UI.colLastEvent,
-      cell: (r) =>
-        r.lastEventAt === null ? (
-          <span className="muted">{ZQ_UI.noEvent}</span>
-        ) : (
-          <When ms={r.lastEventAt} wrap />
-        ),
+      // The status with the time of its last delivery update under it (one column, so the address keeps its width at 768 px).
+      cell: (r) => (
+        <span className="ml-status">
+          <EmailStatus status={r.status} label={r.statusLabel} />
+          {r.lastEventAt !== null && (
+            <span className="ml-status__when">
+              {ZQ_UI.colLastEvent} <When ms={r.lastEventAt} wrap />
+            </span>
+          )}
+        </span>
+      ),
     },
   ];
 

@@ -2,14 +2,16 @@
    stylesheet of the admin defines them (scripts/css-collisions.mjs). */
 
 /* The recipient filter: the address field with its Find button on one row; the field takes the room, the button keeps its 44 px height. */
-.ml-filters .ml-to-field {
-  flex: 2 1 18rem;
+/* It takes its own line under the three choices: an address needs the width, and its hint would otherwise make the row uneven. */
+.filters.ml-filters > .ml-to-field {
+  flex: 1 1 100%;
 }
 
 .ml-to-row {
   display: flex;
   gap: var(--space-2);
   align-items: stretch;
+  max-width: 36rem;
 }
 
 .ml-to-row input {
@@ -21,9 +23,22 @@
   flex: none;
 }
 
-/* The address opens the email: a link that wraps anywhere, never a sideways scroll in a narrow column. */
+/* The address opens the email: it breaks before "@" and dots (<wbr>), and only a single over-long piece breaks inside itself. `break-word` (not
+   `anywhere`) keeps the column's minimum width at its longest piece, so the table never squeezes it to a few letters. */
 .ml-to {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+.ml-status {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+}
+
+.ml-status__when {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
 }
 
 /* Emails stopped: a band above the facts, the danger colour on its rule and icon only; the words stay in the text colour so they read at AA in both themes. */

@@ -2,7 +2,7 @@
 // owner switches the weekly digest (owners only, L7). Every member reads the "client opened a proposal or estimate" switch (off until switched on, Q2 A); the
 // payment and connection alerts ring owners only, so their switches show for owners. One form with the shared save bar: a save sends only what changed, with
 // the row's version (409 `stale_version` offers the latest). The emails' "Change notification settings" link lands here (`NOTIFICATIONS_PATH` in core).
-import { DIGEST_LABEL, PREF_GROUP_LABELS } from "@techaust/core/copy-zq";
+import { PREF_GROUP_LABELS } from "@techaust/core/copy-zq";
 import { PREF_GROUPS, type PrefGroup } from "@techaust/core/notifications";
 import { type FormEvent, useState } from "react";
 import { RequestError } from "../api.ts";
@@ -106,7 +106,7 @@ function PrefsForm(props: { data: PrefsAnswer; reload: () => void }) {
             </SettingRow>
           ))}
         </div>
-        {!owner && <p className="hint np-owner-only">{ZQ_UI.prefsOwnerOnly}</p>}
+        {!owner && <p className="hint">{ZQ_UI.prefsOwnerOnly}</p>}
       </section>
 
       {base.digestAvailable && (
@@ -117,7 +117,7 @@ function PrefsForm(props: { data: PrefsAnswer; reload: () => void }) {
           <div className="settings-rows">
             <SettingRow
               id="np-digest"
-              label={sentenceStart(DIGEST_LABEL)}
+              label={ZQ_UI.digestRow}
               description={
                 <>
                   {ZQ_UI.digestHint}

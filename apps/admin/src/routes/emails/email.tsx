@@ -104,7 +104,13 @@ function EmailDetail() {
           </div>
           <div>
             <dt>{ZQ_UI.factLastEvent}</dt>
-            <dd>{m.lastEventAt === null ? <span className="muted">{ZQ_UI.noEvent}</span> : <When ms={m.lastEventAt} />}</dd>
+            <dd>
+              {m.lastEventAt === null ? (
+                <span className="muted">{ZQ_UI.noEvent}</span>
+              ) : (
+                <When ms={m.lastEventAt} />
+              )}
+            </dd>
           </div>
           {href && (
             <div>
@@ -117,7 +123,7 @@ function EmailDetail() {
           {m.error && (
             <div className="inv-facts__wide">
               <dt>{ZQ_UI.factError}</dt>
-              <dd className="break mono">{m.error}</dd>
+              <dd className="break">{m.error}</dd>
             </div>
           )}
         </dl>
@@ -133,7 +139,9 @@ function EmailDetail() {
         {events.length === 0 ? (
           <p className="ml-none">
             <Mail size={20} />
-            <span>{ZQ_UI.eventsNone}</span>
+            <span>
+              {m.status === "failed" || m.status === "skipped" ? ZQ_UI.eventsNotSent : ZQ_UI.eventsNone}
+            </span>
           </p>
         ) : (
           <ol className="ml-events">
@@ -166,7 +174,14 @@ function EmailDetail() {
 function EventRow({ ev }: { ev: EmailEvent }) {
   const label = ZQ_UI.eventType[ev.type] ?? ev.type;
   const tone = ev.type === "delivery" ? "success" : ev.type === "other" ? "neutral" : "danger";
-  const icon = ev.type === "delivery" ? "check" : ev.type === "complaint" ? "alert" : ev.type === "bounce" ? "ban" : "inbox";
+  const icon =
+    ev.type === "delivery"
+      ? "check"
+      : ev.type === "complaint"
+        ? "alert"
+        : ev.type === "bounce"
+          ? "ban"
+          : "inbox";
   const outcome = ZQ_UI.eventOutcome[ev.outcome] ?? "";
   return (
     <li className="ml-event">

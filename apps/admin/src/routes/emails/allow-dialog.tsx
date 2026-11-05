@@ -1,8 +1,9 @@
 // "Allow emails again" (M7.2; ADM-MAIL-02; run file G3, C.1; early check finding 1): the Owner's confirm for clearing an address from the suppression list,
 // from the email log's detail (`POST /emails/:id/unsuppress`) or a contact (`POST /contacts/:id/unsuppress`). It says what happens, why the address was stopped,
 // and the caution that Amazon SES's own account list may still refuse it (UNCONFIRMED in the brief, so worded as "may"). A refusal is worded from its code.
-import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
+
 import { RequestError } from "../../api.ts";
+import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { ZQ_UI, zqErrorText } from "../../lib/copy-zq.ts";
 
 export function AllowEmailsDialog(props: {
