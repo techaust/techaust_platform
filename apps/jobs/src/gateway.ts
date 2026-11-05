@@ -14,7 +14,6 @@ import {
   gatewaySweepMessage,
 } from "@techaust/core";
 import { uuidv7 } from "@techaust/core/ids";
-import { refundNotify } from "@techaust/core/notifications";
 import {
   gatewayDeadLetterStatements,
   PAYPAL_CLAIM_STALE_MS,
@@ -29,6 +28,7 @@ import {
 } from "@techaust/db/gateway";
 import { adminAdvance, adminGateway } from "./gateway-rpc.ts";
 import { logEvent } from "./log.ts";
+import { sendRefundNotify } from "./refund-notify.ts";
 import { notifyRecentBells, RECENT_MARGIN_MS } from "./staff-notify.ts";
 
 /** The bell of a dead-lettered gateway message (07-ZI S20 and S22: "A payment needs review: {reason}."; staff words, lead under the owner's delegation). */
@@ -68,8 +68,9 @@ export async function processGateway(
       const r = await adminGateway(env).processEvent({ eventId: m.data.eventId });
       if (r.result === "retry") return { retry: gatewayRetryDelay(attempts) };
       if (r.next) await env.LEADS_QUEUE.send({ kind: "gateway.advance", paymentId: r.next.paymentId });
-      // M7.2 (Q4 A, producer 3): a refund event that moved our refund to succeeded: the client's email (its own message on the email queue).
-      if (r.refundNotify) await env.EMAIL_QUEUE.send(refundNotify(r.refundNotify));
+      // M7.2 (Q4 A, producer 3): a refund event that moved our refund to succeeded: the client's email (its own message on the email queue). A failed send is
+      // logged, never thrown (review 1, finding 8): the redelivery would be a duplicate, so `refund.sweep` sends it within the hour.
+      if (r.refundNotify) await sendRefundNotify(env, r.refundNotify);
       // M7.2 (L9): the payment and review bells this event rang are emailed at once (the hourly `bells.sweep` is the safety net).
       if (r.result === "processed" || r.result === "needs_review")
         await notifyRecentBells(env, started - RECENT_MARGIN_MS).catch(() =>

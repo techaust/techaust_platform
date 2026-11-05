@@ -5,7 +5,7 @@
 //                             `email_log_template_created` (0076, review 1 finding 4); else `email_log_created` (0075); the other filters narrow that range (`+col`).
 //   GET  /emails/:id          `emails.read`: the row, its SES events read by `ses_message_id` (index `email_events_message`; finding 5: an event stored before the
 //                             row was linked still shows) and the address's suppression with a label (an older or unknown reason reads generically, finding 7).
-//   POST /emails/:id/unsuppress      `emails.unsuppress` (Owner; finding 1: a staff or lead address can be cleared too): deletes the suppression of THAT row's
+//   POST /emails/:id/unsuppress {}   `emails.unsuppress` (Owner; finding 1: a staff or lead address can be cleared too): deletes the suppression of THAT row's
 //                             address (no address in a path) and clears `bounced_at` on live contacts with it (`updated_at` untouched, L5); 409 `not_suppressed`.
 //   POST /contacts/:id/unsuppress    `emails.unsuppress` {expectedUpdatedAt}: the contact's address; 409 `stale_version`, `not_suppressed`, `client_anonymised`; 404.
 // SES's own account-level suppression list may still block an address cleared here (UNCONFIRMED; a `DeleteSuppressedDestination` route is a follow-up, an IAM change).
@@ -198,7 +198,8 @@ export const emails = new Hono<AppEnv>()
   .post(
     "/:id/unsuppress",
     param(idParam),
-    body(z.object({ expectedUpdatedAt: z.optional(z.number()) })),
+    // Review 1, finding 11: no version (an email log row has none the Owner edits; the DELETE's own match decides): an empty object, nothing else.
+    body(z.strictObject({})),
     async (c) => {
       const { id } = c.req.valid("param");
       const db = c.env.DB;
@@ -228,6 +229,14 @@ export const emails = new Hono<AppEnv>()
   );
 
 /**
+ * The UPDATE that clears `bounced_at` on every live contact with the address (`addressSql`), `guard` the audit-row guard. Review 1, finding 10: a contact's
+ * address is stored lower-cased (the CHECK `contacts_email_lower`), as the email log's and the suppression list's are, so the match is the plain column and the
+ * planner seeks `contacts_email` (a `lower(email)` match scanned every contact). Exported for its EXPLAIN test.
+ */
+export const clearBouncedSql = (addressSql: string, guard: string): string =>
+  `UPDATE contacts SET bounced_at = NULL WHERE email = ${addressSql} AND anonymised_at IS NULL AND bounced_at IS NOT NULL AND ${guard}`;
+
+/**
  * `bounced_at` cleared on every live contact with the address (`addressSql`, bound by `binds`), `updated_at` untouched (L5: an open screen never reads a false
  * `stale_version`), guarded on the audit row.
  */
@@ -237,12 +246,7 @@ function clearBouncedStatement(
   binds: unknown[],
   g: GuardSql,
 ): D1PreparedStatement {
-  return db
-    .prepare(
-      `UPDATE contacts SET bounced_at = NULL WHERE lower(email) = ${addressSql} AND anonymised_at IS NULL AND bounced_at IS NOT NULL
-         AND ${g.sql(binds.length + 1)}`,
-    )
-    .bind(...binds, ...g.params);
+  return db.prepare(clearBouncedSql(addressSql, g.sql(binds.length + 1))).bind(...binds, ...g.params);
 }
 
 /** `POST /contacts/:id/unsuppress` (C.1). */
@@ -257,7 +261,7 @@ export const contactUnsuppress = new Hono<AppEnv>().post(
     const row = await db
       .prepare(
         `SELECT ct.updated_at, ct.anonymised_at, k.anonymised_at AS client_anonymised_at,
-           (SELECT 1 FROM email_suppressions s WHERE s.email = lower(ct.email)) AS suppressed
+           (SELECT 1 FROM email_suppressions s WHERE s.email = ct.email) AS suppressed
          FROM contacts ct JOIN clients k ON k.id = ct.client_id WHERE ct.id = ?1`,
       )
       .bind(id)
@@ -273,7 +277,7 @@ export const contactUnsuppress = new Hono<AppEnv>().post(
     if (row.updated_at !== expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (row.suppressed === null) return err(c, NOT_SUPPRESSED, 409);
     // Every condition again in the WHERE: the version, the live contact and client.
-    const address = `(SELECT lower(ct.email) FROM contacts ct JOIN clients k ON k.id = ct.client_id
+    const address = `(SELECT ct.email FROM contacts ct JOIN clients k ON k.id = ct.client_id
       WHERE ct.id = ?1 AND ct.updated_at = ?2 AND ct.anonymised_at IS NULL AND k.anonymised_at IS NULL)`;
     const done = await mutate(c, {
       main: db.prepare(`DELETE FROM email_suppressions WHERE email = ${address}`).bind(id, expectedUpdatedAt),
@@ -281,7 +285,7 @@ export const contactUnsuppress = new Hono<AppEnv>().post(
       entityType: "contact",
       entityId: id,
       summary: { contactId: id },
-      side: (g) => [clearBouncedStatement(db, `(SELECT lower(email) FROM contacts WHERE id = ?1)`, [id], g)],
+      side: (g) => [clearBouncedStatement(db, "(SELECT email FROM contacts WHERE id = ?1)", [id], g)],
     });
     if (!done) {
       const now = await db

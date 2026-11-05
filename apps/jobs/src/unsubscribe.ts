@@ -9,6 +9,7 @@
 //                capped at 50; never per address: OPEN (08-C RB-12)).
 //   GET /u       200 text/plain with S5's one line and NEVER a change (a link scanner that opens the URL can't unsubscribe anyone).
 import { UNSUBSCRIBE_DONE_LINE, UNSUBSCRIBE_GET_LINE } from "@techaust/core/copy-zq";
+import { hmacSignKey, hmacVerifyKey } from "@techaust/core/hmac";
 import { uuidv7 } from "@techaust/core/ids";
 import { auditStmt } from "@techaust/db/log";
 import { logEvent } from "./log.ts";
@@ -21,20 +22,7 @@ const macInput = (userId: string) => enc.encode(`digest.weekly|${userId}`);
 const USER_ID = /^[0-9a-f-]{36}$/;
 const MAC = /^[A-Za-z0-9_-]{43}$/;
 
-const keys = new Map<string, Promise<CryptoKey>>();
-function keyOf(secret: string): Promise<CryptoKey> {
-  let k = keys.get(secret);
-  if (!k) {
-    if (keys.size >= 4) keys.clear();
-    k = crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
-      "sign",
-      "verify",
-    ]);
-    k.catch(() => keys.delete(secret));
-    keys.set(secret, k);
-  }
-  return k;
-}
+// The keys are imported once per isolate by `@techaust/core/hmac`'s shared cache (review 1, finding 12: no second cache here).
 
 const b64url = (bytes: ArrayBuffer): string => {
   let s = "";
@@ -50,7 +38,7 @@ const fromB64url = (s: string): Uint8Array => {
 
 /** A member's one-click token. */
 export async function unsubscribeToken(secret: string, userId: string): Promise<string> {
-  const mac = await crypto.subtle.sign("HMAC", await keyOf(secret), macInput(userId));
+  const mac = await crypto.subtle.sign("HMAC", await hmacSignKey(secret), macInput(userId));
   return `${b64url(mac)}.${userId}`;
 }
 
@@ -65,7 +53,12 @@ export async function verifyUnsubscribe(
   const userId = token.slice(dot + 1);
   if (dot < 1 || !MAC.test(mac) || !USER_ID.test(userId)) return null;
   try {
-    return (await crypto.subtle.verify("HMAC", await keyOf(secret), fromB64url(mac), macInput(userId)))
+    return (await crypto.subtle.verify(
+      "HMAC",
+      await hmacVerifyKey(secret),
+      fromB64url(mac),
+      macInput(userId),
+    ))
       ? userId
       : null;
   } catch {

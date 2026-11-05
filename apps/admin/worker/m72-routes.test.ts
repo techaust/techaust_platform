@@ -8,7 +8,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import { SIGNIN_CHALLENGE_TTL_MS } from "@techaust/db/signin-pending";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DELIVERY_SQL } from "./document-offer.ts";
-import { emailListStatement } from "./emails.ts";
+import { clearBouncedSql, emailListStatement } from "./emails.ts";
 import { setStubTransport } from "./gateway/config.ts";
 import { issueReceipt } from "./receipt-issue.ts";
 import { mkClient, mkContact } from "./test-clients.ts";
@@ -122,16 +122,30 @@ describe("the email log (emails.read: Owner and Staff)", () => {
 
   it("each filter reaches its rows by its own index, the template filter by email_log_template_created (finding 4); M4.5's delivery read stays on its entity index", async () => {
     const plan = async (sql: string, binds: unknown[]) =>
-      (await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
-        .bind(...binds)
-        .all<{ detail: string }>()).results
+      (
+        await env.DB.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+          .bind(...binds)
+          .all<{ detail: string }>()
+      ).results
         .map((r) => r.detail)
         .join(" | ");
     const cases: [Parameters<typeof emailListStatement>[0], RegExp][] = [
-      [{ template: "invoice.sent" }, /SEARCH email_log USING INDEX email_log_template_created \(template=\?\)/],
-      [{ template: "invoice.sent", since: "5" }, /SEARCH email_log USING INDEX email_log_template_created \(template=\?/],
-      [{ status: "bounced", template: "invoice.sent" }, /SEARCH email_log USING INDEX email_log_status_created \(status=\?\)/],
-      [{ to: "a@example.test", template: "invoice.sent" }, /SEARCH email_log USING INDEX email_log_to \(to_email=\?\)/],
+      [
+        { template: "invoice.sent" },
+        /SEARCH email_log USING INDEX email_log_template_created \(template=\?/,
+      ],
+      [
+        { template: "invoice.sent", since: "5" },
+        /SEARCH email_log USING INDEX email_log_template_created \(template=\?/,
+      ],
+      [
+        { status: "bounced", template: "invoice.sent" },
+        /SEARCH email_log USING INDEX email_log_status_created \(status=\?/,
+      ],
+      [
+        { to: "a@example.test", template: "invoice.sent" },
+        /SEARCH email_log USING INDEX email_log_to \(to_email=\?/,
+      ],
       [{}, /email_log USING INDEX email_log_created/],
     ];
     for (const [q, re] of cases) {
@@ -157,6 +171,23 @@ describe("the email log (emails.read: Owner and Staff)", () => {
     }[];
     expect(listed.map((e) => e.id)).toContain(id);
     expect(new Set(listed.map((e) => e.template))).toEqual(new Set(["invoice.sent"]));
+  });
+
+  it("Allow emails again clears the contacts by the contacts_email index, never a scan of every contact (finding 10)", async () => {
+    for (const address of [
+      "(SELECT to_email FROM email_log WHERE id = ?1)",
+      "(SELECT email FROM contacts WHERE id = ?1)",
+    ]) {
+      const plan = (
+        await env.DB.prepare(`EXPLAIN QUERY PLAN ${clearBouncedSql(address, "1")}`)
+          .bind("x")
+          .all<{ detail: string }>()
+      ).results
+        .map((r) => r.detail)
+        .join(" | ");
+      expect(plan, address).toMatch(/SEARCH contacts USING INDEX contacts_email \(email=\?\)/);
+      expect(plan, address).not.toMatch(/SCAN contacts/);
+    }
   });
 
   it("a page holds at most 50, with a cursor to the next", async () => {
@@ -194,6 +225,10 @@ describe("unsuppress (emails.unsuppress: Owner only)", () => {
     const to = s.email.toLowerCase();
     const id = await logRow(to, { suppressed: "complaint" });
     expect((await call(`/emails/${id}/unsuppress`, { cookie: s.cookie, body: {} })).status).toBe(403);
+    // review 1, finding 11: the body is an empty object; a version it would never read is refused, not ignored
+    expect(
+      (await call(`/emails/${id}/unsuppress`, { cookie: o.cookie, body: { expectedUpdatedAt: 1 } })).status,
+    ).toBe(400);
     expect((await call(`/emails/${id}/unsuppress`, { cookie: o.cookie, body: {} })).status).toBe(200);
     expect(await one("SELECT 1 AS x FROM email_suppressions WHERE email = ?1", to)).toBeNull();
     const again = await call(`/emails/${id}/unsuppress`, { cookie: o.cookie, body: {} });
@@ -321,6 +356,71 @@ describe("Send receipt again (C.2; Tier A scoping) and the refund email's route 
     expect(gone.status).toBe(409);
     expect((await json(gone)).error?.code).toBe("client_anonymised");
     expect(q.sent).toHaveLength(before);
+  });
+
+  it("a payment refunded in full: 409 receipt_refunded, nothing written or queued; a partly refunded one still sends (finding 5)", async () => {
+    const o = await ownerSession();
+    const clientId = await mkReportClient("INR");
+    const ok = await mkContact(clientId, {
+      email: `rf-${uuidv7().slice(-6)}@example.test`,
+      portal_access: 1,
+      can_see_finance: 1,
+    });
+    const refund = (paymentId: string, amountMinor: number) =>
+      call(`/payments/${paymentId}/refunds`, {
+        cookie: o.cookie,
+        body: {
+          id: uuidv7(),
+          amountMinor,
+          from: "credit",
+          reasonCode: "overpayment",
+          manual: {
+            mode: "neft",
+            reference: `UTRR${uuidv7().slice(-10).toUpperCase()}`,
+            paidOn: todayIso(),
+            paidTo: "original",
+          },
+        },
+      });
+    const receiptOf = async (amount: number) => {
+      const p = await recorded(o, recordBody(clientId, amount));
+      const r = await issueReceipt(env, p.id as string);
+      expect(r.result).toBe("issued");
+      const d = await one<{ id: string }>(
+        "SELECT id FROM documents WHERE type = 'receipt' AND number_display = ?1",
+        r.number,
+      );
+      return { paymentId: p.id as string, rid: d?.id as string };
+    };
+    const full = await receiptOf(2_000);
+    expect((await refund(full.paymentId, 2_000)).status).toBe(200);
+    const q = captureQueue();
+    const res = await call(
+      `/receipts/${full.rid}/send`,
+      { cookie: o.cookie, body: { contactIds: [ok.id] } },
+      q.env,
+    );
+    expect(res.status).toBe(409);
+    expect((await json(res)).error?.code).toBe("receipt_refunded");
+    expect(q.sent).toHaveLength(0);
+    expect(await one("SELECT count(*) AS n FROM document_sends WHERE document_id = ?1", full.rid)).toEqual({
+      n: 0,
+    });
+    // the entry's receipt read says so, for the screen to hide the button
+    const read = async (paymentId: string) =>
+      ((await json(await call(`/payments/${paymentId}/receipt`, { cookie: o.cookie }))).receipt as J)
+        .refundedInFull;
+    expect(await read(full.paymentId)).toBe(true);
+    const part = await receiptOf(3_000);
+    expect((await refund(part.paymentId, 1_000)).status).toBe(200);
+    const sent = await call(
+      `/receipts/${part.rid}/send`,
+      { cookie: o.cookie, body: { contactIds: [ok.id] } },
+      q.env,
+    );
+    expect(sent.status).toBe(202);
+    expect(q.sent).toHaveLength(1);
+    expect(await read(part.paymentId)).toBe(false);
   });
 
   it("a manual refund recorded succeeded queues refund.notify (ids only) from the route", async () => {

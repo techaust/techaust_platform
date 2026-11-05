@@ -4,6 +4,7 @@
 // refund email (Q4 A, the C.2 recipient rule), the dead letter (early check finding 4 and the `job.failed` bell) and the magic link whose token is gone.
 import { env as realEnv } from "cloudflare:workers";
 import type { EmailMessage } from "@techaust/core";
+import { hmacSignKey } from "@techaust/core/hmac";
 import { uuidv7 } from "@techaust/core/ids";
 import { staffNotify } from "@techaust/core/notifications";
 import type { SendInput, Transport } from "@techaust/email";
@@ -17,7 +18,7 @@ import { handleQueue } from "../src/queue.ts";
 import { processRefundNotify, refundCopyGate } from "../src/refund-notify.ts";
 import { processRefundFamily } from "../src/refunds.ts";
 import { istHourKey, processSigninUnfinished } from "../src/signin-unfinished.ts";
-import { processStaffNotify } from "../src/staff-notify.ts";
+import { processBellsSweep, processStaffNotify, RECENT_BELLS_SQL } from "../src/staff-notify.ts";
 import {
   unsubscribeGet,
   unsubscribePost,
@@ -128,6 +129,44 @@ describe("staff.notify (L9, Q1 A, Q2 A)", () => {
     await bell(owner.id, "payment.online", "document", doc);
     await processStaffNotify(makeEnv(), staffNotify("offer.viewed", doc));
     expect(emailsOf("staff.notification").map((m) => m.to)).toEqual([sender.email]);
+  });
+
+  it("bells.sweep re-queues only bells not yet expanded: a bell with an emailed row is skipped (review 1, finding 9)", async () => {
+    const a = await staff("owner");
+    const b = await staff("owner");
+    const since = Date.now() - 60_000;
+    const done = `pay-${uuidv7()}`;
+    const fresh = `pay-${uuidv7()}`;
+    for (const u of [a, b]) {
+      await bell(u.id, "payment.online", "payment", done);
+      await bell(u.id, "payment.online", "payment", fresh);
+    }
+    // the first bell was expanded: one of its rows has its notification email logged
+    const row = await one<{ id: string }>(
+      "SELECT id FROM notifications WHERE entity_id = ?1 AND user_id = ?2",
+      done,
+      a.id,
+    );
+    await run(
+      "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at) VALUES (?1, ?2, 'staff.notification', 'notification', ?3, 'sent', 1, 1)",
+      `log-${uuidv7()}`,
+      a.email,
+      row?.id,
+    );
+    await processBellsSweep(makeEnv(), { v: 1, kind: "bells.sweep", since });
+    const ids = fakes.email
+      .map((s) => s.body as { kind?: string; entityId?: string })
+      .filter((x) => x.kind === "staff.notify")
+      .map((x) => x.entityId);
+    expect(ids).toContain(fresh);
+    expect(ids).not.toContain(done);
+    const plan = (
+      await realEnv.DB.prepare(`EXPLAIN QUERY PLAN ${RECENT_BELLS_SQL}`).bind(since).all<{ detail: string }>()
+    ).results
+      .map((p) => p.detail)
+      .join(" | ");
+    for (const index of ["notifications_user_created", "notifications_entity", "email_log_entity"])
+      expect(plan).toContain(index);
   });
 
   it("an unreadable body is acknowledged and nothing is sent", async () => {
@@ -257,6 +296,27 @@ describe("/u one-click (C.5, RFC 8058)", () => {
       "SELECT digest_weekly, digest_off_via FROM staff_notification_prefs WHERE user_id = ?1",
       id,
     );
+
+  it("the token's MAC comes from @techaust/core/hmac's shared key cache; unsubscribe.ts imports no key of its own (review 1, finding 12)", async () => {
+    const src = import.meta.glob("../src/unsubscribe.ts", { query: "?raw", import: "default", eager: true });
+    const text = Object.values(src)[0] as string;
+    expect(text).toContain("@techaust/core/hmac");
+    expect(text).not.toMatch(/importKey|new Map/);
+    const id = uuidv7();
+    const mac = new Uint8Array(
+      await crypto.subtle.sign(
+        "HMAC",
+        await hmacSignKey(KEY),
+        new TextEncoder().encode(`digest.weekly|${id}`),
+      ),
+    );
+    const b64 = btoa(String.fromCharCode(...mac))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    expect(await unsubscribeToken(KEY, id)).toBe(`${b64}.${id}`);
+    expect(await verifyUnsubscribe(KEY, `${b64}.${id}`)).toBe(id);
+  });
 
   it("a valid token switches that member's digest off with one audit row; a repeat writes nothing more", async () => {
     const o = await staff("owner");
@@ -391,53 +451,57 @@ describe("the unfinished sign-in scan (Q3 A)", () => {
   });
 });
 
+/** A pending Razorpay payment for an issued invoice, and a refund of it (`origin`), succeeded (by default now, on 2026-11-04). */
+async function refundOf(
+  origin: "outside" | "chargeback",
+  o: { anonymised?: boolean; clientId?: string; settledAt?: number; settledOn?: string } = {},
+) {
+  const now = Date.now();
+  const owner = await staff("owner");
+  const clientId = o.clientId ?? (await mkClient());
+  const doc = await mkDoc(clientId, null);
+  const checkoutId = `co-m72-${uuidv7()}`;
+  await run(
+    `INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
+     VALUES (?1, 'razorpay', ?2, ?3, ?6, 'staff', 'INR', 50000, 'creating', ?4, ?5, ?5)`,
+    checkoutId,
+    doc.id,
+    clientId,
+    now + 86_400_000,
+    now - 30 * 60_000,
+    owner.id,
+  );
+  const paymentId = `rzp_pay_M72${uuidv7().slice(-12)}`;
+  await run(
+    `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, recorded_by, recorded_at,
+       provider_payment_id, checkout_id, fee_tax_minor, refetched_at)
+     VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', 50000, 0, '2026-10-28', 'upi', ?3, NULL, ?4, ?5, ?6, 0, ?4)`,
+    paymentId,
+    clientId,
+    `PAY-M72${uuidv7().slice(-10)}`,
+    now - 60_000,
+    `pay_M72${uuidv7().slice(-10)}`,
+    checkoutId,
+  );
+  const refundId = uuidv7();
+  await run(
+    `INSERT INTO payment_refunds (id, payment_id, client_id, provider, origin, status, paid_to, reason_code, currency, amount_minor, provider_refund_id,
+       requested_by, requested_at, settled_at, settled_on, updated_at)
+     VALUES (?1, ?2, ?3, 'razorpay', ?4, 'succeeded', 'original', ?5, 'INR', 50000, ?6, ?7, ?8, ?8, ?9, ?8)`,
+    refundId,
+    paymentId,
+    clientId,
+    origin,
+    origin === "chargeback" ? "chargeback" : "duplicate",
+    `rfnd_${uuidv7().slice(-12)}`,
+    owner.id,
+    o.settledAt ?? now,
+    o.settledOn ?? "2026-11-04",
+  );
+  if (o.anonymised) await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", clientId);
+  return { refundId, clientId, doc };
+}
 describe("the refund email (Q4 A; C.2 recipient rule)", () => {
-  /** A pending Razorpay payment for an issued invoice, and a refund of it (`origin`), succeeded. */
-  async function refundOf(origin: "outside" | "chargeback", o: { anonymised?: boolean } = {}) {
-    const now = Date.now();
-    const owner = await staff("owner");
-    const clientId = await mkClient();
-    const doc = await mkDoc(clientId, null);
-    const checkoutId = `co-m72-${uuidv7()}`;
-    await run(
-      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
-       VALUES (?1, 'razorpay', ?2, ?3, ?6, 'staff', 'INR', 50000, 'creating', ?4, ?5, ?5)`,
-      checkoutId,
-      doc.id,
-      clientId,
-      now + 86_400_000,
-      now - 30 * 60_000,
-      owner.id,
-    );
-    const paymentId = `rzp_pay_M72${uuidv7().slice(-12)}`;
-    await run(
-      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, recorded_by, recorded_at,
-         provider_payment_id, checkout_id, fee_tax_minor, refetched_at)
-       VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', 50000, 0, '2026-10-28', 'upi', ?3, NULL, ?4, ?5, ?6, 0, ?4)`,
-      paymentId,
-      clientId,
-      `PAY-M72${uuidv7().slice(-10)}`,
-      now - 60_000,
-      `pay_M72${uuidv7().slice(-10)}`,
-      checkoutId,
-    );
-    const refundId = uuidv7();
-    await run(
-      `INSERT INTO payment_refunds (id, payment_id, client_id, provider, origin, status, paid_to, reason_code, currency, amount_minor, provider_refund_id,
-         requested_by, requested_at, settled_at, settled_on, updated_at)
-       VALUES (?1, ?2, ?3, 'razorpay', ?4, 'succeeded', 'original', ?5, 'INR', 50000, ?6, ?7, ?8, ?8, '2026-11-04', ?8)`,
-      refundId,
-      paymentId,
-      clientId,
-      origin,
-      origin === "chargeback" ? "chargeback" : "duplicate",
-      `rfnd_${uuidv7().slice(-12)}`,
-      owner.id,
-      now,
-    );
-    if (o.anonymised) await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", clientId);
-    return { refundId, clientId, doc };
-  }
   /** 11:00 IST: inside the window. */
   const IN_WINDOW = Date.parse("2026-11-05T05:30:00Z");
   const env = () => makeEnv({ ENVIRONMENT: "local" });
@@ -460,6 +524,8 @@ describe("the refund email (Q4 A; C.2 recipient rule)", () => {
       amount: "₹500.00",
       document_number: r.doc.numberDisplay,
       date: "04 Nov 2026",
+      // review 1, finding 13: "View invoice" opens the refunded document, not the invoice list
+      url: `https://portal.example/invoices/${r.doc.id}`,
     });
   });
 
@@ -538,16 +604,26 @@ describe("the dead letter (early check finding 4; L13)", () => {
       (await one<{ status: string }>("SELECT status FROM email_log WHERE id = ?1", emailLogId(queuedMsg)))
         ?.status,
     ).toBe("failed");
-    const bells = await all<{ title: string }>(
-      "SELECT title FROM notifications WHERE user_id = ?1 AND kind = 'job.failed' AND entity_id LIKE 'techaust-local-email-dlq:%'",
+    const bells = await all<{ title: string; link: string }>(
+      "SELECT title, link FROM notifications WHERE user_id = ?1 AND kind = 'job.failed' AND entity_id LIKE 'techaust-local-email-dlq:%'",
       owner.id,
     );
     expect(bells).toEqual([
       {
         title:
           "A background job ran out of tries (techaust-local-email-dlq). The details are in the alert email.",
+        // the lead's answer to review 1: the email queue's bell opens the email log's failed emails
+        link: "/emails?status=failed",
       },
     ]);
+    // another queue's bell opens the dashboard
+    await processDeadLetter(e, "techaust-local-pdf-dlq", { kind: "pdf.render", documentId: "x" }, transport);
+    expect(
+      await one(
+        "SELECT link FROM notifications WHERE user_id = ?1 AND kind = 'job.failed' AND entity_id LIKE 'techaust-local-pdf-dlq:%'",
+        owner.id,
+      ),
+    ).toEqual({ link: "/" });
     expect(DEAD_LETTER_SQL).toContain("status IN ('queued', 'sending')");
   });
 });
@@ -628,6 +704,56 @@ describe("the offer-viewed bell through portal.alert (E, Q2 A)", () => {
       doc.id,
     );
     expect(await processPortalAlert(e, { kind: "portal.alert", auditId: staffAudit })).toBe("ignored");
+  });
+});
+
+describe("a refund email whose producer's send was lost (review 1, finding 8)", () => {
+  const failing = () => ({
+    send: async () => {
+      throw new Error("queue down");
+    },
+    sendBatch: async () => {
+      throw new Error("queue down");
+    },
+  });
+
+  it("processEvent and checkRefund answering a succeeded refund: a failed email-queue send is logged, never thrown (the message is acknowledged)", async () => {
+    const e = makeEnv({
+      EMAIL_QUEUE: failing(),
+      ADMIN_GATEWAY: {
+        processEvent: async () => ({ result: "processed", refundNotify: "rf_lost" }),
+        checkRefund: async () => ({ result: "succeeded" }),
+      },
+    });
+    expect(await processGateway(e, { kind: "gateway.event", eventId: uuidv7() } as never, 1)).toBe("ack");
+    expect(await processRefundFamily(e, { kind: "refund.check", refundId: uuidv7() } as never, 1)).toBe(
+      "ack",
+    );
+    expect(logs.filter((l) => l.includes("refund.notify_send_failed"))).toHaveLength(2);
+  });
+
+  it("refund.sweep queues refund.notify for a refund that succeeded in the last 75 minutes with no refund email; not when one is logged, older, or a chargeback", async () => {
+    const now = Date.now();
+    const clientId = await mkClient();
+    const istDay = (ms: number) => new Date(ms + 330 * 60_000).toISOString().slice(0, 10);
+    const refund = async (origin: "outside" | "chargeback", settledAt: number) =>
+      (await refundOf(origin, { clientId, settledAt, settledOn: istDay(settledAt) })).refundId;
+    const lost = await refund("outside", now - 10 * 60_000);
+    const mailed = await refund("outside", now - 20 * 60_000);
+    await run(
+      "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, status, created_at, updated_at) VALUES (?1, 'c@example.test', 'refund.sent', 'refund', ?2, 'sent', 1, 1)",
+      `log-${uuidv7()}`,
+      mailed,
+    );
+    const old = await refund("outside", now - 3 * 3_600_000);
+    const cb = await refund("chargeback", now - 5 * 60_000);
+    expect(await processRefundFamily(makeEnv(), { kind: "refund.sweep", asOf: now } as never, 1)).toBe("ack");
+    const notified = fakes.email
+      .map((s) => s.body as { kind?: string; refundId?: string })
+      .filter((b) => b.kind === "refund.notify")
+      .map((b) => b.refundId);
+    expect(notified).toContain(lost);
+    for (const id of [mailed, old, cb]) expect(notified).not.toContain(id);
   });
 });
 

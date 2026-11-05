@@ -20,6 +20,7 @@
     "./documents": "./src/documents.ts",
     "./expiry": "./src/expiry.ts",
     "./hash": "./src/hash.ts",
+    "./hmac": "./src/hmac.ts",
     "./email-templates": "./src/email-templates.ts",
     "./email-events": "./src/email-events.ts",
     "./gstin": "./src/gstin.ts",
