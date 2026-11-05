@@ -4,10 +4,12 @@
 import { EMAIL_TEMPLATES, type EmailTemplate } from "@techaust/core/email-templates";
 import { TEMPLATE_NAMES } from "@techaust/email/fixtures";
 import { useState } from "react";
+import { Link } from "react-router";
 import { api, errorText } from "../../api.ts";
 import { SettingRow, Switch } from "../../components/form.tsx";
-import { Send } from "../../components/icons.tsx";
+import { Mail, Send } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
+import { ZQ_UI } from "../../lib/copy-zq.ts";
 import { sentence } from "../../lib/format.ts";
 import { type FieldErrors, looksLikeEmail } from "../../lib/settings-form.ts";
 import { useUser } from "../../session.tsx";
@@ -84,6 +86,15 @@ export function EmailSettings() {
     <GroupForm spec={spec} readOnly={false}>
       {({ form: f, set, error }) => (
         <>
+          {/* M7.2 (G2): the email log, with the addresses whose emails are stopped */}
+          <div className="settings-rows">
+            <SettingRow id="em-log" label={ZQ_UI.logTitle} description={ZQ_UI.settingsLinkHint}>
+              <Link to="/emails" className="btn btn--secondary" aria-describedby="em-log-desc">
+                <Mail size={20} />
+                {ZQ_UI.settingsLink}
+              </Link>
+            </SettingRow>
+          </div>
           <h2 className="settings-sub">Senders</h2>
           <p className="hint">The addresses must be verified with Amazon SES before mail can go from them.</p>
           <div className="settings-rows">

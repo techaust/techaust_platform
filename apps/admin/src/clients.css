@@ -412,6 +412,22 @@
   font-size: var(--text-sm);
 }
 
+/* M7.2 (G3): "Emails stopped", its reason and day, the email log link and the Owner's "Allow emails again", kept together and wrapping as one group. */
+.contact__stopped {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+}
+
+.contact__stopped .btn--text,
+.contact__stopped-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
 .contact__actions {
   display: flex;
   flex-wrap: wrap;

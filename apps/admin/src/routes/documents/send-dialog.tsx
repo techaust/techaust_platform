@@ -12,6 +12,7 @@ import { Modal } from "../../components/dialog.tsx";
 import { Switch } from "../../components/form.tsx";
 import { Send } from "../../components/icons.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
+import { ZQ_UI } from "../../lib/copy-zq.ts";
 import { DOC_COPY, moneyText, sendLine } from "../../lib/documents.ts";
 import {
   EMAIL_PREVIEW,
@@ -167,15 +168,21 @@ export function SendDialog(props: {
                 </p>
                 {choices.map((c, i) => {
                   const bad = invalid.has(c.id);
+                  // M7.2 (G4): a stopped address is listed with its reason and can't be picked (the email would be skipped).
+                  const stopped = c.portalAccess ? (c.suppression ?? null) : null;
+                  const off = !c.portalAccess || stopped !== null;
+                  const described = [stopped ? `${groupId}-stop-${i}` : "", bad ? `${groupId}-bad-${i}` : ""]
+                    .filter(Boolean)
+                    .join(" ");
                   return (
-                    <label key={c.id} className={`check sendd__contact${c.portalAccess ? "" : " is-off"}`}>
+                    <label key={c.id} className={`check sendd__contact${off ? " is-off" : ""}`}>
                       <input
                         id={`${groupId}-${i}`}
                         type="checkbox"
                         checked={picked.has(c.id)}
-                        disabled={!c.portalAccess || busy}
+                        disabled={off || busy}
                         aria-invalid={bad || undefined}
-                        aria-describedby={bad ? `${groupId}-bad-${i}` : undefined}
+                        aria-describedby={described || undefined}
                         onChange={(e) => {
                           const next = new Set(picked);
                           if (e.target.checked) next.add(c.id);
@@ -188,6 +195,11 @@ export function SendDialog(props: {
                         <span className="sendd__name">{c.name}</span>
                         <span className="sendd__meta">{c.email}</span>
                         {!c.portalAccess && <span className="sendd__meta">{OFFER_COPY.noPortal}</span>}
+                        {stopped && (
+                          <span className="sendd__meta sendd__why" id={`${groupId}-stop-${i}`}>
+                            {ZQ_UI.pickerStopped(stopped.label)}
+                          </span>
+                        )}
                         {bad && (
                           <span className="sendd__bad" id={`${groupId}-bad-${i}`}>
                             {OFFER_ERRORS.recipient_invalid}

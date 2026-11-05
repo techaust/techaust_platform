@@ -25,6 +25,7 @@ import {
 } from "../../components/icons.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
+import { ZQ_UI } from "../../lib/copy-zq.ts";
 import {
   BILLING_FROM,
   CARE_COPY,
@@ -58,6 +59,9 @@ export type SendableView = InvoiceView &
     parentLink?: { number: string | null; balanceMinor?: number | null } | null;
     noteOf?: { reason?: { code: string; text: string } | null } | null;
   };
+
+/** M7.2 (G4): the reason a stopped address shows in the picker (the contact read's `suppression.label`; core's generic label otherwise). */
+const stoppedLabel = (s: ContactView["suppression"]) => s?.label ?? ZQ_UI.stopped;
 
 type Loaded =
   | { state: "loading" }
@@ -214,7 +218,11 @@ export function InvoiceSendDialog(props: {
                         <span className="sendd__meta">{c.email}</span>
                         {c.block && (
                           <span className="sendd__meta sendd__why" id={why}>
-                            {c.block === "no_portal" ? SEND_COPY.noPortal : SEND_COPY.noFinance}
+                            {c.block === "no_portal"
+                              ? SEND_COPY.noPortal
+                              : c.block === "stopped"
+                                ? ZQ_UI.pickerStopped(stoppedLabel(c.suppression))
+                                : SEND_COPY.noFinance}
                           </span>
                         )}
                         {bad && (
@@ -292,7 +300,7 @@ export function InvoiceSendDialog(props: {
   );
 }
 
-const PILL_ICON = { clock: "clock", send: "send", check: "check", ban: "ban" } as const;
+const PILL_ICON = { clock: "clock", send: "send", check: "check", ban: "ban", alert: "alert" } as const;
 
 /**
  * H2 (WCAG 2.4.3): an action that swaps or removes the control that had focus (Pause becomes Resume, Revoke goes) moves focus to what replaced it, or

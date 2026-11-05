@@ -1,0 +1,111 @@
+/* M7.2 (run file G2, G3): the email log, one email's detail and the suppression band. Tokens only (docs/06); class names start with `ml-` so no other
+   stylesheet of the admin defines them (scripts/css-collisions.mjs). */
+
+/* The recipient filter: the address field with its Find button on one row; the field takes the room, the button keeps its 44 px height. */
+.ml-filters .ml-to-field {
+  flex: 2 1 18rem;
+}
+
+.ml-to-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: stretch;
+}
+
+.ml-to-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ml-to-row .btn {
+  flex: none;
+}
+
+/* The address opens the email: a link that wraps anywhere, never a sideways scroll in a narrow column. */
+.ml-to {
+  overflow-wrap: anywhere;
+}
+
+/* Emails stopped: a band above the facts, the danger colour on its rule and icon only; the words stay in the text colour so they read at AA in both themes. */
+.ml-stopped {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-danger);
+  border-radius: var(--radius-md);
+}
+
+.ml-stopped > svg {
+  flex: none;
+  margin-top: 0.125rem;
+  color: var(--color-danger);
+}
+
+.ml-stopped__body {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  min-width: 0;
+}
+
+.ml-stopped__body p {
+  margin: 0;
+}
+
+.ml-stopped__title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: var(--text-body--line-height);
+}
+
+/* The detail's panels stack with the page's rhythm. */
+.ml-panel + .ml-panel {
+  margin-top: var(--space-5);
+}
+
+/* Delivery updates: a quiet timeline, one update a row, the newest last (the order they arrived). */
+.ml-events {
+  display: grid;
+  gap: 0;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ml-event {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.ml-event__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.ml-event__line {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ml-none {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  color: var(--color-text-muted);
+}
+
+.ml-none > svg {
+  flex: none;
+  margin-top: 0.125rem;
+}

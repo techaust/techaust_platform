@@ -15,12 +15,13 @@ import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
-import { Alert, FileText, RefreshCw } from "../../components/icons.tsx";
+import { Alert, FileText, RefreshCw, Send } from "../../components/icons.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { periodText, REFUND_PILLS, ZO_UI } from "../../lib/copy-zo.ts";
+import { ZQ_UI } from "../../lib/copy-zq.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import { amountText, payErrorText } from "../../lib/payments.ts";
 import {
@@ -343,6 +344,8 @@ export function PaymentReceiptAndRefunds(props: {
   status: string;
   role: Role;
   onChanged: (toast: string) => void;
+  /** M7.2 (G7): "Send receipt again" on an issued receipt, for a role that may send (`invoices.send`); the entry dialog opens the picker. */
+  onSendReceipt?: ((r: { id: string; number: string }) => void) | undefined;
 }) {
   const wantsReceipt =
     props.kind === "payment" && (props.status === "confirmed" || props.status === "withdrawn");
@@ -388,6 +391,25 @@ export function PaymentReceiptAndRefunds(props: {
               )}
             </dd>
           </div>
+          {r?.status === "issued" &&
+            r.number &&
+            props.onSendReceipt &&
+            allowed(props.role, "invoices.send") && (
+              <div className="rf-entry-receipt__send">
+                <dt className="visually-hidden">{ZQ_UI.sendReceipt}</dt>
+                <dd>
+                  <button
+                    type="button"
+                    className="btn btn--secondary"
+                    onClick={() => props.onSendReceipt?.({ id: r.id, number: r.number ?? "" })}
+                  >
+                    <Send size={20} />
+                    {ZQ_UI.sendReceipt}
+                    <span className="visually-hidden">{` ${r.number}`}</span>
+                  </button>
+                </dd>
+              </div>
+            )}
         </dl>
       )}
       {rows.length > 0 && (

@@ -7,6 +7,7 @@
 //
 // The email preview repeats the words of the real templates (packages/email/src/billing.ts, which the admin does not bundle); a test renders the real
 // template and compares, so the two can't drift. Money is formatted through core (`moneyText`); nothing here adds up or works out an amount or a date.
+import { EMAIL_STATUS_LABELS } from "@techaust/core/copy-zq";
 import { formatIstDateTime } from "@techaust/core/dates";
 import { noteReasonWords } from "@techaust/core/invoice-email";
 import type { Currency } from "../api.ts";
@@ -95,7 +96,16 @@ export const SEND_COPY = {
  * "waiting": the row isn't queued yet because the PDF is still being made (`queuedAt` null and the PDF not ready; a caller without the key reads
  * as queued). A row not queued yet whose PDF is ready (the consumer hasn't run, or an automatic send waits for the window) is "queued".
  */
-export type SendState = "waiting" | "queued" | "sent" | "delivered" | "failed" | "cancelled";
+/** M7.2 (G5): an email the receiving server bounced, or its reader marked as spam, reads as such (S12), no longer as "Failed". */
+export type SendState =
+  | "waiting"
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "bounced"
+  | "complained"
+  | "failed"
+  | "cancelled";
 export function sendState(s: {
   cancelledAt: number | null;
   emailStatus: string | null;
@@ -109,9 +119,11 @@ export function sendState(s: {
       return "sent";
     case "delivered":
       return "delivered";
-    case "failed":
     case "bounced":
+      return "bounced";
     case "complained":
+      return "complained";
+    case "failed":
       return "failed";
     case "skipped":
       return "cancelled";
@@ -124,6 +136,9 @@ const SEND_STATE_WORDS: Record<SendState, string> = {
   queued: "Queued",
   sent: "Sent",
   delivered: "Delivered",
+  // S12 (07-ZQ, word for word)
+  bounced: EMAIL_STATUS_LABELS.bounced,
+  complained: EMAIL_STATUS_LABELS.complained,
   failed: "Failed",
   cancelled: "Cancelled",
 };
@@ -131,7 +146,7 @@ export const sendStateLabel = (s: SendState) => SEND_STATE_WORDS[s];
 /** Icon and text, never colour alone (docs/06 §5.5). */
 export function sendStateLook(s: SendState): {
   tone: PillTone;
-  icon: "clock" | "send" | "check" | "ban";
+  icon: "clock" | "send" | "check" | "ban" | "alert";
 } {
   switch (s) {
     case "waiting":
@@ -141,8 +156,11 @@ export function sendStateLook(s: SendState): {
       return { tone: "info", icon: "send" };
     case "delivered":
       return { tone: "success", icon: "check" };
+    case "bounced":
     case "failed":
       return { tone: "danger", icon: "ban" };
+    case "complained":
+      return { tone: "danger", icon: "alert" };
     case "cancelled":
       return { tone: "muted", icon: "ban" };
   }
@@ -243,7 +261,7 @@ export function reminderActions(rows: readonly ReminderRowView[], now: number) {
 // ---- H1: who can receive a finance document ---------------------------------------------------------------------------------------------------------
 
 /** Why a contact can't be chosen in the send dialog: no portal access, or portal access without "Can see finance" (POR-03). */
-export type RecipientBlock = "no_portal" | "no_finance" | null;
+export type RecipientBlock = "no_portal" | "no_finance" | "stopped" | null;
 
 /**
  * The contacts the invoice send dialog offers: live ones; first those who can receive it (portal access and "Can see finance"), then the others with
@@ -258,6 +276,8 @@ export function invoiceRecipientChoices<
     isBilling: boolean;
     anonymisedAt: number | null;
     isPrimary: boolean;
+    /** M7.2 (G4): emails to the address are stopped (a bounce, a spam report or by hand): listed with the reason, never ticked or sendable. */
+    suppression?: unknown;
   },
 >(contacts: readonly C[]): { choices: (C & { block: RecipientBlock })[]; ticked: string[] } {
   const live = contacts
@@ -267,7 +287,9 @@ export function invoiceRecipientChoices<
         ? "no_portal"
         : c.canSeeFinance === false
           ? "no_finance"
-          : null;
+          : c.suppression
+            ? "stopped"
+            : null;
       return { ...c, block };
     });
   const can = live.filter((c) => c.block === null);
@@ -277,6 +299,7 @@ export function invoiceRecipientChoices<
   return {
     choices: [
       ...can,
+      ...live.filter((c) => c.block === "stopped"),
       ...live.filter((c) => c.block === "no_finance"),
       ...live.filter((c) => c.block === "no_portal"),
     ],
