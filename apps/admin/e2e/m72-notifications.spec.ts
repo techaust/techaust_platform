@@ -5,7 +5,7 @@
 //   E2E_SAMPLE=1 pnpm --filter @techaust/admin exec playwright test e2e/m72-notifications.spec.ts   (through tools/heavy.sh; M72_SHOTS=<folder> saves screenshots)
 import { execFileSync } from "node:child_process";
 import { argon2Sync, createHash, randomBytes, randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -293,6 +293,116 @@ function base32(s: string): Buffer {
   for (const c of s.replace(/=+$/, "")) bits += B32.indexOf(c).toString(2).padStart(5, "0");
   return Buffer.from((bits.match(/.{8}/g) ?? []).map((b) => Number.parseInt(b, 2)));
 }
+
+/** A UUIDv7 (`POST /payments` takes its idempotency key only in that form). */
+function uuid7(): string {
+  const t = Date.now().toString(16).padStart(12, "0");
+  const r = randomUUID().replaceAll("-", "");
+  return `${t.slice(0, 8)}-${t.slice(8, 12)}-7${r.slice(13, 16)}-${(8 | (Number.parseInt(r[16] ?? "0", 16) & 3)).toString(16)}${r.slice(17, 20)}-${r.slice(20, 32)}`;
+}
+
+/** A step-up for this session, unless one is still good for two minutes; a refused code waits for the next 30-second step (m71's helper). */
+async function stepUp(page: Page) {
+  const me = await page.request.get("/api/v1/auth/me");
+  const until = ((await me.json()) as { stepUpUntil?: number | null }).stepUpUntil ?? null;
+  if (until !== null && until - Date.now() > 120_000) return;
+  const secret = Buffer.from(readFileSync(here("../.e2e/owner-totp.hex"), "utf8"), "hex");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await page.request.post("/api/v1/auth/step-up", {
+      headers,
+      data: { code: totpAt(secret, Math.floor(Date.now() / 30_000)) },
+    });
+    if (res.ok()) return;
+    await page.waitForTimeout(30_000 - (Date.now() % 30_000) + 500);
+  }
+  throw new Error("e2e: no step-up after three steps");
+}
+
+test("Send receipt again: offered while the payment holds money, refused and then hidden once it is refunded in full (finding 5)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await stepUp(page);
+  // the sample's INR client (E2E_SAMPLE), with one contact who can get receipts (portal access and Can see finance; a sample address)
+  const found = await page.request.get("/api/v1/clients?q=X0001");
+  const clientId = (
+    ((await found.json()) as { clients?: { id: string; code: string }[] }).clients ?? []
+  ).find((c) => c.code === "X0001")?.id;
+  expect(clientId, "the sample's INR client").toBeTruthy();
+  const contactName = `Receipt Contact ${run} (sample)`;
+  const contactId = randomUUID();
+  d1(
+    `INSERT INTO contacts (id, client_id, name, email, portal_access, can_see_finance) VALUES ('${contactId}', '${clientId}', '${contactName}', 'receipt-${run}@example.test', 1, 1);`,
+  );
+  // a confirmed payment held as credit (the Owner's entry is confirmed at once)
+  const paymentId = uuid7();
+  const rec = await page.request.post("/api/v1/payments", {
+    headers,
+    data: {
+      id: paymentId,
+      clientId,
+      kind: "payment",
+      currency: "INR",
+      amountMinor: 1_234_00,
+      receivedOn: "2026-11-04",
+      mode: "neft",
+      reference: `UTRE2E${run.toUpperCase()}`,
+    },
+  });
+  expect(rec.status(), await rec.text()).toBe(201);
+  // its receipt, written as the invoices Worker's issue batch writes it (local dev doesn't run jobs' `receipt.issue`); a sample number in the receipt series
+  const no = 5000 + (Date.now() % 4000);
+  d1(
+    `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, issue_date, total_minor, header_extras, snapshot_sha256, frozen_at, created_at, updated_at)
+       SELECT 'rct_' || p.id, 'receipt', 'issued', p.client_id, p.currency, 'receipt', '2627', ${no}, 'TH/RCT/2627/${no}', '2026-11-05', p.amount_minor, NULL, '${"0".repeat(63)}9', ${Date.now()}, ${Date.now()}, ${Date.now()}
+       FROM payments p WHERE p.id = '${paymentId}';
+     UPDATE payments SET receipt_document_id = 'rct_' || id WHERE id = '${paymentId}' AND receipt_document_id IS NULL;`,
+  );
+  await page.goto(`/payments/${paymentId}`);
+  const entry = page.getByRole("dialog", { name: "Payment" });
+  await entry.getByRole("button", { name: /Send receipt again/ }).click();
+  const send = page.getByRole("dialog", { name: `Send receipt TH/RCT/2627/${no} again` });
+  await send.getByRole("checkbox", { name: new RegExp(contactName.replace(/[()]/g, "\\$&")) }).check();
+  // the money goes back in full while the dialog is open: the send is refused by its code, and the dialog can only be closed
+  const refund = await page.request.post(`/api/v1/payments/${paymentId}/refunds`, {
+    headers,
+    data: {
+      id: uuid7(),
+      amountMinor: 1_234_00,
+      from: "credit",
+      reasonCode: "overpayment",
+      note: "Sample refund (e2e)",
+      manual: {
+        mode: "neft",
+        reference: `UTRRF${run.toUpperCase()}`,
+        paidOn: "2026-11-05",
+        paidTo: "original",
+      },
+    },
+  });
+  expect(refund.status(), await refund.text()).toBe(200);
+  await send.getByRole("button", { name: "Send receipt" }).click();
+  const stop = send
+    .getByRole("alert")
+    .filter({ hasText: "This payment was refunded in full, so its receipt can't be sent again." });
+  await expect(stop).toBeVisible();
+  await expect(stop).toBeFocused();
+  await expect(send.getByRole("button", { name: "Send receipt" })).toHaveCount(0);
+  expect(await axe(page), "the refused send").toEqual([]);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/e2e-receipt-refunded-stop-1280.png` });
+  await send.getByRole("button", { name: "Cancel" }).click();
+  // back on the entry, the receipt stays and its "Send receipt again" is gone
+  await expect(entry.locator(".docno", { hasText: `TH/RCT/2627/${no}` })).toBeVisible();
+  await expect(entry.getByText("Refunded on")).toBeVisible();
+  await expect(entry.getByRole("button", { name: /Send receipt again/ })).toHaveCount(0);
+  // the server agrees
+  const again = await page.request.post(`/api/v1/receipts/rct_${paymentId}/send`, {
+    headers,
+    data: { contactIds: [contactId] },
+  });
+  expect(again.status()).toBe(409);
+  expect(((await again.json()) as { error?: { code?: string } }).error?.code).toBe("receipt_refunded");
+});
 
 test("the email log is in the rail for the Owner and Staff, never the Accountant (finding 6)", async ({
   page,
