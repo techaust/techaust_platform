@@ -626,6 +626,9 @@ describe("gateways [ADM-SET-06]", () => {
 
 describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
   const NUMBER = "5550123456789";
+  // A leaked test account number: 555 and ten more digits, not touching another digit or a hex letter. Random hex ids
+  // (access_log.request_id, uuids) can hold a run like "5552530085442f3b", which a digit-only boundary matched (CI, #178).
+  const LEAK = /(?<![\da-f])555\d{10}(?![\da-f])/i;
   const body = (over: Record<string, unknown> = {}) => ({
     accountName: "Sample Account (test)",
     accountNo: NUMBER,
@@ -689,22 +692,22 @@ describe("bank details: masked everywhere [ADM-SET-02, ADM-G-06]", () => {
     await putBank("/settings/bank/INR", o.cookie, body({ accountNo: other, accountNoAgain: other }));
     const mismatch = await putBank("/settings/bank/INR", o.cookie, body({ accountNoAgain: "5550123450000" }));
     expect(mismatch.status).toBe(400);
-    expect(await mismatch.text()).not.toMatch(/(?<!\d)555\d{10}(?!\d)/);
+    expect(await mismatch.text()).not.toMatch(LEAK);
     const shape = await put(
       "/settings/bank/INR",
       o.cookie,
       body({ accountNo: "55 501!!", accountNoAgain: "55 501!!" }),
     );
     expect(shape.status).toBe(400);
-    expect(JSON.stringify(logged)).not.toMatch(/(?<!\d)555\d{10}(?!\d)/);
+    expect(JSON.stringify(logged)).not.toMatch(LEAK);
     const audit = await rows<{ summary: string | null }>(
       "SELECT summary FROM audit_log WHERE action = 'settings.bank.update'",
     );
     expect(audit.length).toBeGreaterThanOrEqual(2);
-    for (const r of audit) expect(r.summary ?? "").not.toMatch(/(?<!\d)555\d{10}(?!\d)/);
+    for (const r of audit) expect(r.summary ?? "").not.toMatch(LEAK);
     const change = JSON.parse(audit.at(-1)?.summary ?? "{}");
     expect(change.accountNo).toEqual({ before: "[masked]", after: "[masked]" });
-    expect(JSON.stringify(await rows("SELECT * FROM access_log"))).not.toMatch(/(?<!\d)555\d{10}(?!\d)/);
+    expect(JSON.stringify(await rows("SELECT * FROM access_log"))).not.toMatch(LEAK);
   });
 
   it("editing without retyping the number keeps it; the same values again change nothing", async () => {
