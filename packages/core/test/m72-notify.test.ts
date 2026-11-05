@@ -85,16 +85,20 @@ describe("the M7.2 message readers", () => {
 });
 
 describe("07-ZQ (H)", () => {
+  it("the owner approved C1 to C4 (2026-11-05)", () => {
+    expect(APPROVED_07ZQ).toBe(true);
+  });
+
   it("the client lines are marked until the owner approves them; the brief's staff lines are word for word", () => {
-    expect(APPROVED_07ZQ).toBe(false);
+    const mark = APPROVED_07ZQ ? "" : "[Placeholder] ";
     expect(REFUND_EMAIL_COPY.subject("₹1.00", "TH/INV/2627/0001")).toBe(
-      "[Placeholder] Refund of ₹1.00 for TH/INV/2627/0001",
+      `${mark}Refund of ₹1.00 for TH/INV/2627/0001`,
     );
     expect(REFUND_EMAIL_COPY.body("Asha", "₹1.00", "TH/INV/2627/0001", "4 Nov 2026")).toBe(
-      "[Placeholder] Hi Asha, we've refunded ₹1.00 for TH/INV/2627/0001 on 4 Nov 2026. Banks and card networks may take longer to show it.",
+      `${mark}Hi Asha, we've refunded ₹1.00 for TH/INV/2627/0001 on 4 Nov 2026. Banks and card networks may take longer to show it.`,
     );
     expect(REFUND_EMAIL_COPY.creditNote("TH/CN/2627/0001")).toBe(
-      "[Placeholder] Credit note TH/CN/2627/0001 records this refund.",
+      `${mark}Credit note TH/CN/2627/0001 records this refund.`,
     );
     expect(REFUND_EMAIL_COPY.button).toBe("View invoice");
     expect(DIGEST_COPY.subject("02 Nov 2026")).toBe("Your week at TecHaust: 02 Nov 2026");

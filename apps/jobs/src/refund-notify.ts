@@ -10,7 +10,7 @@
 //      the refunded invoice in the portal (review 1, finding 13), else the invoice list.
 // Not emailed (review 1, finding 13, kept): a refund from credit of a payment confirmed before M6.5 names no document (no invoice, no checkout, no receipt), so
 // the consumer answers `none` (`no_document`); the run file records it.
-// While 07-ZQ's client lines are unapproved no refund email leaves "local" (`refundCopyGate`, the M6.5 receipt gate's pattern): the message is acknowledged.
+// 07-ZQ's client lines were approved by the owner on 2026-11-05; the gate stays so that an unapproved line can never leave "local" (`refundCopyGate`, the M6.5 receipt gate's pattern): the message is acknowledged.
 import type { EmailMessage } from "@techaust/core";
 import { APPROVED_07ZQ } from "@techaust/core/copy-zq";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";

@@ -8,8 +8,8 @@
 //     and approved by the lead under the owner's delegation (run file "Lead triage of review 1", 2026-11-05), plain; S15's advice is the lead's own words.
 // No line is legal wording (none is invented); 07-A §3.5's "Banks and card networks may take longer" is reused as approved.
 
-/** The owner's approval of the client lines C1 to C4 (not yet asked; run file "Asked later"). */
-export const APPROVED_07ZQ: boolean = false;
+/** The owner's approval of the client lines C1 to C4: approved word for word by the owner, 2026-11-05 (07-ZQ). */
+export const APPROVED_07ZQ: boolean = true;
 const zq = (line: string): string => (APPROVED_07ZQ ? line : `[Placeholder] ${line}`);
 
 // ---- the refund email (C1 to C4; Q4 A: every completed refund except chargebacks) ----------------------------------------------------------------------------

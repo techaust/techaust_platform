@@ -1,6 +1,6 @@
-[Placeholder] Hi Sample, we've refunded ₹11,800.00 for TH/INV/2627/0001 on 4 Nov 2026. Banks and card networks may take longer to show it.
+Hi Sample, we've refunded ₹11,800.00 for TH/INV/2627/0001 on 4 Nov 2026. Banks and card networks may take longer to show it.
 
-[Placeholder] Credit note TH/CN/2627/0001 records this refund.
+Credit note TH/CN/2627/0001 records this refund.
 
 View invoice: https://example.test/sample
 

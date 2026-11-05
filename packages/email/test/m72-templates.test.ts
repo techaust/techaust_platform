@@ -72,8 +72,13 @@ describe("the M7.2 templates", () => {
     }
   });
 
-  it("the staff lines are approved and placed unmarked; only the client's refund lines keep the mark", () => {
-    for (const t of ["digest.weekly", "staff.notification", "staff.signin_unfinished"] as const) {
+  it("every M7.2 line is approved and placed unmarked (the owner approved 07-ZQ's refund lines, 2026-11-05)", () => {
+    for (const t of [
+      "digest.weekly",
+      "staff.notification",
+      "staff.signin_unfinished",
+      "refund.sent",
+    ] as const) {
       const r = renderEmail(t, sampleData(t, who, "x"), opts);
       expect(
         `${r.subject}
@@ -84,7 +89,7 @@ ${r.html}`,
     }
     for (const name of Object.values(TEMPLATE_NAMES)) expect(name).not.toContain("[Placeholder");
     expect(renderEmail("refund.sent", sampleData("refund.sent", who, "x"), opts).subject).toMatch(
-      /^\[Placeholder\] /,
+      /^Refund of /,
     );
   });
 });

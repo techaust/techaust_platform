@@ -8,7 +8,7 @@ import { hmacSignKey } from "@techaust/core/hmac";
 import { uuidv7 } from "@techaust/core/ids";
 import { staffNotify } from "@techaust/core/notifications";
 import type { SendInput, Transport } from "@techaust/email";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { hourlyMessages } from "../src/billing.ts";
 import { processDigest } from "../src/digest.ts";
 import { DEAD_LETTER_SQL, emailLogId, processDeadLetter, processEmail } from "../src/email.ts";
@@ -629,7 +629,8 @@ describe("the refund email (Q4 A; C.2 recipient rule)", () => {
     );
     expect(fakes.email.at(-1)?.body).toEqual({ kind: "refund.notify", refundId: r.refundId });
     expect(fakes.email.at(-1)?.delaySeconds).toBe(11.5 * 3_600);
-    expect(refundCopyGate.approved()).toBe(false);
+    expect(refundCopyGate.approved()).toBe(true); // the owner approved 07-ZQ (2026-11-05)
+    const gate = vi.spyOn(refundCopyGate, "approved").mockReturnValue(false);
     expect(
       await processRefundNotify(
         makeEnv({ ENVIRONMENT: "staging" }),
@@ -637,6 +638,14 @@ describe("the refund email (Q4 A; C.2 recipient rule)", () => {
         IN_WINDOW,
       ),
     ).toBe("held");
+    gate.mockRestore();
+    expect(
+      await processRefundNotify(
+        makeEnv({ ENVIRONMENT: "staging" }),
+        { kind: "refund.notify", refundId: r.refundId },
+        IN_WINDOW,
+      ),
+    ).not.toBe("held");
   });
 });
 
