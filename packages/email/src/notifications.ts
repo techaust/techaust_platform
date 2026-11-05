@@ -1,7 +1,13 @@
 // M7.2's emails (run file docs/runs/m7.2-notifications.md D, G, H): the owners' weekly digest (JOB-CRON-03, non-transactional), a staff notification email
-// (ADM-G-09, one per bell row), the client's refund email (ADM-PAY-08, Q4 A) and the unfinished sign-in alert (Q3 A). These are the BUILDER's plain renderers in
-// the house transactional layout (`securityEmail`), so the pipeline, the tests and the Settings test send work; the designer finishes their look (section G).
-// The words come from `@techaust/core/copy-zq` (07-ZQ): the client lines and the builder's drafts show "[Placeholder]" until approved.
+// (ADM-G-09, one per bell row), the client's refund email (ADM-PAY-08, Q4 A) and the unfinished sign-in alert (Q3 A), in the house layout (`securityEmail`:
+// the badge logo, the verdigris rule, the subject as the heading, light and dark, the plain-text twin). The designer's look (section G):
+//   - digest: 07 §8's core text, then the week's figures as a ledger (label left, the value large with tabular figures, one line per currency), the
+//     dashboard button, and the non-transactional footer (06 §6): S2 and the S3 switch-off link sit in the footer above the 07 §8 line, never in the body;
+//   - staff notification: the bell's title is the subject and the heading (said once), the admin button, and S4 (why you got it, with its settings link)
+//     in the footer, as the digest's "why" line;
+//   - refund: C2, C3 when a credit note records it, and C4's portal button;
+//   - unfinished sign-in: the time bold in the body, the advice, then 07-G's "Not you?" line set apart (the M2.4b security emails' shape).
+// The words come from `@techaust/core/copy-zq` (07-ZQ): the client lines and the drafts show "[Placeholder]" until approved.
 //
 // Data (every value a string, filled by the jobs Worker; the keys are pinned below and by the fixtures):
 //   digest.weekly          week_label, pipeline, invoiced, collected, overdue, new_leads, reminders_due, dashboard_url, settings_url, unsubscribe_url
@@ -16,7 +22,15 @@ import {
   SIGNIN_UNFINISHED_COPY,
 } from "@techaust/core/copy-zq";
 import { escapeHtml, headerValue } from "./headers.ts";
-import { type LayoutOptions, NOT_YOU, para, type Rendered, securityEmail } from "./templates.ts";
+import {
+  footerLink,
+  type LayoutOptions,
+  NOT_YOU,
+  type Para,
+  para,
+  type Rendered,
+  securityEmail,
+} from "./templates.ts";
 
 export const DIGEST_KEYS = [
   "week_label",
@@ -48,14 +62,17 @@ export type RefundSentData = Record<(typeof REFUND_SENT_KEYS)[number], string>;
 export const SIGNIN_UNFINISHED_KEYS = ["first_name", "time", "role"] as const;
 export type SigninUnfinishedData = Record<(typeof SIGNIN_UNFINISHED_KEYS)[number], string>;
 
-/** A paragraph that ends with a link (the link's URL repeated in the text twin). */
-const linkPara = (lead: string, label: string, url: string) =>
-  para(
-    `${lead}${lead ? " " : ""}${label}: ${url}`,
-    `${escapeHtml(lead)}${lead ? " " : ""}<a href="${escapeHtml(url)}">${escapeHtml(label)}</a>`,
-  );
+/** A sentence with a value inside it set bold and kept on one line (the time of a security email, 07-G's look); the plain text is the sentence as it is. */
+function withBold(sentence: string, value: string): Para {
+  const at = value ? sentence.indexOf(value) : -1;
+  if (at === -1) return para(sentence);
+  return {
+    text: sentence,
+    html: `${escapeHtml(sentence.slice(0, at))}<strong style="font-weight:600;white-space:nowrap;">${escapeHtml(value)}</strong>${escapeHtml(sentence.slice(at + value.length))}`,
+  };
+}
 
-/** `digest.weekly` (07 §8): the figures as facts, the dashboard button, then the non-transactional footer (S2, S3). */
+/** `digest.weekly` (07 §8): the core text, the week's figures as a ledger, the dashboard button, then the non-transactional footer (S2, S3). */
 export function digestWeekly(d: DigestData, opts: LayoutOptions): Rendered {
   const C = DIGEST_COPY;
   const rows: [string, string][] = [
@@ -67,22 +84,20 @@ export function digestWeekly(d: DigestData, opts: LayoutOptions): Rendered {
     [C.remindersDue, d.reminders_due],
   ];
   return securityEmail(headerValue(C.subject(d.week_label)), opts, {
-    before: [],
-    facts: { rows, text: rows.map(([k, v]) => `${k}: ${v}`).join("\n") },
+    before: [para(C.intro)],
+    figures: { rows, text: rows.map(([k, v]) => `${k}: ${v}`).join("\n") },
     action: { label: C.button, url: d.dashboard_url },
-    actionFirst: true,
-    after: [para(C.why), linkPara("", C.switchOff, d.settings_url)],
+    footer: [para(C.why), footerLink("", C.switchOff, d.settings_url)],
   });
 }
 
-/** `staff.notification`: the bell's approved title as the subject and first line, the admin button, then S4's footer. */
+/** `staff.notification`: the bell's approved title as the subject and heading, the admin button, then S4 in the footer. */
 export function staffNotification(d: StaffNotificationData, opts: LayoutOptions): Rendered {
   const C = NOTIFICATION_COPY;
   return securityEmail(headerValue(d.title), opts, {
-    before: [para(d.title)],
+    before: [],
     action: { label: C.button, url: d.url },
-    actionFirst: true,
-    after: [linkPara(C.footer(d.group), C.settingsLink, d.settings_url)],
+    footer: [footerLink(C.footer(d.group), C.settingsLink, d.settings_url)],
   });
 }
 
@@ -91,19 +106,18 @@ export function refundSent(d: RefundSentData, opts: LayoutOptions): Rendered {
   const C = REFUND_EMAIL_COPY;
   return securityEmail(headerValue(C.subject(d.amount, d.document_number)), opts, {
     before: [
-      para(C.body(d.first_name, d.amount, d.document_number, d.date)),
+      withBold(C.body(d.first_name, d.amount, d.document_number, d.date), d.amount),
       ...(d.credit_note_number ? [para(C.creditNote(d.credit_note_number))] : []),
     ],
     action: { label: C.button, url: d.url },
-    actionFirst: true,
   });
 }
 
-/** `staff.signin_unfinished` (Q3 A, S15): what happened, what to do, and 07-G's "Not you?" line by role. */
+/** `staff.signin_unfinished` (Q3 A, S15): what happened (the time bold), what to do, and 07-G's "Not you?" line by role. */
 export function staffSigninUnfinished(d: SigninUnfinishedData, opts: LayoutOptions): Rendered {
   const C = SIGNIN_UNFINISHED_COPY;
   return securityEmail(headerValue(C.subject), opts, {
-    before: [para(C.body(d.first_name, d.time)), para(C.advice)],
+    before: [withBold(C.body(d.first_name, d.time), d.time), para(C.advice)],
     notYou: d.role === "owner" ? NOT_YOU.owner : NOT_YOU.member,
   });
 }

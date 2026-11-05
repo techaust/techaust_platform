@@ -1,0 +1,10 @@
+Hi, Sample Owner has invited you to join TecHaust admin as Staff.
+
+To accept, choose a password and add TecHaust to an authenticator app on your phone, such as Google Authenticator, Microsoft Authenticator or 1Password: every sign-in needs a code from it.
+
+The link works once and expires in 48 hours:
+https://example.test/sample/invite
+
+If you weren't expecting this, you can ignore this email.
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

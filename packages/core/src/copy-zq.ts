@@ -37,10 +37,15 @@ export const DIGEST_COPY = {
   subject: (weekLabel: string) => `Your week at TecHaust: ${weekLabel}`,
   /** 07 §8's button (approved) */
   button: "Open dashboard",
-  /** S1: the section labels (the dashboard's tiles; the builder's drafts until the designer places the dashboard's own words) */
-  pipeline: draft("Pipeline"),
+  /** 07 §8's core text (approved), the email's first paragraph: what the figures below are. */
+  intro: "Pipeline, invoiced and collected, overdue invoices, new leads and upcoming reminders.",
+  /**
+   * S1: the section labels. The designer placed the dashboard's own approved words where the dashboard has them: "Pipeline" (the tile, 07-O §7) and
+   * "Collected this month" (the Payments tile, 07-ZH); the other four stay the builder's drafts for the lead.
+   */
+  pipeline: "Pipeline",
   invoiced: draft("Invoiced this month"),
-  collected: draft("Collected this month"),
+  collected: "Collected this month",
   overdue: draft("Overdue invoices"),
   newLeads: draft("New leads (last 7 days)"),
   remindersDue: draft("Reminders due (next 7 days)"),
@@ -67,8 +72,8 @@ export const NOTIFICATION_COPY = {
     `You get this email because ${group} emails are on in your notification settings.`,
   /** S4 */
   settingsLink: "Change notification settings",
-  /** The button of a notification email (the builder's draft) */
-  button: draft("Open in admin"),
+  /** The button of a notification email: the house emails' approved "Open in admin" (07 §8 lead alert, 07-G), placed by the designer */
+  button: "Open in admin",
 } as const;
 
 /** S7: the bell of a client opening a proposal or estimate, named by its number, else "Untitled" (13 2026-10-26). */

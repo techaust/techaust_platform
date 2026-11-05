@@ -130,10 +130,19 @@ describe("07-ZQ (H)", () => {
       SIGNIN_UNFINISHED_COPY.body("Asha", "5 Nov 2026, 10:00 IST"),
       SIGNIN_UNFINISHED_COPY.advice,
       SIGNIN_UNFINISHED_COPY.bell("Asha Rao"),
-      DIGEST_COPY.pipeline,
-      NOTIFICATION_COPY.button,
+      DIGEST_COPY.invoiced,
+      DIGEST_COPY.overdue,
     ])
       expect(v).toMatch(/^\[Placeholder\] /);
+  });
+
+  it("the designer placed the approved words where they exist (S1 from the dashboard, the house emails' button)", () => {
+    expect(DIGEST_COPY.pipeline).toBe("Pipeline");
+    expect(DIGEST_COPY.collected).toBe("Collected this month");
+    expect(NOTIFICATION_COPY.button).toBe("Open in admin");
+    expect(DIGEST_COPY.intro).toBe(
+      "Pipeline, invoiced and collected, overdue invoices, new leads and upcoming reminders.",
+    );
   });
 
   it("the four templates are known; only the digest is non-transactional", () => {

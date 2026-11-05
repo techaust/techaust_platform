@@ -1,0 +1,11 @@
+Hi Sample, we've issued credit note TH/INV/2627/0001 for ₹23,600.00 against invoice TH/INV/2627/0001.
+
+Reason: Price correction.
+
+The amount due on the invoice is now ₹10,000.00.
+
+The credit note is attached as a PDF, and it's also in your client portal.
+
+View credit note: https://example.test/sample/invoice
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com

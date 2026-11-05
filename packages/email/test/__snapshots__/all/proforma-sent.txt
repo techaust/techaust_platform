@@ -1,0 +1,7 @@
+Hi Sample, please find payment request TH/INV/2627/0001 for ₹23,600.00, valid until 12 Nov 2026. You can pay by bank transfer; the bank details are on the payment request. A tax invoice will be issued when payment is received.
+
+The payment request is attached as a PDF, and it's also in your client portal.
+
+View payment request: https://example.test/sample/invoice
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com
