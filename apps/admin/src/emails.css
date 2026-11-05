@@ -29,6 +29,11 @@
   overflow-wrap: break-word;
 }
 
+/* The "Sent" column of an email that hasn't left (finding 15): the word or dash muted, so the send times around it stay the column's reading. */
+.ml-unsent {
+  color: var(--color-text-muted);
+}
+
 .ml-status {
   display: grid;
   gap: var(--space-1);

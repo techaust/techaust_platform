@@ -30,6 +30,26 @@ export function emailStatusLook(status: string): StatusLook {
 }
 
 /**
+ * What the log's "Sent" column shows for a status (M7.2 review 1, finding 15): the time only once the email left (sent, and the outcomes that follow a send);
+ * "Queued" while it waits or is being handed over (its created time is when it was queued, never when it was sent); nothing for one that never left (failed or
+ * not sent: the status says why).
+ */
+export function sentShown(status: string): "time" | "queued" | "none" {
+  switch (status) {
+    case "sent":
+    case "delivered":
+    case "bounced":
+    case "complained":
+      return "time";
+    case "queued":
+    case "sending":
+      return "queued";
+    default:
+      return "none";
+  }
+}
+
+/**
  * The admin page of the record an email was sent for, when there is one to open: an approval, or the proposal or estimate of an offer email (its entity is the
  * document). Other entities (a send, a reminder, a bell, a lead's reference) have no page of their own: null.
  */

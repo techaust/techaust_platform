@@ -4,7 +4,7 @@ import { EMAIL_STATUS_LABELS } from "@techaust/core/copy-zq";
 import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import { sentenceStart, ZQ_ERRORS, ZQ_UI, zqErrorText } from "./copy-zq.ts";
-import { emailRecordHref, emailStatusLook, isAddress, logCrumbs, sinceOf } from "./emails.ts";
+import { emailRecordHref, emailStatusLook, isAddress, logCrumbs, sentShown, sinceOf } from "./emails.ts";
 import { invoiceRecipientChoices } from "./invoice-send.ts";
 import { recipientChoices } from "./offers.ts";
 
@@ -26,6 +26,16 @@ describe("the email log", () => {
     for (const s of ["bounced", "complained", "failed"]) expect(emailStatusLook(s).tone).toBe("danger");
     expect(emailStatusLook("skipped").tone).toBe("muted");
     expect(emailStatusLook("anything else").tone).toBe("muted");
+  });
+
+  it("shows a send time only once the email left: 'Queued' before, nothing for one that never left (review 1, finding 15)", () => {
+    for (const s of ["sent", "delivered", "bounced", "complained"]) expect(sentShown(s), s).toBe("time");
+    for (const s of ["queued", "sending"]) expect(sentShown(s), s).toBe("queued");
+    for (const s of ["failed", "skipped", "anything else"]) expect(sentShown(s), s).toBe("none");
+    // the lists above name every S12 status, so a new status is a choice made here
+    expect(Object.keys(EMAIL_STATUS_LABELS).sort()).toEqual(
+      ["sent", "delivered", "bounced", "complained", "queued", "sending", "failed", "skipped"].sort(),
+    );
   });
 
   it("links an approval and an offer's document, nothing else", () => {

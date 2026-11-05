@@ -14,7 +14,7 @@ import { LoadFailed, NoAccess, useLoad } from "../components/states.tsx";
 import { FieldError } from "../components/ui.tsx";
 import { allowed } from "../lib/access.ts";
 import { ZQ_UI } from "../lib/copy-zq.ts";
-import { emailRecordHref, emailStatusLook, isAddress, logCrumbs, sinceOf } from "../lib/emails.ts";
+import { emailRecordHref, emailStatusLook, isAddress, logCrumbs, sentShown, sinceOf } from "../lib/emails.ts";
 import { type EmailRow, m72Api } from "../lib/m72-api.ts";
 import { useUser } from "../session.tsx";
 import "../emails.css";
@@ -130,7 +130,24 @@ function EmailLog() {
         return href ? <Link to={href}>{templateName(r.template)}</Link> : templateName(r.template);
       },
     },
-    { key: "when", header: ZQ_UI.colWhen, cell: (r) => <When ms={r.createdAt} wrap /> },
+    {
+      key: "when",
+      header: ZQ_UI.colWhen,
+      // Finding 15: a queued email has no send time yet ("Queued"), and one that never left shows none (its status says why)
+      cell: (r) => {
+        const shown = sentShown(r.status);
+        return shown === "time" ? (
+          <When ms={r.createdAt} wrap />
+        ) : shown === "queued" ? (
+          <span className="ml-unsent">{EMAIL_STATUS_LABELS.queued}</span>
+        ) : (
+          <span className="ml-unsent">
+            <span aria-hidden="true">—</span>
+            <span className="visually-hidden">{EMAIL_STATUS_LABELS.skipped}</span>
+          </span>
+        );
+      },
+    },
     {
       key: "status",
       header: ZQ_UI.colStatus,
