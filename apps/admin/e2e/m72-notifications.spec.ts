@@ -4,13 +4,16 @@
 // are written straight to the LOCAL tables, as the jobs Worker's SES hook writes them (sample addresses on example.test only).
 //   E2E_SAMPLE=1 pnpm --filter @techaust/admin exec playwright test e2e/m72-notifications.spec.ts   (through tools/heavy.sh; M72_SHOTS=<folder> saves screenshots)
 import { execFileSync } from "node:child_process";
+import { argon2Sync, createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { createInviteStatements } from "../../../scripts/create-invite-sql.mjs";
 import { ORIGIN } from "../playwright.config.ts";
+import { totpAt } from "./sample-data.ts";
 
 const here = (p: string) => fileURLToPath(new URL(p, import.meta.url));
 
@@ -35,6 +38,8 @@ const run = Date.now().toString(36);
 const BOUNCED = `ml-e2e-${run}-b`;
 const DELIVERED = `ml-e2e-${run}-d`;
 const QUEUED = `ml-e2e-${run}-q`;
+const NOT_SENT = `ml-e2e-${run}-n`;
+const NOT_SENT_TO = `not-sent-${run}@example.test`;
 const BOUNCE_TO = `bounce-${run}@example.test`;
 const SHOTS = process.env.M72_SHOTS ?? "";
 const headers = { Origin: ORIGIN };
@@ -45,7 +50,8 @@ test.beforeAll(() => {
     `INSERT INTO email_log (id, to_email, template, entity_type, entity_id, ses_message_id, status, created_at, updated_at, last_event_at, bounce_type) VALUES
        ('${BOUNCED}', '${BOUNCE_TO}', 'invoice.sent', 'document_send', 'e2e-${run}-1', 'msg-${run}-b', 'bounced', ${now - 3_600_000}, ${now - 60_000}, ${now - 60_000}, 'permanent'),
        ('${DELIVERED}', 'delivered-${run}@example.test', 'receipt.sent', 'document_send', 'e2e-${run}-2', 'msg-${run}-d', 'delivered', ${now - 7_200_000}, ${now - 120_000}, ${now - 120_000}, NULL),
-       ('${QUEUED}', 'a.long.sample.address.${run}.for.layout@subdomain.example.test', 'digest.weekly', 'digest', 'e2e-${run}:2026-11-02', NULL, 'queued', ${now - 30_000}, ${now - 30_000}, NULL, NULL);
+       ('${QUEUED}', 'a.long.sample.address.${run}.for.layout@subdomain.example.test', 'digest.weekly', 'digest', 'e2e-${run}:2026-11-02', NULL, 'queued', ${now - 30_000}, ${now - 30_000}, NULL, NULL),
+       ('${NOT_SENT}', '${NOT_SENT_TO}', 'reminder.sent', 'reminder', 'e2e-${run}-3', NULL, 'skipped', ${now - 90_000}, ${now - 90_000}, NULL, NULL);
      INSERT INTO email_events (id, ses_message_id, type, bounce_type, bounce_sub_type, email_log_id, outcome, received_at) VALUES
        ('ev-${run}-1', 'msg-${run}-b', 'delivery', NULL, NULL, '${BOUNCED}', 'applied', ${now - 3_000_000}),
        ('ev-${run}-2', 'msg-${run}-b', 'bounce', 'permanent', 'General', '${BOUNCED}', 'applied', ${now - 60_000}),
@@ -194,4 +200,131 @@ test("a keyboard user reaches every filter and the first email in order, with a 
   expect(order.slice(0, 2)).toEqual(["ml-status:true", "ml-template:true"]);
   expect(order).toContain("ml-to:true");
   expect(order.some((o) => o.startsWith("Find"))).toBe(true);
+});
+
+// ---- Review 1, findings 6 and 15 (designer D2) ----
+
+test("the Sent column shows a time only once an email left: Queued before, nothing for one never sent (finding 15)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/emails");
+  await expect(page.getByText(BOUNCE_TO).first()).toBeVisible();
+  const heads = await page.locator("thead th").allTextContents();
+  const sent = heads.findIndex((h) => h.trim() === "Sent");
+  expect(sent, "the Sent column").toBeGreaterThanOrEqual(0);
+  const cell = (hasText: string) => page.locator("tbody tr", { hasText }).locator("td").nth(sent);
+  await expect(cell("for.layout@")).toHaveText("Queued");
+  await expect(cell(BOUNCE_TO)).toContainText("IST");
+  await expect(cell(NOT_SENT_TO)).toHaveText(/^—\s*Not sent$/);
+  await expect(cell(NOT_SENT_TO)).not.toContainText("IST");
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/e2e-emails-sent-column-1280.png`, fullPage: true });
+});
+
+/** A throwaway member of `role`, enrolled over the API as global-setup.ts enrols the Owner (local database only; sample address, random password). */
+async function memberCookies(role: "staff" | "accountant") {
+  const email = `e2e-${role}-${run}@example.test`;
+  const token = randomBytes(32).toString("base64url");
+  const now = Date.now();
+  d1(
+    createInviteStatements({
+      email,
+      role,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+      now,
+      expiresAt: now + 3_600_000,
+      auditId: randomUUID(),
+    }).join("\n"),
+  );
+  const call = async (route: string, body: unknown) => {
+    const res = await fetch(`${ORIGIN}/api/v1/auth${route}`, {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return {
+      status: res.status,
+      data: (await res.json().catch(() => ({}))) as Record<string, unknown>,
+      cookies: res.headers.getSetCookie(),
+    };
+  };
+  const start = await call("/invite/start", { token });
+  expect(start.status, `${role} invite/start`).toBe(200);
+  const p = start.data.params as { m: number; t: number; p: number };
+  const clientHash = argon2Sync("argon2id", {
+    message: randomBytes(18).toString("base64url").normalize("NFKC"),
+    nonce: Buffer.from(start.data.salt as string, "base64url"),
+    parallelism: p.p,
+    passes: p.t,
+    memory: p.m,
+    tagLength: 32,
+  }).toString("base64url");
+  const finish = await call("/invite/finish", { token, clientHash, name: `E2E ${role} (sample)` });
+  expect(finish.status, `${role} invite/finish`).toBe(200);
+  const done = await call("/invite/totp", {
+    challenge: finish.data.challenge,
+    code: totpAt(base32(finish.data.secret as string), Math.floor(Date.now() / 30_000)),
+  });
+  expect(done.status, `${role} invite/totp`).toBe(200);
+  return done.cookies.map((c) => {
+    const [pair = ""] = c.split(";");
+    const at = pair.indexOf("=");
+    return {
+      name: pair.slice(0, at),
+      value: pair.slice(at + 1),
+      domain: "localhost",
+      path: "/",
+      expires: -1,
+      httpOnly: true,
+      secure: /;\s*secure/i.test(c),
+      sameSite: "Strict" as const,
+    };
+  });
+}
+
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+function base32(s: string): Buffer {
+  let bits = "";
+  for (const c of s.replace(/=+$/, "")) bits += B32.indexOf(c).toString(2).padStart(5, "0");
+  return Buffer.from((bits.match(/.{8}/g) ?? []).map((b) => Number.parseInt(b, 2)));
+}
+
+test("the email log is in the rail for the Owner and Staff, never the Accountant (finding 6)", async ({
+  page,
+  browser,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/");
+  const ownerRail = page.getByRole("navigation", { name: "Main" });
+  await ownerRail.getByRole("link", { name: "Emails" }).click();
+  await expect(page).toHaveURL(/\/emails$/);
+  await expect(page.getByRole("heading", { name: "Emails", level: 1 })).toBeVisible();
+  await expect(ownerRail.getByRole("link", { name: "Emails" })).toHaveAttribute("aria-current", "page");
+  // one email keeps its section marked in the rail
+  await page.goto(`/emails/${DELIVERED}`);
+  await expect(ownerRail.getByRole("link", { name: "Emails" })).toHaveAttribute("aria-current", "page");
+
+  for (const [role, sees] of [
+    ["staff", true],
+    ["accountant", false],
+  ] as const) {
+    const ctx = await browser.newContext({
+      baseURL: ORIGIN,
+      storageState: { cookies: await memberCookies(role), origins: [] },
+      viewport: { width: 1280, height: 900 },
+    });
+    const p = await ctx.newPage();
+    await p.goto("/");
+    const rail = p.getByRole("navigation", { name: "Main" });
+    await expect(rail.getByRole("link", { name: "Dashboard" })).toBeVisible();
+    await expect(rail.getByRole("link", { name: "Emails" }), role).toHaveCount(sees ? 1 : 0);
+    if (sees) {
+      await rail.getByRole("link", { name: "Emails" }).click();
+      await expect(p.getByRole("heading", { name: "Emails", level: 1 })).toBeVisible();
+      await expect(p.getByText(BOUNCE_TO).first()).toBeVisible();
+      expect(await axe(p), `${role} email log`).toEqual([]);
+      if (SHOTS) await p.screenshot({ path: `${SHOTS}/e2e-emails-rail-${role}-1280.png`, fullPage: true });
+    }
+    await ctx.close();
+  }
 });
