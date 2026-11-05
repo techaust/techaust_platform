@@ -73,13 +73,21 @@ export const NO_CATEGORY = "none";
 
 // ---- source paths (C3; DPDP minimisation, RB-31 pattern) ------------------------------------------------------------------------------------------------
 
-/** The page a lead came from, cut at the first `?` or `#` (query strings and fragments can carry personal data); null stays null. Twin: `sourcePathSql`. */
+/** The longest path the pipeline shows, in characters (code points, as SQLite's `substr` counts them; early check 8). */
+export const SOURCE_PATH_MAX = 120;
+
+/**
+ * The page a lead came from, cut at the first `?` or `#` (query strings and fragments can carry personal data), then at `SOURCE_PATH_MAX` characters; null stays
+ * null. Twin: `sourcePathSql`.
+ */
 export function sourcePath(page: string | null): string | null {
   if (page === null) return null;
   const q = page.indexOf("?");
   const h = page.indexOf("#");
   const cut = q < 0 ? h : h < 0 ? q : Math.min(q, h);
-  return cut < 0 ? page : page.slice(0, cut);
+  const path = cut < 0 ? page : page.slice(0, cut);
+  const chars = Array.from(path);
+  return chars.length > SOURCE_PATH_MAX ? chars.slice(0, SOURCE_PATH_MAX).join("") : path;
 }
 
 // ---- periods ----------------------------------------------------------------------------------------------------------------------------------------------
@@ -254,9 +262,11 @@ export type PipelineReport = {
 
 /** A care invoice as the care-hours report shows it: a draft has no number or issue day; `status` is the document's (`void` when voided). */
 export type CareBilled = {
+  /** null once the draft was discarded */
   documentId: string | null;
   number: string | null;
   issueDate: string | null;
+  /** the document's status (`draft`, `issued`, …), `void` for a voided one, `discarded` for a discarded draft (07 C18b "Draft discarded") */
   status: string | null;
 };
 

@@ -13,6 +13,7 @@ import {
   pipelineRange,
   rate,
   revenueKind,
+  SOURCE_PATH_MAX,
   sourcePath,
 } from "../src/reports.ts";
 
@@ -117,12 +118,21 @@ describe("sourcePath [C3, DPDP minimisation]", () => {
     expect(sourcePath("?only")).toBe("");
   });
 
+  it("keeps at most SOURCE_PATH_MAX characters, counted as code points (early check 8)", () => {
+    expect(SOURCE_PATH_MAX).toBe(120);
+    expect(sourcePath(`/${"a".repeat(119)}`)).toHaveLength(120);
+    expect(sourcePath(`/${"a".repeat(200)}?x=1`)).toBe(`/${"a".repeat(119)}`);
+    const emoji = `/${"\u{1F600}".repeat(130)}`;
+    expect(Array.from(sourcePath(emoji) as string)).toHaveLength(120);
+  });
+
   it("never keeps a ? or a # (property)", () => {
     fc.assert(
       fc.property(fc.string(), (s) => {
         const p = sourcePath(s) as string;
         expect(p.includes("?") || p.includes("#")).toBe(false);
         expect(s.startsWith(p)).toBe(true);
+        expect(Array.from(p).length).toBeLessThanOrEqual(SOURCE_PATH_MAX);
       }),
     );
   });

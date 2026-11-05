@@ -55,6 +55,19 @@ beforeAll(async () => {
     .bind(plans.paused.id)
     .run();
   plans.future = await mkPlan(owner.id, { start: "2026-11-02", billingDay: 2 });
+  // the late plan's October period had a care draft that was discarded: its row stays with the document cleared (early check 6)
+  const lateTerms = await env.DB.prepare("SELECT id FROM care_plan_terms WHERE care_plan_id = ?1")
+    .bind(plans.late.id)
+    .first<{ id: string }>();
+  await insert("care_invoices", {
+    care_plan_id: plans.late.id,
+    period_start: "2026-10-20",
+    period_end: "2026-11-19",
+    terms_id: lateTerms?.id,
+    document_id: null,
+    overage_period_start: null,
+    overage_minutes: null,
+  });
 
   // billed: October's own invoice of the monthly plan (a draft), and November's, which bills October's overage
   const terms = await env.DB.prepare("SELECT id FROM care_plan_terms WHERE care_plan_id = ?1")
@@ -158,8 +171,14 @@ describe("GET /reports/care-hours (C4) [ADM-REP-05]", () => {
     expect(oct[plans.monthly.id]?.billed?.documentId).not.toBe(
       oct[plans.monthly.id]?.overageBilled?.documentId,
     );
-    expect(oct[plans.late.id]?.billed).toBeNull();
+    expect(oct[plans.late.id]?.billed).toEqual({
+      documentId: null,
+      number: null,
+      issueDate: null,
+      status: "discarded",
+    });
     expect(oct[plans.late.id]?.overageBilled).toBeNull();
+    expect(oct[plans.started.id]?.billed).toBeNull();
   });
 
   it("pages of 50 plans by id; a bad month or a tampered cursor is 400", async () => {
@@ -180,6 +199,12 @@ describe("GET /reports/care-hours (C4) [ADM-REP-05]", () => {
     ]) {
       expect((await call(`/reports/care-hours?${q}`, { cookie: owner.cookie })).status, q).toBe(400);
     }
-    expect((await get("month=2030-01")).rows.length).toBeGreaterThan(0); // a future month: the periods have not started, used 0
+    // this month (October 2026 on the pinned clock) is the last one; a month after it is refused (early check 5)
+    expect((await get("month=2026-10")).rows.length).toBeGreaterThan(0);
+    for (const q of ["month=2026-11", "month=2030-01"]) {
+      const res = await call(`/reports/care-hours?${q}`, { cookie: owner.cookie });
+      expect(res.status, q).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code, q).toBe("month_invalid");
+    }
   });
 });

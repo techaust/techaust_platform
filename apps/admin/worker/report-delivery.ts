@@ -17,6 +17,7 @@ import {
   TIME_TO_WIN_BANDS,
 } from "@techaust/core/reports";
 import { assembleCare, careStatements, currentUsage } from "@techaust/db/care";
+import { REPORT_PAGE_SIZE } from "@techaust/db/reports";
 import {
   CARE_HOURS_BILLED_SQL,
   CARE_HOURS_PAGE_SQL,
@@ -26,12 +27,11 @@ import {
   OFFERS_SENT_SQL,
   type OffersDecidedSqlRow,
   OPEN_TREND_SQL,
-  REPORT_PAGE_SIZE,
   SQL_LEAD_SOURCES,
   SQL_LEAD_STAGES,
   SQL_LOST_REASONS,
   TIME_TO_WIN_MEDIAN_SQL,
-} from "@techaust/db/reports";
+} from "@techaust/db/reports-delivery";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type ApiError, type AppEnv, BAD_REQUEST, type Ctx, err } from "./context.ts";
@@ -130,13 +130,17 @@ export async function pipelineReport(
   };
 }
 
+/**
+ * A care invoice row's billed state: its document's status, `void` for a voided one, and `discarded` when its draft was discarded (the row stays, append-only, with
+ * its `document_id` cleared once: trigger `care_invoices_no_update`; early check 6).
+ */
 const billedOf = (r: CareBilledSqlRow | undefined): CareBilled | null =>
   r
     ? {
         documentId: r.document_id,
         number: r.number_display,
         issueDate: r.issue_date,
-        status: r.voided_at !== null ? "void" : r.status,
+        status: r.document_id === null ? "discarded" : r.voided_at !== null ? "void" : r.status,
       }
     : null;
 
@@ -148,7 +152,9 @@ export async function careHoursPage(
   q: z.infer<typeof careHoursQuery>,
 ): Promise<CareHoursPage | "month" | "cursor"> {
   const bounds = monthBounds(q.month);
-  if (!bounds) return "month";
+  const today = todayIst();
+  // a month after the current IST month has no period that has started (early check 5)
+  if (!bounds || q.month > today.slice(0, 7)) return "month";
   let after: string | null = null;
   if (q.after !== undefined) {
     const cur = decodeCursor(q.after);
@@ -156,7 +162,6 @@ export async function careHoursPage(
     after = cur.id;
   }
   const db = c.env.DB;
-  const today = todayIst();
   const { results } = await db
     .prepare(CARE_HOURS_PAGE_SQL(after !== null))
     .bind(...(after === null ? [q.month, bounds.to] : [q.month, bounds.to, after]))

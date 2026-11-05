@@ -14,6 +14,7 @@ import {
   NO_CATEGORY,
   REVENUE_KINDS,
   revenueKind,
+  SOURCE_PATH_MAX,
   sourcePath,
 } from "@techaust/core/reports";
 import { describe, expect, it } from "vitest";
@@ -25,18 +26,9 @@ import {
   type AgeingSqlRow,
   type AgeingTotalsSqlRow,
   ageingBucketSql,
-  CARE_HOURS_BILLED_SQL,
-  CARE_HOURS_PAGE_SQL,
   type CategorySqlRow,
-  COHORT_COUNT_NAMES,
-  carePeriodDaySql,
   INVOICED_SQL,
   type KeyedSqlRow,
-  LEAD_COHORT_SQL,
-  OFFERS_DECIDED_SQL,
-  OFFERS_SENT_GROUPED_SQL,
-  OFFERS_SENT_SQL,
-  OPEN_TREND_SQL,
   OWED_SQL,
   PAYMENTS_REGISTER_SQL,
   REFUNDS_REGISTER_SQL,
@@ -54,13 +46,25 @@ import {
   revenueKindSql,
   SQL_AGEING_BUCKETS,
   SQL_CATEGORY_KEYS,
+  SQL_REVENUE_KINDS,
+} from "../src/reports.ts";
+import {
+  CARE_HOURS_BILLED_SQL,
+  CARE_HOURS_PAGE_SQL,
+  COHORT_COUNT_NAMES,
+  carePeriodDaySql,
+  LEAD_COHORT_SQL,
+  OFFERS_DECIDED_SQL,
+  OFFERS_SENT_GROUPED_SQL,
+  OFFERS_SENT_SQL,
+  OPEN_TREND_SQL,
   SQL_LEAD_SOURCES,
   SQL_LEAD_STAGES,
   SQL_LOST_REASONS,
-  SQL_REVENUE_KINDS,
+  SQL_SOURCE_PATH_MAX,
   sourcePathSql,
   TIME_TO_WIN_MEDIAN_SQL,
-} from "../src/reports.ts";
+} from "../src/reports-delivery.ts";
 import { CATEGORIES, LEAD_SOURCES, LEAD_STAGES, LOST_REASONS } from "../src/schema/index.ts";
 import { mkCarePlan, mkMember } from "./billing-helpers.ts";
 import { all, first, run, TEST_SIGNATURE } from "./helpers.ts";
@@ -133,15 +137,18 @@ async function doc(spec: Spec, items: (string | null)[] = []) {
     `UPDATE documents SET status = ?2, series = ?3, fy = '2627', number = ?4, number_display = ?5, frozen_at = 1000, issue_date = ?6, snapshot_sha256 = ?7,
        voided_at = ?8, void_reason = ?9, ims_status = CASE type WHEN 'credit_note' THEN 'not_applicable' END WHERE id = ?1`,
     d.id,
-    spec.status ?? (voided ? "void" : "issued"),
+    spec.status ?? "issued",
     series,
     n,
     `${series.slice(0, 1).toUpperCase()}/R${n}`,
     spec.issueDate,
     "q".repeat(64),
-    voided ? 5 : null,
-    voided ? "x" : null,
+    null,
+    null,
   );
+  // a draft can't be voided: issue it, then void it
+  if (voided)
+    await run("UPDATE documents SET status = 'void', voided_at = 5, void_reason = 'x' WHERE id = ?1", d.id);
   return d;
 }
 
@@ -286,10 +293,12 @@ async function build() {
     headerExtras: noteExtras([{ line: 0, taxableMinor: 100_00 }]),
     issuer: { signature: TEST_SIGNATURE },
   });
-  // never counted (inserted frozen, without lines: none of them is read): a voided invoice, a proforma, an invoice of the FY before
-  await addDoc({ clientId: inr, issueDate: "2026-05-11", voided: true, lines: [line(9_999_00)] });
-  await addDoc({ type: "proforma", clientId: inr, issueDate: "2026-05-12", lines: [line(7_777_00)] });
-  await addDoc({ clientId: inr, issueDate: "2026-03-31", lines: [line(4_444_00)] });
+  // never counted, each with a "build" line so a leak into the category view shows (early check 4): a voided invoice, a proforma, an invoice of the FY before
+  await doc({ clientId: inr, issueDate: "2026-05-11", voided: true, lines: [line(9_999_00)] }, [catBuild]);
+  await doc({ type: "proforma", clientId: inr, issueDate: "2026-05-12", lines: [line(7_777_00)] }, [
+    catBuild,
+  ]);
+  await doc({ clientId: inr, issueDate: "2026-03-31", lines: [line(4_444_00)] }, [catBuild]);
   const exp1 = await doc(
     {
       currency: "USD",
@@ -369,6 +378,9 @@ describe("the SQL twins equal their core rules", () => {
       "/a/b/c?d=e&f=g",
       "#frag?x",
       "/tab\tchar?y",
+      `/${"a".repeat(200)}?x=1`,
+      `/${"b".repeat(119)}`,
+      `/${"\u{1F600}".repeat(130)}#y`,
     ];
     const got = await all<{ p: string | null }>(
       `SELECT ${sourcePathSql("j.value")} AS p FROM json_each(?1) j ORDER BY j.key`,
@@ -376,6 +388,7 @@ describe("the SQL twins equal their core rules", () => {
     );
     expect(got.map((r) => r.p)).toEqual(pages.map((x) => sourcePath(x)));
     expect(await first(`SELECT ${sourcePathSql("NULL")} AS p`)).toEqual({ p: null });
+    expect(SQL_SOURCE_PATH_MAX).toBe(SOURCE_PATH_MAX);
   });
 
   it("carePeriodDaySql = carePeriodDay for every billing day and start dates around the month", async () => {
@@ -939,6 +952,84 @@ describe("C3 pipeline statements [ADM-REP-03]", () => {
     expect(sent.find((r) => r.status === "viewed")).toMatchObject({ n: 1, taxable: 1_200 });
     expect(sent.find((r) => r.status === "revised")).toMatchObject({ n: 1, taxable: 50 }); // its v2 was sent after the range
     expect(sent.find((r) => r.currency === "USD")).toMatchObject({ status: "sent", n: 1, taxable: 300 });
+  });
+
+  it("a version group counts once in the win rate, by its outcome: a rejected or expired version a later sent version replaced is not counted (early check 1)", async () => {
+    const f = await fixture();
+    const contact = uuidv7();
+    await run(
+      "INSERT INTO contacts (id, client_id, name, email) VALUES (?1, ?2, 'Signer', 'signer-w@example.test')",
+      contact,
+      f.inr,
+    );
+    // a range of its own (February 2031) so the other tests' offers never fall in it
+    const from = Date.parse("2031-01-31T18:30:00Z");
+    const to = Date.parse("2031-02-28T18:30:00Z");
+    const day = (n: number) => from + n * 86_400_000;
+    let n = 0;
+    const offer = async (o: {
+      group?: string;
+      version?: number;
+      status: string;
+      sentAt: number | null;
+      decidedAt?: number | null;
+      validUntil?: string;
+    }) => {
+      const id = uuidv7();
+      const draft = o.status === "draft";
+      n++;
+      await run(
+        `INSERT INTO documents (id, type, status, client_id, currency, version_group_id, version, series, fy, number, number_display, frozen_at, sent_at, decided_at,
+           taxable_minor, total_minor, valid_until, created_at, content_sha256, snapshot_sha256, updated_at)
+         VALUES (?1, 'proposal', ?2, ?3, 'INR', ?4, ?5, CASE WHEN ?6 IS NULL THEN NULL ELSE 'fixture' END, CASE WHEN ?6 IS NULL THEN NULL ELSE '0000' END, ?6, ?7, ?8, ?9, ?10,
+           100, 100, ?11, coalesce(?8, ?13), ?12, CASE WHEN ?6 IS NULL THEN NULL ELSE ?12 END, 1)`,
+        id,
+        o.status,
+        f.inr,
+        o.group ?? id,
+        o.version ?? 1,
+        draft ? null : 880_000 + n,
+        draft ? null : `FIX/W${n}`,
+        draft ? null : (o.sentAt ?? day(0)),
+        o.sentAt,
+        o.decidedAt ?? null,
+        o.validUntil ?? "2031-03-31",
+        "c".repeat(64),
+        day(0),
+      );
+      return id;
+    };
+    // A: rejected v1, then v2 accepted: one win, no loss
+    const a = await offer({ status: "rejected", sentAt: day(1), decidedAt: day(2) });
+    const a2 = await offer({ group: a, version: 2, status: "accepted", sentAt: day(3), decidedAt: day(5) });
+    await run(
+      "INSERT INTO acceptances (id, document_id, contact_id, typed_name, email, accepted_at, pdf_sha256) VALUES (?1, ?2, ?3, 'Signer', 'signer-w@example.test', ?4, ?5)",
+      uuidv7(),
+      a2,
+      contact,
+      day(5),
+      "a".repeat(64),
+    );
+    // B: expired v1 (in the range), then v2 rejected: one loss (the rejection), not two
+    const b = await offer({ status: "expired", sentAt: day(1), validUntil: "2031-02-10" });
+    await offer({ group: b, version: 2, status: "rejected", sentAt: day(11), decidedAt: day(12) });
+    // C: rejected v1, then v2 sent after the range and still open: no outcome yet, so nothing counts (the group is never a loss here and a win later)
+    const cg = await offer({ status: "rejected", sentAt: day(1), decidedAt: day(3) });
+    await offer({ group: cg, version: 2, status: "sent", sentAt: to + 86_400_000 });
+    // D: rejected v1 with a later draft (never sent): the rejection is the outcome
+    const dg = await offer({ status: "rejected", sentAt: day(1), decidedAt: day(4) });
+    await offer({ group: dg, version: 2, status: "draft", sentAt: null });
+    // E: a lone expired offer
+    await offer({ status: "expired", sentAt: day(2), validUntil: "2031-02-20" });
+    const r = await first<{ accepted: number; rejected: number; expired: number }>(
+      OFFERS_DECIDED_SQL,
+      from,
+      to,
+      "2031-02-01",
+      "2031-02-28",
+    );
+    // accepted: A's v2; rejected: B's v2 and D's v1; expired: E (B's v1 and A's, C's v1 are replaced)
+    expect(r).toMatchObject({ accepted: 1, rejected: 2, expired: 1 });
   });
 });
 

@@ -2,6 +2,7 @@
 // each with its reason, so a new write that the matrix opens to the Accountant fails here until it is justified. Re-derived at M7.3's Step 0 after M6.5 to M7.2: M6.5's
 // receipt re-render (`POST /receipts/:id/pdf/retry`, `invoices.draft`) is refused to the Accountant, and M7.2's `PUT /notifications/prefs` is the member's own switches.
 // With the M7.3 report rows: every one is a GET, and each answers per the matrix for the four roles and for no session.
+import { addDays, istDate, toIsoDate } from "@techaust/core/dates";
 import { decide, ROLES } from "@techaust/core/permissions";
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
@@ -36,6 +37,10 @@ describe("the Accountant is read-only [ADM-REP-06, L5]", () => {
   });
 });
 
+/** The last 30 days to today (IST), so the pipeline's range stays inside its 12 months whatever the real clock says (early check 3). */
+const today = istDate(Date.now());
+const LAST_30 = `?from=${toIsoDate(addDays(today, -30))}&to=${toIsoDate(today)}`;
+
 /** The M7.3 rows, their action and who may call them (docs/04 §9: `reports.finance` Owner and Accountant; `reports.pipeline` Owner and Sales; `reports.delivery` Owner and Staff). */
 const M73_ROWS: { path: string; query: string; action: string; allowed: readonly string[] }[] = [
   {
@@ -53,7 +58,7 @@ const M73_ROWS: { path: string; query: string; action: string; allowed: readonly
   { path: "/reports/ageing", query: "", action: "reports.finance", allowed: ["owner", "accountant"] },
   {
     path: "/reports/pipeline",
-    query: "?from=2026-10-01&to=2026-10-31",
+    query: LAST_30,
     action: "reports.pipeline",
     allowed: ["owner", "sales"],
   },
