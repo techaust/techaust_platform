@@ -868,11 +868,27 @@ const keyedCols = (k: string, c: string) => {
  * One aggregate row over the source `rows` (worked out once: `LIMIT -1` keeps it from being flattened into every column) turned into `(key, currency)` rows with
  * the columns of `KeyedSqlRow`, the empty ones dropped, in key order.
  */
-const keyedPivot = (keys: readonly string[], rows: string) => {
+const keyedPivot = (keys: readonly string[], rows: string, roundOff = false) => {
   const p = (m: string) => pickKey(keys, m);
+  const cur = (m: string) =>
+    `CASE kc.currency ${SQL_CURRENCIES.map((c) => `WHEN '${c}' THEN t.${m}_${c}`).join(" ")} END`;
+  // The documents' round-off per currency (`z.first`, `z.ro`, `z.iro`: read on each document's first line only), on every row of that currency.
+  const roundCols = SQL_CURRENCIES.flatMap((c) => [
+    `count(CASE WHEN z.cu = '${c}' AND z.first = 1 THEN 1 END) AS rn_${c}`,
+    `coalesce(sum(CASE WHEN z.cu = '${c}' AND z.first = 1 THEN z.sgn * z.ro END), 0) AS ro_${c}`,
+    `count(CASE WHEN z.cu = '${c}' AND z.first = 1 AND z.iro IS NOT NULL THEN 1 END) AS ric_${c}`,
+    `coalesce(sum(CASE WHEN z.cu = '${c}' AND z.first = 1 THEN z.sgn * z.iro END), 0) AS iro_${c}`,
+  ]);
+  const roundSelect = roundOff
+    ? `, ${cur("ro")} AS round_off, CASE WHEN ${cur("ric")} < ${cur("rn")} THEN NULL ELSE ${cur("iro")} END AS inr_round_off`
+    : "";
+  const cols = [
+    ...keys.flatMap((k) => SQL_CURRENCIES.flatMap((c) => keyedCols(k, c))),
+    ...(roundOff ? roundCols : []),
+  ];
   return `SELECT kc.k AS key, kc.currency, ${p("n")} AS documents, ${p("tx")} AS taxable, ${p("tt")} AS total,
-       CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("ix")} END AS inr_taxable, CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("it")} END AS inr_total
-   FROM (SELECT ${keys.flatMap((k) => SQL_CURRENCIES.flatMap((c) => keyedCols(k, c))).join(",\n         ")}
+       CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("ix")} END AS inr_taxable, CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("it")} END AS inr_total${roundSelect}
+   FROM (SELECT ${cols.join(",\n         ")}
          FROM (${rows} LIMIT -1) z) t
    JOIN (${keyRows(keys)}) kc
    WHERE ${p("n")} > 0`;
@@ -888,6 +904,8 @@ export type KeyedSqlRow = {
   inr_taxable: number | null;
   inr_total: number | null;
 };
+/** A category row also carries its currency's round-off (the same on every row of the currency). */
+export type CategorySqlRow = KeyedSqlRow & { round_off: number; inr_round_off: number | null };
 
 const DOC_ROWS = `SELECT d.currency AS cu, ${revenueKindSql("d")} AS k, ${SIGN} AS sgn, d.taxable_minor AS taxable, d.total_minor AS total,
        ${inrDocTaxable("d.currency")} AS inr_taxable, ${inrDocTotal("d.currency")} AS inr_total
@@ -912,7 +930,8 @@ const lineInr = (f: string, col: string) =>
 const LINE_ROWS = (
   indexed: boolean,
 ) => `SELECT d.currency AS cu, ${LINE_CATEGORY} AS k, ${SIGN} AS sgn, l.taxable_minor AS taxable, l.line_total_minor AS total,
-       ${lineInr("taxableMinor", "taxable_minor")} AS inr_taxable, ${lineInr("lineTotalMinor", "line_total_minor")} AS inr_total
+       ${lineInr("taxableMinor", "taxable_minor")} AS inr_taxable, ${lineInr("lineTotalMinor", "line_total_minor")} AS inr_total,
+       l.position = 1 AS first, d.round_off_minor AS ro, CASE d.currency WHEN 'INR' THEN d.round_off_minor ELSE json_extract(d.computed, '$.inr.roundOffMinor') END AS iro
      FROM (SELECT json_group_object(ci.id, ci.category) AS m FROM catalogue_items ci) cat
        CROSS JOIN documents d${indexed ? " INDEXED BY documents_issued_on" : ""}
        JOIN document_lines l INDEXED BY document_lines_position ON l.document_id = d.id
@@ -922,12 +941,15 @@ const LINE_ROWS = (
 
 /**
  * C1 by category (`?1` to `?2`): invoiced per catalogue category and currency (Q2 A: invoiced only; L8), from the lines of the range's documents. A line's total is
- * before the document's round-off, which belongs to no line: `REVENUE_ROUND_OFF_SQL` gives it, so Σ categories + round-off = the invoiced total (a test holds it).
+ * before the document's round-off, which belongs to no line: each row also carries its currency's round-off (`round_off`, `inr_round_off`), summed on each
+ * document's first line (position 1, M4.3 `lineRows`) in the same pass, so Σ categories + round-off = the invoiced total (a test holds it against `INVOICED_SQL`
+ * and `REVENUE_ROUND_OFF_GROUPED_SQL`). Measured (run file J): a row per document and per line, plus one index probe per document (the end of its lines).
  */
-export const REVENUE_CATEGORY_SQL = /* @__PURE__ */ (() => keyedPivot(SQL_CATEGORY_KEYS, LINE_ROWS(true)))();
+export const REVENUE_CATEGORY_SQL = /* @__PURE__ */ (() =>
+  keyedPivot(SQL_CATEGORY_KEYS, LINE_ROWS(true), true))();
 
-/** The range's round-off per currency, in its own currency and in INR (`computed.inr.roundOffMinor`; NULL when a USD document lacks it). One row per currency with documents. */
-export const REVENUE_ROUND_OFF_SQL = /* @__PURE__ */ (() => {
+/** The reference twin of the round-off columns (tests only): per currency, in its own currency and in INR (NULL when a USD document lacks its INR view). */
+export const REVENUE_ROUND_OFF_GROUPED_SQL = /* @__PURE__ */ (() => {
   const inr =
     "CASE d.currency WHEN 'INR' THEN d.round_off_minor ELSE json_extract(d.computed, '$.inr.roundOffMinor') END";
   return byCurrency(

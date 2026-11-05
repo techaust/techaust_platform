@@ -96,6 +96,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0074_email_event_triggers.sql",
       "0075_signin_pending.sql",
       "0076_email_log_template.sql",
+      "0077_reports_indexes.sql",
     ]);
   });
 

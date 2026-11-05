@@ -27,6 +27,7 @@ import {
   ageingBucketSql,
   CARE_HOURS_BILLED_SQL,
   CARE_HOURS_PAGE_SQL,
+  type CategorySqlRow,
   COHORT_COUNT_NAMES,
   carePeriodDaySql,
   INVOICED_SQL,
@@ -37,6 +38,8 @@ import {
   OFFERS_SENT_SQL,
   OPEN_TREND_SQL,
   OWED_SQL,
+  PAYMENTS_REGISTER_SQL,
+  REFUNDS_REGISTER_SQL,
   REVENUE_CATEGORY_GROUPED_SQL,
   REVENUE_CATEGORY_SQL,
   REVENUE_CLIENTS_SQL,
@@ -44,10 +47,9 @@ import {
   REVENUE_KIND_SQL,
   REVENUE_MONTHS_GROUPED_SQL,
   REVENUE_MONTHS_SQL,
-  REVENUE_ROUND_OFF_SQL,
+  REVENUE_ROUND_OFF_GROUPED_SQL,
   type RevenueClientSqlRow,
   type RevenueMonthSqlRow,
-  type RoundOffSqlRow,
   revenueClientsBinds,
   revenueKindSql,
   SQL_AGEING_BUCKETS,
@@ -567,7 +569,7 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
 
   it("by category = its grouped twin; a note's line takes its parent line's category; Σ taxable = the FY, Σ totals + round-off = the FY total", async () => {
     const f = await fixture();
-    const rows = await all<KeyedSqlRow>(REVENUE_CATEGORY_SQL, FY.from, FY.to);
+    const rows = await all<CategorySqlRow>(REVENUE_CATEGORY_SQL, FY.from, FY.to);
     const twin = await all<Grouped>(REVENUE_CATEGORY_GROUPED_SQL, FY.from, FY.to);
     expect(rows.map(keyOf).sort()).toEqual(twin.map((r) => keyOf(r as never)).sort());
     for (const t of twin) {
@@ -585,7 +587,19 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
     expect(get("none", "INR")?.taxable).toBe(2_000_00);
     expect(get("build", "USD")?.inr_taxable).toBe(f.exp1.computed.lines[0]?.inr?.taxableMinor);
     expect(get("run", "USD")?.inr_taxable).toBeNull(); // exp2 has no INR view
-    const round = await all<RoundOffSqlRow>(REVENUE_ROUND_OFF_SQL, FY.from, FY.to);
+    const round = await all<{ currency: string; round_off: number; inr_round_off: number | null }>(
+      REVENUE_ROUND_OFF_GROUPED_SQL,
+      FY.from,
+      FY.to,
+    );
+    // the round-off on every row of a currency = the reference twin's
+    for (const r of rows) {
+      const g = round.find((x) => x.currency === r.currency);
+      expect({ ro: r.round_off, iro: r.inr_round_off }, r.currency).toEqual({
+        ro: g?.round_off,
+        iro: g?.inr_round_off,
+      });
+    }
     const invoiced = await all<{ currency: string; fy_taxable: number; fy_total: number }>(
       INVOICED_SQL,
       FY.from,
@@ -656,6 +670,59 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
 });
 
 // ---- ageing ------------------------------------------------------------------------------------------------------------------------------------------------
+
+describe("C1 collected = the payments register less the refunds register (M6.1, M6.5) [ADM-REP-01, ADM-PAY-08]", () => {
+  it("Σ months' money received = the register's payment rows, TDS = its TDS rows, refunded = the refunds register, per currency", async () => {
+    await fixture();
+    const months = await all<RevenueMonthSqlRow>(REVENUE_MONTHS_SQL, FY.from);
+    const register = await all<{ kind: string; currency: string; amount_minor: number }>(
+      PAYMENTS_REGISTER_SQL(false),
+      FY.from,
+      FY.to,
+    );
+    const refunds = await all<{ currency: string; amount_minor: number }>(
+      REFUNDS_REGISTER_SQL(false),
+      FY.from,
+      FY.to,
+    );
+    expect(register.length).toBeLessThan(51); // one page holds the fixture
+    for (const cur of ["INR", "USD"]) {
+      const m = months.filter((r) => r.currency === cur);
+      const sum = <T>(rs: T[], f: (r: T) => number) => rs.reduce((a, r) => a + f(r), 0);
+      expect(
+        sum(m, (r) => r.received),
+        cur,
+      ).toBe(
+        sum(
+          register.filter((r) => r.currency === cur && r.kind === "payment"),
+          (r) => r.amount_minor,
+        ),
+      );
+      expect(
+        sum(m, (r) => r.tds),
+        cur,
+      ).toBe(
+        sum(
+          register.filter((r) => r.currency === cur && r.kind === "tds"),
+          (r) => r.amount_minor,
+        ),
+      );
+      expect(
+        sum(m, (r) => r.refunded),
+        cur,
+      ).toBe(
+        sum(
+          refunds.filter((r) => r.currency === cur),
+          (r) => r.amount_minor,
+        ),
+      );
+      expect(
+        sum(m, (r) => r.collected),
+        cur,
+      ).toBe(sum(m, (r) => r.received) - sum(m, (r) => r.refunded));
+    }
+  });
+});
 
 describe("C9 ageing: Σ buckets = OWED_SQL, the overdue buckets = its overdue figure, credit apart [ADM-REP-02]", () => {
   it("totals = the grouped twin and the dashboard's owed figures, as at several days", async () => {
@@ -738,7 +805,6 @@ describe("every new statement runs, is served by its index, and reads no table e
     ],
     ["kind", REVENUE_KIND_SQL, [FY.from, FY.to], [/documents_issued_on/]],
     ["category", REVENUE_CATEGORY_SQL, [FY.from, FY.to], [/documents_issued_on/, /document_lines_position/]],
-    ["round-off", REVENUE_ROUND_OFF_SQL, [FY.from, FY.to], [/documents_issued_on/]],
     [
       "clients",
       REVENUE_CLIENTS_SQL(true),

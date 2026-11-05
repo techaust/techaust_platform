@@ -22,17 +22,16 @@ import {
   AGEING_TOTALS_SQL,
   type AgeingSqlRow,
   type AgeingTotalsSqlRow,
+  type CategorySqlRow,
   type KeyedSqlRow,
   REPORT_PAGE_SIZE,
   REVENUE_CATEGORY_SQL,
   REVENUE_CLIENTS_SQL,
   REVENUE_KIND_SQL,
   REVENUE_MONTHS_SQL,
-  REVENUE_ROUND_OFF_SQL,
   type RevenueClientSqlRow,
   type RevenueMonthSqlRow,
   type RevenueSqlRow,
-  type RoundOffSqlRow,
   revenueClientsBinds,
 } from "@techaust/db/reports";
 import { Hono } from "hono/tiny";
@@ -123,22 +122,13 @@ export async function revenueReport(
     const { results } = await db.prepare(REVENUE_KIND_SQL).bind(fy.from, fy.to).all<KeyedSqlRow>();
     return { by, fy: q.fy, from: fy.from, to: fy.to, rows: keyed(results) };
   }
-  const [lines, round] = await db.batch([
-    db.prepare(REVENUE_CATEGORY_SQL).bind(fy.from, fy.to),
-    db.prepare(REVENUE_ROUND_OFF_SQL).bind(fy.from, fy.to),
-  ]);
-  return {
-    by,
-    fy: q.fy,
-    from: fy.from,
-    to: fy.to,
-    rows: keyed((lines?.results ?? []) as KeyedSqlRow[]),
-    roundOff: ((round?.results ?? []) as RoundOffSqlRow[]).map((r) => ({
-      currency: r.currency,
-      roundOffMinor: r.round_off,
-      inrRoundOffMinor: r.inr_round_off,
-    })),
-  };
+  const { results } = await db.prepare(REVENUE_CATEGORY_SQL).bind(fy.from, fy.to).all<CategorySqlRow>();
+  // every row of a currency carries the same round-off: one per currency
+  const roundOff: NonNullable<RevenueByKey<string>["roundOff"]> = [];
+  for (const r of results)
+    if (!roundOff.some((x) => x.currency === r.currency))
+      roundOff.push({ currency: r.currency, roundOffMinor: r.round_off, inrRoundOffMinor: r.inr_round_off });
+  return { by, fy: q.fy, from: fy.from, to: fy.to, rows: keyed(results), roundOff };
 }
 
 /** The cursor of a C2 page: the last row's invoiced total and client id; null for none, "bad" for one that is not ours. */
