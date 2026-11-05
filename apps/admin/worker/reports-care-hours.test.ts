@@ -12,7 +12,8 @@ import { call, pinClock, type TestSession } from "./test-helpers.ts";
 
 let owner: TestSession;
 let staff: TestSession;
-const plans: Record<string, { id: string; client: string }> = {};
+type Plan = { id: string; client: string };
+const plans = {} as Record<"monthly" | "late" | "started" | "paused" | "future", Plan>;
 
 const get = async (q: string, s: TestSession = owner) => {
   const res = await call(`/reports/care-hours?${q}`, { cookie: s.cookie });
