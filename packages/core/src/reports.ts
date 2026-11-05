@@ -252,6 +252,14 @@ export type PipelineReport = {
   };
 };
 
+/** A care invoice as the care-hours report shows it: a draft has no number or issue day; `status` is the document's (`void` when voided). */
+export type CareBilled = {
+  documentId: string | null;
+  number: string | null;
+  issueDate: string | null;
+  status: string | null;
+};
+
 export type CareHoursRow = {
   planId: string;
   client: { id: string; code: string; name: string };
@@ -264,6 +272,6 @@ export type CareHoursRow = {
   burnBp: number | null;
   flag: "none" | "near" | "reached";
   /** The care invoice for this period (its plan fee), and the one that bills this period's overage (07 copy C17 to C19); null: not billed yet. */
-  billed: { documentId: string | null; number: string | null; issueDate: string | null } | null;
-  overageBilled: { documentId: string | null; number: string | null; issueDate: string | null } | null;
+  billed: CareBilled | null;
+  overageBilled: CareBilled | null;
 };

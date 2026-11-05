@@ -14,6 +14,7 @@ import { invoiceSend } from "./invoice-send.ts";
 import { invoiceWithdraw } from "./invoice-withdraw.ts";
 import { invoices } from "./invoices.ts";
 import { receiptPdf } from "./receipt-issue.ts";
+import { revenueReports } from "./report-revenue.ts";
 import { reports } from "./reports.ts";
 import { statementPdf } from "./statement-pdf.ts";
 import { statements } from "./statements.ts";
@@ -25,6 +26,8 @@ export function mountInvoices(app: App) {
   app.route("/v1/clients", statements);
   app.route("/v1/clients", statementPdf);
   app.route("/v1/reports", reports);
+  // M7.3 (C1, C2, C9): revenue and collections, outstanding and ageing.
+  app.route("/v1/reports", revenueReports);
   // Invoices (M5.1): one router per concern under /invoices.
   app.route("/v1/invoices", invoices);
   app.route("/v1/invoices", invoiceIssue);

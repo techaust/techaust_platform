@@ -778,7 +778,7 @@ const revenueColumns = (inv: string, pay: string, ref: string, at: string) => {
   const j = (v: string, i: number) => `coalesce(json_extract(${v}, ${at} || '[${i}]'), 0)`;
   return `${j(inv, 0)} AS documents, ${j(inv, 1)} AS taxable, ${j(inv, 2)} AS total,
        CASE WHEN ${j(inv, 3)} < ${j(inv, 0)} THEN NULL ELSE ${j(inv, 4)} END AS inr_taxable, CASE WHEN ${j(inv, 3)} < ${j(inv, 0)} THEN NULL ELSE ${j(inv, 5)} END AS inr_total,
-       ${j(pay, 0)} AS payments, ${j(pay, 1)} AS received, ${j(ref, 0)} AS refunds, ${j(ref, 1)} AS refunded, ${j(pay, 2)} AS tds_n, ${j(pay, 3)} AS tds,
+       ${j(pay, 0)} AS payments, ${j(pay, 1)} AS received, ${j(ref, 0)} AS refunds, ${j(ref, 1)} AS refunded, ${j(pay, 1)} - ${j(ref, 1)} AS collected, ${j(pay, 2)} AS tds_n, ${j(pay, 3)} AS tds,
        ${j(pay, 5)} + ${j(ref, 3)} AS inr_missing, CASE WHEN ${j(pay, 5)} + ${j(ref, 3)} > 0 THEN NULL ELSE ${j(pay, 4)} - ${j(ref, 2)} END AS inr_collected`;
 };
 
@@ -794,6 +794,8 @@ export type RevenueSqlRow = {
   received: number;
   refunds: number;
   refunded: number;
+  /** `received − refunded` (M6.5 L9: money received less the refunds that went out). */
+  collected: number;
   tds_n: number;
   tds: number;
   inr_missing: number;
@@ -1010,6 +1012,7 @@ export const AGEING_PAGE_SQL = (after: boolean): string => {
   const at = (i: number) => `coalesce(json_extract(y.a, '$.' || cur.currency || '[${i}]'), 0)`;
   return `SELECT y.id AS client_id, y.code AS client_code, y.display_name AS client_name, y.anonymised_at, cur.currency,
        ${SQL_AGEING_BUCKETS.flatMap((b, i) => [`${at(2 * i)} AS n_${b}`, `${at(2 * i + 1)} AS b_${b}`]).join(", ")},
+       ${SQL_AGEING_BUCKETS.map((_, i) => at(2 * i + 1)).join(" + ")} AS total,
        (SELECT coalesce(sum(${paymentFreeSql("p")}), 0) FROM payments p INDEXED BY payments_client
          WHERE p.client_id = y.id AND p.currency = cur.currency AND p.status = 'confirmed' AND p.kind = 'payment') AS credit
    FROM (SELECT c.id, c.code, c.display_name, c.anonymised_at,
@@ -1030,6 +1033,7 @@ export type AgeingSqlRow = {
   anonymised_at: number | null;
   currency: "INR" | "USD";
   credit: number;
+  total: number;
 } & Record<`n_${SqlAgeingBucket}` | `b_${SqlAgeingBucket}`, number>;
 
 /**
@@ -1040,6 +1044,7 @@ export const AGEING_TOTALS_SQL = /* @__PURE__ */ (() =>
   byCurrency(
     (c) => [
       `count(CASE WHEN d.currency = '${c}' THEN 1 END) AS n_${c}`,
+      `coalesce(sum(CASE WHEN d.currency = '${c}' THEN d.balance_minor END), 0) AS t_${c}`,
       ...SQL_AGEING_BUCKETS.flatMap((b) => {
         const is = `d.currency = '${c}' AND ${ageingBucketSql("d.due_date", "?1")} = '${b}'`;
         return [
@@ -1051,11 +1056,13 @@ export const AGEING_TOTALS_SQL = /* @__PURE__ */ (() =>
     SQL_AGEING_BUCKETS.flatMap((b) => [
       `${pickCurrency(`n${b}`)} AS n_${b}`,
       `${pickCurrency(`b${b}`)} AS b_${b}`,
-    ]).join(", "),
+    ])
+      .concat(`${pickCurrency("t")} AS total`)
+      .join(", "),
     `FROM documents d INDEXED BY documents_status_due WHERE d.status IN ${OPEN_STATUSES} AND d.type IN ${DEBIT_DOCS} AND d.balance_minor > 0 AND d.voided_at IS NULL`,
     "n",
   ))();
-export type AgeingTotalsSqlRow = { currency: "INR" | "USD" } & Record<
+export type AgeingTotalsSqlRow = { currency: "INR" | "USD"; total: number } & Record<
   `n_${SqlAgeingBucket}` | `b_${SqlAgeingBucket}`,
   number
 >;
