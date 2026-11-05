@@ -112,7 +112,7 @@ describe("the words", () => {
   });
 
   it("shows every lead-approved staff line unmarked: S6 names, S12 statuses, S13 reasons, the template names, the audit lines (review 1, finding 3)", () => {
-    const shown = [
+    const shown: string[] = [
       ...Object.values(PREF_GROUP_LABELS),
       DIGEST_LABEL,
       ...Object.values(EMAIL_STATUS_LABELS),
@@ -126,7 +126,8 @@ describe("the words", () => {
         "contact.unsuppress",
         "receipt.send",
       ].map((a) => ACTION_LABELS[a] ?? ""),
-      ...Object.values(ZQ_UI).filter((v): v is string => typeof v === "string"),
+      ...Object.values(ZQ_UI as Record<string, unknown>).filter((v): v is string => typeof v === "string"),
+      ...Object.values(ZQ_UI.prefsHint),
       ...Object.values(ZQ_ERRORS),
     ];
     for (const line of shown) {
