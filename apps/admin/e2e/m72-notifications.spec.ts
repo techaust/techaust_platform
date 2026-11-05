@@ -226,6 +226,21 @@ test("the Sent column shows a time only once an email left: Queued before, nothi
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/e2e-emails-sent-column-1280.png`, fullPage: true });
 });
 
+test("the email queue's dead-letter bell link /emails?status=failed opens the log filtered to failed emails", async ({
+  page,
+}) => {
+  d1(
+    `INSERT INTO email_log (id, to_email, template, entity_type, entity_id, ses_message_id, status, created_at, updated_at, last_event_at, bounce_type) VALUES
+       ('ml-e2e-${run}-f', 'failed-${run}@example.test', 'invoice.sent', 'document_send', 'e2e-${run}-4', NULL, 'failed', ${Date.now() - 60_000}, ${Date.now() - 60_000}, NULL, NULL);`,
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/emails?status=failed");
+  await expect(page.getByRole("combobox", { name: "Status" })).toHaveValue("failed");
+  await expect(page.locator("tbody tr", { hasText: `failed-${run}@example.test` })).toBeVisible();
+  await expect(page.locator("tbody tr", { hasText: BOUNCE_TO })).toHaveCount(0);
+  for (const row of await page.locator("tbody tr").all()) await expect(row).toContainText("Failed");
+});
+
 /** A throwaway member of `role`, enrolled over the API as global-setup.ts enrols the Owner (local database only; sample address, random password). */
 async function memberCookies(role: "staff" | "accountant") {
   const email = `e2e-${role}-${run}@example.test`;
