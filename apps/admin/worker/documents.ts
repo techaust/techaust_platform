@@ -138,23 +138,27 @@ const PREFIX_END = "\u{10FFFF}";
  * `documents_number_display`, offers only, so an invoice number never matches) or whose client's code (upper-cased, `clients_code`) or name (no case,
  * `clients_name_nocase`) starts with it (`by: "client"`; an anonymised client's name is "Anonymised client", so its old name finds nothing). Each match drives
  * the read: the matching groups through `documents_version`, the matching clients through `documents_client_type_status`; then the list's own filters, keyset and
- * order. Returns the SQL and its values in order.
+ * order. The page's ids are picked first (`k`, at most `limit` of them) and only those rows are read in full (the list's columns cost about a dozen rows each:
+ * the group number, the approval and the custom-line seeks), so a broad prefix costs its matches once, not a dozen times. Returns the SQL and its values in order.
  */
 export function searchStatement(
   by: "number" | "client",
-  type: string,
+  types: readonly ("proposal" | "estimate")[],
   needle: string,
   f: {
     status?: string | undefined;
     clientId?: string | undefined;
     cursor?: { k: number; id: string } | null;
   },
+  limit: number,
 ): { sql: string; binds: unknown[] } {
-  const binds: unknown[] = [type];
+  const binds: unknown[] = [];
   const p = (v: unknown) => {
     binds.push(v);
     return `?${binds.length}`;
   };
+  // both types in one statement (the list's no-search path reads one type per statement): a prefix's matches are read once, not once per type
+  const type = types.map(p).join(", ");
   const up = needle.toUpperCase();
   const match =
     by === "number"
@@ -168,9 +172,11 @@ export function searchStatement(
   return {
     // the planner would rather walk the type's newest-first index (`documents_type_created`) and test each row: every offer of the type read
     sql: `SELECT ${LIST_COLUMNS}
-   FROM documents d INDEXED BY ${by === "number" ? "documents_version" : "documents_client_type_status"} JOIN clients cl ON cl.id = d.client_id
-   WHERE ${match} AND d.type = ?1${status}${client}${cursor} AND ${LATEST_ONLY}
-   ORDER BY d.created_at DESC, d.id DESC LIMIT`,
+   FROM (SELECT d.id AS kid FROM documents d INDEXED BY ${by === "number" ? "documents_version" : "documents_client_type_status"}
+         WHERE ${match} AND d.type IN (${type})${status}${client}${cursor} AND ${LATEST_ONLY}
+         ORDER BY d.created_at DESC, d.id DESC LIMIT ${Math.trunc(limit)}) k
+   JOIN documents d ON d.id = k.kid JOIN clients cl ON cl.id = d.client_id
+   ORDER BY d.created_at DESC, d.id DESC`,
     binds,
   };
 }
@@ -230,8 +236,8 @@ export async function listDocuments(
   const types = q.type ? [q.type] : (["proposal", "estimate"] as const);
   const filters = { status: q.status !== undefined, client: q.clientId !== undefined, cursor: cur !== null };
   const keyset = cur ? { k: cur.k as number, id: cur.id } : null;
-  // C7: a search reads, per type, the documents whose group's number starts with the text and those whose client's code or name does (two statements, each
-  // driven by its own index); a document found both ways is one row.
+  // C7: a search reads the documents whose group's number starts with the text and those whose client's code or name does (two statements, each driven by its
+  // own index, both types in each); a document found both ways is one row.
   const stmts =
     needle === undefined
       ? types.map((t) =>
@@ -242,16 +248,16 @@ export async function listDocuments(
             ...(cur ? [cur.k, cur.id] : []),
           ),
         )
-      : types.flatMap((t) =>
-          (["number", "client"] as const).map((by) => {
-            const s = searchStatement(by, t, needle, {
-              status: q.status,
-              clientId: q.clientId,
-              cursor: keyset,
-            });
-            return c.env.DB.prepare(`${s.sql} ${limit + 1}`).bind(...s.binds);
-          }),
-        );
+      : (["number", "client"] as const).map((by) => {
+          const s = searchStatement(
+            by,
+            types,
+            needle,
+            { status: q.status, clientId: q.clientId, cursor: keyset },
+            limit + 1,
+          );
+          return c.env.DB.prepare(s.sql).bind(...s.binds);
+        });
   const results = await c.env.DB.batch<ListRow>(stmts);
   const seen = new Set<string>();
   const merged = results

@@ -142,9 +142,9 @@ describe("GET /documents?q= (C7) [ADM-G-05]", () => {
 
   it("each statement is driven by its index range (EXPLAIN)", async () => {
     for (const by of ["number", "client"] as const) {
-      const s = searchStatement(by, "proposal", "Ac", { cursor: { k: 5, id: "x" } });
+      const s = searchStatement(by, ["proposal", "estimate"], "Ac", { cursor: { k: 5, id: "x" } }, 26);
       const plan = (
-        await env.DB.prepare(`EXPLAIN QUERY PLAN ${s.sql} 26`)
+        await env.DB.prepare(`EXPLAIN QUERY PLAN ${s.sql}`)
           .bind(...s.binds)
           .all<{ detail: string }>()
       ).results

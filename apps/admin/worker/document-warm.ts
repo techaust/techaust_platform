@@ -31,8 +31,10 @@ export function warmDocuments(): number {
       listQuery.safeParse({ type: "proposal", limit: "25" }).success,
       // M7.3 C7: the search query and both of its statements built once
       listQuery.safeParse({ q: "PR/26", after: "x" }).success &&
-        searchStatement("number", "proposal", "PR/26", { cursor: { k: 1, id: "x" } }).binds.length === 5 &&
-        searchStatement("client", "estimate", "Ac", { status: "sent", clientId: "c" }).binds.length === 7,
+        searchStatement("number", ["proposal", "estimate"], "PR/26", { cursor: { k: 1, id: "x" } }, 26).binds
+          .length === 6 &&
+        searchStatement("client", ["estimate"], "Ac", { status: "sent", clientId: "c" }, 26).binds.length ===
+          7,
     ];
     return samples.filter(Boolean).length;
   } catch {
