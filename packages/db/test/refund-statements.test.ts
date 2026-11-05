@@ -38,6 +38,7 @@ import {
   REFUNDS_LIST_BY_CLIENT_SQL,
   REFUNDS_LIST_BY_STATUS_SQL,
   REFUNDS_LIST_SQL,
+  REFUNDS_UNMAILED_SQL,
   type RefundInsertArgs,
   realisationReductionStatement,
   receiptVoidStatement,
@@ -1994,5 +1995,19 @@ describe("early check 1: the statements [findings 1 to 3, 5 to 10; L40]", () => 
         )
       )?.stage,
     ).toBe("reduction_pending");
+  });
+});
+
+describe("M7.2 re-check finding 2: the refund-email sweep's read", () => {
+  it("two seeks (the settled day, and the recording time for a back-dated manual or outside refund), no scan of payment_refunds", async () => {
+    const plan = (
+      await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${REFUNDS_UNMAILED_SQL}`, "2026-11-05", 1)
+    )
+      .map((r) => r.detail)
+      .join("\n");
+    expect(plan).toMatch(/SEARCH r USING INDEX payment_refunds_settled/);
+    expect(plan).toMatch(/SEARCH b USING INDEX payment_refunds_list \(requested_at>\?\)/);
+    expect(plan).not.toMatch(/SCAN (r|b)\b/);
+    expect(plan).toMatch(/email_log_entity/);
   });
 });

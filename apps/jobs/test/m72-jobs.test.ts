@@ -344,7 +344,8 @@ describe("/u one-click (C.5, RFC 8058)", () => {
     const b = await staff("owner");
     const ta = await unsubscribeToken(KEY, a.id);
     const mac = ta.split(".")[0] as string;
-    const tampered = `${mac.slice(0, -1)}${mac.endsWith("A") ? "B" : "A"}.${a.id}`;
+    // Re-check finding 1: the first character carries 6 whole bits of the MAC, so changing it always changes the bytes (the last one carries 2 unused bits).
+    const tampered = `${mac.startsWith("A") ? "B" : "A"}${mac.slice(1)}.${a.id}`;
     const crossed = `${mac}.${b.id}`;
     for (const t of [tampered, crossed, null, "", "x.y", `${mac}.${a.id}.extra`]) {
       const r = await post(t);
@@ -356,6 +357,21 @@ describe("/u one-click (C.5, RFC 8058)", () => {
     expect((await one<{ count: number }>("SELECT count FROM hook_failures WHERE key = ?1", key))?.count).toBe(
       6,
     );
+  });
+
+  it("re-check finding 1: a MAC with a non-canonical last character (the same bytes) is refused by its shape", async () => {
+    const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const o = await staff("owner");
+    const token = await unsubscribeToken(KEY, o.id);
+    const mac = token.split(".")[0] as string;
+    const last = ALPHABET.indexOf(mac.slice(-1));
+    expect(last % 4).toBe(0);
+    // Each of the three other endings with the same 4 high bits decodes to the very same 32 bytes as the real MAC.
+    for (const low of [1, 2, 3]) {
+      const odd = `${mac.slice(0, -1)}${ALPHABET[last + low]}.${o.id}`;
+      expect(await verifyUnsubscribe(KEY, odd), odd).toBeNull();
+    }
+    expect(await verifyUnsubscribe(KEY, token)).toBe(o.id);
   });
 
   it("GET /u never changes anything (a link scanner can't unsubscribe), even with a valid token", async () => {
@@ -526,6 +542,64 @@ describe("the refund email (Q4 A; C.2 recipient rule)", () => {
       date: "04 Nov 2026",
       // review 1, finding 13: "View invoice" opens the refunded document, not the invoice list
       url: `https://portal.example/invoices/${r.doc.id}`,
+    });
+  });
+
+  it("re-check finding 6: a refund from credit of an online payment on a proforma opens the tax invoice the payment sits on, not the converted proforma", async () => {
+    const now = Date.now();
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    const proforma = await mkDoc(clientId, null, { type: "proforma", status: "converted" });
+    const invoice = await mkDoc(clientId, null);
+    const checkoutId = `co-m72-${uuidv7()}`;
+    await run(
+      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
+       VALUES (?1, 'razorpay', ?2, ?3, ?6, 'staff', 'INR', 50000, 'creating', ?4, ?5, ?5)`,
+      checkoutId,
+      proforma.id,
+      clientId,
+      now + 86_400_000,
+      now - 30 * 60_000,
+      owner.id,
+    );
+    const paymentId = `rzp_pay_M72${uuidv7().slice(-12)}`;
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, received_on, mode, reference_norm, recorded_by, recorded_at,
+         verified_by, verified_at, provider_payment_id, checkout_id, fee_tax_minor, refetched_at)
+       VALUES (?1, ?2, 'payment', 'razorpay', 'confirmed', 'INR', 50000, 0, '2026-10-28', 'upi', ?3, NULL, ?4, NULL, ?4, ?5, ?6, 0, ?4)`,
+      paymentId,
+      clientId,
+      `PAY-M72${uuidv7().slice(-10)}`,
+      now - 60_000,
+      `pay_M72${uuidv7().slice(-10)}`,
+      checkoutId,
+    );
+    // The tax invoice for the payment received holds 30,000; the other 20,000 is the client's credit, refunded outside the system.
+    await run(
+      "INSERT INTO payment_allocations (id, payment_id, document_id, amount_minor, kind, created_by, created_at) VALUES (?1, ?2, ?3, 30000, 'allocate', ?4, 1)",
+      uuidv7(),
+      paymentId,
+      invoice.id,
+      owner.id,
+    );
+    const refundId = uuidv7();
+    await run(
+      `INSERT INTO payment_refunds (id, payment_id, client_id, provider, origin, status, paid_to, reason_code, currency, amount_minor, provider_refund_id,
+         requested_by, requested_at, settled_at, settled_on, updated_at)
+       VALUES (?1, ?2, ?3, 'razorpay', 'outside', 'succeeded', 'original', 'duplicate', 'INR', 20000, ?4, ?5, ?6, ?6, '2026-11-04', ?6)`,
+      refundId,
+      paymentId,
+      clientId,
+      `rfnd_${uuidv7().slice(-12)}`,
+      owner.id,
+      now,
+    );
+    await mkContact(clientId);
+    expect(await processRefundNotify(env(), { kind: "refund.notify", refundId }, IN_WINDOW)).toBe("queued");
+    const mail = emailsOf("refund.sent").find((m) => m.entity?.id === refundId);
+    expect(mail?.data).toMatchObject({
+      document_number: invoice.numberDisplay,
+      url: `https://portal.example/invoices/${invoice.id}`,
     });
   });
 
@@ -747,12 +821,17 @@ describe("a refund email whose producer's send was lost (review 1, finding 8)", 
     );
     const old = await refund("outside", now - 3 * 3_600_000);
     const cb = await refund("chargeback", now - 5 * 60_000);
+    // Re-check finding 2: recorded now, settled on a paid-on day three days ago (a manual or outside refund), no refund email logged.
+    const backDated = (
+      await refundOf("outside", { clientId, settledAt: now, settledOn: istDay(now - 3 * 86_400_000) })
+    ).refundId;
     expect(await processRefundFamily(makeEnv(), { kind: "refund.sweep", asOf: now } as never, 1)).toBe("ack");
     const notified = fakes.email
       .map((s) => s.body as { kind?: string; refundId?: string })
       .filter((b) => b.kind === "refund.notify")
       .map((b) => b.refundId);
     expect(notified).toContain(lost);
+    expect(notified).toContain(backDated);
     for (const id of [mailed, old, cb]) expect(notified).not.toContain(id);
   });
 });

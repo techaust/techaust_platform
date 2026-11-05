@@ -418,16 +418,25 @@ export const REFUNDS_IDLE_SQL = `SELECT r.id FROM payment_refunds r INDEXED BY p
 export const REFUND_MAIL_LOOKBACK_MS = 75 * 60_000;
 
 /**
- * M7.2 review 1, finding 8: the refunds that succeeded since `?2` (UTC ms; `?1` its IST day, the index's leading column) and that may be emailed (not a
- * chargeback) but have no `refund.sent` row in the email log yet, at most 20, so `refund.sweep` queues `refund.notify` for each again. The safety net for a
- * producer whose queue send was lost after the batch that set `succeeded` (a route's `waitUntil`, jobs after `processEvent` or `checkRefund`): a redelivery
- * of that message finds the refund settled and answers nothing more. The partial index `payment_refunds_settled (settled_on, id)` reads only a day or two of
- * succeeded refunds; `email_log_entity` answers the NOT EXISTS. The consumer re-checks every rule in SQL, and its entity makes a repeat send nothing twice.
+ * M7.2 review 1, finding 8: the refunds that succeeded since `?2` (UTC ms; `?1` its IST day) and that may be emailed (not a chargeback) but have no
+ * `refund.sent` row in the email log yet, at most 20, so `refund.sweep` queues `refund.notify` for each again. The safety net for a producer whose queue send
+ * was lost after the batch that set `succeeded` (a route's `waitUntil`, jobs after `processEvent` or `checkRefund`): a redelivery of that message finds the
+ * refund settled and answers nothing more. The consumer re-checks every rule in SQL, and its entity makes a repeat send nothing twice.
+ * Two seeks, one row each (UNION):
+ *   - the partial index `payment_refunds_settled (settled_on, id)` reads only a day or two of succeeded refunds (a gateway refund settles on its own day);
+ *   - re-check finding 2: a manual or outside refund settles on the paid-on day (`settled_on`), which can be days before it was recorded, so the second seek
+ *     reads `payment_refunds_list (requested_at, id)` over the refunds recorded since `?2` (such a refund is recorded settled: `settled_at` = `requested_at`).
+ * `email_log_entity` answers the NOT EXISTS.
  */
-export const REFUNDS_UNMAILED_SQL = `SELECT r.id FROM payment_refunds r INDEXED BY payment_refunds_settled
-   WHERE r.status = 'succeeded' AND r.settled_on >= ?1 AND r.settled_at >= ?2 AND r.origin <> 'chargeback'
-     AND NOT EXISTS (SELECT 1 FROM email_log e WHERE e.entity_type = 'refund' AND e.entity_id = r.id)
-   ORDER BY r.settled_on, r.id LIMIT 20`;
+export const REFUNDS_UNMAILED_SQL = `SELECT id, settled_on FROM (
+     SELECT r.id, r.settled_on FROM payment_refunds r INDEXED BY payment_refunds_settled
+     WHERE r.status = 'succeeded' AND r.settled_on >= ?1 AND r.settled_at >= ?2 AND r.origin <> 'chargeback'
+       AND NOT EXISTS (SELECT 1 FROM email_log e WHERE e.entity_type = 'refund' AND e.entity_id = r.id)
+     UNION
+     SELECT b.id, b.settled_on FROM payment_refunds b INDEXED BY payment_refunds_list
+     WHERE b.requested_at >= ?2 AND b.status = 'succeeded' AND b.settled_at >= ?2 AND b.origin <> 'chargeback'
+       AND NOT EXISTS (SELECT 1 FROM email_log e WHERE e.entity_type = 'refund' AND e.entity_id = b.id))
+   ORDER BY settled_on, id LIMIT 20`;
 
 /** The Refunds tab, all statuses: one page newest first, keyset `(requested_at, id)` with `?1`/`?2` (the first page binds a far-future instant and ''), at most 51; `payment_refunds_list`. */
 export const REFUNDS_LIST_SQL = `SELECT ${REFUND_COLS}, c.code AS client_code, c.display_name AS client_name

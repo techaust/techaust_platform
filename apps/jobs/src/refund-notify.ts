@@ -3,7 +3,7 @@
 // before the generic path. `refund.notify {refundId}` (ids only) comes from the finance Worker's refund routes (`waitUntil` after the batch that set `succeeded`) and
 // from jobs after `GatewayEvents.processEvent` / `checkRefund` answered a refund that succeeded. ONE unit of work:
 //   ONE batch: the refund with every rule in SQL (status `succeeded`, origin not `chargeback`, the client not anonymised), its document's number (else the
-//   document its payment's checkout was for, else the payment's receipt's), the credit note that records it (issued only), the terms row (the send window); and the client's live contacts with portal access AND
+//   document its payment was last allocated to, else the one its checkout was for, else the payment's receipt's), the credit note that records it (issued only), the terms row (the send window); and the client's live contacts with portal access AND
 //   "can see finance" (Researched 2026-10-28, RB-31: finance emails only to finance contacts), the contact's `client_id` the refund's own
 //   -> outside the window (default 09:00 to 19:00 IST; Q48: a system email waits) the same message again with `delaySeconds`;
 //   -> else one `refund.sent` per contact, entity `{type: "refund", id}`, so a second producer (route and RPC both) or a redelivery sends once; its button opens
@@ -28,14 +28,20 @@ export const REFUND_MAIL_MAX = 20;
 /** 07-ZQ's client lines approved (one switch); behind an object so a test can stand in for the flipped switch. */
 export const refundCopyGate = { approved: (): boolean => APPROVED_07ZQ };
 
-/** The refund, only when it may be emailed: every rule in the WHERE (a row that fails one reads as nothing). */
+/**
+ * The refund, only when it may be emailed: every rule in the WHERE (a row that fails one reads as nothing). The document it names: the refund's own (an
+ * invoice's excess), else the one its payment was last allocated to (re-check finding 6: an online payment on a proforma sits on the tax invoice issued for
+ * it, while its checkout still names the converted proforma), else its checkout's, else (number only) its receipt's. One seek of `payment_allocations_payment`.
+ */
 export const REFUND_ROW_SQL = `SELECT r.id, r.client_id, r.amount_minor, r.currency, r.settled_on, r.settled_at,
-     coalesce(d.number_display, cd.number_display, rc.number_display) AS document_number, coalesce(d.id, cd.id) AS invoice_id,
+     coalesce(d.number_display, ad.number_display, cd.number_display, rc.number_display) AS document_number, coalesce(d.id, ad.id, cd.id) AS invoice_id,
      CASE WHEN cn.status <> 'draft' AND cn.number_display IS NOT NULL THEN cn.number_display END AS credit_note_number
    FROM payment_refunds r
    JOIN clients k ON k.id = r.client_id AND k.anonymised_at IS NULL
    LEFT JOIN documents d ON d.id = r.document_id
    LEFT JOIN payments p ON p.id = r.payment_id
+   LEFT JOIN documents ad ON ad.id = (SELECT pa.document_id FROM payment_allocations pa INDEXED BY payment_allocations_payment
+     WHERE pa.payment_id = p.id AND pa.kind = 'allocate' ORDER BY pa.created_at DESC, pa.id DESC LIMIT 1)
    LEFT JOIN checkout_sessions cs ON cs.id = p.checkout_id
    LEFT JOIN documents cd ON cd.id = cs.document_id
    LEFT JOIN documents rc ON rc.id = p.receipt_document_id
@@ -100,7 +106,7 @@ export async function processRefundNotify(
   }
   const day = row.settled_on ? parseIsoDate(row.settled_on) : null;
   const date = day ? formatDate(day) : (row.settled_on ?? "");
-  // Review 1, finding 13: "View invoice" opens the refunded invoice (its excess, or the document its payment's checkout was for); a refund from credit named
+  // Review 1, finding 13: "View invoice" opens the refunded invoice (its excess, the document its payment sits on, or the one its checkout was for); a refund from credit named
   // only by the payment's receipt opens the invoice list, where the receipt is shown on the invoice it paid.
   const url = row.invoice_id
     ? `${portalBase(env)}/invoices/${encodeURIComponent(row.invoice_id)}`

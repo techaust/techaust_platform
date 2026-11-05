@@ -20,7 +20,11 @@ const enc = new TextEncoder();
 const macInput = (userId: string) => enc.encode(`digest.weekly|${userId}`);
 /** A staff user id as the token carries it (a lower-case UUID; the transport's URL check pins the same shape). */
 const USER_ID = /^[0-9a-f-]{36}$/;
-const MAC = /^[A-Za-z0-9_-]{43}$/;
+/**
+ * The MAC's canonical shape (re-check finding 1): 32 bytes are 43 base64url characters, and the last one carries 4 bits and 2 unused zero bits, so only the
+ * 16 characters whose alphabet index is a multiple of 4 may end it. Without this, 3 other endings decode to the same bytes and would verify too.
+ */
+const MAC = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 
 // The keys are imported once per isolate by `@techaust/core/hmac`'s shared cache (review 1, finding 12: no second cache here).
 
