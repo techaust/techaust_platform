@@ -107,9 +107,7 @@ export async function processRefundEvent(
       const answer = await quiet("processed", "refund_moved");
       // M7.2 (Q4 A, run file D "Refund email" producer 3): our refund now succeeded: the jobs Worker queues the client's email (its consumer re-checks every rule
       // in SQL, and its entity makes a second producer send nothing twice).
-      return status === "succeeded"
-        ? { ...answer, next: { kind: "refund.notify", refundId: ours.id } }
-        : answer;
+      return status === "succeeded" ? { ...answer, refundNotify: ours.id } : answer;
     } else if (g.state === "failed") return quiet("processed", "refund_settled");
     else {
       // L43 (finding 1c): a refund we marked failed that the gateway shows as made or on its way: a review item and the owners' bell, never a quiet "settled".

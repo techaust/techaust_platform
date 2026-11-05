@@ -12,6 +12,7 @@
 import { EMAIL_STATUS_LABELS } from "@techaust/core/copy-zq";
 import { suppressionReasonLabel } from "@techaust/core/email-events";
 import { EMAIL_TEMPLATES } from "@techaust/core/email-templates";
+import type { GuardSql } from "@techaust/db/log";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type ApiError, type AppEnv, BAD_REQUEST, err, mutate, NOT_FOUND } from "./context.ts";
@@ -210,7 +211,7 @@ function clearBouncedStatement(
   db: D1Database,
   addressSql: string,
   binds: unknown[],
-  g: { sql: (at: number) => string; params: unknown[] },
+  g: GuardSql,
 ): D1PreparedStatement {
   return db
     .prepare(

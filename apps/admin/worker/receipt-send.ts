@@ -113,7 +113,8 @@ export const receiptSend = new Hono<AppEnv>().post("/:id/send", param(idParam), 
     amount: r.amount_minor !== null && r.currency ? formatMoney(money(r.amount_minor, r.currency)) : "",
     date: day ? formatDate(day) : (r.received_on ?? ""),
     attached: attach ? "1" : "0",
-    url: `${(c.env.PORTAL_URL ?? "").replace(/\/+$/, "")}/invoices`,
+    // finance's own var (wrangler.finance.jsonc; the generated Env is the front's, which has no PORTAL_URL)
+    url: `${String(Reflect.get(c.env, "PORTAL_URL") ?? "").replace(/\/+$/, "")}/invoices`,
   };
   for (const s of written) {
     const message: EmailMessage = {

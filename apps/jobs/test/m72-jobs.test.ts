@@ -635,13 +635,10 @@ describe("the refund email's RPC producers (D, producers 3 and 4)", () => {
   it("processEvent answering next refund.notify queues it on the email queue", async () => {
     const e = makeEnv({
       ADMIN_GATEWAY: {
-        processEvent: async () => ({
-          result: "processed",
-          next: { kind: "refund.notify", refundId: "rf_1" },
-        }),
+        processEvent: async () => ({ result: "processed", refundNotify: "rf_1" }),
       },
     });
-    expect(await processGateway(e, { kind: "gateway.event", eventId: uuidv7() }, 1)).toBe("ack");
+    expect(await processGateway(e, { kind: "gateway.event", eventId: uuidv7() } as never, 1)).toBe("ack");
     expect(fakes.email.map((s) => s.body)).toContainEqual({ kind: "refund.notify", refundId: "rf_1" });
   });
 

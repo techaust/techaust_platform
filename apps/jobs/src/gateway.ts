@@ -67,10 +67,9 @@ export async function processGateway(
       const started = now;
       const r = await adminGateway(env).processEvent({ eventId: m.data.eventId });
       if (r.result === "retry") return { retry: gatewayRetryDelay(attempts) };
-      if (r.next?.kind === "gateway.advance")
-        await env.LEADS_QUEUE.send({ kind: "gateway.advance", paymentId: r.next.paymentId });
+      if (r.next) await env.LEADS_QUEUE.send({ kind: "gateway.advance", paymentId: r.next.paymentId });
       // M7.2 (Q4 A, producer 3): a refund event that moved our refund to succeeded: the client's email (its own message on the email queue).
-      if (r.next?.kind === "refund.notify") await env.EMAIL_QUEUE.send(refundNotify(r.next.refundId));
+      if (r.refundNotify) await env.EMAIL_QUEUE.send(refundNotify(r.refundNotify));
       // M7.2 (L9): the payment and review bells this event rang are emailed at once (the hourly `bells.sweep` is the safety net).
       if (r.result === "processed" || r.result === "needs_review")
         await notifyRecentBells(env, started - RECENT_MARGIN_MS).catch(() =>

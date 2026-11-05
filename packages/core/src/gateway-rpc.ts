@@ -22,13 +22,13 @@ export const isRpcGateway = (v: unknown): v is RpcGateway => (RPC_GATEWAYS as re
 export const PROCESS_EVENT_RESULTS = ["processed", "ignored", "needs_review", "duplicate", "retry"] as const;
 export type ProcessEventResult = {
   readonly result: (typeof PROCESS_EVENT_RESULTS)[number];
+  /** A proforma paid online: the jobs Worker enqueues `gateway.advance` for this payment (its own message: one unit of work each). */
+  readonly next?: { readonly kind: "gateway.advance"; readonly paymentId: string };
   /**
-   * A proforma paid online: the jobs Worker enqueues `gateway.advance` for this payment (its own message: one unit of work each). M7.2 (Q4 A, run file D
-   * "Refund email" producer 3): a refund event that moved one of our refunds to `succeeded`: the jobs Worker enqueues `refund.notify` (the client's email).
+   * M7.2 (Q4 A, run file D "Refund email" producer 3): a refund event moved this refund of ours to `succeeded`: the jobs Worker enqueues `refund.notify` for it
+   * (the client's email; its consumer re-checks every rule in SQL).
    */
-  readonly next?:
-    | { readonly kind: "gateway.advance"; readonly paymentId: string }
-    | { readonly kind: "refund.notify"; readonly refundId: string };
+  readonly refundNotify?: string;
 };
 
 /**
@@ -162,16 +162,9 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 
 export function isProcessEventResult(v: unknown): v is ProcessEventResult {
   if (!isObj(v) || !(PROCESS_EVENT_RESULTS as readonly unknown[]).includes(v.result)) return false;
+  if (v.refundNotify !== undefined && !isRpcId(v.refundNotify)) return false;
   if (v.next === undefined) return true;
-  if (!isObj(v.next)) return false;
-  if (v.next.kind === "gateway.advance") return isRpcId(v.next.paymentId);
-  const keys = Object.keys(v.next);
-  return (
-    v.next.kind === "refund.notify" &&
-    keys.length === 2 &&
-    keys.includes("refundId") &&
-    isRpcId(v.next.refundId)
-  );
+  return isObj(v.next) && v.next.kind === "gateway.advance" && isRpcId(v.next.paymentId);
 }
 
 export function isIssueAdvanceResult(v: unknown): v is IssueAdvanceResult {
