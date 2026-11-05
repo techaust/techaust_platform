@@ -37,34 +37,39 @@ describe("the Accountant is read-only [ADM-REP-06, L5]", () => {
   });
 });
 
-/** The last 30 days to today (IST), so the pipeline's range stays inside its 12 months whatever the real clock says (early check 3). */
-const today = istDate(Date.now());
-const LAST_30 = `?from=${toIsoDate(addDays(today, -30))}&to=${toIsoDate(today)}`;
+/**
+ * The last 30 days to today (IST), read when the test runs (never at module load: clock-ist.test.ts), so the pipeline's range stays inside its 12 months
+ * whatever the real clock says (early check 3).
+ */
+const last30 = () => {
+  const today = istDate(Date.now());
+  return `?from=${toIsoDate(addDays(today, -30))}&to=${toIsoDate(today)}`;
+};
 
 /** The M7.3 rows, their action and who may call them (docs/04 §9: `reports.finance` Owner and Accountant; `reports.pipeline` Owner and Sales; `reports.delivery` Owner and Staff). */
-const M73_ROWS: { path: string; query: string; action: string; allowed: readonly string[] }[] = [
+const M73_ROWS: { path: string; query: () => string; action: string; allowed: readonly string[] }[] = [
   {
     path: "/reports/revenue",
-    query: "?fy=2627",
+    query: () => "?fy=2627",
     action: "reports.finance",
     allowed: ["owner", "accountant"],
   },
   {
     path: "/reports/revenue/clients",
-    query: "?fy=2627&currency=INR",
+    query: () => "?fy=2627&currency=INR",
     action: "reports.finance",
     allowed: ["owner", "accountant"],
   },
-  { path: "/reports/ageing", query: "", action: "reports.finance", allowed: ["owner", "accountant"] },
+  { path: "/reports/ageing", query: () => "", action: "reports.finance", allowed: ["owner", "accountant"] },
   {
     path: "/reports/pipeline",
-    query: LAST_30,
+    query: last30,
     action: "reports.pipeline",
     allowed: ["owner", "sales"],
   },
   {
     path: "/reports/care-hours",
-    query: "?month=2026-10",
+    query: () => "?month=2026-10",
     action: "reports.delivery",
     allowed: ["owner", "staff"],
   },
@@ -87,11 +92,11 @@ describe("the M7.3 report rows: GET only, per the matrix, for every role and no 
     it(`${r.path}: 200 for ${r.allowed.join(" and ")}, 403 for the others, 401 with no session`, async () => {
       for (const role of ROLES) {
         const s = await sessionFor(role);
-        const res = await call(`${r.path}${r.query}`, { cookie: s.cookie });
+        const res = await call(`${r.path}${r.query()}`, { cookie: s.cookie });
         expect(res.status, `${role} ${r.path}: ${await res.clone().text()}`).toBe(
           r.allowed.includes(role) ? 200 : 403,
         );
       }
-      expect((await call(`${r.path}${r.query}`)).status).toBe(401);
+      expect((await call(`${r.path}${r.query()}`)).status).toBe(401);
     });
 });

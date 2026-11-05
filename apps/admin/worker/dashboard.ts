@@ -67,8 +67,7 @@ import { type AppEnv, actor } from "./context.ts";
  */
 export function reportLinksFor(role: Parameters<typeof decide>[0], today: string): DashboardReportLinks {
   const fy = fyOfDate(parseIsoDate(today) as NonNullable<ReturnType<typeof parseIsoDate>>);
-  const can = (action: "reports.finance" | "reports.pipeline" | "reports.delivery") =>
-    decide(role, action) === "allow";
+  const can = (what: Parameters<typeof decide>[1]) => decide(role, what) === "allow";
   return {
     ...(can("reports.finance") ? { revenue: { fy: fy.token }, ageing: {} } : {}),
     ...(can("reports.pipeline") ? { pipeline: { from: `${today.slice(0, 7)}-01`, to: today } } : {}),

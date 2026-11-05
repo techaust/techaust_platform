@@ -1154,6 +1154,10 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
     },
     // M6.5 B4 (added on purpose): the refunds register, one audit row per page as the registers.
     "GET /api/v1/reports/refunds": async () => run(await owner(), "/reports/refunds?fy=2627", {}),
+    // M7.3 C6 (added on purpose): the CSV twins of revenue per client and the ageing, one audit row per page as the registers.
+    "GET /api/v1/reports/revenue/export": async () =>
+      run(await owner(), "/reports/revenue/export?fy=2627&currency=INR", {}),
+    "GET /api/v1/reports/ageing/export": async () => run(await owner(), "/reports/ageing/export", {}),
     "POST /api/v1/clients/:id/statement/pdf": async () => {
       const s = await owner();
       await putCompany();
