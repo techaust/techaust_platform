@@ -2,6 +2,7 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-05 [#183](https://github.com/techaust/techaust_platform/pull/183) docs: record of 2026-11-05 (M7.1 on staging, M7.2 in review)
 - 2026-11-05 [#182](https://github.com/techaust/techaust_platform/pull/182) feat(portal): M7.1 the full client portal
 - 2026-11-05 [#181](https://github.com/techaust/techaust_platform/pull/181) feat(web): LinkedIn line icon in the footer contact rows and on About
 - 2026-11-05 [#180](https://github.com/techaust/techaust_platform/pull/180) feat(web): the company LinkedIn page in the footer
