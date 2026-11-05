@@ -38,8 +38,11 @@
     overflow: visible;
   }
 
+  /* a group wider than the line shrinks to it and wraps inside (never pushes the page wider) */
   .report-nav ul {
+    flex: 0 1 auto;
     flex-wrap: wrap;
+    min-width: 0;
   }
 }
 

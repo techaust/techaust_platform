@@ -180,9 +180,9 @@ export function ChartFrame(props: {
   return (
     <figure className={`chart${props.className ? ` ${props.className}` : ""}`} aria-labelledby={props.id}>
       <figcaption className="chart__head">
-        <h3 id={props.id} className="chart__title">
+        <h2 id={props.id} className="chart__title">
           {props.title}
-        </h3>
+        </h2>
         {props.legend}
       </figcaption>
       {props.children}

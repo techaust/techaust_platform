@@ -148,7 +148,7 @@ function NothingIn({ currency, fy }: { currency: Currency; fy: string }) {
       <EmptyState
         icon={<Receipt />}
         title={R.emptyCurrency(currency, fyLabel(fy)).replace(/\.$/, "")}
-        headingLevel={3}
+        headingLevel={2}
       >
         {null}
       </EmptyState>
@@ -614,7 +614,7 @@ function ClientsBlock({ fy, currency }: { fy: string; currency: Currency }) {
   ];
   const caption = `${R.perClient}, ${currency}`;
   return (
-    <section className="m73-block" aria-labelledby="rev-clients-h">
+    <div className="m73-block">
       <div className="m73-block__head">
         <h2 id="rev-clients-h" className="report-sub">
           {caption}
@@ -676,6 +676,6 @@ function ClientsBlock({ fy, currency }: { fy: string; currency: Currency }) {
           {moreError}
         </p>
       )}
-    </section>
+    </div>
   );
 }

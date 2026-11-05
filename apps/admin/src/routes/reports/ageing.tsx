@@ -214,7 +214,7 @@ function CurrencyBlock(props: { currency: Currency; rows: AgeingRow[]; total: Ag
       }
     : null;
   return (
-    <section className="m73-block" aria-labelledby={`age-${currency}`}>
+    <div className="m73-block">
       <ChartFrame
         id={`age-${currency}`}
         title={title}
@@ -237,6 +237,6 @@ function CurrencyBlock(props: { currency: Currency; rows: AgeingRow[]; total: Ag
           totals={totalRow ? [totalRow] : []}
         />
       </div>
-    </section>
+    </div>
   );
 }

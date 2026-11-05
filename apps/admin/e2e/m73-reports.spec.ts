@@ -196,7 +196,7 @@ test("revenue: Export CSV asks for a fresh code (cancelling makes no file), or w
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/reports/revenue");
-  const block = page.locator("section", { has: page.getByRole("heading", { name: /^By client, INR$/ }) });
+  const block = page.locator(".m73-block", { has: page.getByRole("heading", { name: /^By client, INR$/ }) });
   await expect(block.getByRole("table")).toBeVisible();
   const download = page.waitForEvent("download", { timeout: 20_000 }).catch(() => null);
   await block.getByRole("button", { name: "Export CSV" }).click();
@@ -298,7 +298,11 @@ test("All payments reads newest received first (C8), the date received leading e
   const table = page.getByRole("table").first();
   await expect(table.locator("tbody tr").first()).toBeVisible();
   const days = await table.locator("tbody tr > :first-child").allInnerTexts();
-  const iso = days.map((d) => new Date(`${d.trim()} UTC`).toISOString().slice(0, 10));
+  // the date cell may carry words for a screen reader beside the day: read the day alone
+  const iso = days
+    .map((d) => /\d{2} [A-Z][a-z]{2} \d{4}/.exec(d)?.[0])
+    .filter((d): d is string => d !== undefined)
+    .map((d) => new Date(`${d} UTC`).toISOString().slice(0, 10));
   expect(iso.length).toBeGreaterThan(1);
   expect([...iso].sort().reverse()).toEqual(iso);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/payments-all-1280.png`, fullPage: true });

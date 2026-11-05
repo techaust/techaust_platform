@@ -294,7 +294,7 @@ function TopPaths({ r }: { r: Report }) {
     { key: "won", header: P.won, align: "end", cell: (p) => <span className="tnum">{p.won}</span> },
   ];
   return (
-    <section className="m73-block" aria-labelledby="pipe-paths">
+    <div className="m73-block">
       <h2 id="pipe-paths" className="report-sub">
         {P.topPaths}
       </h2>
@@ -306,7 +306,7 @@ function TopPaths({ r }: { r: Report }) {
           rowKey={(p) => p.path ?? "-"}
         />
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -331,7 +331,7 @@ function OffersSent({ r }: { r: Report }) {
     },
   ];
   return (
-    <section className="m73-block" aria-labelledby="pipe-offers">
+    <div className="m73-block">
       <h2 id="pipe-offers" className="report-sub">
         {P.offersSent}
       </h2>
@@ -350,7 +350,7 @@ function OffersSent({ r }: { r: Report }) {
         />
       </div>
       {usd && <p className="m73-note">{P.usdNote}</p>}
-    </section>
+    </div>
   );
 }
 
