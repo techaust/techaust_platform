@@ -269,6 +269,6 @@ Regards, ${who.name}, TecHaust Technologies`,
         url: SAMPLE,
       };
     case "staff.signin_unfinished":
-      return { first_name, time, role: who.role };
+      return { first_name, time };
   }
 }

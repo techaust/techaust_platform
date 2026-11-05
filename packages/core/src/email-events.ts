@@ -282,14 +282,14 @@ export const holdsUnknown = (ev: Pick<SesEvent, "timeMs">, now: number): boolean
 
 /**
  * The words of a suppression's reason (S13; early check finding 7): the three reasons trigger 0074 allows, and one generic label for anything older or unknown (a
- * row written before 0074 may say `bounce`). Staff words drafted by the builder for the lead ("[Placeholder]" until approved; the designer places them).
+ * row written before 0074 may say `bounce`). Staff words drafted by the builder, approved by the lead under the owner's delegation (2026-11-05).
  */
 export const SUPPRESSION_REASON_LABELS = {
-  hard_bounce: "[Placeholder] The address bounced",
-  complaint: "[Placeholder] Marked as spam",
-  manual: "[Placeholder] Stopped by hand",
+  hard_bounce: "The address bounced",
+  complaint: "Marked as spam",
+  manual: "Stopped by hand",
 } as const;
-export const SUPPRESSION_REASON_OTHER = "[Placeholder] Emails stopped";
+export const SUPPRESSION_REASON_OTHER = "Emails stopped";
 export const suppressionReasonLabel = (reason: string | null | undefined): string =>
   typeof reason === "string" && Object.hasOwn(SUPPRESSION_REASON_LABELS, reason)
     ? SUPPRESSION_REASON_LABELS[reason as keyof typeof SUPPRESSION_REASON_LABELS]

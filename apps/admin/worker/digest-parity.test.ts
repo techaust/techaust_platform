@@ -110,4 +110,50 @@ describe("digest figures = dashboard figures", () => {
     await add(3, now + 3 * 86_400_000, null, "paused"); // skipped
     expect(await count()).toBe(before + 1);
   });
+
+  it("a waiting reminder of a paid, voided or fully credited document, or of an anonymised client, is not counted (review 1, finding 1)", async () => {
+    const now = Date.now();
+    const count = async () => {
+      const r = await env.DB.batch(digestStatements(env.DB, digestWindowOf(now)));
+      return digestFiguresOf(r).remindersDue;
+    };
+    const before = await count();
+    const inr = await mkReportClient("INR");
+    const remind = (documentId: string, hours: number) =>
+      env.DB.prepare(
+        "INSERT INTO reminders (id, document_id, offset_days, due_at, sent_at, skipped_reason) VALUES (?1, ?2, 0, ?3, NULL, NULL)",
+      )
+        .bind(crypto.randomUUID(), documentId, now + hours * 3_600_000)
+        .run();
+    const live = await addDoc({ clientId: inr, issueDate: istToday(), lines: [line(100_00)], dueDate: plus(3) });
+    const paid = await addDoc({
+      clientId: inr,
+      issueDate: istToday(),
+      lines: [line(100_00)],
+      dueDate: plus(3),
+      status: "paid",
+      paid: "total",
+      balance: 0,
+    });
+    const voided = await addDoc({
+      clientId: inr,
+      issueDate: istToday(),
+      lines: [line(100_00)],
+      dueDate: plus(3),
+      voided: true,
+    });
+    const credited = await addDoc({
+      clientId: inr,
+      issueDate: istToday(),
+      lines: [line(100_00)],
+      dueDate: plus(3),
+      status: "credited",
+      balance: 0,
+    });
+    const gone = await mkReportClient("INR");
+    const ofGone = await addDoc({ clientId: gone, issueDate: istToday(), lines: [line(100_00)], dueDate: plus(3) });
+    await env.DB.prepare("UPDATE clients SET anonymised_at = 1 WHERE id = ?1").bind(gone).run();
+    for (const d of [live, paid, voided, credited, ofGone]) await remind(d.id, 24);
+    expect(await count()).toBe(before + 1);
+  });
 });

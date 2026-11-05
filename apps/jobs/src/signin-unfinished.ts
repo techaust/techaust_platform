@@ -45,7 +45,7 @@ export async function processSigninUnfinished(
   const messages: EmailMessage[] = [...byMember.values()].map((r) => ({
     template: "staff.signin_unfinished",
     to: r.email,
-    data: { first_name: firstNameOf(r.name), time: formatIstDateTime(r.at), role: r.role },
+    data: { first_name: firstNameOf(r.name), time: formatIstDateTime(r.at) },
     entity: { type: "signin_unfinished", id: `${r.user_id}:${hour}` },
   }));
   // Enqueue first, then mark (the lead's triage): a lost mark repeats the send, which the email log makes a no-op; a lost send is never marked done.

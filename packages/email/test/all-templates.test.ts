@@ -41,8 +41,6 @@ function cases(): Case[] {
         template: t,
         data: { ...base, total: "$1,200.00", balance: "$1,200.00", number: "TH/EXP/2627/0001" },
       });
-    if (t === "staff.signin_unfinished")
-      out.push({ name: `${t}.member`, template: t, data: { ...base, role: "staff" } });
     if (t === "refund.sent")
       out.push({ name: `${t}.no-note`, template: t, data: { ...base, credit_note_number: "" } });
   }

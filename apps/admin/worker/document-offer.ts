@@ -40,11 +40,12 @@ export function startPlanOf(ctx: Pick<Context, "bundle" | "client" | "settingsRo
 const GROUP = "(SELECT version_group_id FROM documents WHERE id = ?1)";
 
 /**
- * The group's send rows (every version), newest first. `email_log` status of the offer email by the row's id (index `email_log_entity`). `removed`: the
+ * The group's send rows (every version), newest first. `email_log` status of the offer email by the row's id (index `email_log_entity`; the unary plus on
+ * `template` keeps the planner off M7.2's `email_log_template_created`, which would scan every offer email). `removed`: the
  * send's contact was erased or anonymised (`deleteContactAccess` cleared `contact_id` and `email`; a send is always written with a contact).
  */
 export const DELIVERY_SQL = `SELECT s.id, d.version, s.kind, s.queued_at, s.cancelled_at, s.created_at, s.attach_pdf, s.email, c.name AS contact_name, s.contact_id IS NULL AS removed,
-  (SELECT e.status FROM email_log e WHERE e.entity_type = 'document_send' AND e.entity_id = s.id AND e.template = 'offer.sent' ORDER BY e.created_at DESC LIMIT 1) AS email_status
+  (SELECT e.status FROM email_log e WHERE e.entity_type = 'document_send' AND e.entity_id = s.id AND +e.template = 'offer.sent' ORDER BY e.created_at DESC LIMIT 1) AS email_status
   FROM document_sends s JOIN documents d ON d.id = s.document_id LEFT JOIN contacts c ON c.id = s.contact_id
   WHERE d.version_group_id = ${GROUP} ORDER BY s.created_at DESC, s.id DESC LIMIT 50`;
 
