@@ -177,7 +177,9 @@ function CurrencyBlock(props: { currency: Currency; rows: AgeingRow[]; total: Ag
       align: "end",
       cell: (r) =>
         r.isTotal ? (
-          ""
+          <span className="m73-zero" aria-hidden="true">
+            –
+          </span>
         ) : r.creditHeldMinor === 0 ? (
           <span className="m73-zero">{moneyText(0, currency)}</span>
         ) : (
@@ -189,7 +191,9 @@ function CurrencyBlock(props: { currency: Currency; rows: AgeingRow[]; total: Ag
       header: A.statement,
       cell: (r) =>
         r.isTotal ? (
-          ""
+          <span className="m73-zero" aria-hidden="true">
+            –
+          </span>
         ) : (
           <Link to={`/clients/${encodeURIComponent(r.client.id)}?tab=statement`} className="m73-statement">
             {A.openStatement}

@@ -375,7 +375,14 @@ function keyColumns(first: string, countHeader: string, currency: Currency): Col
       key: "count",
       header: countHeader,
       align: "end",
-      cell: (r) => (r.round ? "" : <span className="tnum">{r.inv.count}</span>),
+      cell: (r) =>
+        r.round ? (
+          <span className="m73-zero" aria-hidden="true">
+            –
+          </span>
+        ) : (
+          <span className="tnum">{r.inv.count}</span>
+        ),
     },
     {
       key: "before",
@@ -383,7 +390,9 @@ function keyColumns(first: string, countHeader: string, currency: Currency): Col
       align: "end",
       cell: (r) =>
         r.round ? (
-          ""
+          <span className="m73-zero" aria-hidden="true">
+            –
+          </span>
         ) : (
           <Money minor={r.inv.taxableMinor} currency={currency} inr={usd ? r.inv.inrTaxableMinor : null} />
         ),
