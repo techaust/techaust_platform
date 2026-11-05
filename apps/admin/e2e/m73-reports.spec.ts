@@ -186,6 +186,8 @@ test("revenue: the year by month as paired columns with its table and total, the
   await expect(page).toHaveURL(/by=kind/);
   await page.getByText("USD", { exact: true }).click();
   await expect(page).toHaveURL(/currency=USD/);
+  await page.getByText("Month", { exact: true }).click();
+  await expect(page).not.toHaveURL(/by=/);
   await expect(page.getByText(/INR equivalent: invoices at the rate on the invoice/)).toBeVisible();
 });
 
@@ -286,6 +288,20 @@ test("dashboard v2: deltas in words, the overdue buckets, the leads trend and th
     await expect(reports.getByRole("link", { name: r })).toBeVisible();
   await reports.getByRole("link", { name: "Pipeline and win rate" }).click();
   await expect(page).toHaveURL(/\/reports\/pipeline\?from=\d{4}-\d{2}-01&to=/);
+});
+
+test("All payments reads newest received first (C8), the date received leading each row", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/payments?tab=all");
+  const table = page.getByRole("table").first();
+  await expect(table.locator("tbody tr").first()).toBeVisible();
+  const days = await table.locator("tbody tr > :first-child").allInnerTexts();
+  const iso = days.map((d) => new Date(`${d.trim()} UTC`).toISOString().slice(0, 10));
+  expect(iso.length).toBeGreaterThan(1);
+  expect([...iso].sort().reverse()).toEqual(iso);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/payments-all-1280.png`, fullPage: true });
 });
 
 test("the offer list searches by a client's name, in the URL", async ({ page }) => {

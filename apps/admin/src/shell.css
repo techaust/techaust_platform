@@ -1690,8 +1690,11 @@ body:has(.shell) {
   border-top: 1px solid var(--color-text);
   border-bottom: 3px double var(--color-text);
   font-weight: 600;
-  text-align: start;
   vertical-align: middle;
+}
+
+.dtable__table .dtable__total > :first-child {
+  text-align: start;
 }
 
 .dtable__table .dtable__total + .dtable__total > * {
@@ -1706,7 +1709,7 @@ body:has(.shell) {
   border-end-end-radius: var(--radius-md);
 }
 
-.dcard--total {
+.dcard.dcard--total {
   border-top: 1px solid var(--color-text);
   border-bottom: 3px double var(--color-text);
   font-weight: 600;

@@ -290,7 +290,11 @@
   line-height: var(--text-caption--line-height);
 }
 
-/* The Reports tile: one 44 px link per report. */
+/* The Reports tile: one 44 px link per report; on a phone it follows the day's tiles (care.css orders the one-column dashboard). */
+.tile--reports {
+  order: 5;
+}
+
 .tile-links {
   display: grid;
   gap: 0;

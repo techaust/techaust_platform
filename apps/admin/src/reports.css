@@ -912,8 +912,12 @@
 
 /* A wide list (the ageing's nine columns, care hours): it scrolls sideways inside its own box, never the page (the box is then a named keyboard stop,
    DataTable's scroll region); the cells sit closer and the client's name keeps a readable width. */
-.m73-table--wide > .dtable {
+.m73-table > .dtable {
   overflow-x: auto;
+}
+
+.m73-table .dtable__table th:first-child {
+  white-space: nowrap;
 }
 
 .m73-table--wide .dtable__table :is(th, td) {
@@ -921,12 +925,13 @@
 }
 
 /* Inside a box that scrolls sideways a sticky header would stick to the box, not the page (shell.css's users list does the same). */
-.m73-table--wide .dtable__table thead th {
+.m73-table .dtable__table thead th {
   position: static;
 }
 
 .m73-table--wide .dtable__table :is(thead th, tbody th, tfoot th):first-child {
   min-width: 11rem;
+  white-space: normal;
 }
 
 .m73-grid {
