@@ -22,6 +22,7 @@ import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { periodText, REFUND_PILLS, ZO_UI } from "../../lib/copy-zo.ts";
 import { ZQ_UI } from "../../lib/copy-zq.ts";
+import { receiptResendable } from "../../lib/emails.ts";
 import { INV_COPY } from "../../lib/invoices.ts";
 import { amountText, payErrorText } from "../../lib/payments.ts";
 import {
@@ -391,25 +392,23 @@ export function PaymentReceiptAndRefunds(props: {
               )}
             </dd>
           </div>
-          {r?.status === "issued" &&
-            r.number &&
-            props.onSendReceipt &&
-            allowed(props.role, "invoices.send") && (
-              <div className="rf-entry-receipt__send">
-                <dt className="visually-hidden">{ZQ_UI.sendReceipt}</dt>
-                <dd>
-                  <button
-                    type="button"
-                    className="btn btn--secondary"
-                    onClick={() => props.onSendReceipt?.({ id: r.id, number: r.number ?? "" })}
-                  >
-                    <Send size={20} />
-                    {ZQ_UI.sendReceipt}
-                    <span className="visually-hidden">{` ${r.number}`}</span>
-                  </button>
-                </dd>
-              </div>
-            )}
+          {/* review 1, finding 5: never for a payment refunded in full (the route refuses it) */}
+          {r && props.onSendReceipt && receiptResendable(r, allowed(props.role, "invoices.send")) && (
+            <div className="rf-entry-receipt__send">
+              <dt className="visually-hidden">{ZQ_UI.sendReceipt}</dt>
+              <dd>
+                <button
+                  type="button"
+                  className="btn btn--secondary"
+                  onClick={() => props.onSendReceipt?.({ id: r.id, number: r.number ?? "" })}
+                >
+                  <Send size={20} />
+                  {ZQ_UI.sendReceipt}
+                  <span className="visually-hidden">{` ${r.number}`}</span>
+                </button>
+              </dd>
+            </div>
+          )}
         </dl>
       )}
       {rows.length > 0 && (

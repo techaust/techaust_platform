@@ -30,6 +30,16 @@ export function emailStatusLook(status: string): StatusLook {
 }
 
 /**
+ * "Send receipt again" is offered (M7.2 G7; review 1, finding 5) for an issued receipt with a number, to a role that may send (`invoices.send`), while its
+ * payment still holds money: once the money has all gone back (`refundedInFull`, the server's `paymentRefundedInFullSql`) the route refuses it with 409
+ * `receipt_refunded`, so the button isn't shown. A payment held as credit or partly refunded keeps it.
+ */
+export const receiptResendable = (
+  r: { status: string; number: string | null; refundedInFull?: boolean } | null | undefined,
+  canSend: boolean,
+): boolean => !!r && canSend && r.status === "issued" && !!r.number && r.refundedInFull !== true;
+
+/**
  * What the log's "Sent" column shows for a status (M7.2 review 1, finding 15): the time only once the email left (sent, and the outcomes that follow a send);
  * "Queued" while it waits or is being handed over (its created time is when it was queued, never when it was sent); nothing for one that never left (failed or
  * not sent: the status says why).

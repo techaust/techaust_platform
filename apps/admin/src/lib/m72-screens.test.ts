@@ -8,7 +8,15 @@ import { describe, expect, it } from "vitest";
 import { RequestError } from "../api.ts";
 import { ACTION_LABELS } from "./audit.ts";
 import { sentenceStart, ZQ_ERRORS, ZQ_UI, zqErrorText } from "./copy-zq.ts";
-import { emailRecordHref, emailStatusLook, isAddress, logCrumbs, sentShown, sinceOf } from "./emails.ts";
+import {
+  emailRecordHref,
+  emailStatusLook,
+  isAddress,
+  logCrumbs,
+  receiptResendable,
+  sentShown,
+  sinceOf,
+} from "./emails.ts";
 import { invoiceRecipientChoices } from "./invoice-send.ts";
 import { recipientChoices } from "./offers.ts";
 
@@ -39,6 +47,20 @@ describe("the email log", () => {
     // the lists above name every S12 status, so a new status is a choice made here
     expect(Object.keys(EMAIL_STATUS_LABELS).sort()).toEqual(
       ["sent", "delivered", "bounced", "complained", "queued", "sending", "failed", "skipped"].sort(),
+    );
+  });
+
+  it("offers Send receipt again only on an issued, numbered receipt whose payment wasn't refunded in full, to a role that sends (finding 5)", () => {
+    const issued = { status: "issued", number: "TH/RCT/2627/0001" };
+    expect(receiptResendable(issued, true)).toBe(true);
+    expect(receiptResendable({ ...issued, refundedInFull: false }, true)).toBe(true);
+    expect(receiptResendable({ ...issued, refundedInFull: true }, true)).toBe(false);
+    expect(receiptResendable(issued, false)).toBe(false);
+    expect(receiptResendable({ ...issued, status: "void" }, true)).toBe(false);
+    expect(receiptResendable({ ...issued, number: null }, true)).toBe(false);
+    expect(receiptResendable(null, true)).toBe(false);
+    expect(zqErrorText(new RequestError(409, "receipt_refunded", "server words"))).toBe(
+      "This payment was refunded in full, so its receipt can't be sent again.",
     );
   });
 
@@ -99,6 +121,7 @@ describe("the words", () => {
       "not_suppressed",
       "client_anonymised",
       "receipt_void",
+      "receipt_refunded",
       "recipient_invalid",
     ])
       expect(zqErrorText(new RequestError(409, code, "server words"))).toBe(ZQ_ERRORS[code]);

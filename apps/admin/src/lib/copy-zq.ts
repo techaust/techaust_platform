@@ -149,6 +149,8 @@ export const ZQ_ERRORS: Record<string, string> = {
   not_suppressed: "Emails to this address aren't stopped any more. Reload to see the latest.",
   client_anonymised: "This client has been anonymised, so nothing can be changed or sent.",
   receipt_void: "This receipt was voided, so it can't be sent.",
+  // review 1, finding 5 (S-line, designer D2 under the lead's delegation): the payment's money has all gone back
+  receipt_refunded: "This payment was refunded in full, so its receipt can't be sent again.",
   recipient_invalid:
     "Some contacts can't get this receipt: they need portal access and Can see finance. They're marked below.",
   forbidden: "You don't have access to do this.",

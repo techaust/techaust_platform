@@ -185,6 +185,8 @@ export type ReceiptOfPayment = {
   status: string;
   hasPdf: boolean;
   voidedAt: number | null;
+  /** M7.2 review 1, finding 5: the payment's money has all gone back (refused with 409 `receipt_refunded`, so "Send receipt again" is hidden). Absent from an older API. */
+  refundedInFull?: boolean;
 };
 
 /** A settlement row (snake_case, `SETTLEMENTS_SQL`). */

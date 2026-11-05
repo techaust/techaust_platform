@@ -5,13 +5,20 @@
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { Link } from "react-router";
 import { api, type ContactView, RequestError } from "../../api.ts";
-import { Modal } from "../../components/dialog.tsx";
+import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { Send } from "../../components/icons.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { ZQ_UI, zqErrorText } from "../../lib/copy-zq.ts";
 import { invoiceRecipientChoices, MAX_RECIPIENTS } from "../../lib/invoice-send.ts";
 import { m72Api } from "../../lib/m72-api.ts";
 import "../../documents.css";
+
+/** The refusals of the receipt itself, not of a contact (review 1, finding 5): the dialog can only be closed after one. */
+export const RECEIPT_STOPS: ReadonlySet<string> = new Set([
+  "receipt_refunded",
+  "receipt_void",
+  "client_anonymised",
+]);
 
 type Loaded =
   | { state: "loading" }
@@ -30,6 +37,10 @@ export function ReceiptSendDialog(props: {
   const [error, setError] = useState<string | null>(null);
   const [invalid, setInvalid] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  // A refusal of the receipt itself (refunded in full, voided, the client anonymised): nothing in the form can change it, so it shows above the contacts,
+  // takes focus, and the send button goes (review 1, finding 5).
+  const [stopped, setStopped] = useState<string | null>(null);
+  const refusal = useRefusalFocus();
   const groupId = useId();
   const { clientId } = props;
 
@@ -70,6 +81,11 @@ export function ReceiptSendDialog(props: {
       const r = await m72Api.sendReceipt(props.receiptId, ids);
       props.onDone(ZQ_UI.sendReceiptSent(r.queued ?? ids.length));
     } catch (err) {
+      if (err instanceof RequestError && RECEIPT_STOPS.has(err.code)) {
+        setStopped(zqErrorText(err));
+        refusal.show();
+        return;
+      }
       if (err instanceof RequestError && err.code === "recipient_invalid" && err.extra.contactIds?.length)
         setInvalid(new Set(err.extra.contactIds));
       setError(zqErrorText(err));
@@ -92,6 +108,11 @@ export function ReceiptSendDialog(props: {
       <form noValidate onSubmit={submit}>
         <div className="dialog__body">
           <p>{ZQ_UI.sendReceiptIntro}</p>
+          {stopped && (
+            <Notice tone="error" ref={refusal.ref}>
+              {stopped}
+            </Notice>
+          )}
           {loaded.state === "loading" && (
             <p className="hint" role="status">
               {ZQ_UI.loading}
@@ -167,15 +188,17 @@ export function ReceiptSendDialog(props: {
           <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
             {ZQ_UI.cancel}
           </button>
-          <button
-            type="submit"
-            className="btn btn--primary"
-            disabled={busy || loaded.state !== "ready" || noneCan}
-            aria-busy={busy || undefined}
-          >
-            <Send size={20} />
-            {busy ? ZQ_UI.sendReceiptSending : ZQ_UI.sendReceiptSend}
-          </button>
+          {!stopped && (
+            <button
+              type="submit"
+              className="btn btn--primary"
+              disabled={busy || loaded.state !== "ready" || noneCan}
+              aria-busy={busy || undefined}
+            >
+              <Send size={20} />
+              {busy ? ZQ_UI.sendReceiptSending : ZQ_UI.sendReceiptSend}
+            </button>
+          )}
         </div>
       </form>
     </Modal>
