@@ -203,9 +203,11 @@ describe("every ROUTES row has one owner", () => {
     // reduction rows (44). M6.5 B4: the refunds register on the invoices Worker with the other registers (35).
     // M7.1: the "I've paid" notices list and dismiss on finance (48); the client requests on the API.
     // M7.2 (changed on purpose): "Send receipt again" on finance (49); the notification switches, the email log and the two unsuppress routes on the API.
-    expect(INVOICES_ROWS.length).toBe(35);
+    // M7.3 (changed on purpose, run file L12): revenue (by month, category or kind), revenue per client and the ageing on the invoices Worker with the other
+    // reports (38); the pipeline and care plan hours on the API, beside the leads and care plans they read.
+    expect(INVOICES_ROWS.length).toBe(38);
     expect(FINANCE_ROWS.length).toBe(49);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 35 - 49);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 38 - 49);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...INVOICES_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(
       ROUTES.length,
     );
@@ -222,8 +224,9 @@ describe("every ROUTES row has one owner", () => {
 
   // The fourth admin Worker (brief A.2): invoices, notes, their sends and PDFs, a client's invoices and statement, reports, approvals and the dashboard go to
   // the invoices Worker; payments, the ledger panels, credit, advices and the gateways stay in the finance Worker.
+  // M7.3 (L12): the pipeline and care plan hours reports are the API's (they read leads, offers and care plans, not the invoice chain).
   const INVOICES =
-    /^\/api\/v1\/(invoices(\/:id(\/(issue|issue-request|void|withdraw|service-completed|advance-invoice|credit-note|debit-note|ims-status|pdf|pdf\/supplier|pdf\/retry|send|links\/revoke|reminders\/(pause|resume)))?)?$|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|reports\/|approvals(\/|$)|dashboard$|receipts\/:id\/pdf(\/retry)?$)/;
+    /^\/api\/v1\/(invoices(\/:id(\/(issue|issue-request|void|withdraw|service-completed|advance-invoice|credit-note|debit-note|ims-status|pdf|pdf\/supplier|pdf\/retry|send|links\/revoke|reminders\/(pause|resume)))?)?$|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|reports\/(?!pipeline$|care-hours$)|approvals(\/|$)|dashboard$|receipts\/:id\/pdf(\/retry)?$)/;
   const FINANCE =
     /^\/api\/v1\/(payments(\/|$)|refunds(\/|$)|reconciliation\/|clients\/:id\/credit(\/|$)|receipts\/:id\/send$|invoices\/:id\/(payment-link(\/cancel)?|payments|credit\/release|realisation-extensions(\/:eid\/letter)?|realisation-reductions(\/:rid\/letter)?)$)/;
 
