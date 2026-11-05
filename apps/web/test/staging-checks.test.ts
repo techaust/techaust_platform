@@ -106,6 +106,16 @@ describe("staging-health judge [A6-8]", () => {
     expect(judge(hook as never, answer(400, {}))).toMatch(/expected signature_missing/);
   });
 
+  it("M7.2 (run file F): the SES hook outside Access answers its own JSON 401 token_missing; an Access 401 (not JSON) fails", () => {
+    const ses = CHECKS.jobs.find((c) => c.path === "/ses");
+    expect(ses).toMatchObject({ status: 401, method: "POST", code: "token_missing", access: false });
+    expect(judge(ses as never, answer(401, { error: { code: "token_missing" } }))).toBeNull();
+    expect(judge(ses as never, answer(401))).toMatch(/from Cloudflare Access/);
+    expect(judge(ses as never, answer(401, { error: { code: "token_invalid" } }))).toMatch(
+      /expected token_missing/,
+    );
+  });
+
   it("knows every staging Worker with a URL, and admin proves its API, invoices and finance Workers through their bindings (M6.1, the fourth Worker)", () => {
     expect(Object.keys(CHECKS).sort()).toEqual(["admin", "jobs", "portal", "web"]);
     expect(CHECKS.admin.map((c) => [c.path, c.status])).toEqual([
