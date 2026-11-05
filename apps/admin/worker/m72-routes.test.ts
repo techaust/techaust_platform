@@ -130,10 +130,7 @@ describe("the email log (emails.read: Owner and Staff)", () => {
         .map((r) => r.detail)
         .join(" | ");
     const cases: [Parameters<typeof emailListStatement>[0], RegExp][] = [
-      [
-        { template: "invoice.sent" },
-        /SEARCH email_log USING INDEX email_log_template_created \(template=\?/,
-      ],
+      [{ template: "invoice.sent" }, /SEARCH email_log USING INDEX email_log_template_created \(template=\?/],
       [
         { template: "invoice.sent", since: "5" },
         /SEARCH email_log USING INDEX email_log_template_created \(template=\?/,
