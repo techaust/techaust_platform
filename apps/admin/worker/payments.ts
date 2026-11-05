@@ -22,6 +22,7 @@ import {
   planAllocations,
   receiptMonthWarning,
 } from "@techaust/core/ledger";
+import { staffNotify } from "@techaust/core/notifications";
 import {
   paymentsListQuery,
   proofMeta,
@@ -60,6 +61,7 @@ import { docDownload, dropDoc, extOfMime, streamToDocs, uploadHead } from "./doc
 import { gatewayPaymentOf, refundNeededOf } from "./gateway/messages.ts";
 import { body, idParam, isUnique, param, query, refusedWith, STALE_VERSION } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
+import { queueNotify } from "./mail.ts";
 import {
   ALREADY_RECORDED,
   allocationExceedsBalance,
@@ -842,6 +844,9 @@ export const payments = new Hono<AppEnv>()
     }
     // M6.5 (L3): an Owner's entry is confirmed in its batch: its receipt follows (never TDS).
     if (confirmed && f.kind === "payment") c.executionCtx.waitUntil(enqueueReceipt(c.env, f.id));
+    // M7.2 (L9, Q1 A): an entry that waits for the Owner's check rang the owners' `payment.verify` bell in this batch: its emails by the owners' switches
+    // (ids only; the hourly `bells.sweep` catches a lost send).
+    if (!confirmed) queueNotify(c, staffNotify("payment.verify", f.id));
     // Review part 1, finding 3 (RA-41): whether the credit this confirmation leaves may be an advance (codes only).
     const ra41 =
       confirmed && f.kind === "payment"

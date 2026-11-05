@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "09664430-46b2-475b-b10c-ef542f4107ec",
+  "id": "569cc4e9-187b-43c4-ae58-01b7aed7d464",
   "prevId": "2c1ce6c7-54f0-406e-a3f9-668d56542dc4",
   "tables": {
     "catalogue_items": {
@@ -5840,6 +5840,21 @@
           "columns": ["ses_message_id"],
           "isUnique": false,
           "where": "\"email_log\".\"ses_message_id\" is not null"
+        },
+        "email_log_created": {
+          "name": "email_log_created",
+          "columns": ["created_at", "id"],
+          "isUnique": false
+        },
+        "email_log_status_created": {
+          "name": "email_log_status_created",
+          "columns": ["status", "created_at", "id"],
+          "isUnique": false
+        },
+        "email_log_template_created": {
+          "name": "email_log_template_created",
+          "columns": ["template", "created_at", "id"],
+          "isUnique": false
         }
       },
       "foreignKeys": {},

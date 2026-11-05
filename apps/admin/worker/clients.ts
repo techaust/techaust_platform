@@ -23,6 +23,7 @@ import {
   type TaxCheck,
   type TaxInput,
 } from "@techaust/core/clients";
+import { suppressionReasonLabel } from "@techaust/core/email-events";
 import { uuidv7 } from "@techaust/core/ids";
 import { normaliseEmail } from "@techaust/core/lead-lifecycle";
 import { decide, type Role } from "@techaust/core/permissions";
@@ -129,6 +130,12 @@ const careAtCol = (a: string) =>
 export const CLIENT_VIEW_COLS = `${CLIENT_COLS}, ${careAtCol("clients.")}`;
 const CONTACT_COLS =
   "id, client_id, name, email, phone, title, is_primary, is_billing, portal_access, can_see_finance, marketing_consent, bounced_at, anonymised_at, legal_hold, created_at, updated_at";
+/**
+ * M7.2 (C.1, G3, G4): a contact's suppression, by its address (the primary key of `email_suppressions`): the reason and when, for the "Emails stopped" badge and
+ * the send pickers' disabled rows. `a` is the contacts table's name or alias with its dot.
+ */
+const suppressionCols = (a: string) =>
+  `(SELECT s.reason FROM email_suppressions s WHERE s.email = lower(${a}email)) AS suppression_reason, (SELECT s.at FROM email_suppressions s WHERE s.email = lower(${a}email)) AS suppression_at`;
 
 export type ClientRow = {
   id: string;
@@ -172,6 +179,9 @@ type ContactRow = {
   can_see_finance: number;
   marketing_consent: string | null;
   bounced_at: number | null;
+  /** M7.2: present on the contact reads that select `suppressionCols`. */
+  suppression_reason?: string | null;
+  suppression_at?: number | null;
   anonymised_at: number | null;
   legal_hold: number;
   created_at: number;
@@ -243,6 +253,15 @@ export const contactView = (r: ContactRow) => ({
   canSeeFinance: Boolean(r.can_see_finance),
   marketingConsent: json(r.marketing_consent),
   bouncedAt: r.bounced_at,
+  // M7.2 (C.1): the address's suppression, or null; `label` maps an unknown or older reason generically (early check finding 7).
+  suppression:
+    r.suppression_reason == null
+      ? null
+      : {
+          reason: r.suppression_reason,
+          label: suppressionReasonLabel(r.suppression_reason),
+          at: r.suppression_at ?? null,
+        },
   anonymisedAt: r.anonymised_at,
   legalHold: Boolean(r.legal_hold),
   createdAt: r.created_at,
@@ -604,7 +623,9 @@ export const clients = new Hono<AppEnv>()
     >([
       db.prepare(`SELECT ${CLIENT_VIEW_COLS} FROM clients WHERE id = ?1`).bind(id),
       db
-        .prepare(`SELECT ${CONTACT_COLS} FROM contacts WHERE client_id = ?1 ORDER BY email, id LIMIT 101`)
+        .prepare(
+          `SELECT ${CONTACT_COLS}, ${suppressionCols("contacts.")} FROM contacts WHERE client_id = ?1 ORDER BY email, id LIMIT 101`,
+        )
         .bind(id),
       db
         .prepare("SELECT count(*) AS n FROM contacts WHERE client_id = ?1 AND anonymised_at IS NULL")
@@ -874,7 +895,7 @@ export const clients = new Hono<AppEnv>()
     if (!(await clientExists(c, id))) return err(c, NOT_FOUND, 404);
     const order = keysetSql("c.email", "c.id", true, "after", 2);
     const { results } = await c.env.DB.prepare(
-      `SELECT ${CONTACT_COLS.replace(/(\w+)/g, "c.$1")} FROM contacts c WHERE c.client_id = ?1${cur ? ` AND ${order.where}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
+      `SELECT ${CONTACT_COLS.replace(/(\w+)/g, "c.$1")}, ${suppressionCols("c.")} FROM contacts c WHERE c.client_id = ?1${cur ? ` AND ${order.where}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`,
     )
       .bind(id, ...(cur ? [cur.k, cur.id] : []))
       .all<ContactRow>();
@@ -1076,7 +1097,7 @@ export const contacts = new Hono<AppEnv>()
     const f = c.req.valid("json");
     const db = c.env.DB;
     const row = await db
-      .prepare(`SELECT ${CONTACT_COLS} FROM contacts WHERE id = ?1`)
+      .prepare(`SELECT ${CONTACT_COLS}, ${suppressionCols("contacts.")} FROM contacts WHERE id = ?1`)
       .bind(id)
       .first<ContactRow>();
     if (!row) return err(c, NOT_FOUND, 404);

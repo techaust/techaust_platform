@@ -328,6 +328,8 @@ export const ROUTES: readonly RouteDef[] = [
   // M6.5 (ADM-PAY-09, L34): a payment's receipt (a read beside the payment: the finance Worker), its PDF (an invoice-family document: the invoices Worker) and
   // the re-render as the invoice's (`invoices.draft`).
   X("GET", "/payments/:id/receipt", "payments.read"),
+  // M7.2 (ADM-PAY-09, C.2): "Send receipt again" to 1 to 5 finance contacts (a manual send goes at once).
+  X("POST", "/receipts/:id/send", "invoices.send", { audit: "receipt.send" }),
   I("GET", "/receipts/:id/pdf", "payments.read"),
   I("POST", "/receipts/:id/pdf/retry", "invoices.draft", { audit: "receipt.pdf_retry" }),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.
@@ -341,6 +343,13 @@ export const ROUTES: readonly RouteDef[] = [
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),
   R("POST", "/notifications/:id/read", "notifications.own", { audit: "notification.read" }),
+  // M7.2 (ADM-G-09, C.1): the member's own email switches; the email log (Owner, Staff) and the suppression list (Owner only, audited, no step-up: L12).
+  R("GET", "/notifications/prefs", "notifications.own"),
+  R("PUT", "/notifications/prefs", "notifications.own", { audit: "notification.prefs" }),
+  R("GET", "/emails", "emails.read"),
+  R("GET", "/emails/:id", "emails.read"),
+  R("POST", "/emails/:id/unsuppress", "emails.unsuppress", { audit: "email.unsuppress" }),
+  R("POST", "/contacts/:id/unsuppress", "emails.unsuppress", { audit: "contact.unsuppress" }),
   R("GET", "/search", "search.use"),
   R("GET", "/audit", "audit.readFinance"),
   // The CSV export reads the same list through its own step-up action; each page is audited (`audit.export`).

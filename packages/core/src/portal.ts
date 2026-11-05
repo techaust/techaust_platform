@@ -202,6 +202,11 @@ export const isPortalAlertMessage = (body: unknown): body is PortalAlertMessage 
 /** The audit actions a portal alert expands; any other row is refused (logged, acknowledged). */
 export const PORTAL_ALERT_ACTIONS = ["portal.request", "payment.notice"] as const;
 export type PortalAlertAction = (typeof PORTAL_ALERT_ACTIONS)[number];
+/**
+ * M7.2 (E, Q2 A): a contact's first view of a proposal or estimate (the portal's `document.view` audit row) rides the same message: jobs writes the `offer.viewed`
+ * bell for the owners and the person who sent it, then queues its `staff.notify` (portal SQL never names a `staff_` table).
+ */
+export const OFFER_VIEW_ACTION = "document.view";
 /** The request kinds whose bell also goes to Staff (run file D); every other kind rings the active Owners only. */
 export const STAFF_BELL_KINDS = ["contact_change"] as const satisfies readonly RequestKind[];
 export const staffBelled = (kind: unknown): boolean =>

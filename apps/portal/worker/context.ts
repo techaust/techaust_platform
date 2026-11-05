@@ -43,6 +43,8 @@ export type Vars = {
   viewer?: OfferViewer | undefined;
   /** M4.5: statements that ride in the request's single after-the-answer write (the first-view update and its audit row). */
   after?: D1PreparedStatement[];
+  /** M7.2 (E): an audit row of `after` whose staff bell jobs writes (`portal.alert`), sent once the after-write succeeded. */
+  afterAlert?: string;
   /** The handler already wrote this request's access row (inside its batch), or must write none. */
   accessDone?: boolean;
 };
