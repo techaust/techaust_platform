@@ -551,6 +551,8 @@ export type RequestItem = {
   outcome: string | null;
   createdAt: number;
   closedAt: number | null;
+  /** M7.4 (E): an open request's reply date (UTC ms; shown as its IST day), null once closed. */
+  replyBy?: number | null;
 };
 export type ProfileMe = {
   name: string;

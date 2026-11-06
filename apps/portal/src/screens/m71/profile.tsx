@@ -3,6 +3,7 @@
 // needed for the purpose, or is the name enough under DPDP s.8(7) data minimisation?), and the contact's own requests with a "New request" dialog (the
 // five kinds, one channel per DPDP s.11 to s.13 right; Researched 2026-10-29, 08-C RB-36; RB-13 for the reply within a month). A stale save says so (C17)
 // and offers to reload. Words: copy-zp.ts C16 to C24 (marked until approved), G2 to G5.
+import { NEW_KIND_LABELS, PORTAL_REQUEST_COPY } from "@techaust/core/copy-zr";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { type Profile, type ProfileMe, portalApi, RequestError, type RequestItem } from "../../api.ts";
 import { Modal } from "../../components/dialog.tsx";
@@ -25,7 +26,17 @@ import { useMe } from "../../session.tsx";
 import { MoreButton, ScreenSkeleton } from "../home.tsx";
 import "./m71.css";
 
-const KINDS = ["contact_change", "data_access", "data_correction", "data_erasure", "grievance"] as const;
+// M7.4 (E, L9): the two kinds 07-A §6 promises, after M7.1's five; their labels are 07-ZR C5 and C6 (the owner's, "[Placeholder]" until approved)
+const KINDS = [
+  "contact_change",
+  "data_access",
+  "data_correction",
+  "data_erasure",
+  "grievance",
+  "consent_withdrawal",
+  "nomination",
+] as const;
+const kindLabel = (k: string): string => ZP.kinds[k] ?? (NEW_KIND_LABELS as Record<string, string>)[k] ?? k;
 
 /** `/profile`. */
 export function ProfileRoute() {
@@ -308,7 +319,7 @@ function RequestRow({ r }: { r: RequestItem }) {
   return (
     <li className="m71-req">
       <div className="m71-req__main">
-        <h3 className="m71-req__kind">{ZP.kinds[r.kind] ?? r.kind}</h3>
+        <h3 className="m71-req__kind">{kindLabel(r.kind)}</h3>
         {r.details && <p className="m71-req__details">{r.details}</p>}
       </div>
       <div className="m71-req__state">
@@ -316,6 +327,10 @@ function RequestRow({ r }: { r: RequestItem }) {
         {s.outcome && <span className="m71-req__outcome">{s.outcome}</span>}
         {/* the day it was sent, while it is open (a closed one says its closing day instead) */}
         {s.open && <span className="m71-req__when">{istDayText(r.createdAt)}</span>}
+        {/* M7.4 (E, C1): the day we reply by, in IST, while it is open (07-ZR C1, the owner's line; "[Placeholder]" until approved) */}
+        {s.open && typeof r.replyBy === "number" && (
+          <span className="m71-req__reply">{PORTAL_REQUEST_COPY.replyBy(istDayText(r.replyBy))}</span>
+        )}
       </div>
     </li>
   );
@@ -385,7 +400,7 @@ function RequestForm(props: { onCancel: () => void; onSent: (r: RequestItem) => 
                   setErrors((x) => (x.details ? { details: x.details } : {}));
                 }}
               />
-              <span>{ZP.kinds[k]}</span>
+              <span>{kindLabel(k)}</span>
             </label>
           ))}
           {errors.kind && <FieldError id={`${id}-kind-error`}>{errors.kind}</FieldError>}
