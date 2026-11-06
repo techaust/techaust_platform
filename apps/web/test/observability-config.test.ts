@@ -127,12 +127,12 @@ describe("the guard refuses [A6-9]", () => {
   it("an admin API Worker that logs or traces differently from the front", () => {
     const front = load("admin/wrangler.jsonc");
     const api = clone(load("admin/wrangler.api.jsonc"));
-    expect(guard.apiConfigProblems(api, front)).toEqual([]);
+    expect(guard.apiConfigProblems(api, front, guard.AUX_OPTS["wrangler.api.jsonc"])).toEqual([]);
     api.env.staging.observability = {
       ...api.env.staging.observability,
       traces: { enabled: true, head_sampling_rate: 0.05 },
     };
-    expect(guard.apiConfigProblems(api, front)).toContain(
+    expect(guard.apiConfigProblems(api, front, guard.AUX_OPTS["wrangler.api.jsonc"])).toContain(
       "env.staging: observability differs from the front's",
     );
   });

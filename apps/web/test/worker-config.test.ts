@@ -414,7 +414,7 @@ describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
     // The API Worker may hold none.
     const a = structuredClone(api);
     a.env.staging.services = [{ binding: "ADMIN_ADVANCE", service: "x" }];
-    expect(guard.apiConfigProblems(a, front)).toEqual([
+    expect(guard.apiConfigProblems(a, front, guard.AUX_OPTS["wrangler.api.jsonc"])).toEqual([
       "env.staging: services is not allowed on the API Worker",
     ]);
   });
