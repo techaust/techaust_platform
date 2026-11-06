@@ -72,6 +72,8 @@ export const makeEnv = (
     EMAIL_TRANSPORT: "log",
     EMAIL_ASSET_BASE: "https://assets.example.test/brand/",
     LEAD_ALERT_TO: "alerts@example.test",
+    // M7.4 (L23): the erased-address hash key (the consumer's `h:` check and the purge need it).
+    ERASURE_HASH_KEY: (realEnv as unknown as { ERASURE_HASH_KEY: string }).ERASURE_HASH_KEY,
     EMAIL_QUEUE: recorder(fakes.email, fakes.emailBatches),
     LEADS_QUEUE: recorder(fakes.leads),
     PDF_QUEUE: recorder(fakes.pdf),

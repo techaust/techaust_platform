@@ -25,6 +25,8 @@ const makeEnv = () =>
   ({
     DB: realEnv.DB,
     PDF_QUEUE: { sendBatch: async () => undefined }, // the cron also enqueues the PDF sweep and the offer sweep (M4.4, M4.5)
+    // M7.4 (L23): the erased-address hash key (the email consumer's `h:` check and the purge need it).
+    ERASURE_HASH_KEY: (realEnv as unknown as { ERASURE_HASH_KEY: string }).ERASURE_HASH_KEY,
     ENVIRONMENT: "local",
     LEAD_ALERT_TO: "owner@example.test",
     ADMIN_URL: "https://admin.example/",
@@ -161,7 +163,9 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
           k !== "lead.purge.scan" &&
           k !== "stats.metric" &&
           k !== "documents.expire" &&
-          k !== "statement.purge", // M5.5b: the statement PDF cache clean-up rides the same daily tick (changed on purpose)
+          k !== "statement.purge" && // M5.5b: the statement PDF cache clean-up rides the same daily tick (changed on purpose)
+          k !== "retention.start" && // M7.4: the clean-up's start (changed on purpose)
+          k !== "r2.sweep",
       ),
     ).toHaveLength(0);
     // The scan message, consumed, queues the due lead.

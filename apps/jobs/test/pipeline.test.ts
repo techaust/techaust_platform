@@ -17,6 +17,8 @@ const makeEnv = (over: Record<string, unknown> = {}) =>
   ({
     DB: realEnv.DB,
     ENVIRONMENT: "local",
+    // M7.4 (L23): the erased-address hash key (the email consumer's `h:` check and the purge need it).
+    ERASURE_HASH_KEY: (realEnv as unknown as { ERASURE_HASH_KEY: string }).ERASURE_HASH_KEY,
     LEAD_ALERT_TO: "owner@example.test",
     EMAIL_ALLOWED_RECIPIENTS: "",
     EMAIL_TRANSPORT: "log",
