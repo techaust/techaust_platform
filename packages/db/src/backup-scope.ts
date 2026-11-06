@@ -3,7 +3,9 @@
 // GST tables only (invoices, notes, receipts, payments, the ledger and the audit rows of those), never leads or contacts, so erased personal data leaves every
 // backup within the 90 days of the rolling copies; `documents` also holds proposals and estimates, so the monthly copy takes only the invoice family (T7 F1).
 // L35: the `audit_log` export leaves out the IP address, the browser and the three alert summaries' `ua`, `city` and `country` (Settled by the lead on the
-// safest reading, 2026-11-06 (08-C RB-48)). Every table is classified; a test fails on any table missing.
+// safest reading, 2026-11-06 (08-C RB-48)). L40: the contract records read with the invoices join it: the deeds (numbered ones), the proposal and estimate
+// terms versions and the terms blocks that sent documents pin, and the care plans' terms and status history. Every table is classified; a test fails on any
+// table missing.
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import { INVOICE_FAMILY_SQL } from "@techaust/core/clients";
 import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./triggers-data-protection.ts";
@@ -35,6 +37,12 @@ export const BACKUP_SCOPE: Record<string, BackupScope> = {
   care_invoices: F,
   fx_rates: F,
   audit_log: F,
+  // contract records read with the invoices for 8 years (L40)
+  deeds: F,
+  terms_versions: F,
+  terms_blocks: F,
+  care_plan_terms: F,
+  care_plan_status_log: F,
   // everything else: rolling copies only
   acceptances: R,
   acceptance_certificates: R,
@@ -42,8 +50,6 @@ export const BACKUP_SCOPE: Record<string, BackupScope> = {
   approvals: R,
   auth_attempts: R,
   bank_accounts: R,
-  care_plan_status_log: R,
-  care_plan_terms: R,
   care_plans: R,
   catalogue_items: R,
   catalogue_price_history: R,
@@ -53,7 +59,6 @@ export const BACKUP_SCOPE: Record<string, BackupScope> = {
   clients: R,
   consent_receipts: R,
   contacts: R,
-  deeds: R,
   doc_access_tokens: R,
   document_sends: R,
   email_events: R,
@@ -90,8 +95,6 @@ export const BACKUP_SCOPE: Record<string, BackupScope> = {
   statement_pdfs: R,
   stats_daily: R,
   templates: R,
-  terms_blocks: R,
-  terms_versions: R,
   time_logs: R,
   webhook_events: R,
 };
@@ -116,7 +119,8 @@ export const AUDIT_EXPORT_COLUMNS = [
 /**
  * The row filter (and, for `audit_log`, the column list) of each monthly table: the invoice family's documents and their child rows; the audit rows of the
  * finance actions (`FINANCE_AUDIT_ACTIONS`), without IP and browser and with the alert keys removed (an alert is not a finance action today; the removal
- * holds if one ever becomes one). Every other monthly table is taken whole.
+ * holds if one ever becomes one); L40: the terms versions and blocks a sent (frozen) document or an acceptance pins, never an unused draft text; the deeds
+ * that were numbered (finalised, signed, or cancelled after finalising), never a draft. Every other monthly table is taken whole.
  */
 export function monthlyExportSql(table: string): string {
   if (BACKUP_SCOPE[table] !== "finance_monthly")
@@ -128,6 +132,13 @@ export function monthlyExportSql(table: string): string {
     case "document_sections":
     case "payment_schedules":
       return `SELECT * FROM ${table} WHERE document_id IN (${INVOICE_DOCS})`;
+    case "terms_versions":
+      return `SELECT * FROM terms_versions WHERE id IN (SELECT terms_version_id FROM documents WHERE frozen_at IS NOT NULL AND terms_version_id IS NOT NULL)
+        OR id IN (SELECT terms_version_id FROM acceptances WHERE terms_version_id IS NOT NULL)`;
+    case "terms_blocks":
+      return "SELECT * FROM terms_blocks WHERE id IN (SELECT export_declaration_id FROM documents WHERE frozen_at IS NOT NULL AND export_declaration_id IS NOT NULL)";
+    case "deeds":
+      return "SELECT * FROM deeds WHERE number IS NOT NULL";
     case "audit_log": {
       const cols = AUDIT_EXPORT_COLUMNS.map((c) =>
         c === "summary"

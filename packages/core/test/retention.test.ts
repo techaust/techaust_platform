@@ -3,6 +3,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { fromIst } from "../src/dates.ts";
 import {
+  CLOCK_SKEW_MARGIN_MS,
   cutoffOf,
   cutoffsOf,
   FIGURE_FLOORS,
@@ -52,10 +53,11 @@ describe("cutoffOf", () => {
     expect(cutoffOf("requests", figures, asOf)).toEqual({ before: istMidnight(2024, 6, 15) });
     expect(cutoffOf("consent", figures, asOf)).toEqual({ before: istMidnight(2024, 6, 15) });
   });
-  it("12 months is held back to the 366-day floor (12 calendar months can be 365 days)", () => {
+  it("12 months is held back to the 366-day floor and the clock margin (12 calendar months can be 365 days; L2)", () => {
     const twelve = { ...figures, emailLogMonths: 12, requestsMonths: 12, consentProofMonths: 12 };
     for (const f of ["email_log", "requests", "consent"] as const)
-      expect(cutoffOf(f, twelve, asOf)).toEqual({ before: asOf - 366 * DAY });
+      expect(cutoffOf(f, twelve, asOf)).toEqual({ before: asOf - 366 * DAY - CLOCK_SKEW_MARGIN_MS });
+    expect(CLOCK_SKEW_MARGIN_MS).toBe(3_600_000);
   });
   it("a figure below its floor reads at the floor; a malformed one throws", () => {
     expect(cutoffOf("access_log", { ...figures, securityLogMonths: 1 }, asOf)).toEqual(
@@ -100,7 +102,7 @@ describe("cutoffOf", () => {
           };
           const { before } = cutoffOf(family, f, at);
           // a row 365 days old is never due; one older than the cut-off is
-          expect(before).toBeLessThanOrEqual(at - TRIGGER_FLOOR_DAYS * DAY);
+          expect(before).toBeLessThanOrEqual(at - TRIGGER_FLOOR_DAYS * DAY - CLOCK_SKEW_MARGIN_MS);
           expect(at - 365 * DAY >= before).toBe(true);
           // and a high figure is exactly N months back
           if (months >= 24) expect(before).toBeLessThan(at - 700 * DAY);

@@ -6,7 +6,8 @@
 // lead on the safest reading, 2026-11-06 (08-C RB-48), L33.
 //
 // Placeholders of every family's SQL: `?1` the family's `before` (UTC ms; the stats family: an IST date "YYYY-MM-DD"; access_log: the UUIDv7 floor of
-// `before`), `?2` the second figure (bells: `readBefore`; counters: `asOf`; else unused but bound), `?3` the run id, `?4` the family name. `bindsOf` gives them.
+// `before`), `?2` the second figure (bells: `readBefore`; counters: `asOf`; access_log: `before` in UTC ms, its `at` bound (early check 1 L1); else unused
+// but bound), `?3` the run id, `?4` the family name. `bindsOf` gives them.
 import { istDate, toIsoDate } from "@techaust/core";
 import type { RetentionCutoff, RetentionFamily } from "@techaust/core/retention";
 import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./triggers-data-protection.ts";
@@ -98,7 +99,7 @@ export const RETENTION_MATRIX: Record<string, RetentionRule> = {
   ),
   staff_invites: staff("kept with the account it made; an expired invite is never usable"),
   staff_known_devices: staff(
-    "L36: a device's browser (user_agent) is kept while the account exists, for the new-device alert; for the lead: an age rule",
+    "L39, L47: kept while the account exists (the new-device alert's reference); deleted when the account is deactivated, in the same batch",
   ),
   staff_recovery_codes: staff("kept while the account exists (replaced as a set)"),
   staff_notification_prefs: staff("kept while the account exists"),
@@ -184,6 +185,22 @@ const HELD_LEAD = (leadId: string) =>
   `EXISTS (SELECT 1 FROM leads hl WHERE hl.id = ${leadId} AND hl.legal_hold = 1)`;
 
 const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
+
+/** A live lead (not erased) or a live contact (neither anonymised nor erased) by an id expression. */
+const LIVE_LEAD = (leadId: string) =>
+  `EXISTS (SELECT 1 FROM leads kl WHERE kl.id = ${leadId} AND kl.erased_hash IS NULL)`;
+const LIVE_CONTACT = (contactId: string) =>
+  `EXISTS (SELECT 1 FROM contacts kc WHERE kc.id = ${contactId} AND kc.anonymised_at IS NULL AND kc.erased_hash IS NULL)`;
+/**
+ * The consent family's rule for a hash `h` (H1, L46): no receipt of the hash is at or after the cut-off (`?1`), and none is linked to a live lead or contact,
+ * or to a lead or contact that has any receipt at or after the cut-off. With `?1` at or before now minus 366 days (core `cutoffOf`), this is a subset of
+ * what `consent_receipts_no_delete` allows, so a page never aborts on a young linked receipt.
+ */
+export const HASH_SETTLED_SQL = (h: string) =>
+  `NOT EXISTS (SELECT 1 FROM consent_receipts y WHERE y.subject_hash = ${h} AND y.at >= ?1)
+            AND NOT EXISTS (SELECT 1 FROM consent_receipts k WHERE k.subject_hash = ${h} AND (
+              (k.lead_id IS NOT NULL AND (${LIVE_LEAD("k.lead_id")} OR EXISTS (SELECT 1 FROM consent_receipts yl WHERE yl.lead_id = k.lead_id AND yl.at >= ?1)))
+              OR (k.contact_id IS NOT NULL AND (${LIVE_CONTACT("k.contact_id")} OR EXISTS (SELECT 1 FROM consent_receipts yc WHERE yc.contact_id = k.contact_id AND yc.at >= ?1)))))`;
 /** The per-plan statistics (a care plan id in `dimension`). */
 export const PER_PLAN_METRICS = ["care.used_minutes", "care.available_minutes"] as const;
 
@@ -210,7 +227,8 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
   access_log: [
     {
       table: "access_log",
-      age: "access_log.id < ?1",
+      // L1 (early check 1): the id's time and the stored `at` both before the cut-off, so the row passes the floor trigger's `at` check whatever its id says.
+      age: "access_log.id < ?1 AND access_log.at < ?2",
       held: `(access_log.realm = 'portal' AND access_log.actor_id IS NOT NULL AND ${HELD_CONTACT_SQL("access_log.actor_id")})`,
       oldest: "at",
       order: "id",
@@ -302,22 +320,26 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
   consent: [
     {
       table: "consent_receipts",
-      // L30: a subject's receipts go together, once the subject has ended (an `ended` receipt, written by an erasure or the purge, carries its hash) and its
-      // newest receipt is older than the cut-off; a receipt with neither a hash nor a link (a lead purged before hashes existed) goes on its own age.
+      // L30, L46: a subject's receipts go together, once the subject has ended (an `ended` receipt, written by an erasure or the purge, carries its hash),
+      // none of its receipts is at or after the cut-off, and (early check 1 H1) none of them is linked to a live lead or contact, or to a lead or contact
+      // with a receipt at or after the cut-off (the link checks of the trigger `consent_receipts_no_delete`): an `ended` receipt of an earlier, purged lead
+      // never takes the proof of a live record with the same address. Every receipt of one hash shares the verdict, so a hash goes whole. A receipt with
+      // neither a hash nor a link (a lead purged before hashes existed) goes on its own age. L4: a page takes the `ended` rows last (`order`), so an `ended`
+      // row is never deleted while another receipt of its hash remains.
       age: `consent_receipts.at < ?1 AND (
           (consent_receipts.subject_hash IS NOT NULL
             AND EXISTS (SELECT 1 FROM consent_receipts e WHERE e.subject_hash = consent_receipts.subject_hash AND e.event = 'ended')
-            AND NOT EXISTS (SELECT 1 FROM consent_receipts y WHERE y.subject_hash = consent_receipts.subject_hash AND y.at >= ?1))
+            AND ${HASH_SETTLED_SQL("consent_receipts.subject_hash")})
           OR (consent_receipts.subject_hash IS NULL AND consent_receipts.lead_id IS NULL AND consent_receipts.contact_id IS NULL))`,
       held: null,
       oldest: "at",
-      order: "at, id",
+      order: "(event = 'ended'), at, id",
     },
     {
       table: "email_suppressions",
-      // L29: the `h:` stop ends with its subject's receipts (none newer than the cut-off).
+      // L29: the `h:` stop ends with its subject's receipts (none at or after the cut-off, none linked to a live record: H1).
       age: `email_suppressions.reason = 'erased' AND email_suppressions.at < ?1
-        AND NOT EXISTS (SELECT 1 FROM consent_receipts y WHERE y.subject_hash = substr(email_suppressions.email, 3) AND y.at >= ?1)`,
+        AND ${HASH_SETTLED_SQL("substr(email_suppressions.email, 3)")}`,
       held: null,
       oldest: "at",
       order: "at",
@@ -354,7 +376,7 @@ export function uuidv7Floor(ms: number): string {
 export function bindsOf(family: RetentionFamily, cutoff: RetentionCutoff, asOf: number): [unknown, unknown] {
   switch (family) {
     case "access_log":
-      return [uuidv7Floor(cutoff.before), asOf];
+      return [uuidv7Floor(cutoff.before), cutoff.before];
     case "stats":
       return [toIsoDate(istDate(cutoff.before)), asOf];
     case "bells":
@@ -394,7 +416,8 @@ export function dryRunSql(family: RetentionFamily): string {
 
 /**
  * One live page of a family: first the count upsert (the page's rows, read with the same predicate in the same transaction, added to `due`; `held_skipped`
- * and `oldest_at` set on the first page; `done` once every table had fewer than a full page), then per table `DELETE … WHERE rowid IN (SELECT rowid …
+ * and `oldest_at` read and set on the first page only (L6: CASE runs only the branch it takes, so a later page, which finds its row, runs neither read);
+ * `done` once every table had fewer than a full page), then per table `DELETE … WHERE rowid IN (SELECT rowid …
  * ORDER BY … LIMIT 500)` (never `DELETE … LIMIT`, a build option D1 may lack), or the audit scrub's UPDATE. The consumer sends the family again while
  * `done` is 0. Statements: 1 + the family's tables.
  */
@@ -405,8 +428,10 @@ export function livePageSql(family: RetentionFamily): string[] {
     .map((t) => heldWhere(t))
     .flatMap((w, i) => (w ? [countOf(tables[i] as FamilyTable, w, DRY_RUN_COUNT_CAP)] : []));
   const done = tables.map((t) => `${page(t)} < ${LIVE_PAGE_ROWS}`).join(" AND ");
+  const onFirst = (x: string, otherwise: string) =>
+    `CASE WHEN NOT EXISTS (SELECT 1 FROM retention_run_counts WHERE run_id = ?3 AND family = ?4) THEN ${x} ELSE ${otherwise} END`;
   const upsert = `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done)
-    VALUES (?3, ?4, ${sum(tables.map(page))}, ${helds.length ? sum(helds) : "0"}, ${minOf(tables.map(oldestOf))}, ${done})
+    VALUES (?3, ?4, ${sum(tables.map(page))}, ${helds.length ? onFirst(sum(helds), "0") : "0"}, ${onFirst(minOf(tables.map(oldestOf)), "NULL")}, ${done})
     ON CONFLICT(run_id, family) DO UPDATE SET due = retention_run_counts.due + excluded.due, done = excluded.done`;
   const act = tables.map((t) => {
     const ids = `SELECT rowid FROM ${t.table} WHERE ${dueWhere(t)} ORDER BY ${t.order} LIMIT ${LIVE_PAGE_ROWS}`;

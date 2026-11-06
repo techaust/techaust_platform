@@ -61,6 +61,12 @@ export const FIGURE_FLOORS = {
 export const TRIGGER_FLOOR_DAYS = 366;
 
 /**
+ * Early check 1 L2: the cut-off stays this much further back than `asOf` minus the floor, so a Worker clock ahead of the database's (whose `unixepoch` the
+ * triggers read) never selects a row the floor trigger then refuses, which would abort the whole page.
+ */
+export const CLOCK_SKEW_MARGIN_MS = 3_600_000;
+
+/**
  * The families a database floor guards, and the triggers that hold it (each refuses a row younger than `TRIGGER_FLOOR_DAYS`; pinned to the installed
  * triggers by a db test). The audit scrub is an UPDATE of `ip` and `user_agent` to NULL and of the three `alert.*` summaries' `ua`, `city` and `country`
  * (Q3 A; L33), held by the re-created `audit_log_no_update`. The consent family also deletes the `erased` stop rows (L29); those have no floor trigger,
@@ -122,7 +128,7 @@ function figureOf(figures: RetentionFigures, key: keyof RetentionFigures): numbe
 
 /**
  * The cut-off of `family` for a run at `asOf` (UTC ms). Setting-driven families: the start of the IST day that many calendar months back, and never later
- * than `asOf` minus the one-year database floor. Throws on a malformed figure or time.
+ * than `asOf` minus the one-year database floor and `CLOCK_SKEW_MARGIN_MS`. Throws on a malformed figure or time.
  */
 export function cutoffOf(family: RetentionFamily, figures: RetentionFigures, asOf: number): RetentionCutoff {
   assertMs(asOf);
@@ -147,7 +153,9 @@ export function cutoffOf(family: RetentionFamily, figures: RetentionFigures, asO
     case "requests":
     case "consent": {
       const months = figureOf(figures, FIGURE_OF[family]);
-      return { before: Math.min(monthsBack(asOf, months), asOf - TRIGGER_FLOOR_DAYS * DAY_MS) };
+      return {
+        before: Math.min(monthsBack(asOf, months), asOf - TRIGGER_FLOOR_DAYS * DAY_MS - CLOCK_SKEW_MARGIN_MS),
+      };
     }
     default:
       throw new RangeError(`Unknown retention family: ${String(family satisfies never)}`);

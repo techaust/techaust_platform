@@ -11,6 +11,7 @@ import { DRAIN_PAGE_SQL, ORPHAN_FILES_SQL, SIGNATURES_IN_USE_SQL } from "../src/
 import {
   bindsOf,
   dryRunSql,
+  dueWhere,
   FAMILY_TABLES,
   highestPlaceholder,
   livePageSql,
@@ -21,6 +22,8 @@ import {
 import * as schema from "../src/schema/index.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember } from "./billing-helpers.ts";
 import { all, db, first, REQUEST_CLOCK_COLS, requestClockOf, run } from "./helpers.ts";
+import { seedMoney } from "./money-seed.ts";
+import { mkQuote, send } from "./quotes.ts";
 
 const DAY = 86_400_000;
 const ago = (days: number) => Date.now() - days * DAY;
@@ -61,6 +64,33 @@ describe("the matrix and the backup scope cover every table (A.6, B.6)", () => {
   it("every monthly export statement runs", async () => {
     for (const [t, scope] of Object.entries(BACKUP_SCOPE))
       if (scope === "finance_monthly") await db().prepare(monthlyExportSql(t)).all();
+  });
+  it("L40 (early check 1 H4): the contract records are monthly; terms only as pinned by a sent document, deeds only once numbered", async () => {
+    for (const t of ["deeds", "terms_versions", "terms_blocks", "care_plan_terms", "care_plan_status_log"])
+      expect(BACKUP_SCOPE[t], t).toBe("finance_monthly");
+    for (const t of ["bank_accounts", "time_logs", "care_plans"])
+      expect(BACKUP_SCOPE[t], t).toBe("rolling_only");
+    expect(monthlyExportSql("deeds")).toBe("SELECT * FROM deeds WHERE number IS NOT NULL");
+    const pinned = uuidv7();
+    const unused = uuidv7();
+    for (const [id, version] of [
+      [pinned, 901],
+      [unused, 902],
+    ] as const)
+      await run(
+        "INSERT INTO terms_versions (id, kind, version, body_md, sha256) VALUES (?1, 'proposal', ?2, 'Terms', ?3)",
+        id,
+        version,
+        "a".repeat(64),
+      );
+    const q = await mkQuote({ type: "proposal" });
+    await run("UPDATE documents SET terms_version_id = ?2 WHERE id = ?1", q.id, pinned);
+    // a draft's pin does not count until it is sent
+    const ids = async () => (await all<{ id: string }>(monthlyExportSql("terms_versions"))).map((r) => r.id);
+    expect(await ids()).not.toContain(pinned);
+    await send(q);
+    expect(await ids()).toContain(pinned);
+    expect(await ids()).not.toContain(unused);
   });
   it("every family's tables are in the matrix under that family", () => {
     for (const family of RETENTION_FAMILIES)
@@ -126,15 +156,17 @@ async function seed() {
       uuidv7(),
       at,
     );
-  // access_log: old portal rows of the free and the held contact, a young one
-  for (const [actor, at] of [
-    [live, old],
-    [held, old],
-    [live, young],
+  // access_log: old portal rows of the free and the held contact, a young one, and (L1) one whose id is old but whose `at` is young (kept: the floor
+  // trigger reads `at`)
+  for (const [actor, idAt, at] of [
+    [live, old, old],
+    [held, old, old],
+    [live, young, young],
+    [live, old, young],
   ] as const)
     await run(
       "INSERT INTO access_log (id, at, realm, actor_id, method, route, status) VALUES (?1, ?2, 'portal', ?3, 'GET', '/x', 200)",
-      uuidv7(at),
+      uuidv7(idAt),
       at,
       actor,
     );
@@ -271,20 +303,41 @@ async function seed() {
     lead,
   );
   await receipt(null, "grant", "web_form", ago(1500), lead);
+  // H1: a purged lead's receipts of address X (ended 4 years ago) and a live contact's 4-year-old grant with the same hash: the contact's proof stays, and so
+  // does the whole hash (a hash goes whole)
+  const shared = "3".repeat(64);
+  await receipt(shared, "grant", "web_form", ago(1500));
+  await receipt(shared, "ended", "retention", ago(1490));
+  await run(
+    "INSERT INTO consent_receipts (id, subject_hash, contact_id, event, source, purposes, marketing, at) VALUES (?1, ?2, ?3, 'grant', 'staff', '[\"marketing_updates\"]', 1, ?4)",
+    uuidv7(),
+    shared,
+    live,
+    ago(1460),
+  );
   // runs: one 14 months old (due), the run under test
   await run(
     "INSERT INTO retention_runs (id, as_of, mode, started_at, families) VALUES (?1, 1, 'dry_run', ?2, 11)",
     uuidv7(),
     ago(430),
   );
-  // financial rows older than every cut-off
+  // financial rows older than every cut-off, and (M3) a row in every financial table
   await mkIssued(free, { frozenAt: ago(4000) });
-  return { owner };
+  await seedMoney(free, owner);
+  return { owner, live, shared };
 }
 
 const FINANCIAL = Object.entries(RETENTION_MATRIX)
   .filter(([, r]) => r.kind === "never" || r.kind === "no_age_rule" || r.kind === "staff_account")
   .map(([t]) => t);
+/** The money tables (the matrix's "financial record" rule): each must hold a row before the run (M3). */
+const MONEY = Object.entries(RETENTION_MATRIX)
+  .filter(([, r]) => r.kind === "never" && r.rule.startsWith("financial record"))
+  .map(([t]) => t);
+const rowidsOf = async (table: string, where = "1", ...p: unknown[]) =>
+  (await all<{ r: number }>(`SELECT rowid AS r FROM ${table} WHERE ${where} ORDER BY rowid`, ...p)).map(
+    (x) => x.r,
+  );
 const countAll = async (names: string[]) => {
   const out: Record<string, number> = {};
   for (const t of names) out[t] = (await first<{ n: number }>(`SELECT count(*) AS n FROM ${t}`))?.n ?? -1;
@@ -293,7 +346,7 @@ const countAll = async (names: string[]) => {
 
 describe("dry run and live (L5): the same rows, only those, held kept, financial untouched, a second run removes nothing", () => {
   it("per family", async () => {
-    await seed();
+    const { live: liveContact, shared } = await seed();
     const asOf = Date.now();
     const cut = cutoffsOf(figures, asOf);
     const dryId = uuidv7();
@@ -310,6 +363,8 @@ describe("dry run and live (L5): the same rows, only those, held kept, financial
       );
     const allTables = Object.keys(RETENTION_MATRIX);
     const before = await countAll(allTables);
+    // M3: every money table holds a row, so "untouched" below means something
+    for (const t of MONEY) expect(before[t], t).toBeGreaterThan(0);
     // dry run: one batch per family, nothing but the counts written
     for (const family of RETENTION_FAMILIES)
       await db().batch(retentionStatements(db(), family, "dry_run", cut[family], asOf, dryId));
@@ -323,21 +378,24 @@ describe("dry run and live (L5): the same rows, only those, held kept, financial
         )
       ).map((r) => [r.family, r]),
     );
-    // the rows each family's predicate selects, read before the live run
+    // the rows each family's predicate selects (M3: by rowid), and every row of its tables, read before the live run
     const selected: Record<string, number> = {};
+    const due: Record<string, number[]> = {};
+    const every: Record<string, number[]> = {};
     for (const family of RETENTION_FAMILIES)
       for (const t of FAMILY_TABLES[family]) {
         const [p1, p2] = bindsOf(family, cut[family], asOf);
-        const where = t.held ? `(${t.age}) AND NOT ${t.held}` : `(${t.age})`;
-        selected[family] =
-          (selected[family] ?? 0) +
-          ((
-            await first<{ n: number }>(
-              `SELECT count(*) AS n FROM ${t.table} WHERE ${where}`,
-              ...[p1, p2].slice(0, highestPlaceholder(where)),
-            )
-          )?.n ?? 0);
+        const where = dueWhere(t);
+        due[t.table] = await rowidsOf(t.table, where, ...[p1, p2].slice(0, highestPlaceholder(where)));
+        every[t.table] = await rowidsOf(t.table);
+        selected[family] = (selected[family] ?? 0) + (due[t.table]?.length ?? 0);
       }
+    const auditBefore = await all<{
+      r: number;
+      ip: string | null;
+      user_agent: string | null;
+      summary: string | null;
+    }>("SELECT rowid AS r, ip, user_agent, summary FROM audit_log ORDER BY rowid");
     // live: pages until done
     for (const family of RETENTION_FAMILIES) {
       for (let page = 0; page < 5; page++) {
@@ -378,6 +436,44 @@ describe("dry run and live (L5): the same rows, only those, held kept, financial
     });
     for (const f of ["email_log", "access_log", "audit_ip", "requests"])
       expect(counts[f]?.held_skipped, f).toBe(1);
+    // M3: exactly the selected rows went (or, for the audit scrub, lost their IP and browser), and every other row is still there unchanged
+    for (const family of RETENTION_FAMILIES)
+      for (const t of FAMILY_TABLES[family]) {
+        const gone = new Set(due[t.table]);
+        if (t.scrub) {
+          const now = await all<{
+            r: number;
+            ip: string | null;
+            user_agent: string | null;
+            summary: string | null;
+          }>("SELECT rowid AS r, ip, user_agent, summary FROM audit_log ORDER BY rowid");
+          const was = new Map(auditBefore.map((x) => [x.r, x]));
+          for (const row of now) {
+            if (gone.has(row.r)) expect([row.ip, row.user_agent], `audit ${row.r}`).toEqual([null, null]);
+            else if (was.has(row.r)) expect(row, `audit ${row.r}`).toEqual(was.get(row.r));
+          }
+          continue;
+        }
+        expect(await rowidsOf(t.table), t.table).toEqual((every[t.table] ?? []).filter((r) => !gone.has(r)));
+      }
+    // H1: the live contact's old grant (and the purged lead's receipts of the same hash) stay; L1: the access row with an old id but a young `at` stays
+    expect(
+      await all<{ event: string }>(
+        "SELECT event FROM consent_receipts WHERE subject_hash = ?1 ORDER BY at",
+        shared,
+      ),
+    ).toEqual([{ event: "grant" }, { event: "ended" }, { event: "grant" }]);
+    expect(
+      (
+        await first<{ n: number }>(
+          "SELECT count(*) AS n FROM consent_receipts WHERE contact_id = ?1",
+          liveContact,
+        )
+      )?.n,
+    ).toBe(1);
+    expect(
+      (await first<{ n: number }>("SELECT count(*) AS n FROM access_log WHERE at > ?1", ago(60)))?.n,
+    ).toBe(2);
     // financial, record and account tables untouched
     const after = await countAll(FINANCIAL);
     for (const t of FINANCIAL) expect(after[t], t).toBe(before[t]);
