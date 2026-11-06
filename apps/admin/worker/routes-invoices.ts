@@ -6,6 +6,7 @@ import type { App } from "./app.ts";
 import { approvals } from "./approvals.ts";
 import { clientInvoices } from "./client-invoices.ts";
 import { dashboard } from "./dashboard.ts";
+import { dashboardUsage } from "./dashboard-usage.ts";
 import { invoicePdf, invoiceSupplierPdf } from "./document-pdf.ts";
 import { invoiceAdvance } from "./invoice-advance.ts";
 import { invoiceIssue } from "./invoice-issue.ts";
@@ -41,4 +42,6 @@ export function mountInvoices(app: App) {
   app.route("/v1/receipts", receiptPdf);
   app.route("/v1/approvals", approvals);
   app.route("/v1/dashboard", dashboard);
+  // M7.5 D1/G: the Free-plan usage tile's data (Owner and Accountant).
+  app.route("/v1/dashboard/usage", dashboardUsage);
 }
