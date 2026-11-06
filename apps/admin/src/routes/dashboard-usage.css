@@ -34,9 +34,28 @@
   line-height: var(--text-sm--line-height);
 }
 
+.usage-head__intro--stale {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-text);
+}
+
+.usage-head__intro--stale .icon {
+  flex: none;
+  margin-top: 0.125rem;
+}
+
+/* A narrow tile: the toggle wraps under the intro and lines up with its text (the button's own padding pulled back). */
 .usage-head__toggle {
-  margin-inline-start: auto;
+  margin-inline-start: calc(-1 * var(--space-2));
   font-size: var(--text-sm);
+}
+
+@container (min-width: 40rem) {
+  .usage-head__toggle {
+    margin-inline-start: auto;
+  }
 }
 
 /* ---------- One row per limit ---------- */
@@ -104,23 +123,47 @@
   align-self: center;
 }
 
+/* A wide tile: one line per limit, and the rows share their columns (a subgrid), so every strip starts and ends at the same x and the shares line up as a
+   column of figures, with a pill after its figure where there is one. */
 @container (min-width: 40rem) {
+  .usage-rows {
+    grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr) auto;
+    column-gap: var(--space-5);
+  }
+
   .usage-row {
-    grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr) minmax(9rem, auto);
-    grid-template-areas: "name strip share";
-    gap: var(--space-5);
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    grid-template-areas: none;
+    row-gap: 0;
+  }
+
+  .usage-row__name {
+    grid-area: auto;
+    grid-column: 1;
+  }
+
+  .usage-row__strip {
+    grid-area: auto;
+    grid-column: 2;
   }
 
   .usage-row__share {
-    justify-content: flex-end;
+    grid-area: auto;
+    grid-column: 3;
+    display: grid;
+    grid-template-columns: 3.75rem auto;
+    justify-content: start;
+    column-gap: var(--space-3);
+  }
+
+  .usage-row__pct {
+    grid-column: 1;
+    justify-self: end;
   }
 }
 
 /* ---------- Under the rows: requests stopped at a limit, then the table ---------- */
-
-.usage-stopped > div:first-child {
-  border-top-color: var(--color-border);
-}
 
 .usage-failed {
   display: grid;

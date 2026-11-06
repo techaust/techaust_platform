@@ -98,7 +98,7 @@ export type UsageView = {
   rows: UsageRow[];
   /** Requests stopped at a limit on the newest day; null when not read. */
   stopped: number | null;
-  /** Every day of the window that has a reading, newest first (the table). */
+  /** Every day of the window, newest first (the table): a day not read has no values, and says so, as the strip's gap does. */
   days: UsageDay[];
 };
 
@@ -129,7 +129,10 @@ export function usageView(tile: UsageTile, now: number): UsageView | null {
       }),
     })),
     stopped: value(newestDay, EXCEEDED_METRIC),
-    days: [...days].reverse(),
+    days: Array.from({ length: USAGE_TILE_DAYS }, (_, k) => {
+      const date = addDays(to, -k);
+      return days.find((d) => d.date === date) ?? { date, values: {} };
+    }),
   };
 }
 

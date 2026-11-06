@@ -70,9 +70,10 @@ export function LimitStrip(props: {
     const p = pts[k];
     if (!p) return;
     setAt(k);
+    // The readout's foot sits just above the strip (the crosshair marks the day), so it never covers the line it reads.
     show({
       x: p.x,
-      y: p.y - 8,
+      y: -4,
       content: {
         title: props.dayText(p.date),
         rows: [{ value: props.valueText(p.value), label: props.shareText(p.value) }],
@@ -149,7 +150,8 @@ export function LimitStrip(props: {
           )}
         </svg>
       )}
-      <ChartTip tip={tip} width={width} />
+      {/* The strip is shorter than the readout: the box rises above it, clear of the line it reads. */}
+      <ChartTip tip={tip} width={width} floor={Number.NEGATIVE_INFINITY} />
     </div>
   );
 }

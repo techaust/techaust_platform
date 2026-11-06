@@ -121,7 +121,16 @@ export function useTip() {
   return { tip, show: setTip, hide: () => setTip(null) };
 }
 
-export function ChartTip({ tip, width }: { tip: TipState; width: number }) {
+export function ChartTip({
+  tip,
+  width,
+  floor = 0,
+}: {
+  tip: TipState;
+  width: number;
+  /** The highest the box may sit, in px from the plot's top: 0 keeps it inside the plot; a strip too short to hold it lets it rise above (M7.5). */
+  floor?: number;
+}) {
   // The box sits above the point; measured before paint, so a point near the top keeps the box inside the plot rather than over the chart's title (review 1,
   // finding 8).
   const box = useRef<HTMLDivElement>(null);
@@ -138,7 +147,7 @@ export function ChartTip({ tip, width }: { tip: TipState; width: number }) {
       className="chart-tip"
       aria-hidden="true"
       style={{
-        top: `${Math.max(0, tip.y - height)}px`,
+        top: `${Math.max(floor, tip.y - height)}px`,
         ...(left ? { right: `${Math.max(0, width - tip.x + 8)}px` } : { left: `${tip.x + 8}px` }),
       }}
     >

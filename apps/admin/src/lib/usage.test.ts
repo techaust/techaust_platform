@@ -69,7 +69,19 @@ describe("usageView", () => {
     // a zero that was read is a zero
     expect(v.rows[2]?.latest).toBe(0);
     expect(v.stopped).toBe(2);
-    expect(v.days.map((d) => d.date)).toEqual(["2026-11-06", "2026-11-05", "2026-10-08"]);
+    // the table lists every day of the window, newest first; a day not read has no values (it says "Not read")
+    expect(v.days).toHaveLength(30);
+    expect(v.days[0]).toEqual({
+      date: "2026-11-06",
+      values: { "cf.requests": 82_003, "cf.d1.rows_written": 0, "cf.exceeded_resources": 2 },
+    });
+    expect(v.days[2]).toEqual({ date: "2026-11-04", values: {} });
+    expect(v.days.at(-1)?.date).toBe("2026-10-08");
+    expect(v.days.filter((d) => Object.keys(d.values).length > 0).map((d) => d.date)).toEqual([
+      "2026-11-06",
+      "2026-11-05",
+      "2026-10-08",
+    ]);
   });
 
   it("a newest reading older than yesterday is stale (the nightly reading stopped)", () => {

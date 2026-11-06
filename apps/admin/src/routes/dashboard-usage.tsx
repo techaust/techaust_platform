@@ -11,7 +11,7 @@ import { api, type UsageDay } from "../api.ts";
 import { LimitStrip } from "../components/chart/index.ts";
 import { type Column, DataTable } from "../components/data-table.tsx";
 import { Skeleton, StatusPill } from "../components/display.tsx";
-import { BarChart, RefreshCw } from "../components/icons.tsx";
+import { BarChart, Clock, RefreshCw } from "../components/icons.tsx";
 import { useLoad } from "../components/states.tsx";
 import {
   levelOf,
@@ -82,14 +82,23 @@ export function UsageTile() {
   );
 }
 
-function Head(props: { intro?: string; action?: ReactNode }) {
+function Head(props: { intro?: string; stale?: boolean; action?: ReactNode }) {
   return (
     <div className="lead-panel__head tile__head usage-head">
       <div className="usage-head__text">
         <h2 id="tile-usage" className="lead-panel__title">
           {U.title}
         </h2>
-        {props.intro && <p className="usage-head__intro">{props.intro}</p>}
+        {props.intro &&
+          (props.stale ? (
+            // An old reading is said in the text colour with a clock, so it isn't read as yesterday's.
+            <p className="usage-head__intro usage-head__intro--stale">
+              <Clock size={16} />
+              <span>{props.intro}</span>
+            </p>
+          ) : (
+            <p className="usage-head__intro">{props.intro}</p>
+          ))}
       </div>
       {props.action}
     </div>
@@ -104,6 +113,7 @@ function Ready({ view }: { view: UsageView }) {
     <>
       <Head
         intro={view.stale ? U.stale(day) : U.intro(day)}
+        stale={view.stale}
         action={
           <button
             type="button"
@@ -122,7 +132,7 @@ function Ready({ view }: { view: UsageView }) {
         ))}
       </ul>
       {view.stopped !== null && (
-        <dl className="mini-facts usage-stopped">
+        <dl className="mini-facts">
           <div data-alert={view.stopped > 0 || undefined}>
             <dt>{U.stopped}</dt>
             <dd className="tnum">{usageCount(view.stopped)}</dd>
