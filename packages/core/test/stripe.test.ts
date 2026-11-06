@@ -788,4 +788,19 @@ describe("the key guard [ADM-PAY-11, L3, CLAUDE.md rule 7]", () => {
     expect(h3).toHaveLength(1);
     expect(h3[0]).toContain(`with API version **${STRIPE_API_VERSION}**`);
   });
+
+  it("both secret scripts give the window its input encoding back, in a finally and on the BOM refusal (M7.4 review 1 low 9)", () => {
+    const repo = join(import.meta.dirname, "..", "..", "..");
+    for (const file of [join("tools", "set-gateway-keys.ps1"), join("scripts", "set-erasure-hash-key.ps1")]) {
+      const ps1 = readFileSync(join(repo, file), "utf8");
+      expect(ps1, file).toContain("$prevEncoding = [Console]::InputEncoding");
+      const fin = ps1.slice(ps1.lastIndexOf("} finally {"));
+      expect(fin, file).toContain("[Console]::InputEncoding = $prevEncoding");
+      const refusal = ps1.slice(
+        ps1.indexOf("GetPreamble().Length -ne 0"),
+        ps1.indexOf("would add a byte-order mark"),
+      );
+      expect(refusal, file).toContain("[Console]::InputEncoding = $prevEncoding");
+    }
+  });
 });

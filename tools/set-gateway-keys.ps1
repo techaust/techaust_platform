@@ -177,9 +177,12 @@ switch ($Gateway) {
 }
 
 # M7.4 (early check 2, low 10): Windows PowerShell writes a child's standard input in the console's input encoding; when that is UTF-8 with a byte-order
-# mark the BOM bytes reach wrangler before the value. Use BOM-free UTF-8 for the runs below, and store nothing if the window refuses it.
+# mark the BOM bytes reach wrangler before the value. Use BOM-free UTF-8 for the runs below, and store nothing if the window refuses it. The window's own
+# encoding is restored at the end, as scripts/set-erasure-hash-key.ps1 does (M7.4 review 1 low 9).
+$prevEncoding = [Console]::InputEncoding
 try { [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
 if ([Console]::InputEncoding.GetPreamble().Length -ne 0) {
+  try { [Console]::InputEncoding = $prevEncoding } catch { }
   Write-Host "RESULT: FAILED ($Gateway): this PowerShell window would add a byte-order mark to the value. Nothing was stored. Tell the lead."
   exit 1
 }
@@ -216,6 +219,7 @@ try {
 } finally {
   foreach ($k in @($secrets.Keys)) { $secrets[$k] = $null }
   $id = $null; $secret = $null; $key = $null; $whsec = $null; $wid = $null
+  try { [Console]::InputEncoding = $prevEncoding } catch { }
 }
 if ($Gateway -eq "razorpay-webhook") {
   Write-Host "RESULT: razorpay-webhook secret made and stored on staging: $($stored -join ', '); it is on your clipboard, paste it into Razorpay's webhook Secret box now"

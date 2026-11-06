@@ -40,6 +40,7 @@ try { [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false } ca
 if ([Console]::InputEncoding.GetPreamble().Length -ne 0) {
   $value = $null
   [Array]::Clear($bytes, 0, $bytes.Length)
+  try { [Console]::InputEncoding = $prevEncoding } catch { }
   Write-Host "RESULT: FAILED: this PowerShell window would add a byte-order mark to the key. Nothing was stored. Tell the lead."
   exit 1
 }
