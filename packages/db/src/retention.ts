@@ -10,7 +10,7 @@
 // but bound), `?3` the run id, `?4` the family name. `bindsOf` gives them.
 import { istDate, toIsoDate } from "@techaust/core";
 import { type RetentionCutoff, type RetentionFamily, SWITCH_LIVE_SQL } from "@techaust/core/retention";
-import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./dp-shared.ts";
+import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079, auditIpDueSql } from "./dp-shared.ts";
 
 /** How a table's rows end. */
 export type RetentionRule =
@@ -238,9 +238,8 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
   audit_ip: [
     {
       table: "audit_log",
-      age: `audit_log.at < ?1 AND (audit_log.ip IS NOT NULL OR audit_log.user_agent IS NOT NULL
-        OR (audit_log.action IN (${q(ALERT_ACTIONS_0079)}) AND json_valid(audit_log.summary)
-          AND (${ALERT_SCRUB_KEYS_0079.map((k) => `json_type(audit_log.summary, '${k}') IS NOT NULL`).join(" OR ")})))`,
+      // Early check 2, low 7: the same text as the WHERE of the partial index `audit_log_ip_due` (at, id), so the scan reads only rows still to scrub.
+      age: `audit_log.at < ?1 AND ${auditIpDueSql("audit_log.")}`,
       held: `((audit_log.entity_type = 'client' AND ${HELD_CLIENT("audit_log.entity_id")})
         OR (audit_log.entity_type = 'contact' AND EXISTS (SELECT 1 FROM contacts hc WHERE hc.id = audit_log.entity_id AND hc.legal_hold = 1))
         OR (audit_log.entity_type = 'lead' AND ${HELD_LEAD("audit_log.entity_id")}))`,

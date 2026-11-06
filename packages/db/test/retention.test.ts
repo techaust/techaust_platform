@@ -7,6 +7,7 @@ import { is } from "drizzle-orm";
 import { getTableConfig, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
 import { AUDIT_EXPORT_COLUMNS, BACKUP_SCOPE, monthlyExportSql } from "../src/backup-scope.ts";
+import { auditIpDueSql } from "../src/dp-shared.ts";
 import { DRAIN_PAGE_SQL, ORPHAN_FILES_SQL, SIGNATURES_IN_USE_SQL } from "../src/r2-sweep.ts";
 import {
   bindsOf,
@@ -551,6 +552,68 @@ describe("dry run and live (L5): the same rows, only those, held kept, financial
 describe("indexes (EXPLAIN)", () => {
   const plan = async (sql: string, ...p: unknown[]) =>
     (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...p)).map((r) => r.detail).join(" | ");
+
+  it("early check 2, low 7: the audit_ip scan reads only rows still to scrub; a scrubbed row leaves the partial index", async () => {
+    const asOf = Date.now();
+    const cut = cutoffsOf(figures, asOf);
+    const N = 300;
+    await run(
+      `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ?1)
+       INSERT INTO audit_log (id, at, actor_type, action, entity_type, entity_id, ip, user_agent)
+       SELECT lower(hex(randomblob(16))), ?2 + i, 'system', 'project.update', 'project', 'low7', '203.0.113.9', 'Firefox' FROM n`,
+      N,
+      asOf - 800 * DAY,
+    );
+    const t = FAMILY_TABLES.audit_ip[0];
+    if (!t) throw new Error("audit_ip");
+    const [p1] = bindsOf("audit_ip", cut.audit_ip, asOf);
+    const scan = (indexed = "") =>
+      db()
+        .prepare(`SELECT rowid FROM audit_log ${indexed} WHERE ${dueWhere(t)} ORDER BY ${t.order} LIMIT 500`)
+        .bind(p1)
+        .all();
+    expect(
+      await plan(`SELECT rowid FROM audit_log WHERE ${dueWhere(t)} ORDER BY ${t.order} LIMIT 500`, p1),
+    ).toMatch(/USING INDEX audit_log_ip_due/);
+    // scrub them (the live pages, the switch on)
+    await switchRetention(true);
+    const runId = uuidv7();
+    await run(
+      "INSERT INTO retention_runs (id, as_of, mode, families) VALUES (?1, ?2, 'live', 1)",
+      runId,
+      asOf,
+    );
+    for (let page = 0; page < 5; page++) {
+      await db().batch(retentionStatements(db(), "audit_ip", "live", cut.audit_ip, asOf, runId));
+      const r = await first<{ done: number }>(
+        "SELECT done FROM retention_run_counts WHERE run_id = ?1 AND family = 'audit_ip'",
+        runId,
+      );
+      if (r?.done === 1) break;
+    }
+    expect(
+      await first<{ n: number }>(
+        "SELECT count(*) AS n FROM audit_log WHERE entity_id = 'low7' AND ip IS NULL",
+      ),
+    ).toEqual({
+      n: N,
+    });
+    // the next night: the scrubbed rows are not read again (only held rows of earlier tests stay in the index); the plain `at` index would read them all
+    const after = await scan();
+    const held =
+      (
+        await first<{ n: number }>(
+          `SELECT count(*) AS n FROM audit_log WHERE at < ?1 AND ${auditIpDueSql("")}`,
+          p1,
+        )
+      )?.n ?? 0;
+    expect(after.results.length).toBe(0);
+    expect(after.meta.rows_read).toBeLessThanOrEqual(held * 4 + 5);
+    const plain = await scan("INDEXED BY audit_log_at");
+    expect(plain.results.length).toBe(0);
+    expect(plain.meta.rows_read).toBeGreaterThanOrEqual(N);
+  });
+
   it("each family's select uses its index", async () => {
     const asOf = Date.now();
     const cut = cutoffsOf(figures, asOf);
@@ -558,7 +621,8 @@ describe("indexes (EXPLAIN)", () => {
       email_log: /email_log_created/,
       email_events: /email_events_received/,
       access_log: /PRIMARY KEY|sqlite_autoindex_access_log/,
-      audit_ip: /audit_log_at/,
+      // early check 2, low 7: the partial index of rows still to scrub
+      audit_ip: /audit_log_ip_due/,
       bells: /notifications_created/,
       stats: /stats_daily_metric/,
       runs: /retention_runs_started/,
