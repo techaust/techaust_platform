@@ -16,22 +16,19 @@ Select-String -Path "D:\Business\1. Parent Project\TecHaust Technologies\Applica
 ```
 Select-String -Path "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\staging-<date>.sql" -Pattern "^INSERT INTO" | Select-Object -Last 1 LineNumber
 ```
-   If the first trigger comes before the last insert, or the file has `BEGIN TRANSACTION`/`COMMIT` or `_cf_KV`, stop. Load schema, then data, then triggers (I4's fallback; the builder's script does the split).
-3. **Restore into an empty local scratch database** (separate from the dev database; no migrations applied first, because the file carries the schema and `d1_migrations`):
+   This step is for the record only: `drill:verify --import` (step 3) loads schema, then data, then triggers whatever the file's order, and drops `BEGIN TRANSACTION`/`COMMIT`. Write in the entry whether the remote file had triggers last. If the file has a `_cf_KV` table, stop and tell the lead.
+3. **Restore and verify in one step** into a fresh local scratch database (separate from the dev database; the script refuses `--remote`, applies no migrations first because the file carries the schema and `d1_migrations`, and verifies the same database it loaded):
 ```
-pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 execute DB --local --persist-to "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.wrangler\drill-<date>" --file "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\staging-<date>.sql"
+pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" drill:verify -- --import "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\staging-<date>.sql" --persist-to "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.wrangler\drill-<date>"
 ```
-4. **Verify.** `pnpm drill:verify` is written by builder B1; its exact arguments are in its run-file report.
-```
-pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" drill:verify
-```
+4. **Read the result.** The script prints each check and ends with a pass or the list of problems. To run the checks again on the same database without loading it, drop `--import` and keep the same `--persist-to`.
    What it checks (I4):
    - row counts per table, compared with the same counts read from staging just before the export;
    - the last number per series and FY against `doc_counters` (no gaps);
    - the ledger recomputed against the stored figures;
    - the audit tail (the newest rows match);
-   - every trigger of `packages/db/src/triggers.ts` present;
-   - the migration count against `packages/db/migrations` (80 files, 0000–0079, at fea31a76).
+   - every trigger of every set in `packages/db/src/triggers.ts` (`TRIGGER_SETS`) present;
+   - the migration count against `packages/db/migrations` (81 files, 0000–0080, in M7.5).
 5. **Clean up:** delete `.wrangler\drill-<date>` and the export.
 6. **The Time Travel rehearsal** (only with the owner's yes at the time; question QB):
    1. `time-travel info` (save **B0**);

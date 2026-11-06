@@ -2,6 +2,8 @@
 
 _Draft by analyst R, 2026-11-07._ The lead reads every source **read-only**: the Cloudflare dashboard, or the Cloudflare MCP server (as in M7.5 Step 0, which read `workersInvocationsAdaptive`). **Daily limits reset at 00:00 UTC** (Workers requests and D1, per the Workers limits and D1 pricing pages read 2026-11-07; Browser Run "until the next UTC day").
 
+**Per account, not per Worker or database (audit B6 L11):** the daily D1 rows read and written, the requests per day and the queue operations are account-wide limits. After launch, staging (benchmarks, e2e runs, the nightly jobs) and production share them, and the live `techaust-web` shares the requests until it is deleted at L8. The production projection adds staging's own daily use.
+
 ## The table (J)
 | Metric | Free limit | NFR-2 target | Where to read it | Rule |
 |---|---|---|---|---|

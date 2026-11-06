@@ -64,7 +64,7 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
 ```
 Notes:
 - The trigger `client_sessions_revoked_once` only stops a second revocation, so the `WHERE` above passes it.
-- No trigger on `magic_link_tokens` was found. Sign-in links die by themselves within 15 minutes anyway.
+- The trigger `magic_link_tokens_used_once` lets a link be marked used only once; the `WHERE used_at IS NULL` above passes it. Sign-in links die by themselves within 15 minutes anyway.
 - **Run the file once against a local database first** (`--local --persist-to "…\.wrangler\state"`). It has not been run anywhere yet.
 
 **Only if emailed links leaked** (`doc_access_tokens`, `offer_links`): use admin › the document › **Revoke links**, per document. Revoking them all by SQL also pauses reminders and stops clients paying through their emailed links (CLAUDE.md M5.4), so it is the owner's decision.
@@ -75,12 +75,12 @@ Read the "Breaks" column before rotating anything. A `wrangler secret put` **dep
 | Secret | Worker(s) and `--config` (from `apps/<app>`) | Value | What a new value breaks (from the code) | How |
 |---|---|---|---|---|
 | `PASSWORD_PEPPER` | admin front (`apps/admin/wrangler.jsonc`) | base64 of 32 random bytes (`keyBytes`, `crypto.ts:38`) | **Every staff password stops verifying: nobody can sign in.** Each member is reset with break-glass (below) | **Never routinely.** Only with a suspected copy of the database and this key |
-| `SALT_PEPPER` | admin front | base64, 32 bytes | (a) Unknown emails get new fake salts, so someone who saved one can tell it was fake. (b) Per-address sign-in locks (`ip:` keys, `lockout.ts:102`) restart. (c) An invite between "start" and "finish" yields an account whose password never matches; reset that member | Script (to be written, F1) |
-| `TOTP_ENC_KEY` | admin front | base64, first 32 bytes used | **Every stored authenticator secret can't be opened.** Code sign-in and step-up fail for every member (decrypt throws, `crypto.ts:89-97`). Recovery codes still sign in, but nothing needing step-up works. **No re-encryption script exists** (08 §4 assumes one) | **Do not rotate** until the re-encrypt script exists (F2). If the database and this key are both exposed, rotate and re-enrol everyone with break-glass |
-| `SESSION_HMAC_KEY` | admin front | base64, 32 bytes | Sign-ins in their 5-minute code step and enrolments in their 10-minute step fail; the person starts again (invitees reopen their link). Sessions aren't touched (random tokens, SHA-256) | Script (F1) |
-| `TURNSTILE_SECRET` | web (widget `techaust-staging-forms`); admin front and portal (widget `techaust-staging-signin`, shared) | Turnstile dashboard › the widget › rotate the secret (label and grace period unverified) | Until every Worker of that widget holds the new secret: the web forms fail, the portal refuses every link request (400 `turnstile_failed`), and admin refuses sign-in after 3 failures | Script, paste mode (F1); store on each Worker of the widget straight away |
+| `SALT_PEPPER` | admin front | base64, 32 bytes | (a) Unknown emails get new fake salts, so someone who saved one can tell it was fake. (b) Per-address sign-in locks (`ip:` keys, `lockout.ts:102`) restart. (c) An invite between "start" and "finish" yields an account whose password never matches; reset that member. (d) Staff `acct:` lockout counters restart (M7.5 L8) | `tools/set-random-secret.ps1 -Name SALT_PEPPER -Encoding base64 -Config "apps\admin\wrangler.jsonc"` |
+| `TOTP_ENC_KEY` | admin front | base64, first 32 bytes used | Nothing, if done in this order (M7.5 L7, L23): seals are versioned (`v1.`) and a secret opened with `TOTP_ENC_KEY_PREVIOUS` is re-sealed under the new key at that member's next sign-in, invite or step-up. A member who hasn't signed in before `_PREVIOUS` is removed can no longer use codes (a counted 401) and needs break-glass | 1. `set-random-secret.ps1 -Mode paste -Name TOTP_ENC_KEY_PREVIOUS -Config "apps\admin\wrangler.jsonc"` with the **old** value. 2. `set-random-secret.ps1 -Name TOTP_ENC_KEY -Encoding base64 -Config "apps\admin\wrangler.jsonc"`. 3. Every member signs in once. 4. Remove `_PREVIOUS` (`wrangler secret delete TOTP_ENC_KEY_PREVIOUS`, same form as below). If the old key itself is exposed, skip step 1 and re-enrol everyone with break-glass |
+| `SESSION_HMAC_KEY` | admin front | base64, 32 bytes | Sign-ins in their 5-minute code step and enrolments in their 10-minute step fail; the person starts again (invitees reopen their link). Sessions aren't touched (random tokens, SHA-256) | `tools/set-random-secret.ps1 -Encoding base64` (M7.5 F1) |
+| `TURNSTILE_SECRET` | web (widget `techaust-staging-forms`); admin front and portal (widget `techaust-staging-signin`, shared) | Turnstile dashboard › the widget › rotate the secret (label and grace period unverified) | Until every Worker of that widget holds the new secret: the web forms fail, the portal refuses every link request (400 `turnstile_failed`), and admin refuses sign-in after 3 failures | `tools/set-random-secret.ps1 -Mode paste` (M7.5 F1) on each Worker of the widget, straight away |
 | `PORTAL_KEY_PEPPER` | portal (`apps/portal/wrangler.jsonc`) | base64, 32 bytes | Only the counters restart (`p:req:`, `p:mail:`, `p:fail:`, `p:pay:`); a locked address is unlocked | `tools/set-portal-pepper.ps1` (staging only) |
-| `FORMS_IP_PEPPER` | web (`apps/web/wrangler.jsonc`) | base64, 32 bytes | The per-address form counters restart. New leads and consent receipts carry a different `ip_hash` for the same address (no link across the rotation) | Script (F1) |
+| `FORMS_IP_PEPPER` | web (`apps/web/wrangler.jsonc`) | base64, 32 bytes | The per-address form counters restart. New leads and consent receipts carry a different `ip_hash` for the same address (no link across the rotation) | `tools/set-random-secret.ps1 -Encoding base64` (M7.5 F1) |
 | `ERASURE_HASH_KEY` | admin API (`wrangler.api.jsonc`) **and** jobs, same value | hex | **People erased before could be emailed again** (environments.md "Losing or changing the key") | **Never by re-running** `scripts/set-erasure-hash-key.ps1`. A change is its own task |
 | `UNSUBSCRIBE_KEY` | jobs | hex | One-click links in digests already sent stop working (no `_PREVIOUS`, `apps/jobs/src/unsubscribe.ts`). Owners can switch the digest off in **Your account › Notifications** | `tools/set-gateway-keys.ps1 -Gateway unsubscribe-key -Configs "apps\jobs\wrangler.jsonc"` |
 | `SES_EVENTS_TOKEN` | jobs + the EventBridge connection | hex | SES events are refused until both sides match. EventBridge retries for up to 24 h (m7.2 run file). `SES_EVENTS_TOKEN_PREVIOUS` allows an overlap, but no script sets it (F3) | `-Gateway ses-events` (on the clipboard), then paste it into the connection's API key value at once |
@@ -95,7 +95,11 @@ powershell -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust
 powershell -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\tools\set-gateway-keys.ps1" -Gateway unsubscribe-key -Configs "apps\jobs\wrangler.jsonc"
 ```
 
-**Until script F1 exists**, the lead can store a value with wrangler's own prompt. Wrangler 4.156.2 hides what is typed (`prompt(…, { isSecret: true })`). It needs a random value the owner can't easily make, so F1 should be built before Phase 7. The form, for each Worker:
+**The generic script** (M7.5 L26) stores a random value (hex by default, `-Encoding base64` where the table says base64) or a pasted one (`-Mode paste`, hidden), on a Worker config (`-Config`) or as a GitHub secret (`-GitHub`), with the BOM guard and one `RESULT:` line:
+```
+powershell -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\tools\set-random-secret.ps1" -Name <NAME> -Config "apps\admin\wrangler.jsonc"
+```
+Wrangler's own prompt also works and hides what is typed (`prompt(…, { isSecret: true })`), for a value you already have. The form, for each Worker:
 ```
 pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/admin exec wrangler secret put SESSION_HMAC_KEY --config wrangler.jsonc --env staging
 ```
@@ -144,21 +148,22 @@ Follow `docs/runbooks/ses-and-turnstile.md` Part 8 with two changes for an incid
 ```
 gh secret set CF_API_TOKEN_STAGING --repo techaust/techaust_platform
 ```
-  `gh` asks for the value. Whether it hides the typing is **unverified**, so prefer a hidden-input script (F1 covers `gh secret set` too).
+  Prefer the generic script with `-GitHub` (hidden input, BOM-free), since whether `gh` hides typing is **unverified**.
 - **Access service tokens** `staging-deploy-check` (`CF_ACCESS_DEPLOY_CLIENT_ID`/`_SECRET`) and the benchmark token (`CF_ACCESS_BENCH_*`): Zero Trust › Access › Service credentials › the token › refresh or rotate. Then store both values with `gh secret set` as above.
-- **`CF_ANALYTICS_TOKEN`** (jobs secret, after Q4): roll it in Cloudflare › API Tokens. Then `wrangler secret put CF_ANALYTICS_TOKEN` on jobs (form above).
+- **`CF_ANALYTICS_TOKEN`** (jobs secret, M7.5 Q4): roll it in Cloudflare › API Tokens, then store it with `scripts/set-cf-analytics-token.ps1` (hidden input, `RESULT:` line).
 - **The owner's own sign-ins:**
   - Cloudflare: Manage Account › Audit Log; revoke unknown API tokens.
   - GitHub: Settings › Sessions, Security log, Personal access tokens; check repo Settings › Branches (`main` protection) and Actions secrets.
   - `wrangler logout` then `wrangler login` on this PC (from `apps\jobs`).
-- **`BUILD_SNAPSHOT_TOKEN`** is listed in 08 §4 but used nowhere today. Nothing to rotate; remove the row (F6).
+- **`BUILD_SNAPSHOT_TOKEN`** was used nowhere; its 08 §4 row was removed in M7.5.
 
 ### 2.7 Take something offline
 **No feature-flag kill switch exists** (no such var in any `wrangler*.jsonc`). The levers that do exist:
 1. roll the Worker back (2.8);
 2. deploy a fix that removes the route (normal PR; held if needed);
 3. Cloudflare Access in front of a host (staging already has it; production at Phase 7);
-4. for payments, keep `PAYMENTS_LIVE_ALLOWED` "false" and switch a gateway off in **Settings › Gateways** (exact effect per gateway unverified).
+4. for payments, keep `PAYMENTS_LIVE_ALLOWED` "false" and switch a gateway off in **Settings › Gateways** (exact effect per gateway unverified);
+5. **pause the background work:** `wrangler queues pause-delivery <queue>` for `techaust-staging-leads`, `-email` and `-pdf` (messages are kept; `resume-delivery` restarts them; restore.md §2.2 has the full form). Webhooks are still answered and recorded while paused.
 
 A kill switch is a follow-up proposal (F7).
 
@@ -225,7 +230,7 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
    - Compare the bucket's object count (R2 › bucket › **Metrics**) with `SELECT count(*) FROM documents WHERE pdf_sha256 IS NOT NULL` (one PDF per row, plus envelopes and supplier copies).
    - Check the R2 operations metrics for deletes (`r2OperationsAdaptiveGroups`, `actionType`).
 5. **Restore:**
-   - **No automatic path exists when the row already has `pdf_sha256`.** "Retry" answers 409 `pdf_done` (`document-pdf.ts:101`). `pdf.render` returns "done" (`apps/jobs/src/pdf.ts:199`). The sweep only takes rows without a PDF (`pdf.ts:791`).
+   - **No automatic path exists when the row already has `pdf_sha256`.** "Retry" answers 409 `pdf_done` (`document-pdf.ts:97`). `pdf.render` returns "done" (`apps/jobs/src/pdf.ts:199`). The sweep only takes rows without a PDF (`pdf.ts:791`).
    - Until the R2 copy to S3 exists (N8, Phase 7), the bytes can't be restored.
    - A rebuilt PDF must be rendered from the sealed envelope and checked against the stored hash. That is a Tier A builder task, not a hand fix.
    - For the invoice family, the stored **DUPLICATE FOR SUPPLIER** copy (`-supplier.pdf`) shows what the client's page said.
@@ -306,12 +311,12 @@ Header fields:
 - closed on.
 
 ## Follow-ups this runbook needs (for the lead)
-- **F1** `tools/rotate-secret.ps1`: random base64 (32 bytes) or random hex, or a pasted value with hidden input; `-Env staging|production`; several configs in one run; `gh secret set`; the house `RESULT:` line and BOM guard (model: `set-erasure-hash-key.ps1`).
-- **F2** A `TOTP_ENC_KEY` re-encryption script (old and new key held for the run). Until then: never rotate.
-- **F3** A `-Previous` mode for webhook and SES-event secrets.
-- **F4** Replace the lost SES key script.
+- **F1** done in M7.5 (L26): `tools/set-random-secret.ps1`. Several configs in one run is still open (run it once per config).
+- **F2** done in M7.5 (L23): rotation through `TOTP_ENC_KEY_PREVIOUS` and re-seal at the next sign-in (2.3).
+- **F3** partly: `set-random-secret.ps1 -Mode paste -Name <NAME>_PREVIOUS` stores the old value for an overlap.
+- **F4** done in M7.5 (L26): `scripts/set-ses-keys.ps1`.
 - **F5** Production modes for `admin:reset-2fa` and every secret script (Phase 7 L3).
-- **F6** 08 §4 fixes:
+- **F6** done in M7.5 (08 §4 and §5 updated):
   - drop `BUILD_SNAPSHOT_TOKEN`;
   - correct the `TOTP_ENC_KEY` line;
   - add `SALT_PEPPER`'s side effects.

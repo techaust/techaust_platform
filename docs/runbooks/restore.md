@@ -42,7 +42,18 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
 2. Pick a quiet time:
    - not around :30 UTC (the hourly cron) or 22:00 UTC (the daily one);
    - no PR merging, because the staging deploy runs migrations.
-   Writes made while the database is rewound are lost when it goes back to B0.
+   Writes made while the database is rewound are **lost** when it goes back to B0 (audit B6 M3). That includes:
+   - a webhook event the gateway was told we received (its payment would never be recorded);
+   - a document number issued in the window (the counter goes back, so the number would be issued twice);
+   - an email row (it could be sent again).
+
+   So, before step 3:
+   - **Keep staff out:** tell everyone not to use the admin or the portal until step 5 is done.
+   - **Pause the three queues' delivery** (messages are kept while paused; the crons only enqueue). Run this once per queue, with `<queue>` each of `techaust-staging-leads`, `techaust-staging-email` and `techaust-staging-pdf`:
+```
+pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler queues pause-delivery <queue>
+```
+     Both `pause-delivery` and `resume-delivery` exist in the installed wrangler 4.156.2 (checked 2026-11-07); neither has been run on staging yet.
 3. Restore to the moment before the mistake. Wrangler asks "OK to proceed (y/N)"; answer `y`:
 ```
 pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 time-travel restore DB --env staging --timestamp=<RFC3339 time>
@@ -52,6 +63,7 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
 ```
 pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 time-travel restore DB --env staging --bookmark=<B0>
 ```
+   Then resume each queue (`wrangler queues resume-delivery <queue>`, same form) and do §4 step 3 (payments) for the rewound window: a webhook that arrived in it was answered but its row is gone.
 6. Put the rows back. **Writing into frozen, append-only or triggered tables is Tier A:** the lead has the analyst check the SQL first. Many triggers refuse such inserts on purpose.
 7. Write an audit row (actor `system`, summary `{"via":"cli","restore":"<ref>"}`) and a log entry.
 
@@ -90,6 +102,7 @@ Known points for N8:
 Anything made after the restore point exists outside D1: PDFs and envelopes in R2, emails, and payments at the gateways.
 1. **Document numbers.**
    - List the R2 keys under `docs/<type>/<fy>/` newer than the restore point (R2 › `…-docs` › Objects, or the lead read-only). The key holds the number (`<number>-v<version>`).
+   - **Deeds** (series `deed`, `TH/DA/{FY}/{N}`) aren't in those keys: their PDFs sit under `deeds/<id>/unsigned-<sha>.pdf`. Read the number from each sealed deed snapshot or signed upload newer than the restore point (audit B6 L12).
    - For each series and FY, set the counter **past** the highest number found. `doc_counters.next_no` may only rise (trigger), so this is allowed; the SQL is Tier A, checked by the analyst.
    - Otherwise a new issue takes a number a client already holds. Jobs would then refuse its PDF ("a different envelope already holds the key").
 2. **Lost documents:**
