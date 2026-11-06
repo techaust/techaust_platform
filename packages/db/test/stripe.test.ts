@@ -509,13 +509,14 @@ describe("onlinePayableSql is the twin of core payableOnline, per provider [L14,
     it.each(cases)(`${provider}: doc %j, client %j, pending %s`, async (d, k, pending) => {
       const usd = !("domestic" in k);
       const clientId = await mkClientRow({ currency: usd ? "USD" : "INR" });
-      if ("anonymised" in k) await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", clientId);
       const documentId = await mkDoc(clientId, {
         type: "type" in d ? d.type : undefined,
         currency: "currency" in d ? d.currency : usd ? "USD" : "INR",
         balance: "balance" in d ? d.balance : 50_000,
         status: "status" in d ? d.status : undefined,
       });
+      // M7.4 (0079): an anonymised client takes no new document, so the client is anonymised after its document exists.
+      if ("anonymised" in k) await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", clientId);
       if (pending) {
         // A gateway payment waiting on the document, through one of its checkouts, with the requested allocation naming it.
         const contactId = await mkContact(clientId);

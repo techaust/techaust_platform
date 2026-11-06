@@ -838,7 +838,8 @@ describe("the tax invoice for money received [Q9, LD22; Researched 2026-10-28, s
     const w = await world();
     const a = await advanceArgs(w);
     await run("UPDATE clients SET anonymised_at = 9 WHERE id = ?", w.clientId);
-    await rejects(runAdvance(a), /issue did not freeze/);
+    // M7.4 (0079): the anonymised lock refuses the new document row itself; before it the freeze did.
+    await rejects(runAdvance(a), /issue did not freeze|documents_anonymised_lock/);
     expect(await counterOf("invoice", w.fy)).toBeNull();
   });
 

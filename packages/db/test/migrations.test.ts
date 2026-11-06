@@ -8,7 +8,7 @@ const tables = (Object.values(schema) as unknown[]).filter((v): v is SQLiteTable
 
 describe("migrations apply cleanly to a fresh D1", () => {
   it("creates every table in the Drizzle schema, with every column", async () => {
-    expect(tables.length).toBe(72); // M7.2: staff_signin_pending (0075); email_events, staff_notification_prefs (0073); M7.1: client_requests, payment_notices (0071); M6.5: payment_refunds, settlements, settlement_items, bank_matches, realisation_reductions (0069); M6.4: realisation_advices, realisation_advice_payments (0067); FX-1: pdf_failures (0051); M6.1: payments, payment_allocations, realisation_extensions (0059); T11: deeds (0061); M6.2: webhook_events, checkout_sessions, review_items, hook_failures (0063)
+    expect(tables.length).toBe(77); // M7.4: legal_holds, consent_receipts, r2_deletions, retention_runs, retention_run_counts (0078); M7.2: staff_signin_pending (0075); email_events, staff_notification_prefs (0073); M7.1: client_requests, payment_notices (0071); M6.5: payment_refunds, settlements, settlement_items, bank_matches, realisation_reductions (0069); M6.4: realisation_advices, realisation_advice_payments (0067); FX-1: pdf_failures (0051); M6.1: payments, payment_allocations, realisation_extensions (0059); T11: deeds (0061); M6.2: webhook_events, checkout_sessions, review_items, hook_failures (0063)
     for (const table of tables) {
       const { name, columns } = getTableConfig(table);
       const live = await all<{ name: string }>(`SELECT name FROM pragma_table_info(?)`, name);
@@ -97,6 +97,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0075_signin_pending.sql",
       "0076_email_log_template.sql",
       "0077_reports_indexes.sql",
+      "0078_data_protection.sql",
+      "0079_data_protection_triggers.sql",
     ]);
   });
 
