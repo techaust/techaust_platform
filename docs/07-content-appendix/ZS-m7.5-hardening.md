@@ -1,6 +1,6 @@
 # 07-ZS: M7.5 hardening (the Free-plan usage tile and its bell)
 
-Status: **staff lines only, the lead's under the owner's delegation** (run file [m7.5-hardening](../runs/m7.5-hardening.md) section H; M7.5 has no client line). The bell title is approved (L41). The tile's lines ZS1–ZS15 are the designer's drafts for the lead's approval under the same delegation. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3), sentence case. Numbers in Indian grouping (`toLocaleString("en-IN")`); dates as the admin writes them ("06 Nov 2026"); days are UTC days, because Cloudflare's daily Free limits reset at 00:00 UTC.
+Status: **staff lines only, the lead's under the owner's delegation** (run file [m7.5-hardening](../runs/m7.5-hardening.md) section H; M7.5 has no client line). The bell title is approved (L41). The tile's lines ZS1–ZS15 (the designer's drafts) are approved by the lead under the same delegation (L49, 2026-11-07). English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3), sentence case. Numbers in Indian grouping (`toLocaleString("en-IN")`); dates as the admin writes them ("06 Nov 2026"); days are UTC days, because Cloudflare's daily Free limits reset at 00:00 UTC.
 
 Where they live: the tile's words in `apps/admin/src/lib/usage.ts` (`USAGE_COPY`); the metric names and the bell title in `packages/core/src/usage.ts` (`USAGE_METRIC_LABELS`, `usageBellTitle`).
 
@@ -8,7 +8,7 @@ Where they live: the tile's words in `apps/admin/src/lib/usage.ts` (`USAGE_COPY`
 - Bell `usage.limit` (Owners, at the 09:00 IST alerts): "Free plan: {Worker requests | D1 rows read | D1 rows written | Queue operations} at {50 | 80} % of the daily limit on {UTC date} ({figure} of {limit})", e.g. "Free plan: Worker requests at 80 % of the daily limit on 2026-11-06 (82,003 of 1,00,000)".
 - The metric names (shared by the bell and the tile's rows): "Worker requests", "D1 rows read", "D1 rows written", "Queue operations".
 
-## The dashboard tile (Owner and Accountant; designer's drafts for the lead)
+## The dashboard tile (Owner and Accountant; approved by the lead, L49)
 - **ZS1** tile title: "Free plan usage"
 - **ZS2** under the title, when the newest reading is yesterday's: "Use on {date} (UTC) against each daily limit, with the last 30 days."
 - **ZS3** under the title, when the newest reading is older (with a clock icon, in the text colour): "No reading since {date} (UTC). The figures are from that day."
