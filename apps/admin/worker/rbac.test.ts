@@ -1714,8 +1714,11 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
     expect(sameRequest).toEqual([{ action: "auth.login" }]);
     await env.DB.prepare("UPDATE staff_users SET totp_last_step = NULL WHERE id = ?").bind(id).run();
     const ridTotp = "ray-totp-login";
+    // M7.5 (L4): a login challenge works once, so the code sign-in takes a fresh one.
+    const again = await call("/auth/login", { body: { email: e.email, clientHash: e.clientHash } });
+    const fresh = ((await again.json()) as { challenge: string }).challenge;
     const t = await call("/auth/totp", {
-      body: { challenge, code: totpCode(e.secret, currentStep(Date.now())) },
+      body: { challenge: fresh, code: totpCode(e.secret, currentStep(Date.now())) },
       headers: headers(ridTotp),
     });
     expect(t.status).toBe(200);
