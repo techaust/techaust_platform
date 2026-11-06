@@ -119,4 +119,6 @@ export const M72_TEMPLATE_NAMES = {
   "staff.notification": "Notification email (team)",
   "refund.sent": "Refund sent (client)",
   "staff.signin_unfinished": "Unfinished sign-in alert",
+  // M7.4 (07-ZR; the builder's draft for the lead): the acknowledgement of a portal request.
+  "request.received": "Request received (client)",
 } as const;

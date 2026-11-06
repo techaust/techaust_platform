@@ -64,10 +64,7 @@ export const NOT_SUPPRESSED = {
 
 export const legalHolds = new Hono<AppEnv>()
   .get("/", async (c) => {
-    const q = legalHoldQuery.safeParse({
-      entityType: c.req.query("entityType"),
-      entityId: c.req.query("entityId"),
-    });
+    const q = legalHoldQuery.safeParse(c.req.query());
     if (!q.success) return err(c, BAD_REQUEST, 400);
     const { entityType, entityId } = q.data;
     const db = c.env.DB;
