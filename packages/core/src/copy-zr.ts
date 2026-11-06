@@ -74,9 +74,9 @@ export const STAFF_COPY = {
   liftNotFound: "This address isn't on the erased list.",
 } as const;
 
-/** A bell names a record by its client code or lead ref (13 2026-10-26); a request naming only an address has neither: the gap stays marked for the lead. */
+/** A bell names a record by its client code or lead ref (13 2026-10-26); a request naming only an address has neither, so the bell names no one (lead, 2026-11-06). */
 export const requestRef = (clientCode: string | null, leadRef: string | null): string =>
-  clientCode ?? leadRef ?? "[Placeholder] an address not in our records";
+  clientCode ?? leadRef ?? "someone not yet matched to a record";
 
 export const BELL_COPY = {
   /** S3 */

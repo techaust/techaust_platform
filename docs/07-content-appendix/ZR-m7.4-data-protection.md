@@ -30,7 +30,7 @@ Status: **Client lines C1–C7 and the Rule 9 block: waiting for the owner's app
 - **S9** "Allow emails again to an erased address. Use this only when the person has asked us to contact them again." · toast "Emails to this address are allowed again." · error "This address isn't on the erased list."
 - **S10** bell `email.erased_skip` (L25): "Emails to {ref} are stopped because the address was erased. If they've asked to hear from us again, allow emails again in Settings › Data retention."
 
-## Builder's drafts for the lead (staff only)
+## Staff lines added in the build (approved by the lead under the owner's delegation, 2026-11-06)
 - Bell `retention.done_with_holds` (a live run that skipped held rows; S3's pair): "The clean-up ran. Some records were kept because a legal hold stands on them."
 - S3's bell kind words for the two new kinds (beside M7.1's): "withdrawal of their consent" · "nomination of someone to act for them".
-- A request that names only an address has no client code or lead ref for S4–S6: the bell shows "[Placeholder] an address not in our records" until the lead words it.
+- A request that names only an address has no client code or lead ref for S4–S6: the bell says "someone not yet matched to a record" (e.g. "A data request from someone not yet matched to a record is past its reply date.").
