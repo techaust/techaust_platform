@@ -779,11 +779,14 @@ async function seed(dir, extra) {
       returnTo: "invoice",
     });
   }
-  // M7.5 L20: the portal. The sample clients (the `portal:sample` SQL, made-up @example.test contacts), links minted by the `portal:link` SQL for the
-  // finance contact of Sample Client A: one used here for the session cookie, the rest kept for the link sign-in case (each is single use).
-  const { sampleStatements, linkStatements, SAMPLE } = await import("./portal-sql.mjs");
-  for (const s of sampleStatements()) raw.exec(s);
-  const portalContact = SAMPLE[0].contacts.find((x) => x.portal === 1 && x.finance === 1);
+  // M7.5 L20: the portal. Links minted by the `portal:link` SQL: one used here for the session cookie, the rest kept for the link sign-in case (each is
+  // single use). M7.5 L39: for a contact of the probe's own INR client (X0001, portal access and finance set above), whose issued invoices, offers and
+  // receipts give Home and the invoices list rows to shape (the portal sample clients have none, so B2's first runs read empty lists); the start-up dry
+  // run's fixture is captured from the same calls.
+  const { linkStatements } = await import("./portal-sql.mjs");
+  const portalContact = raw
+    .prepare("SELECT id FROM contacts WHERE client_id = ? AND anonymised_at IS NULL ORDER BY id LIMIT 1")
+    .get(inr);
   const mintLink = () => {
     const token = randomBytes(32).toString("base64url");
     const tokenHash = createHash("sha256").update(token).digest("hex");
@@ -1001,9 +1004,10 @@ export const CASES = {
   "rpc GatewayEvents.processEvent": { worker: "finance", rpc: true },
   // M7.5 L20: the portal's hot rows: health, the link sign-in (a fresh single-use link per attempt), and the signed-in reads.
   "portal GET /health": { worker: "portal", call: () => ({ path: "/health", origin: PORTAL_ORIGIN }) },
+  // M7.5 L39: in the portal's start-up dry run too, with a made-up token of the right shape (the answer book holds the rows the captured use read and wrote).
   "portal POST /auth/magic/verify": {
     worker: "portal",
-    warm: false,
+    warmBody: () => ({ token: "warm-up-link-token-not-a-real-one".padEnd(43, "0") }),
     call: (m, i) => ({
       path: "/auth/magic/verify",
       body: { token: m.portalTokens[i] },
@@ -1276,7 +1280,7 @@ export function sqlKey(sql) {
  * for M6.3; a second row of the same shape runs the same code), and so does the invoices Worker, which took finance's invoice routes with their fixture (the
  * fourth admin Worker, 2026-11-03); the front and the API keep two.
  */
-const ROWS_KEPT = { front: 2, api: 2, finance: 1, invoices: 1 };
+const ROWS_KEPT = { front: 2, api: 2, finance: 1, invoices: 1, portal: 1 };
 
 const FIXTURE_NAMES = {
   front: "FRONT_WARM",
@@ -1285,6 +1289,7 @@ const FIXTURE_NAMES = {
   invoices: "INVOICES_WARM",
   "finance-rpc": "FINANCE_RPC_WARM",
   "invoices-rpc": "INVOICES_RPC_WARM",
+  portal: "PORTAL_WARM",
 };
 /** The type and its module of each RPC fixture (the HTTP ones are `WarmFixture` of warm-routes.ts). */
 const RPC_FIXTURE_TYPES = {
@@ -1339,6 +1344,8 @@ function writeFixtures(work, seedDir) {
     "finance-rpc": { calls: [], rows: {} },
     // Brief D.7: the invoices Worker's `GatewayAdvance` dry run (apps/admin/worker/warm-advance.ts).
     "invoices-rpc": { calls: [], rows: {} },
+    // M7.5 L39: the portal's start-up dry run (apps/portal/worker/warm-routes.ts), one row per answer (its bundle's plan line, 160,000 bytes).
+    portal: { calls: [], rows: {} },
   };
   for (const [name, c] of Object.entries(CASES)) {
     if (c.warmRpc) {
@@ -1414,16 +1421,27 @@ function writeFixtures(work, seedDir) {
   for (const [worker, raw] of Object.entries(out)) {
     const data = madeUpGatewayIds(raw);
     const name = FIXTURE_NAMES[worker];
-    const [type, from] = RPC_FIXTURE_TYPES[worker] ?? ["WarmFixture", "../warm-routes.ts"];
-    const file = at(`apps/admin/worker/warm-fixtures/${worker}.ts`);
-    mkdirSync(at("apps/admin/worker/warm-fixtures"), { recursive: true });
+    const portal = worker === "portal";
+    const [type, from] = RPC_FIXTURE_TYPES[worker] ?? [
+      "WarmFixture",
+      portal ? "@techaust/db/warm" : "../warm-routes.ts",
+    ];
+    // M7.5 L39: the portal's fixture sits beside its own dry run (apps/portal/worker/warm-fixtures/), the second path .gitleaks.toml allows.
+    const dir = portal ? "apps/portal/worker/warm-fixtures" : "apps/admin/worker/warm-fixtures";
+    const file = at(`${dir}/${worker}.ts`);
+    mkdirSync(at(dir), { recursive: true });
+    const made = portal
+      ? `// "(sample)" names, @example.test addresses; the link token and the session cookie are made-up words, the key pepper the probe's made-up test value). No
+// real or personal data. The token hashes and HMAC'd counter keys were made under that made-up pepper only; this folder is one of the two paths
+// .gitleaks.toml allows.`
+      : `// "(sample)" names, @example.test addresses, SAMPLE bank values; secrets and keys are the admin tests' made-up test values). No real or personal data.
+// Credential-shaped values (the front's sign-in rows) were made under the admin tests' TEST_KEY values only (warm-fixtures.test.ts); this folder is the one
+// path .gitleaks.toml allows.`;
     writeFileSync(
       file,
       `// GENERATED by \`node scripts/cpu-probe.mjs --write-fixtures\` (CPU warm-up (b)1, docs/runs/cpu-warmup.md): do not edit by hand. The ${worker} Worker's
 // start-up dry run (warm-routes.ts): its hot routes' requests and the rows they read, captured from the probe's MADE-UP sample set (the e2e sample values:
-// "(sample)" names, @example.test addresses, SAMPLE bank values; secrets and keys are the admin tests' made-up test values). No real or personal data.
-// Credential-shaped values (the front's sign-in rows) were made under the admin tests' TEST_KEY values only (warm-fixtures.test.ts); this folder is the one
-// path .gitleaks.toml allows.
+${made}
 import type { ${type} } from "${from}";
 
 export const ${name}: ${type} = ${JSON.stringify(data)};

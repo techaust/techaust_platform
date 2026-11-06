@@ -61,6 +61,8 @@ export type AuditEntry = RequestInfo & {
 };
 
 export type AccessEntry = RequestInfo & {
+  /** Defaults to a new UUIDv7; only the portal's start-up dry run gives one (a made-up id: global scope refuses random values, M7.5 L39). */
+  id?: string;
   realm?: "admin" | "portal" | "jobs";
   /** NULL before sign-in. Never an email. */
   actorId: string | null;
@@ -149,7 +151,7 @@ const ACCESS_COLUMNS = "id, realm, actor_id, method, route, status, ip, user_age
 
 export function accessStmt(db: D1Database, entry: AccessEntry, guard?: Guard): D1PreparedStatement {
   const values = [
-    uuidv7(),
+    entry.id ?? uuidv7(),
     entry.realm ?? "admin",
     entry.actorId,
     entry.method,

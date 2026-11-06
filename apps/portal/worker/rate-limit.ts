@@ -17,10 +17,10 @@ export function addressBindingOf(path: string): "RL_SIGNIN" | "RL_LINKS" | null 
 const limiterOf = (env: Env, name: "RL_SESSION" | "RL_SIGNIN" | "RL_LINKS"): Limiter | undefined =>
   Reflect.get(env, name) as Limiter | undefined;
 
-/** L2: whether this session may make another request now (asked by the guard before the session read). */
+/** L2: whether this session may make another request now (asked by the guard before the session read). No binding or a warm dry run (L39): yes, no work. */
 export async function sessionAllowed(c: Ctx, sessionId: string): Promise<boolean> {
   const limiter = limiterOf(c.env, "RL_SESSION");
-  if (!limiter) return true;
+  if (!limiter || c.var.warm) return true;
   return underLimit(limiter, await rateLimitKey(c.env.PORTAL_KEY_PEPPER, "s", sessionId), "portal.session");
 }
 
@@ -32,7 +32,7 @@ export const addressLimit = createMiddleware<AppEnv>(async (c, next) => {
   const row = c.var.route;
   const name = row && row.method === "POST" ? addressBindingOf(row.path) : null;
   const limiter = name ? limiterOf(c.env, name) : undefined;
-  if (!row || !name || !limiter) return next();
+  if (!row || !name || !limiter || c.var.warm) return next();
   // A request with no address header (never behind Cloudflare) shares one bucket: the strict side (as `callerAddress`).
   const key = await rateLimitKey(c.env.PORTAL_KEY_PEPPER, `a${row.path}`, addressOf(c.var.ip ?? "unknown"));
   if (!(await underLimit(limiter, key, `portal.${name}`))) return tooMany(c);

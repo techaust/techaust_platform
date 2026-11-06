@@ -33,6 +33,8 @@ import type { MagicLinkSender } from "./sender.ts";
 import { notes } from "./shared.ts";
 import { defaultViewer } from "./viewer.ts";
 import "./warm.ts"; // start-up warm-up of the sign-in path (CPU tuning 3)
+import { PORTAL_WARM } from "./warm-fixtures/portal.ts";
+import { warmAtStartup, warmIn } from "./warm-routes.ts";
 
 let isolateId: string | undefined;
 let isolateRequests = 0;
@@ -48,12 +50,21 @@ export type Deps = {
   testRoutes?: TestRoute[];
 };
 
-/** The API. A factory so a test can inject a capturing sender and add routes the table does not declare. */
-export function createApp(deps: Deps = {}) {
+/**
+ * The API. A factory so a test can inject a capturing sender and add routes the table does not declare.
+ *
+ * `warm: true` (M7.5 L39, the admin's CPU warm-up (b)1): a second instance of the SAME chain and handlers for the start-up dry run on a made-up env
+ * (warm-routes.ts), so V8 compiles them before the first metered request. It differs only where a dry run must leave no trace and must not use what global
+ * scope refuses: no request number, no random isolate or request id, no `f: 1` first-run mark, no log line, no access row, a body from `warmBodies`, `c.json`
+ * without a body, and errors answered silently. The Worker's real app is always built without it.
+ */
+export function createApp(deps: Deps = {}, opts: { warm?: boolean } = {}) {
+  const warm = opts.warm === true;
   const sender = deps.sender;
   const viewer = deps.viewer ?? defaultViewer;
   const routeFor = tableOf([...ROUTES, ...(deps.testRoutes ?? []).map((t) => t.def)]);
   const app = new Hono<AppEnv>().basePath("/api");
+  if (warm) app.use(warmIn);
   // docs/08 section 3.1 on every API answer (audit A1 finding 4): Hono's defaults, plus HSTS for one year with subdomains (its
   // default is 180 days) and the same Permissions-Policy as the static files (public/_headers).
   app.use(
@@ -77,10 +88,15 @@ export function createApp(deps: Deps = {}) {
   // token or cookie. (Random values can't be made at module level in Workers, so `iso` is lazy.)
   app.use(
     createMiddleware<AppEnv>(async (c, next) => {
-      isolateId ??= hex(randomBytes(3));
-      const n = ++isolateRequests; // taken before next(), so concurrent requests get distinct numbers
+      // A warm app counts no request and draws no random id (global scope refuses random values).
+      if (warm) c.set("warm", true);
+      else isolateId ??= hex(randomBytes(3));
+      const n = warm ? 0 : ++isolateRequests; // taken before next(), so concurrent requests get distinct numbers
       // Header values are the client's: cut before they reach a log row (audit M2).
-      c.set("rid", clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? hex(randomBytes(8)));
+      c.set(
+        "rid",
+        clipHeader(c.req.header("cf-ray"), HEADER_LIMITS.requestId) ?? (warm ? "warm" : hex(randomBytes(8))),
+      );
       c.set("ip", clipHeader(c.req.header("CF-Connecting-IP"), HEADER_LIMITS.ip));
       c.set("ua", clipHeader(c.req.header("User-Agent"), HEADER_LIMITS.ua));
       c.set("sender", sender);
@@ -90,7 +106,7 @@ export function createApp(deps: Deps = {}) {
       c.set("route", row);
       await next();
       c.header("Cache-Control", "no-store");
-      if (row && row.log !== false && c.var.scope && !c.var.accessDone) {
+      if (row && row.log !== false && c.var.scope && !c.var.accessDone && !warm) {
         // The write rides in the execution context: the response does not wait for it (audit L5). The statements
         // are built before the first await, so they see this request's final state.
         const write = async () => {
@@ -121,19 +137,19 @@ export function createApp(deps: Deps = {}) {
         };
         c.executionCtx.waitUntil(write());
       }
-      console.log(
-        JSON.stringify({
-          ev: "req",
-          r: row?.path ?? "other",
-          s: c.res.status,
-          rid: c.var.rid,
-          iso: isolateId,
-          n,
-          // M7.1 J (M6.2 CPU diagnosis, lead decision 4): `f: 1` on the first run of this route pattern in this isolate, so the staging CPU gate reads first
-          // runs directly; absent (dropped by JSON) on every later run. The key is the method and the PATTERN, never a raw path.
-          f: firstRun(`${c.req.method} ${row?.path ?? "other"}`),
-        }),
-      );
+      // A warm app builds the line (its code runs) but neither marks a first run nor prints it.
+      const line = JSON.stringify({
+        ev: "req",
+        r: row?.path ?? "other",
+        s: c.res.status,
+        rid: c.var.rid,
+        iso: warm ? "warm" : isolateId,
+        n,
+        // M7.1 J (M6.2 CPU diagnosis, lead decision 4): `f: 1` on the first run of this route pattern in this isolate, so the staging CPU gate reads first
+        // runs directly; absent (dropped by JSON) on every later run. The key is the method and the PATTERN, never a raw path.
+        f: warm ? undefined : firstRun(`${c.req.method} ${row?.path ?? "other"}`),
+      });
+      if (!warm) console.log(line);
     }),
   );
   app.use(csrf);
@@ -173,6 +189,8 @@ export function createApp(deps: Deps = {}) {
 
   app.notFound((c) => err(c, NOT_FOUND, 404));
   app.onError((e, c) => {
+    // A warm app answers an error silently: at global scope a step that needs a random value or an I/O stops the dry run there.
+    if (warm) return c.body(null, 500);
     if (e instanceof HTTPException) {
       const status = e.status as ContentfulStatusCode;
       return err(c, status === 404 ? NOT_FOUND : BAD_REQUEST, status);
@@ -197,4 +215,6 @@ const app = createApp();
 // M7.1 J (L19; M6.2 CPU diagnosis, lead decision 1): every row's route regex compiled and tiered up while the module loads, not in the metered first request
 // (`warmRouter` from @techaust/auth; pure, no env, no I/O, never throws). Not exported: a named export of a Worker entry module is read as an entrypoint.
 warmRouter(app, ROUTES);
+// M7.5 L39: the hot routes dry-run on made-up rows while the module loads (warm-routes.ts); never throws, stores, sends or logs nothing.
+void warmAtStartup(() => createApp({}, { warm: true }), PORTAL_WARM);
 export default app satisfies ExportedHandler<Env>;
