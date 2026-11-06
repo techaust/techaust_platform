@@ -123,12 +123,15 @@ describe("the workflows (read, not run)", () => {
   const publish = read("publish-catalogue.yml");
   const deploy = read("deploy-staging.yml");
 
-  it("deploy-staging fetches the snapshot after the migration and seed, before the Workers are deployed", () => {
+  it("deploy-staging fetches the snapshot after the migration, before the Workers are deployed (M7.5: the seed moved to the deploy job)", () => {
     const at = (s: string) => deploy.indexOf(s);
-    expect(at("Migrate and seed staging D1")).toBeGreaterThan(-1);
+    expect(at("Migrate staging D1")).toBeGreaterThan(-1);
     expect(
       at("node scripts/fetch-catalogue-snapshot.mjs --out apps/web/catalogue-snapshot.json"),
-    ).toBeGreaterThan(at("Migrate and seed staging D1"));
+    ).toBeGreaterThan(at("Migrate staging D1"));
+    expect(at("name: Seed staging D1")).toBeLessThan(
+      at("name: Deploy 1 of 7, the admin API Worker (staging)"),
+    );
     expect(at("name: Deploy 1 of 7, the admin API Worker (staging)")).toBeGreaterThan(
       at("fetch-catalogue-snapshot.mjs"),
     );

@@ -69,8 +69,31 @@ export function snapshotFromOutput(text) {
   return { id: row.id, json: row.json, sha256: row.sha256 };
 }
 
-/** Runs wrangler through the jobs package (its config holds the `DB` binding for `--env staging`). */
+/**
+ * Runs wrangler through the jobs package (its config holds the `DB` binding for `--env staging`). M7.5 (owner's Q3 A): a job that installed only wrangler
+ * (`@techaust/deploy-tools`) names it in WRANGLER_BIN, and wrangler runs from apps/jobs with no pnpm package code.
+ */
 export function runWrangler() {
+  const bin = process.env.WRANGLER_BIN;
+  if (bin) {
+    const r = spawnSync(
+      process.execPath,
+      [
+        resolve(ROOT, bin),
+        "d1",
+        "execute",
+        "DB",
+        "--remote",
+        "--env",
+        "staging",
+        "--json",
+        "--command",
+        SNAPSHOT_SQL,
+      ],
+      { cwd: resolve(ROOT, "apps/jobs"), encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+    );
+    return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", error: r.error };
+  }
   const r = spawnSync(
     "pnpm",
     [

@@ -270,7 +270,9 @@ describe("M7.1 L17: no local secrets file in a build output (check-staging-build
   it("both deploy-time guards call it for the SPAs", () => {
     const build = readFileSync(new URL("../../../scripts/check-staging-build.mjs", import.meta.url), "utf8");
     const headers = readFileSync(new URL("../../../scripts/check-spa-headers.mjs", import.meta.url), "utf8");
-    expect(build.match(/devVarsProblems\(/g)?.length).toBe(2); // the SPA targets and the admin aux targets
+    // The SPA targets, the admin aux targets and (M7.5) `dev-vars`, every app's output for deploy-prod.yml's build job.
+    expect(build.match(/devVarsProblems\(/g)?.length).toBe(3);
+    expect(build).toMatch(/if \(target === "dev-vars"\) return devVarsEverywhere\(\);/);
     expect(headers).toMatch(/devVarsProblems\(app, join\(root, "apps", app, "dist"\)\)/);
   });
 });

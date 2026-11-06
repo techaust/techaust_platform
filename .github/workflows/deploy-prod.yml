@@ -18,6 +18,9 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+# M7.5 (owner's Q3 A, 2026-11-01): the build and the deploy are separate jobs. `build` installs and runs package code with NO secret and NO environment;
+# `deploy` holds the production environment (its secrets and the owner's review) and installs nothing but wrangler (`@techaust/deploy-tools`, from the
+# lockfile), taking the build as an artifact. Phase 7 (L3-L4) fills in the production builds and deploy steps on this shape.
 jobs:
   guard:
     runs-on: ubuntu-latest
@@ -35,11 +38,9 @@ jobs:
           [ "$ENABLED" = "true" ] || { echo "Production deploys are disabled until Phase 7."; exit 1; }
           [ "$CONFIRM" = "deploy techaust.com $TAG" ] || { echo "Confirmation text does not match."; exit 1; }
           echo "Guards passed for $TAG"
-  deploy:
+  build:
     needs: guard
-    # The `production` environment holds the production secrets and a required reviewer (the owner). The owner
-    # creates it and sets those in Phase 7 (L3-L4); until then the guard job above stops every run.
-    environment: production
+    # No environment and no secret: this job installs and runs package code.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -62,4 +63,37 @@ jobs:
         run: |
           pnpm --filter @techaust/web exec astro build
           node scripts/check-prod-readiness.mjs
+      # M7.1 L17 / M7.5 F: no local secrets file (`.dev.vars`, `.dev.vars.*`) in any app's build output.
+      - name: No .dev.vars in any build output
+        run: node scripts/check-staging-build.mjs dev-vars
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: production-build
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          path: apps/web/dist
+  deploy:
+    needs: build
+    # The `production` environment holds the production secrets and a required reviewer (the owner). The owner
+    # creates it and sets those in Phase 7 (L3-L4); until then the guard job above stops every run.
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # Wrangler alone, from the lockfile; the build arrives as an artifact.
+      - name: Install wrangler only
+        run: pnpm install --frozen-lockfile --filter @techaust/deploy-tools
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: production-build
+          path: apps/web/dist
       - run: echo "Production deploy steps (backup, migrations, deploy, smoke tests) are added in Phase 7 (L3-L4)."

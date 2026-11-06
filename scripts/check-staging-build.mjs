@@ -98,7 +98,12 @@ export const ADMIN_AUX_TARGETS = {
   "admin-invoices": { config: "wrangler.invoices.jsonc", dist: "techaust_platform_admin_invoices" },
 };
 
+/** M7.5 (deploy-prod.yml's build job): every app's build output free of `.dev.vars` files. */
+export const devVarsEverywhere = () =>
+  ["admin", "portal", "web", "jobs"].flatMap((app) => devVarsProblems(app, join(APPS_DIR, app, "dist")));
+
 export function problemsFor(target) {
+  if (target === "dev-vars") return devVarsEverywhere();
   if (target === "admin" || target === "portal") {
     const appDir = join(APPS_DIR, target);
     const name = stagingNameOf(readFileSync(join(appDir, "wrangler.jsonc"), "utf8"));

@@ -371,7 +371,14 @@ async function main() {
     throw new Error("the Access service token (CF_ACCESS_CLIENT_ID, CF_ACCESS_CLIENT_SECRET) is missing");
 
   const dayPath = join(ROOT, ".logs", "bench-day.json");
-  const today = remainingToday(existsSync(dayPath) ? JSON.parse(readFileSync(dayPath, "utf8")) : null);
+  // The day file is this machine's count; a workflow run starts empty, so the owner passes earlier runs' count (BENCH_SENT_TODAY). The larger one counts.
+  const fileDay = existsSync(dayPath) ? JSON.parse(readFileSync(dayPath, "utf8")) : null;
+  const told = Number.parseInt(process.env.BENCH_SENT_TODAY ?? "0", 10) || 0;
+  const nowDay = new Date().toISOString().slice(0, 10);
+  const today = remainingToday({
+    day: nowDay,
+    requests: Math.max(told, fileDay?.day === nowDay ? Number(fileDay.requests) || 0 : 0),
+  });
   const budget = { left: today.left, sent: 0 };
   console.log(
     `bench ${mode}: ${today.used} requests already sent today (UTC ${today.day}), ${today.left} left of ${DAY_CAP_REQUESTS}`,

@@ -1,0 +1,9 @@
+{
+  "name": "@techaust/deploy-tools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "M7.5 (owner's Q3 A): the deploy jobs install ONLY this package (wrangler, the apps' own pinned version) from the lockfile, so no package code but wrangler runs where the Cloudflare token is.",
+  "devDependencies": {
+    "wrangler": "4.156.2"
+  }
+}
