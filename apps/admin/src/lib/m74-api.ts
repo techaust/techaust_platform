@@ -2,59 +2,45 @@
 // close; legal holds; the erased-address lift; the clean-up report and the real-deletion switch; a lead's export, erase and consent withdrawal; and a
 // contact's "anonymise in parts" (F5). Its own module, so the main chunk doesn't carry it. The shapes mirror apps/admin/worker/{client-requests,
 // data-protection,lead-data,clients}.ts; every refusal arrives as a `RequestError` whose `code` the screens word (lib/copy-zr.ts).
+import {
+  type Channel,
+  DECLINE_REASONS as CORE_DECLINE,
+  EMAIL_ONLY_DECLINE_REASONS as CORE_EMAIL_ONLY,
+  IDENTITY_CHECKED_KINDS as CORE_IDENTITY,
+  REQUEST_KINDS as CORE_KINDS,
+  STAFF_CHANNELS as CORE_STAFF_CHANNELS,
+  type DeclineReason,
+  type DsrKind,
+  type RequestState,
+} from "@techaust/core/dsr";
 import { qs, request } from "../api.ts";
 
 const pid = (id: string) => encodeURIComponent(id);
 
-export type RequestKind =
-  | "contact_change"
-  | "data_access"
-  | "data_correction"
-  | "data_erasure"
-  | "grievance"
-  | "consent_withdrawal"
-  | "nomination";
-export const REQUEST_KINDS: readonly RequestKind[] = [
-  "data_access",
-  "data_correction",
-  "data_erasure",
-  "consent_withdrawal",
-  "nomination",
-  "grievance",
-  "contact_change",
-];
-export type Channel = "portal" | "email" | "post" | "phone" | "in_person";
-export const STAFF_CHANNELS = ["email", "post", "phone", "in_person"] as const;
-export type RequestState = "open" | "ack_overdue" | "due_soon" | "overdue" | "closed";
-export type DeclineReason =
-  | "legal_hold"
-  | "law_requires_keeping"
-  | "identity_not_confirmed"
-  | "duplicate"
-  | "not_on_record"
-  | "other";
-export const DECLINE_REASONS: readonly DeclineReason[] = [
-  "legal_hold",
-  "law_requires_keeping",
-  "identity_not_confirmed",
-  "duplicate",
-  "not_on_record",
-  "other",
-];
-/** L28: an erasure request naming only an address closes only as declined, for one of these (core `EMAIL_ONLY_DECLINE_REASONS`). */
-export const EMAIL_ONLY_DECLINE_REASONS: readonly DeclineReason[] = [
-  "not_on_record",
-  "identity_not_confirmed",
-  "duplicate",
-  "other",
-];
-/** L42: these kinds close `done` only once the identity check is recorded (core `IDENTITY_CHECKED_KINDS`). */
-export const IDENTITY_CHECKED_KINDS: readonly string[] = [
-  "data_access",
-  "data_correction",
-  "data_erasure",
-  "nomination",
-];
+// The lists come from core (`@techaust/core/dsr`, pure, the same lists the API, its SQL and the triggers hold; review low 5), never copies. Only the order
+// the screens offer the kinds in is ours: a record keyed by every core kind, so a kind added to core fails the typecheck until it has a place here.
+export type RequestKind = DsrKind;
+export type { Channel, DeclineReason, RequestState };
+
+const KIND_ORDER: Readonly<Record<RequestKind, number>> = {
+  data_access: 0,
+  data_correction: 1,
+  data_erasure: 2,
+  consent_withdrawal: 3,
+  nomination: 4,
+  grievance: 5,
+  contact_change: 6,
+};
+/** Every kind, in the order "What they asked for" and "Kind" offer them (the data rights first). */
+export const REQUEST_KINDS: readonly RequestKind[] = [...CORE_KINDS].sort(
+  (a, b) => KIND_ORDER[a] - KIND_ORDER[b],
+);
+export const STAFF_CHANNELS = CORE_STAFF_CHANNELS;
+export const DECLINE_REASONS: readonly DeclineReason[] = CORE_DECLINE;
+/** L28: an erasure request naming only an address closes only as declined, for one of these. */
+export const EMAIL_ONLY_DECLINE_REASONS: readonly DeclineReason[] = CORE_EMAIL_ONLY;
+/** L42: these kinds close `done` only once the identity check is recorded. */
+export const IDENTITY_CHECKED_KINDS: readonly string[] = CORE_IDENTITY;
 
 /** One request as the admin reads it (`requestView` in worker/client-requests.ts). */
 export type RequestView = {

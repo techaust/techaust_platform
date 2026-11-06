@@ -79,6 +79,20 @@ const req = (o: Partial<RequestView> = {}): RequestView => ({
 describe("the lists the screens offer are core's [ADM-SET-09, POR-11]", () => {
   it("kinds, channels, decline reasons, the L28 reasons and the L42 kinds", () => {
     expect([...REQUEST_KINDS].sort()).toEqual([...CORE_KINDS].sort());
+    // review low 5: core's lists, in the screens' own order for the kinds (the data rights first)
+    expect(REQUEST_KINDS).toEqual([
+      "data_access",
+      "data_correction",
+      "data_erasure",
+      "consent_withdrawal",
+      "nomination",
+      "grievance",
+      "contact_change",
+    ]);
+    expect(DECLINE_REASONS).toBe(CORE_DECLINE);
+    expect(EMAIL_ONLY_DECLINE_REASONS).toBe(CORE_EMAIL_ONLY);
+    expect(IDENTITY_CHECKED_KINDS).toBe(CORE_IDENTITY);
+    expect(STAFF_CHANNELS).toBe(CORE_STAFF_CHANNELS);
     expect([...STAFF_CHANNELS]).toEqual([...CORE_STAFF_CHANNELS]);
     expect([...DECLINE_REASONS]).toEqual([...CORE_DECLINE]);
     expect([...EMAIL_ONLY_DECLINE_REASONS]).toEqual([...CORE_EMAIL_ONLY]);
