@@ -135,6 +135,8 @@ export async function mkProforma(
     client?: () => Promise<{ clientId: string; contactId: string }>;
     clientId?: string;
     milestoneId?: string;
+    /** M7.5 (L17): the proforma's services (catalogue items), e.g. one per SAC for many tax groups; default one service of `price`. */
+    services?: { catalogueItemId: string }[];
   } = {},
 ) {
   const client = opts.clientId
@@ -142,7 +144,7 @@ export async function mkProforma(
     : await (opts.client ?? mkInvoiceClient)();
   const body: Record<string, unknown> = { clientId: client.clientId, kind: "proforma" };
   if (opts.milestoneId) body.fromMilestoneId = opts.milestoneId;
-  else body.services = [{ catalogueItemId: (await mkService(opts.price ?? 100_000)).id }];
+  else body.services = opts.services ?? [{ catalogueItemId: (await mkService(opts.price ?? 100_000)).id }];
   const res = await call("/invoices", { cookie: s.cookie, body });
   if (res.status !== 201) throw new Error(`could not make a proforma: ${res.status} ${await res.text()}`);
   const b = await json(res);

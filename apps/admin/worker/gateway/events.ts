@@ -46,12 +46,19 @@ const factsOf = (raw: string | null): Record<string, unknown> => {
 };
 const text = (v: unknown) => (typeof v === "string" && v.length > 0 && v.length <= 255 ? v : null);
 
+/** M7.5 (A2 finding C, L17): at most this many stale links are cancelled per invocation (one fetch and one D1 call each; subrequests are 50 an invocation). */
+export const STALE_CANCEL_MAX = 10;
+
 /**
  * The stale links of a document paid through another link are cancelled at Razorpay after the batch (best effort: a failure is logged by code only, and the
  * link stays `stale`; if it is paid later the money is recorded pending with a `document_not_payable` item for the Owner: L4 as amended by the lead, 2026-11-01).
+ * M7.5 (L17): at most `STALE_CANCEL_MAX` per invocation; any beyond stay `stale` under the same L4 rule (one line logs how many were left).
  */
 export function staleCanceller(env: GatewayEnv, api: RazorpayApi, now: number) {
-  return async (links: readonly { id: string; linkId: string }[]) => {
+  return async (all: readonly { id: string; linkId: string }[]) => {
+    const links = all.slice(0, STALE_CANCEL_MAX);
+    if (all.length > links.length)
+      console.log(JSON.stringify({ ev: "gw", m: "stale_cancel_capped", left: all.length - links.length }));
     for (const l of links) {
       const r = await api.cancelLink(l.linkId);
       if (r.ok) await checkoutEndStatement(env.DB, { id: l.id, status: "cancelled", now }).run();
