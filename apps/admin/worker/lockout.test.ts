@@ -206,7 +206,7 @@ describe("account lockout over HTTP [ADM-AUTH-06]", () => {
     expect(await bodyOf(res)).toEqual({
       error: { code: "locked", message: "Too many attempts. Try again in 15 minutes." },
     });
-    expect((await attemptsRow(await accountKey(e.email)))?.failures).toBe(10);
+    expect((await attemptsRow(await accountKey(env.SALT_PEPPER, e.email)))?.failures).toBe(10);
   });
 
   it("10 wrong codes lock /totp, /recovery and step-up, even for the right code", async () => {
@@ -236,7 +236,7 @@ describe("account lockout over HTTP [ADM-AUTH-06]", () => {
     for (let i = 0; i < 5; i++)
       await call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } });
     for (let i = 0; i < 5; i++) await call("/auth/totp", { body: { challenge, code: wrongCode(e.secret) } });
-    expect((await attemptsRow(await accountKey(e.email)))?.failures).toBe(6);
+    expect((await attemptsRow(await accountKey(env.SALT_PEPPER, e.email)))?.failures).toBe(6);
     expect((await attemptsRow(codeKey(id)))?.failures).toBe(5);
     // six failures stand, so the password step wants a token now (M2.4b); the code counter has nothing to do with it
     const again = await call("/auth/login", {
@@ -247,7 +247,7 @@ describe("account lockout over HTTP [ADM-AUTH-06]", () => {
 
   it("the lock lasts 15 minutes, then one verified attempt is allowed, then it is locked again", async () => {
     const e = await enrol("lock-expiry@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     for (let i = 0; i < 10; i++)
       await call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } });
     expect((await call("/auth/login", { body: { email: e.email, clientHash: e.clientHash } })).status).toBe(
@@ -336,7 +336,7 @@ describe("the per-address counter [ADM-AUTH-06]", () => {
       access: await countOf("access_log"),
       audit: await countOf("audit_log"),
     }).toEqual(before);
-    expect(await attemptsRow(await accountKey(other.email))).toBeNull(); // not even the account counter
+    expect(await attemptsRow(await accountKey(env.SALT_PEPPER, other.email))).toBeNull(); // not even the account counter
 
     // Another address is unaffected.
     expect(
@@ -378,7 +378,7 @@ describe("the per-address counter [ADM-AUTH-06]", () => {
     const ip = "198.51.100.50";
     const ik = await ipKey(env.SALT_PEPPER, ip);
     const e = await enrol("ip-locked-acct@example.com");
-    const ak = await accountKey(e.email);
+    const ak = await accountKey(env.SALT_PEPPER, e.email);
     await seed(ak, 10, Date.now(), Date.now() + LOCK_MS);
     for (let i = 1; i <= 3; i++) {
       const r = await counting("/auth/login", {
@@ -478,7 +478,7 @@ describe("parallel attempts can't slip past the lock (the M1.4 pre-read finding)
 
   it("9 failures, then 5 parallel wrong /login: exactly 1 x 401 and 4 x 429, failures = 10, locked", async () => {
     const e = await enrol("race-login@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     await seed(k, 9);
     const rs = await parallel(5, (env_) =>
       call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } }, env_),
@@ -494,7 +494,7 @@ describe("parallel attempts can't slip past the lock (the M1.4 pre-read finding)
     const id = await userId(e.email);
     const challenge = await challengeFor(e.email, e.clientHash);
     await seed(codeKey(id), 9);
-    await seed(await accountKey(e.email), 9); // what M1.4's /totp read; the new /totp doesn't look at it
+    await seed(await accountKey(env.SALT_PEPPER, e.email), 9); // what M1.4's /totp read; the new /totp doesn't look at it
     const rs = await parallel(5, (env_) =>
       call("/auth/totp", { body: { challenge, code: wrongCode(e.secret) } }, env_),
     );
@@ -510,7 +510,7 @@ describe("parallel attempts can't slip past the lock (the M1.4 pre-read finding)
       call("/auth/login", { body: { email: e.email, clientHash: hash(), turnstile: token() } }, env_),
     );
     expect(statuses(rs)).toEqual(Array(10).fill(401));
-    const row = await attemptsRow(await accountKey(e.email));
+    const row = await attemptsRow(await accountKey(env.SALT_PEPPER, e.email));
     expect(row?.failures).toBe(10);
     expect(row?.locked_until).toBeGreaterThan(Date.now());
     expect((await call("/auth/login", { body: { email: e.email, clientHash: e.clientHash } })).status).toBe(
@@ -537,7 +537,7 @@ describe("parallel attempts can't slip past the lock (the M1.4 pre-read finding)
     expect(await countOf("staff_sessions", "user_id = ?", id)).toBe(sessions + 1);
     expect(await countOf("audit_log", "action = 'auth.login' AND actor_id = ?", id)).toBe(logins + 1);
     expect(await attemptsRow(codeKey(id))).toBeNull();
-    expect(await attemptsRow(await accountKey(e.email))).toBeNull();
+    expect(await attemptsRow(await accountKey(env.SALT_PEPPER, e.email))).toBeNull();
   });
 });
 

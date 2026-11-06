@@ -26,6 +26,10 @@ export function breakGlassStatements(p: {
   auditId: string;
 }): string[];
 
+export function auditReadBackSql(ids: string[]): string;
+
+export function readBackProblem(p: { found: string[]; expected: string[] }): string | null;
+
 export function checkBreakGlass(p: {
   email: string;
   newEmail: unknown;

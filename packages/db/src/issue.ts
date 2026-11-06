@@ -616,6 +616,46 @@ export type AdvanceLine = {
 };
 
 /**
+ * The advance lines as the JSON the one-statement insert reads (M7.5 L17): exactly the AdvanceLine fields, so a value can't reach a column it isn't for.
+ * A non-integer number would be stored as a REAL through `json_extract`, so one is refused here (amounts are minor units, rates basis points, quantities
+ * milli-units: integers by the conventions).
+ */
+export function advanceLinesJson(lines: readonly AdvanceLine[]): string {
+  return JSON.stringify(
+    lines.map((l) => {
+      for (const n of [
+        l.position,
+        l.qtyMilli,
+        l.rateMinor,
+        l.taxableMinor,
+        l.gstRateBp,
+        l.cgstMinor,
+        l.sgstMinor,
+        l.igstMinor,
+        l.lineTotalMinor,
+      ])
+        if (!Number.isSafeInteger(n)) throw new RangeError("advance line values are integers");
+      return {
+        id: l.id,
+        position: l.position,
+        description: l.description,
+        detail: l.detail,
+        sac: l.sac,
+        qtyMilli: l.qtyMilli,
+        unit: l.unit,
+        rateMinor: l.rateMinor,
+        taxableMinor: l.taxableMinor,
+        gstRateBp: l.gstRateBp,
+        cgstMinor: l.cgstMinor,
+        sgstMinor: l.sgstMinor,
+        igstMinor: l.igstMinor,
+        lineTotalMinor: l.lineTotalMinor,
+      };
+    }),
+  );
+}
+
+/**
  * Who issues the tax invoice for a payment received (M6.2, L6): the Owner with a live step-up (M5.2), or the system for a Razorpay payment received against a
  * proforma (`gateway_auto`: the pending gateway payment `paymentId`, its paid checkout `checkoutId`, and `onBehalfOf`, the proforma's issuing Owner).
  */
@@ -779,31 +819,26 @@ export function advanceIssueStatements(db: D1Database, args: AdvanceIssueArgs): 
       a.now,
       d.fx?.noRateDay ?? null,
     );
-  const lines = d.lines.map((l) =>
-    db
-      .prepare(
-        `INSERT INTO document_lines (id, document_id, position, description, detail, sac, qty_milli, unit, rate_minor, taxable_minor, gst_rate_bp,
-           cgst_minor, sgst_minor, igst_minor, line_total_minor)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)`,
-      )
-      .bind(
-        l.id,
-        a.documentId,
-        l.position,
-        l.description,
-        l.detail,
-        l.sac,
-        l.qtyMilli,
-        l.unit,
-        l.rateMinor,
-        l.taxableMinor,
-        l.gstRateBp,
-        l.cgstMinor,
-        l.sgstMinor,
-        l.igstMinor,
-        l.lineTotalMinor,
-      ),
-  );
+  // M7.5 (A2 finding A, L17): every line in ONE statement (`json_each` over the lines as JSON), so the batch's statement count no longer grows with the
+  // proforma's SAC/rate groups (up to MAX_GROUPS, 10): it stays well under the house rule of 45 on the Owner's route and the gateway's automatic advance.
+  // Every value is an integer, a string or null, so `json_extract` hands each column what the old bound values gave it.
+  const lines =
+    d.lines.length === 0
+      ? []
+      : [
+          db
+            .prepare(
+              `INSERT INTO document_lines (id, document_id, position, description, detail, sac, qty_milli, unit, rate_minor, taxable_minor, gst_rate_bp,
+                 cgst_minor, sgst_minor, igst_minor, line_total_minor)
+               SELECT json_extract(j.value, '$.id'), ?1, json_extract(j.value, '$.position'), json_extract(j.value, '$.description'),
+                 json_extract(j.value, '$.detail'), json_extract(j.value, '$.sac'), json_extract(j.value, '$.qtyMilli'), json_extract(j.value, '$.unit'),
+                 json_extract(j.value, '$.rateMinor'), json_extract(j.value, '$.taxableMinor'), json_extract(j.value, '$.gstRateBp'),
+                 json_extract(j.value, '$.cgstMinor'), json_extract(j.value, '$.sgstMinor'), json_extract(j.value, '$.igstMinor'),
+                 json_extract(j.value, '$.lineTotalMinor')
+               FROM json_each(?2) j ORDER BY j.key`,
+            )
+            .bind(a.documentId, advanceLinesJson(d.lines)),
+        ];
   const base: FreezeBase = {
     ...a,
     expected: { ...a.expected, updatedAt: a.now, contentSha256: a.contentSha256 },

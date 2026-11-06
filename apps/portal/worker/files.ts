@@ -3,7 +3,7 @@
 // another organisation's file, an unshared one, or one unshared between the list and the click is the plain 404. The object is streamed from the private
 // `FILES` bucket through this session-checked Worker (never a signed URL, lead 2026-10-25): an attachment, never rendered, never cached, never sniffed. A
 // missing object is a 404 and one error line (an incident: the row says the file exists). One access row per download, no audit row (L5).
-import { contentDisposition } from "@techaust/core/file-types";
+import { downloadHeaders } from "@techaust/core/file-types";
 import { SHARED_FILE_SQL, sharedFilesFor, sharedFilesForProject } from "@techaust/db/portal-shared";
 import { Hono } from "hono/tiny";
 import { type AppEnv, err, NOT_FOUND } from "./context.ts";
@@ -42,13 +42,6 @@ export const files = new Hono<AppEnv>()
       return err(c, NOT_FOUND, 404);
     }
     return new Response(object.body, {
-      headers: {
-        "Content-Type": row.mime,
-        "Content-Length": String(object.size),
-        "Content-Disposition": contentDisposition(row.filename),
-        "Cache-Control": "no-store",
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-      },
+      headers: downloadHeaders({ contentType: row.mime, size: object.size, filename: row.filename }),
     });
   });

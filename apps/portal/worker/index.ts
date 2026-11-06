@@ -1,4 +1,5 @@
 import { answeringRow, firstRun, hex, randomBytes, warmRouter } from "@techaust/auth";
+import { API_CSP } from "@techaust/core/file-types";
 import { portalAlertMessage } from "@techaust/core/portal";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
@@ -25,6 +26,7 @@ import { paidNoticeRoutes, tokenPaidNoticeRoutes } from "./paid-notice.ts";
 import { payReturn } from "./pay-return.ts";
 import { profile } from "./profile.ts";
 import { projects } from "./projects.ts";
+import { addressLimit } from "./rate-limit.ts";
 import { receiptList } from "./receipts.ts";
 import { requests } from "./requests.ts";
 import type { MagicLinkSender } from "./sender.ts";
@@ -60,6 +62,12 @@ export function createApp(deps: Deps = {}) {
       permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [], usb: [] },
     }),
   );
+  // M7.5 (C3a, L11): every answer that set no policy of its own (JSON, errors, 404s) gets web's API policy, `default-src 'none'; frame-ancestors 'none'`.
+  // Set-if-absent AFTER the handler: Hono's `secureHeaders({ contentSecurityPolicy })` would overwrite a download's `default-src 'none'; sandbox`.
+  app.use(async (c, next) => {
+    await next();
+    if (!c.res.headers.has("Content-Security-Policy")) c.res.headers.set("Content-Security-Policy", API_CSP);
+  });
 
   // The outermost middleware: request ID and facts, the route's table row, the exit log line, and the access-log
   // row of a SIGNED-IN request (owner's Q1 = A) unless the handler already wrote it inside its own batch. Anonymous
@@ -129,6 +137,8 @@ export function createApp(deps: Deps = {}) {
     }),
   );
   app.use(csrf);
+  // M7.5 (C2): the per-address limit of the sign-in and emailed-link rows, before the body is read, Turnstile or any D1 statement (rate-limit.ts).
+  app.use(addressLimit);
   app.use(bodyLimit({ maxSize: 16 * 1024, onError: (c) => err(c as Ctx, BAD_REQUEST, 413) }));
   app.use(guard);
 

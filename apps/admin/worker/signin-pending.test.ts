@@ -1,7 +1,7 @@
 // M7.2 (Q3 A; run file docs/runs/m7.2-notifications.md, "Lead triage of the early check"): the unfinished sign-in marker. Tier A ground (staff auth):
 // only a correct password writes a row, keyed by the challenge's own signed id; the finished sign-in of THAT challenge deletes it; nothing else does.
 import { env } from "cloudflare:workers";
-import { fromB64url, signChallenge, totpCode } from "@techaust/auth";
+import { CHALLENGE_TTL_MS, fromB64url, signChallenge, totpCode } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
 import {
   call,
@@ -92,10 +92,11 @@ describe("unfinished sign-in marker (Q3 A) [ADM-AUTH-09, ADM-G-09]", () => {
     const uid = await userId(e.email);
     await challengeFor(e.email, e.clientHash); // one unfinished row
     const ak = claimOfAk(await challengeFor(e.email, e.clientHash));
+    // signed just now, as M7.1's /login signed it (no `iat`: M7.5 L4 reads it as issued at exp - 5 minutes)
     const old = await signChallenge(env.SESSION_HMAC_KEY, {
       purpose: "login_totp",
       sub: uid,
-      exp: Date.now() + 60_000,
+      exp: Date.now() + CHALLENGE_TTL_MS,
       ak,
     });
     expect((await totp(old, e.secret, e.step + 1)).status).toBe(200);
@@ -114,6 +115,7 @@ describe("unfinished sign-in marker (Q3 A) [ADM-AUTH-09, ADM-G-09]", () => {
       purpose: "login_totp",
       sub: bId,
       exp: Date.now() + 60_000,
+      iat: Date.now(),
       ak: bAk,
       jti: aJti,
     });

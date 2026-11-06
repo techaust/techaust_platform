@@ -131,5 +131,36 @@ export function contentDisposition(name: string): string {
   return `attachment; filename="${asciiName}"; filename*=UTF-8''${pct}`;
 }
 
+/**
+ * M7.5 (C3, L11): the policy of every JSON or error answer of the admin and portal APIs, as web's Worker sends it: nothing may load, and no page may frame it.
+ * Set only where the handler set none (a download keeps its own `DOWNLOAD_CSP`).
+ */
+export const API_CSP = "default-src 'none'; frame-ancestors 'none'";
+/** M7.5 (C3b, L12): the policy of every stored file or PDF served for download: nothing loads, and the browser treats it as a sandboxed, unique origin. */
+export const DOWNLOAD_CSP = "default-src 'none'; sandbox";
+
+/**
+ * M7.5 (L12): the one set of headers for a stored object served through a Worker (admin and portal): an attachment (`contentDisposition`, RFC 6266 and
+ * 8187) when a filename is given, never sniffed, sandboxed (`DOWNLOAD_CSP`), never cached, never indexed. `filename: null`: no `Content-Disposition` (the
+ * signature preview the settings screen shows as an image).
+ */
+export function downloadHeaders(o: {
+  contentType: string;
+  size: number;
+  filename: string | null;
+  etag?: string | null;
+}): Record<string, string> {
+  return {
+    "Content-Type": o.contentType,
+    "Content-Length": String(o.size),
+    ...(o.filename !== null ? { "Content-Disposition": contentDisposition(o.filename) } : {}),
+    ...(o.etag ? { ETag: `"${o.etag}"` } : {}),
+    "X-Content-Type-Options": "nosniff",
+    "Content-Security-Policy": DOWNLOAD_CSP,
+    "Cache-Control": "no-store",
+    "X-Robots-Tag": "noindex",
+  };
+}
+
 /** The R2 key: the client and the file id, never a filename. */
 export const fileKey = (clientId: string, fileId: string) => `files/${clientId}/${fileId}`;

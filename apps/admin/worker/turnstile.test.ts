@@ -165,7 +165,7 @@ RETURNING failures, locked_until`);
 describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
   it("attempts 1 to 3 need no token and make no siteverify call", async () => {
     const e = await enrol("gate-free@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     for (let i = 1; i <= 3; i++) {
       const res = await login(e.email, hash());
       expect(res.status).toBe(401);
@@ -184,7 +184,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
 
   it("the 4th attempt without a token is 401 turnstile_required, counts nothing and still writes its access row", async () => {
     const e = await enrol("gate-4th@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     for (let i = 0; i < 3; i++) await login(e.email, hash());
     const before = {
       row: await attemptsRow(k),
@@ -206,7 +206,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
 
   it("with a token Cloudflare confirms, the attempt counts and is checked as before", async () => {
     const e = await enrol("gate-valid@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     for (let i = 0; i < 3; i++) await login(e.email, hash());
     const wrong = await login(e.email, hash(), { turnstile: token() });
     expect(wrong.status).toBe(401);
@@ -234,7 +234,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
 
   it("a successful sign-in clears the password counter, so the next sign-in needs no token again", async () => {
     const e = await enrol("gate-clear@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     for (let i = 0; i < 3; i++) await login(e.email, hash());
     const challenge = (await (await login(e.email, e.clientHash, { turnstile: token() })).json()) as {
       challenge: string;
@@ -254,7 +254,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
 
   it("a token Cloudflare refuses (bad, used twice, made for another surface or host) is the same as none", async () => {
     const e = await enrol("gate-refused@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     for (let i = 0; i < 3; i++) await login(e.email, hash());
     const refusedBody = async (res: Response) => {
       expect(res.status).toBe(401);
@@ -280,7 +280,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
 
   it("fails closed when siteverify is down: a network error, a 500 and a body that is not JSON all ask for a token again", async () => {
     const e = await enrol("gate-down@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     for (let i = 0; i < 3; i++) await login(e.email, hash());
     for (const answer of ["network-error", { httpStatus: 500 }, "not-json"] as const) {
       sv.answer = answer;
@@ -293,7 +293,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
 
   it("a lock still answers 429, with a token or without", async () => {
     const e = await enrol("gate-locked@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     await seed(k, 10, Date.now(), Date.now() + LOCK_MS);
     for (const extra of [{}, { turnstile: token() }, { turnstile: "bad-token" }]) {
       const res = await login(e.email, e.clientHash, extra);
@@ -305,7 +305,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
 
   it("after the lock ends, a tokenless attempt is turnstile_required and a verified one counts", async () => {
     const e = await enrol("gate-lock-over@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     await seed(k, 10, Date.now() - 60_000, Date.now() - 1);
     expect(await bodyOf(await login(e.email, e.clientHash))).toEqual(REQUIRED);
     expect((await login(e.email, e.clientHash, { turnstile: token() })).status).toBe(200);
@@ -315,7 +315,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
   it("is identical for an unknown email and a real one: status, body, headers and D1 calls", async () => {
     const e = await enrol("gate-known@example.com");
     const ghost = "gate-ghost@example.com";
-    for (const email of [e.email, ghost]) await seed(await accountKey(email), 3);
+    for (const email of [e.email, ghost]) await seed(await accountKey(env.SALT_PEPPER, email), 3);
     const known = await counting("/auth/login", { body: { email: e.email, clientHash: hash() } });
     const unknown = await counting("/auth/login", { body: { email: ghost, clientHash: hash() } });
     expect(known.res.status).toBe(401);
@@ -335,7 +335,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
     timeout: 30_000,
   }, async () => {
     const e = await enrol("gate-script@example.com");
-    const k = await accountKey(e.email);
+    const k = await accountKey(env.SALT_PEPPER, e.email);
     for (let i = 0; i < 3; i++) await login(e.email, hash());
     const before = await attemptsRow(k);
     for (let i = 0; i < 100; i++) {
@@ -357,7 +357,7 @@ describe("/login and the Turnstile step [ADM-AUTH-06]", () => {
         body: { email: e.email, clientHash: hash() },
         headers: { "CF-Connecting-IP": ip },
       });
-    const acct = await accountKey(e.email);
+    const acct = await accountKey(env.SALT_PEPPER, e.email);
     expect((await attemptsRow(ik))?.failures).toBe(3);
     expect((await attemptsRow(acct))?.failures).toBe(3);
     const refused = await call("/auth/login", {

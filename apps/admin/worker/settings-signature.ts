@@ -13,6 +13,8 @@
 // FX-3 (A6 1c): at most 800 by 400 pixels (core SIGNATURE_MAX_WIDTH and _HEIGHT), read from the PNG's IHDR, so the check costs no decoding.
 // PNG only for a new upload (lead, docs/13 2026-10-29): the admin re-encodes every image, JPEG included, to a PNG within that box before it
 // uploads (lib/signature-scale.ts), so the PDF integrity check follows the image's Flate stream. A stored signature (a JPEG too) is left as it is.
+
+import { downloadHeaders } from "@techaust/core/file-types";
 import {
   resolveSetting,
   SIGNATURE_MAX_BYTES,
@@ -80,14 +82,9 @@ export const settingsSignature = new Hono<AppEnv>()
     if (!ref) return err(c, NOT_FOUND, 404);
     const obj = await c.env.DOCS.get(ref.key);
     if (!obj) return err(c, NOT_FOUND, 404);
+    // No filename: the settings screen shows it as an image (M7.5 L12: the shared download headers otherwise).
     return new Response(obj.body, {
-      headers: {
-        "Content-Type": ref.mime,
-        "Content-Length": String(obj.size),
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-        "Cache-Control": "no-store",
-      },
+      headers: downloadHeaders({ contentType: ref.mime, size: obj.size, filename: null }),
     });
   })
 

@@ -540,6 +540,64 @@ export function portalFilesProblems(portal) {
   return problems;
 }
 
+/**
+ * M7.5 (C2, L2, L5, L22): the In-Worker Rate Limiting bindings each Worker must have, by name with its limit per 60 seconds. Bindings are not inherited by
+ * environments, so every scope (top level, `env.staging`, `env.production`) lists them. Only the admin FRONT has them (the API, finance and invoices Workers
+ * are reached through it and must not hold the limiter or its keys).
+ */
+export const RATE_LIMITS = {
+  admin: { RL_SESSION: 240, RL_SIGNIN: 20, RL_INVITE: 10 },
+  portal: { RL_SESSION: 120, RL_SIGNIN: 10, RL_LINKS: 30 },
+};
+
+/**
+ * M7.5 (L22): each config of `required` ([label, config, {name: limit}]) has exactly those bindings in every scope, each with `simple` `{limit, period: 60}` and
+ * a `namespace_id` that is a positive integer string; every namespace id is used once across every scope and purpose of `required` (two bindings sharing one
+ * share their counters, Cloudflare docs read 2026-11-07), and none collides with a namespace id of `others` ([label, config], e.g. web's RL_FORMS); `none`
+ * ([label, config]) has no `ratelimits` in any scope. Empty = passes.
+ */
+export function rateLimitProblems(required, others = [], none = []) {
+  const problems = [];
+  const owners = new Map();
+  const claim = (id, who) => {
+    const was = owners.get(id);
+    if (was) problems.push(`${who}: namespace_id ${id} is already used by ${was}`);
+    else owners.set(id, who);
+  };
+  for (const [label, cfg, want] of required) {
+    for (const [scope, c] of SCOPES(cfg)) {
+      const list = c?.ratelimits ?? [];
+      const names = list.map((r) => r?.name).sort();
+      const wantNames = Object.keys(want).sort();
+      if (JSON.stringify(names) !== JSON.stringify(wantNames))
+        problems.push(
+          `${label} ${scope}: ratelimits must be exactly ${JSON.stringify(wantNames)} (not inherited: list them in every scope)`,
+        );
+      for (const r of list) {
+        const who = `${label} ${scope} ${r?.name}`;
+        if (typeof r?.namespace_id !== "string" || !/^[1-9][0-9]*$/.test(r.namespace_id))
+          problems.push(`${who}: namespace_id must be a positive integer, as a string`);
+        else claim(r.namespace_id, who);
+        if (r?.simple?.period !== 60) problems.push(`${who}: simple.period must be 60`);
+        if (want[r?.name] !== undefined && r?.simple?.limit !== want[r.name])
+          problems.push(`${who}: simple.limit must be ${want[r.name]}`);
+      }
+    }
+  }
+  for (const [label, cfg] of others)
+    for (const [scope, c] of SCOPES(cfg))
+      for (const r of c?.ratelimits ?? [])
+        if (owners.has(r?.namespace_id))
+          problems.push(
+            `${label} ${scope} ${r?.name}: namespace_id ${r.namespace_id} is already used by ${owners.get(r.namespace_id)}`,
+          );
+  for (const [label, cfg] of none)
+    for (const [scope, c] of SCOPES(cfg))
+      if (c?.ratelimits !== undefined)
+        problems.push(`${label} ${scope}: no ratelimits (the front counts every request it forwards)`);
+  return problems;
+}
+
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   let failed = false;
   for (const app of APPS) {
@@ -610,6 +668,17 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     console.error(p);
     failed = true;
   }
+  for (const p of rateLimitProblems(
+    [
+      ["apps/admin/wrangler.jsonc", front, RATE_LIMITS.admin],
+      ["apps/portal/wrangler.jsonc", read("portal/wrangler.jsonc"), RATE_LIMITS.portal],
+    ],
+    [["apps/web/wrangler.jsonc", read("web/wrangler.jsonc")]],
+    ADMIN_AUX_CONFIGS.map((f) => [`apps/admin/${f}`, aux[f]]),
+  )) {
+    console.error(p);
+    failed = true;
+  }
   for (const p of jobsBuildProblems(read("jobs/wrangler.jsonc"))) {
     console.error(`apps/jobs: ${p}`);
     failed = true;
@@ -636,6 +705,6 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   }
   if (failed) process.exit(1);
   console.log(
-    "worker config guard: ok (preview_urls is false everywhere; the admin API, finance and invoices Workers have no public URL; the entrypoint bindings point at their Workers; the portal's FILES on local and staging only; traces on staging only; jobs minified with source maps)",
+    "worker config guard: ok (preview_urls is false everywhere; the admin API, finance and invoices Workers have no public URL; the entrypoint bindings point at their Workers; the portal's FILES on local and staging only; traces on staging only; jobs minified with source maps; the front's and the portal's rate limits in every scope)",
   );
 }

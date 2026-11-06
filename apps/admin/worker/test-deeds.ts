@@ -152,8 +152,8 @@ export function statementCounter() {
   return { env: withDb(db), count: () => n };
 }
 
-/** D1 Free: at most 50 queries per Worker invocation (a batch's statements each count). */
-export const D1_FREE_QUERIES = 50;
+/** M7.5 (A2 finding B, L17): the house rule (T7) the deed batches are held to: at most 45 statements per invocation, 5 under D1 Free's 50. */
+export const HOUSE_STATEMENTS = 45;
 
 /** The eSign moment as the provider shows it in IST, to the second: a second ago (after the finalise, never in the future). */
 export const istNowText = () => new Date(Date.now() + 19_800_000 - 1_000).toISOString().slice(0, 19);

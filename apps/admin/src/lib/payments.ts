@@ -7,6 +7,7 @@
 // empty states and dialogs); each one shows the "[Placeholder]" mark until it is approved, then `APPROVED_07ZH_NEW` turns true and the marks go (the
 // 07-X, 07-Y and 07-Z pattern). A 07-S, 07-R or 07-V line that already says the thing is reused and says where it comes from.
 // Money is formatted and added only through core; nothing here adds up an amount by hand. Pure, so the words and rules are tested without a browser.
+import { csvCell } from "@techaust/core/csv-cell";
 import { LEDGER_STATUSES, PAYABLE_TYPES, receiptMonthWarning, TDS_TYPES } from "@techaust/core/ledger";
 import { type Currency, compare, formatMoney, money, subtract, sum } from "@techaust/core/money";
 import { reviewReason } from "../../worker/gateway/reasons.ts";
@@ -674,11 +675,8 @@ export function askedDocOf(
 
 // ---- the register CSV -----------------------------------------------------------------------------------------------------------------------------------
 
-/** One CSV cell: quoted when needed; a leading = + - @ is defused (spreadsheet formulas), as the audit CSV does. */
-export function csvCell(v: string): string {
-  const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
-  return /[",\n\r]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
-}
+/** One CSV cell (quoted when needed; a leading = + - @, tab or CR defused): the one shared writer, `@techaust/core/csv-cell` (M7.5 B1). */
+export { csvCell };
 
 const decimal = (minor: number, currency: Currency) => plainAmount(minor, currency);
 const rateText = (bp: number | null) => (bp === null ? "" : bpToPercent(bp));

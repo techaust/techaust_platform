@@ -20,9 +20,11 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { portOffset, shiftLocalUrl } from "./dev-ports.mjs";
 import {
+  auditReadBackSql,
   breakGlassStatements,
   checkBreakGlass,
   normaliseEmail,
+  readBackProblem,
   reinviteStatements,
   resetStatements,
 } from "./reset-2fa-sql.mjs";
@@ -97,6 +99,12 @@ function runFile(statements) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+/** M7.5 (C5): reads the run's audit rows back; stops with the reason when one is missing. */
+function readBack(expected) {
+  const found = rows(auditReadBackSql(expected)).map((r) => r.id);
+  const problem = readBackProblem({ found, expected });
+  if (problem) throw new Error(problem);
+}
 // The local link follows TECHAUST_PORT_OFFSET (CLOUD-1, scripts/dev-ports.mjs): the dev server the person opens it on.
 const origin = values.staging ? ORIGINS.staging : shiftLocalUrl(ORIGINS.local, portOffset());
 
@@ -118,6 +126,7 @@ if (onlyOwner) {
   );
   if (!made)
     throw new Error("The invite was not created (the checks changed while running); nothing was changed.");
+  readBack([common.auditId]);
   console.log(
     `Break-glass: ${email} is the only active owner, so it was left untouched. A one-time OWNER invite was issued for ${newEmail}.\nNext: open the link, enrol that account (password and authenticator), then in Staff and invites reset or deactivate ${email}.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
   );
@@ -125,14 +134,16 @@ if (onlyOwner) {
 }
 
 // Already "invited" (an earlier reset whose link was lost): only a fresh invite; staff_users is not touched.
+const alertId = randomUUID();
 runFile(
   user.status === "invited"
     ? reinviteStatements({ ...common, email })
-    : resetStatements({ ...common, email, alertId: randomUUID() }),
+    : resetStatements({ ...common, email, alertId }),
 );
 
 const [after] = rows(`SELECT status FROM staff_users WHERE email = ${q(email)}`);
 if (after?.status !== "invited") throw new Error("The reset did not apply; nothing was changed.");
+readBack(user.status === "invited" ? [common.auditId] : [common.auditId, alertId]);
 console.log(
   `${user.status === "invited" ? "New link issued" : "Reset done"} for ${email}: password, authenticator and recovery codes cleared, sessions ended.\nNo email is sent about this reset: tell the member yourself.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
 );

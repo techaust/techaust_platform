@@ -4,9 +4,11 @@ import { INVITE_TTL_MS, tokenHash } from "@techaust/auth";
 import { describe, expect, it } from "vitest";
 import { createInviteStatements } from "../../../scripts/create-invite-sql.mjs";
 import {
+  auditReadBackSql,
   breakGlassStatements,
   checkBreakGlass,
   normaliseEmail,
+  readBackProblem,
   reinviteStatements,
   resetStatements,
 } from "../../../scripts/reset-2fa-sql.mjs";
@@ -737,15 +739,66 @@ describe("break-glass: pnpm admin:reset-2fa [ADM-AUTH-07, docs/08 §3.2]", () =>
     ).toBe("deactivated");
   });
 
-  it("is refused by the database for the only active owner (the last-owner trigger)", async () => {
+  it("M7.5 C5: for the only active owner the SQL itself changes nothing (the trigger stays as the second line): no audit row, no invite, no session ended", async () => {
     const o = await sessionFor("owner");
     await env.DB.prepare("UPDATE staff_users SET status = 'deactivated' WHERE role = 'owner' AND id <> ?")
       .bind(o.id)
       .run();
-    await expect(run(o.email, "v".repeat(43))).rejects.toThrow(/at least one active owner/);
+    const before = {
+      audits: await countOf("audit_log"),
+      invites: await countOf("staff_invites"),
+      live: await countOf("staff_sessions", "user_id = ? AND revoked_at IS NULL", o.id),
+    };
+    await run(o.email, "v".repeat(43));
     expect((await one<{ status: string }>("SELECT status FROM staff_users WHERE id = ?", o.id))?.status).toBe(
       "active",
     );
+    expect({
+      audits: await countOf("audit_log"),
+      invites: await countOf("staff_invites"),
+      live: await countOf("staff_sessions", "user_id = ? AND revoked_at IS NULL", o.id),
+    }).toEqual(before);
+    // the trigger is still there behind the guard: a direct update of the last owner is refused
+    await expect(
+      env.DB.prepare("UPDATE staff_users SET status = 'invited' WHERE id = ?").bind(o.id).run(),
+    ).rejects.toThrow(/at least one active owner/);
+  });
+
+  it("M7.5 C5: the script reads its audit rows back; a run that wrote them passes, one whose guard held is reported", async () => {
+    await sessionFor("owner"); // keep an owner around
+    const e = await enrol(newEmail(), "staff");
+    const now = Date.now();
+    const ids = { auditId: crypto.randomUUID(), alertId: crypto.randomUUID() };
+    await env.DB.exec(
+      resetStatements({
+        email: e.email,
+        tokenHash: await tokenHash("r".repeat(43)),
+        now,
+        expiresAt: now + INVITE_TTL_MS,
+        ...ids,
+      }).join("\n"),
+    );
+    const expected = [ids.auditId, ids.alertId];
+    const found = async (want: string[]) =>
+      (await env.DB.prepare(auditReadBackSql(want)).all<{ id: string }>()).results.map((r) => r.id);
+    expect(readBackProblem({ found: await found(expected), expected })).toBeNull();
+    // the same member again (now invited): the guard holds, nothing is written, the read-back says so
+    const again = { auditId: crypto.randomUUID(), alertId: crypto.randomUUID() };
+    await env.DB.exec(
+      resetStatements({
+        email: e.email,
+        tokenHash: await tokenHash("s".repeat(43)),
+        now: now + 1,
+        expiresAt: now + INVITE_TTL_MS,
+        ...again,
+      }).join("\n"),
+    );
+    const want = [again.auditId, again.alertId];
+    expect(readBackProblem({ found: await found(want), expected: want })).toMatch(
+      /2 of 2 audit rows missing.*do not use the link/,
+    );
+    expect(readBackProblem({ found: [ids.auditId], expected })).toMatch(/1 of 2 audit rows missing/);
+    expect(auditReadBackSql(["a'b", "c"])).toBe("SELECT id FROM audit_log WHERE id IN ('a''b', 'c')");
   });
 });
 
@@ -790,9 +843,20 @@ describe("break-glass for the only owner: a second owner is invited [ADM-AUTH-07
         auditId: "audit-1",
       }),
     ).toEqual([
-      "INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) SELECT 'abc123', 'second@example.com', 'owner', NULL, 5000 WHERE EXISTS (SELECT 1 FROM staff_users WHERE id = 'owner-1' AND role = 'owner' AND status = 'active') AND NOT EXISTS (SELECT 1 FROM staff_users WHERE email = 'second@example.com') AND NOT EXISTS (SELECT 1 FROM staff_invites WHERE email = 'second@example.com' AND used_at IS NULL AND expires_at > 1000);",
+      "INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) SELECT 'abc123', 'second@example.com', 'owner', NULL, 5000 WHERE EXISTS (SELECT 1 FROM staff_users WHERE id = 'owner-1' AND role = 'owner' AND status = 'active') AND (SELECT count(*) FROM staff_users WHERE role = 'owner' AND status = 'active') = 1 AND NOT EXISTS (SELECT 1 FROM staff_users WHERE email = 'second@example.com') AND NOT EXISTS (SELECT 1 FROM staff_invites WHERE email = 'second@example.com' AND used_at IS NULL AND expires_at > 1000);",
       `INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, summary) SELECT 'audit-1', 'system', NULL, 'user.invite', 'staff_invite', 'abc123', '{"via":"cli","reason":"break-glass","lost_owner_id":"owner-1"}' WHERE EXISTS (SELECT 1 FROM staff_invites WHERE token_hash = 'abc123' AND email = 'second@example.com');`,
     ]);
+  });
+
+  it("M7.5 C5: not once a second owner is active (the lost owner is no longer the only one): no invite, no audit row", async () => {
+    const o = await onlyOwner();
+    await sessionFor("owner"); // a second active owner appears between the script's checks and the run
+    const address = `second-${Math.random().toString(36).slice(2, 8)}@example.com`;
+    const p = await params(o.id, address);
+    await run(p);
+    expect(await countOf("staff_invites", "email = ?", address)).toBe(0);
+    expect(await countOf("audit_log", "id = ?", p.auditId)).toBe(0);
+    expect(readBackProblem({ found: [], expected: [p.auditId] })).toMatch(/do not use the link/);
   });
 
   it("stores an owner invite for the new address, with the expiry from --hours and a break-glass audit row", async () => {
@@ -887,20 +951,21 @@ describe("break-glass for the only owner: a second owner is invited [ADM-AUTH-07
     const address = `second-${Math.random().toString(36).slice(2, 8)}@example.com`;
     const token = `${crypto.randomUUID().replaceAll("-", "")}${"y".repeat(11)}`;
     await run(await params(o.id, address, token));
-    // Still the only active owner: the trigger is untouched, resetting the lost owner is still refused.
+    // Still the only active owner: resetting the lost owner changes nothing (M7.5 C5: the SQL's own only-owner guard, before the trigger).
     const now = Date.now();
-    await expect(
-      env.DB.exec(
-        resetStatements({
-          email: o.email,
-          tokenHash: await tokenHash("z".repeat(43)),
-          now,
-          expiresAt: now + INVITE_TTL_MS,
-          auditId: crypto.randomUUID(),
-          alertId: crypto.randomUUID(),
-        }).join("\n"),
-      ),
-    ).rejects.toThrow(/at least one active owner/);
+    await env.DB.exec(
+      resetStatements({
+        email: o.email,
+        tokenHash: await tokenHash("z".repeat(43)),
+        now,
+        expiresAt: now + INVITE_TTL_MS,
+        auditId: crypto.randomUUID(),
+        alertId: crypto.randomUUID(),
+      }).join("\n"),
+    );
+    expect((await one<{ status: string }>("SELECT status FROM staff_users WHERE id = ?", o.id))?.status).toBe(
+      "active",
+    );
     const second = await accept(token, "Second Owner");
     expect(second.email).toBe(address);
     expect(await one("SELECT role, status FROM staff_users WHERE email = ?", address)).toEqual({

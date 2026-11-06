@@ -9,6 +9,7 @@
 import { checkSession, PORTAL_IDLE_MS, readPortalCookie, tokenHash } from "@techaust/auth";
 import { createMiddleware } from "hono/factory";
 import { type AppEnv, err, NOT_FOUND, type RouteDef, UNAUTHENTICATED } from "./context.ts";
+import { sessionAllowed, tooMany } from "./rate-limit.ts";
 import { issueScope } from "./scope.ts";
 
 type Opts = { audit?: string; log?: boolean };
@@ -119,6 +120,8 @@ export const guard = createMiddleware<AppEnv>(async (c, next) => {
   const token = readPortalCookie(c.req.header("Cookie"));
   if (!token) return err(c, UNAUTHENTICATED, 401);
   const sessionId = await tokenHash(token);
+  // M7.5 (A1 F2, L2): the per-session limit, before any D1 work. A refusal writes nothing (no scope is set, so no access row).
+  if (!(await sessionAllowed(c, sessionId))) return tooMany(c);
   const s = await c.env.DB.prepare(SESSION_READ).bind(sessionId).first<SessionRow>();
   const t = Date.now();
   const state = s

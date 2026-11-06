@@ -4,7 +4,7 @@
 // the password dictionaries load on top of that only when the password field is used.
 import { type FormEvent, useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
-import { api, errorText, hashPassword, type User } from "../api.ts";
+import { api, errorText, hashPassword, RequestError, type User } from "../api.ts";
 import { QrCode } from "../components/qr-code.tsx";
 import { RecoveryCodes } from "../components/recovery-codes.tsx";
 import { Card, CodeField, CopyButton, Field, Notice, useFocusOnChange } from "../components/ui.tsx";
@@ -44,6 +44,8 @@ export function Component() {
   const [step, setStep] = useState<Step>("details");
   const [enrol, setEnrol] = useState<Enrolment | null>(null);
   const [done, setDone] = useState<{ user: User; codes: string[] } | null>(null);
+  // M7.5 (L9, M1.5 L3): the authenticator step outlived its 10-minute window (`enrolment_expired`): back to step 1 with the server's line.
+  const [expired, setExpired] = useState<string | null>(null);
   const heading = useFocusOnChange<HTMLHeadingElement>(step);
   const { user } = useSession();
 
@@ -74,7 +76,9 @@ export function Component() {
         <DetailsStep
           token={token}
           invite={invite}
+          notice={expired}
           onDone={(e) => {
+            setExpired(null);
             setEnrol(e);
             setStep("app");
           }}
@@ -89,6 +93,11 @@ export function Component() {
             history.replaceState(history.state, "", "/invite");
             setDone({ user, codes });
             setStep("codes");
+          }}
+          onExpired={(text) => {
+            setEnrol(null);
+            setExpired(text);
+            setStep("details");
           }}
         />
       )}
@@ -128,14 +137,20 @@ function InviteInvalid({ reason }: { reason: string }) {
   );
 }
 
-function DetailsStep(props: { token: string; invite: Invite; onDone: (e: Enrolment) => void }) {
+function DetailsStep(props: {
+  token: string;
+  invite: Invite;
+  /** Shown as the step's error when the person was sent back here (the authenticator step timed out). */
+  notice?: string | null;
+  onDone: (e: Enrolment) => void;
+}) {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [strength, setStrength] = useState<Strength | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [pwError, setPwError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(props.notice ?? null);
   const [phase, setPhase] = useState<"idle" | "checking" | "hashing">("idle");
   const inputs = personalWords(name, props.invite.email);
   const inputsKey = inputs.join(" ");
@@ -283,7 +298,13 @@ function StrengthMeter({ password, strength }: { password: string; strength: Str
   );
 }
 
-function AppStep(props: { enrol: Enrolment; email: string; onDone: (u: User, codes: string[]) => void }) {
+function AppStep(props: {
+  enrol: Enrolment;
+  email: string;
+  onDone: (u: User, codes: string[]) => void;
+  /** The enrolment window ended (`enrolment_expired`): the parent goes back to step 1 with this line. */
+  onExpired: (text: string) => void;
+}) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -303,6 +324,10 @@ function AppStep(props: { enrol: Enrolment; email: string; onDone: (u: User, cod
       props.onDone(r.user, r.recoveryCodes);
     } catch (err) {
       setCode("");
+      if (err instanceof RequestError && err.code === "enrolment_expired") {
+        props.onExpired(errorText(err));
+        return;
+      }
       setError(errorText(err));
     } finally {
       setBusy(false);
