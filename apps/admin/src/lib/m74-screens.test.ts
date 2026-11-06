@@ -11,8 +11,9 @@ import {
 } from "@techaust/core/dsr";
 import { describe, expect, it } from "vitest";
 import { type AuditEntry, RequestError } from "../api.ts";
+import { eraseRefusal, tooManyRefs } from "../routes/leads/data-tools.tsx";
 import { reportBellHref } from "./bell-links.ts";
-import { ZR_CLOSE, ZR_LOG, ZR_REQ } from "./copy-zr.ts";
+import { ZR_CLOSE, ZR_LEAD, ZR_LOG, ZR_REQ } from "./copy-zr.ts";
 import { ZR_NAV } from "./copy-zr-nav.ts";
 import {
   DECLINE_REASONS,
@@ -78,6 +79,20 @@ const req = (o: Partial<RequestView> = {}): RequestView => ({
 describe("the lists the screens offer are core's [ADM-SET-09, POR-11]", () => {
   it("kinds, channels, decline reasons, the L28 reasons and the L42 kinds", () => {
     expect([...REQUEST_KINDS].sort()).toEqual([...CORE_KINDS].sort());
+    // review low 5: core's lists, in the screens' own order for the kinds (the data rights first)
+    expect(REQUEST_KINDS).toEqual([
+      "data_access",
+      "data_correction",
+      "data_erasure",
+      "consent_withdrawal",
+      "nomination",
+      "grievance",
+      "contact_change",
+    ]);
+    expect(DECLINE_REASONS).toBe(CORE_DECLINE);
+    expect(EMAIL_ONLY_DECLINE_REASONS).toBe(CORE_EMAIL_ONLY);
+    expect(IDENTITY_CHECKED_KINDS).toBe(CORE_IDENTITY);
+    expect(STAFF_CHANNELS).toBe(CORE_STAFF_CHANNELS);
     expect([...STAFF_CHANNELS]).toEqual([...CORE_STAFF_CHANNELS]);
     expect([...DECLINE_REASONS]).toEqual([...CORE_DECLINE]);
     expect([...EMAIL_ONLY_DECLINE_REASONS]).toEqual([...CORE_EMAIL_ONLY]);
@@ -346,6 +361,31 @@ describe("Log a request: the checks before the API (C.2, L22, L28)", () => {
     expect(logErrorText(new RequestError(404, "not_found", "x"))).toBe(ZR_LOG.refused.not_found);
     expect(clientIdOfLink("/clients/abc?tab=contacts")).toBe("abc");
     expect(clientIdOfLink("/leads/abc")).toBeUndefined();
+  });
+});
+
+describe("a lead erase refused as too_many_leads names the enquiries (review low 11) [ADM-CLI-05]", () => {
+  it("the sentence stays; the refs come only from that refusal's details, as a list of strings", () => {
+    const refs = ["L-0A1B2", "L-0A1B3"];
+    const tooMany = new RequestError(409, "too_many_leads", "x", null, [], [], [], { details: { refs } });
+    expect(eraseRefusal(tooMany)).toBe(
+      "This person has too many enquiries to erase at once. Ask your developer to help.",
+    );
+    expect(tooManyRefs(tooMany)).toEqual(refs);
+    // no refs sent: the sentence alone
+    expect(tooManyRefs(new RequestError(409, "too_many_leads", "x"))).toEqual([]);
+    // another refusal never lists anything, and a scalar under `refs` is not a list
+    expect(
+      tooManyRefs(new RequestError(409, "legal_hold", "x", null, [], [], [], { details: { refs } })),
+    ).toEqual([]);
+    expect(
+      tooManyRefs(
+        new RequestError(409, "too_many_leads", "x", null, [], [], [], { details: { refs: "L-0A1B2" } }),
+      ),
+    ).toEqual([]);
+    expect(tooManyRefs(new Error("x"))).toEqual([]);
+    expect(ZR_LEAD.tooManyRefs(50)).toBe("50 of their enquiries:");
+    expect(ZR_LEAD.tooManyRefs(1)).toBe("1 of their enquiries:");
   });
 });
 

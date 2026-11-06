@@ -40,6 +40,8 @@ function d1(sql: string) {
 
 const LEAD = `lead-m74-${run}`;
 const LEAD_REF = `L-M74-${run}`;
+/** A second manual lead, only for the too_many_leads refusal (its erase answer is mocked; nothing is erased). */
+const LEAD_MANY = `lead-m74-many-${run}`;
 
 test.beforeAll(() => {
   const now = Date.now();
@@ -86,10 +88,30 @@ test.beforeAll(() => {
       `INSERT INTO leads (id, ref, stage, source, contact_name, contact_email, consent, created_at, updated_at, last_activity_at)
         VALUES ('${LEAD}', '${LEAD_REF}', 'new', 'manual', 'Ravi Kumar (sample)', 'ravi.${run.toLowerCase()}@example.test',
           '{"noticeVersion":"0.3","purposes":["respond_to_enquiry","marketing_updates"],"at":${now - 5 * DAY},"marketing":true}', ${now - 5 * DAY}, ${now - 5 * DAY}, ${now - 5 * DAY});`,
+      `INSERT INTO leads (id, ref, stage, source, contact_name, contact_email, created_at, updated_at, last_activity_at)
+        VALUES ('${LEAD_MANY}', 'L-M74M-${run}', 'new', 'manual', 'Meena Iyer (sample)', 'meena.${run.toLowerCase()}@example.test', ${now - 2 * DAY}, ${now - 2 * DAY}, ${now - 2 * DAY});`,
       runRow(`rr-m74-${run}-a`, now - 9 * DAY),
       runRow(`rr-m74-${run}-b`, now - 20 * 3_600_000),
     ].join("\n"),
   );
+});
+
+// The portal requests this run wrote, closed again at the end (declined as a duplicate; one already closed answers 409 and is left as it is), so the next
+// run on the same database finds free contacts for its own (one open request per contact and kind) and never a stale twin (review 1 low 8).
+test.afterAll(async ({ browser }) => {
+  const ctx = await browser.newContext({ baseURL: ORIGIN, storageState: here("../.e2e/owner-state.json") });
+  try {
+    for (const kind of ["data_access", "grievance", "data_correction", "contact_change"]) {
+      const res = await ctx.request.post(`/api/v1/client-requests/req-m74-${run}-${kind}/close`, {
+        headers: { Origin: ORIGIN },
+        data: { outcome: "declined", declineReason: "duplicate" },
+      });
+      // closed now, closed by the test already, or never written (no free contact)
+      expect([200, 404, 409], await res.text()).toContain(res.status());
+    }
+  } finally {
+    await ctx.close();
+  }
 });
 
 async function axe(page: Page) {
@@ -405,32 +427,128 @@ test("the erase dialog's in-parts state (F5; the API's answers mocked)", async (
 test("the keyboard: Show by arrow keys, a request opened with Enter, Escape back to its link, a visible focus ring", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/requests");
-  await expect(page.getByRole("heading", { level: 1, name: "Requests" })).toBeVisible();
-  const open = page.getByRole("radio", { name: "Open" });
-  await open.focus();
-  // the focus ring is drawn around the chosen pill (2 px, the focus colour)
-  const ring = await page.evaluate(() => {
-    const opt = document.activeElement?.closest("label");
-    return opt ? getComputedStyle(opt).outlineWidth : "";
+  // Its own overdue request (review 1 low 8: never the one the inbox test closes, whatever order the tests run in): logged by email 60 days ago from an
+  // address not in our records, so no other open request blocks it, and closed again at the end so runs on one database don't pile up.
+  const email = `keyboard.${run.toLowerCase()}.${Date.now().toString(36)}@example.test`;
+  const logged = await page.request.post("/api/v1/client-requests", {
+    headers,
+    data: {
+      kind: "grievance",
+      channel: "email",
+      receivedOn: new Date(Date.now() + 19_800_000 - 60 * DAY).toISOString().slice(0, 10),
+      requesterEmail: email,
+      details: "Asked how long we keep their enquiry (sample, keyboard test).",
+    },
   });
-  expect(ring).toBe("2px");
-  await page.keyboard.press("ArrowRight");
-  await expect(page.getByRole("radio", { name: "Overdue" })).toBeChecked();
-  await expect(page).toHaveURL(/show=overdue/);
-  const link = page.locator("tbody .dp-row-open").first();
-  await link.focus();
-  await page.keyboard.press("Enter");
-  const dialog = page.getByRole("dialog");
-  await expect(dialog).toBeVisible();
-  // Tab stays inside the dialog
-  for (let i = 0; i < 8; i++) await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => !!document.activeElement?.closest("dialog"))).toBe(true);
-  await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
-  await expect(page).not.toHaveURL(/id=/);
-  await expect(link).toBeFocused();
+  expect(logged.ok(), await logged.text()).toBe(true);
+  const id = ((await logged.json()) as { request: { id: string } }).request.id;
+  try {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto("/requests");
+    await expect(page.getByRole("heading", { level: 1, name: "Requests" })).toBeVisible();
+    const open = page.getByRole("radio", { name: "Open" });
+    await open.focus();
+    // the focus ring is drawn around the chosen pill (2 px, the focus colour)
+    const ring = await page.evaluate(() => {
+      const opt = document.activeElement?.closest("label");
+      return opt ? getComputedStyle(opt).outlineWidth : "";
+    });
+    expect(ring).toBe("2px");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("radio", { name: "Overdue" })).toBeChecked();
+    await expect(page).toHaveURL(/show=overdue/);
+    const link = page.locator(`tbody .dp-row-open[href*="${id}"]`);
+    await expect(link).toBeVisible();
+    await link.focus();
+    await page.keyboard.press("Enter");
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(
+      dialog.getByText("Asked how long we keep their enquiry (sample, keyboard test)."),
+    ).toBeVisible();
+    // Tab stays inside the dialog
+    for (let i = 0; i < 8; i++) await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => !!document.activeElement?.closest("dialog"))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(page).not.toHaveURL(/id=/);
+    await expect(link).toBeFocused();
+  } finally {
+    const closed = await page.request.post(`/api/v1/client-requests/${encodeURIComponent(id)}/close`, {
+      headers,
+      data: { outcome: "declined", declineReason: "duplicate" },
+    });
+    expect(closed.ok(), await closed.text()).toBe(true);
+  }
+});
+
+test("a lead erase refused as too_many_leads lists the enquiries' references under the refusal (review 1 low 11; the API's answer mocked)", async ({
+  page,
+}) => {
+  await stepUp(page);
+  // no console error but the refused request's own line (the browser logs every 4xx answer)
+  const consoleErrors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) consoleErrors.push(m.text());
+  });
+  const refs = Array.from(
+    { length: 50 },
+    (_, i) => `L-${(0x2a000 + i * 37).toString(36).toUpperCase().padStart(5, "0")}`,
+  );
+  await page.route("**/api/v1/leads/*/erase", (route) =>
+    route.fulfill({
+      status: 409,
+      json: {
+        error: {
+          code: "too_many_leads",
+          message: "This person has too many enquiries to erase at once",
+          details: { refs },
+        },
+      },
+    }),
+  );
+  await page.addInitScript(() => {
+    // the copy button's clipboard, in a page that grants no clipboard permission
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: async () => {} },
+      configurable: true,
+    });
+  });
+  await page.goto(`/leads/${LEAD_MANY}`);
+  for (const theme of ["light", "dark"] as const)
+    for (const width of [375, 768, 1280] as const) {
+      // the in-app theme against the OS's other theme
+      await page.emulateMedia({ colorScheme: theme === "light" ? "dark" : "light" });
+      await page.evaluate((t) => localStorage.setItem("ta-admin-theme", t), theme);
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/leads/${LEAD_MANY}`);
+      await expect(page.getByRole("heading", { level: 1, name: "Meena Iyer (sample)" })).toBeVisible();
+      await page.getByRole("button", { name: /^Data tools/ }).click();
+      await page.getByRole("menuitem", { name: "Erase this lead" }).click();
+      const erase = page.getByRole("dialog", { name: "Erase Meena Iyer (sample)?" });
+      await erase.getByRole("radio", { name: "They asked to be erased" }).check();
+      await erase.getByRole("button", { name: "Erase lead" }).click();
+      const notice = erase.getByRole("alert");
+      await expect(notice).toHaveText(
+        "This person has too many enquiries to erase at once. Ask your developer to help.",
+      );
+      await expect(notice).toBeFocused();
+      const list = erase.getByRole("region", { name: "50 of their enquiries:" });
+      await expect(list.getByRole("listitem")).toHaveCount(50);
+      await expect(list.getByRole("listitem").first()).toHaveText(refs[0] ?? "");
+      await expect(erase.getByRole("button", { name: "Erase lead" })).toBeDisabled();
+      expect(await axe(page), `refs ${width} ${theme}`).toEqual([]);
+      await noSideways(page);
+      await shot(page, `lead-too-many-${width}-${theme}`, false);
+      // the copy button says so; Tab reaches it from the notice
+      await page.keyboard.press("Tab");
+      await expect(list.getByRole("button", { name: "Copy references" })).toBeFocused();
+      await page.keyboard.press("Enter");
+      await expect(list.getByRole("button", { name: "Copied" })).toBeVisible();
+      await erase.getByRole("button", { name: "Cancel" }).click();
+      await expect(erase).toHaveCount(0);
+    }
+  expect(consoleErrors).toEqual([]);
 });
 
 for (const theme of ["light", "dark"] as const)

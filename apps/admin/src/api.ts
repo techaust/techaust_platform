@@ -1095,8 +1095,9 @@ export class RequestError extends Error {
       reason?: string;
       /** FX-5: 400 `terms_due_days_mismatch`, the days the terms state that differ (`stated`) and Settings › Payment terms' days (`dueDays`). */
       termsDueDays?: { stated: number[]; dueDays: number };
-      /** M6.1: the payment routes' `error.details`, its plain values only (`femaDue`, `latest`, `documentId`, `balanceMinor`, `receivedOn`). */
-      details?: Record<string, string | number>;
+      /** M6.1: the payment routes' `error.details`, its plain values only (`femaDue`, `latest`, `documentId`, `balanceMinor`, `receivedOn`);
+       * M7.4: a list of strings under `refs` only (`too_many_leads`). */
+      details?: Record<string, string | number | readonly string[]>;
       /** ADM-INV-10: a refused void or withdraw (409) names every reason (codes), so the screen picks its own line (a proforma's void points to Withdraw). */
       reasons?: string[];
     } = {},
@@ -1257,13 +1258,23 @@ const PAYMENT_DETAIL_KEYS = [
   "clientName",
   "paymentId",
 ] as const;
-const plainDetails = (d: Record<string, unknown>): Record<string, string | number> =>
-  Object.fromEntries(
-    PAYMENT_DETAIL_KEYS.flatMap((k) => {
+/** M7.4 review low 11: the `error.details` keys that hold a list of strings (`too_many_leads` names its `refs`). Only a list whose every item is a
+ * string is copied, at most `MAX_DETAIL_LIST` items; any other value under these keys (and any list under the keys above) is dropped as before. */
+const LIST_DETAIL_KEYS = ["refs"] as const;
+const MAX_DETAIL_LIST = 50;
+const plainDetails = (d: Record<string, unknown>): Record<string, string | number | readonly string[]> =>
+  Object.fromEntries([
+    ...PAYMENT_DETAIL_KEYS.flatMap((k) => {
       const v = d[k];
       return typeof v === "string" || typeof v === "number" ? [[k, v] as const] : [];
     }),
-  );
+    ...LIST_DETAIL_KEYS.flatMap((k) => {
+      const v = d[k];
+      return Array.isArray(v) && v.length <= MAX_DETAIL_LIST && v.every((x) => typeof x === "string")
+        ? [[k, [...v] as readonly string[]] as const]
+        : [];
+    }),
+  ]);
 
 const strings = (xs: unknown[]): string[] => xs.filter((x): x is string => typeof x === "string");
 
