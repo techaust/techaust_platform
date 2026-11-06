@@ -10,7 +10,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import { todayIst as todayIstText } from "@techaust/core/offers";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
-import { clientGoneSql } from "./anonymised.ts";
+import { clientGoneSql, storedPdfRefusal } from "./anonymised.ts";
 import { type ApiError, type AppEnv, actor, err, mutate, NOT_FOUND } from "./context.ts";
 import { pdfFilename } from "./document-pdf.ts";
 import { body, idParam, param } from "./http.ts";
@@ -233,15 +233,18 @@ export const documentLinks = new Hono<AppEnv>()
     const [cert, acc] = await db.batch([
       db
         .prepare(
-          "SELECT ce.r2_key, d.number_display, d.version FROM acceptance_certificates ce JOIN acceptances a ON a.id = ce.acceptance_id JOIN documents d ON d.id = a.document_id WHERE a.document_id = ?1",
+          `SELECT ce.r2_key, d.number_display, d.version, ${clientGoneSql("d.client_id")} AS gone FROM acceptance_certificates ce JOIN acceptances a ON a.id = ce.acceptance_id JOIN documents d ON d.id = a.document_id WHERE a.document_id = ?1`,
         )
         .bind(id),
       db.prepare("SELECT 1 AS yes FROM acceptances WHERE document_id = ?1").bind(id),
     ]);
     const row = cert?.results[0] as
-      | { r2_key: string; number_display: string | null; version: number }
+      | { r2_key: string; number_display: string | null; version: number; gone: number }
       | undefined;
     if (!row) return acc?.results[0] ? err(c, CERTIFICATE_PENDING, 409) : err(c, NOT_FOUND, 404);
+    // M7.4 (Q4 A, L43; early check 2 M1): an anonymised client's stored certificate is the Owner's and the Accountant's only, like the offer's own PDF.
+    const refused = storedPdfRefusal(c, row.gone);
+    if (refused) return refused;
     const object = await c.env.DOCS.get(row.r2_key);
     if (!object) return err(c, NOT_FOUND, 404);
     // The same download rules as the proposal's own PDF (document-pdf.ts): an attachment, never rendered, never cached, never sniffed.

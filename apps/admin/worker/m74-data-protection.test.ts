@@ -7,12 +7,18 @@ import { istDate, toIsoDate } from "@techaust/core/dates";
 import { requestDueAt } from "@techaust/core/dsr";
 import { addressHash } from "@techaust/core/hmac";
 import { uuidv7 } from "@techaust/core/ids";
+import { type Action, decide, ROLES } from "@techaust/core/permissions";
 import { PROCESSORS } from "@techaust/core/processors";
 import { describe, expect, it } from "vitest";
 import { MATCHED_LEADS } from "./clients.ts";
+import { issueReceipt } from "./receipt-issue.ts";
 import { insert, mkClient, mkContact, mkDoc, mkLead } from "./test-clients.ts";
+import { finalisedDeed, putSigned } from "./test-deeds.ts";
 import { bodyOf, call, countingEnv, countOf, one, rows, sessionFor } from "./test-helpers.ts";
+import { putCompany } from "./test-invoices.ts";
+import { recordBody, recorded } from "./test-payments.ts";
 import { mkPortalClient, mkRequest } from "./test-portal.ts";
+import { addDoc, line } from "./test-reports.ts";
 
 const DAY = 86_400_000;
 const owner = () => sessionFor("owner", { stepUp: true });
@@ -628,6 +634,85 @@ describe("Q4 A (L43): an anonymised client's stored PDFs are the Owner's and the
     expect(
       await code(await call(`/invoices/${other}/pdf`, { cookie: (await sessionFor("staff")).cookie })),
     ).toBe("pdf_pending");
+  });
+
+  // Early check 2 M1: every stored-PDF route (the offer, its acceptance certificate, an invoice, a credit note, a receipt, the deed unsigned and signed, the
+  // supplier copy). Staff and Sales get 403: `client_anonymised_pdf` where their role may read the route, the plain `forbidden` where it may not. The Owner and the
+  // Accountant pass the anonymised check wherever their role may read the route (each answer then is the route's own: the file, or "not made yet").
+  it("every stored-PDF route refuses Staff and Sales and lets the Owner and the Accountant through [M1]", async () => {
+    await putCompany();
+    const o = await owner();
+    const f = await finalisedDeed(o);
+    const signed = await putSigned(o, f.deedId);
+    expect(signed.status, await signed.clone().text()).toBe(200);
+    await env.DB.prepare("UPDATE deeds SET unsigned_r2_key = ?2, unsigned_sha256 = 'z' WHERE id = ?1")
+      .bind(f.deedId, `deeds/${f.deedId}/unsigned-m1.pdf`)
+      .run();
+    const contact = await mkContact(f.clientId);
+    const acc = crypto.randomUUID();
+    const certKey = `docs/proposal/2627/m1-${acc}-certificate.pdf`;
+    await env.DB.prepare(
+      "INSERT INTO acceptances (id, document_id, contact_id, typed_name, email, accepted_at, pdf_sha256, certificate_r2_key) VALUES (?1, ?2, ?3, 'A', 'a@example.test', 1, 'h', ?4)",
+    )
+      .bind(acc, f.proposalId, contact.id, certKey)
+      .run();
+    await env.DB.prepare(
+      "INSERT INTO acceptance_certificates (acceptance_id, r2_key, sha256, rendered_at) VALUES (?1, ?2, 's', 1)",
+    )
+      .bind(acc, certKey)
+      .run();
+    await env.DOCS.put(certKey, "%PDF-1.4 certificate");
+    const cn = await addDoc({
+      type: "credit_note",
+      clientId: f.clientId,
+      issueDate: "2026-10-06",
+      parentId: f.inv.id,
+      lines: [line(100_00)],
+      dueDate: null,
+    });
+    const pay = await recorded(o, recordBody(f.clientId, 2_000));
+    await issueReceipt(env, pay.id as string);
+    expect(
+      await countOf("documents", "id = ? AND type = 'receipt' AND frozen_at IS NOT NULL", `rct_${pay.id}`),
+    ).toBe(1);
+    await env.DB.prepare("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1")
+      .bind(f.clientId, Date.now())
+      .run();
+
+    const routes: [string, Action][] = [
+      [`/documents/${f.proposalId}/pdf`, "proposals.read"],
+      [`/documents/${f.proposalId}/certificate`, "proposals.read"],
+      [`/invoices/${f.inv.id}/pdf`, "invoices.read"],
+      [`/invoices/${cn.id}/pdf`, "invoices.read"],
+      [`/invoices/${f.inv.id}/pdf/supplier`, "invoices.supplierCopy"],
+      [`/receipts/rct_${pay.id}/pdf`, "payments.read"],
+      [`/deeds/${f.deedId}/pdf/unsigned`, "deeds.view"],
+      [`/deeds/${f.deedId}/pdf/signed`, "deeds.view"],
+    ];
+    let reached = 0;
+    for (const [path, action] of routes) {
+      for (const role of ROLES) {
+        const res = await call(path, { cookie: (await sessionFor(role)).cookie });
+        const got = res.headers.get("Content-Type")?.startsWith("application/pdf") ? "pdf" : await code(res);
+        const label = `${role} ${path}`;
+        if (decide(role, action) === "deny") {
+          expect([res.status, got], label).toEqual([403, "forbidden"]);
+        } else if (role === "staff" || role === "sales") {
+          expect([res.status, got], label).toEqual([403, "client_anonymised_pdf"]);
+          reached++;
+        } else {
+          expect(res.status, label).not.toBe(403);
+          expect(got, label).not.toBe("client_anonymised_pdf");
+        }
+      }
+    }
+    // Staff reach the check on all eight routes but the supplier copy; Sales only on the offer's two.
+    expect(reached).toBe(7 + 2);
+    // The stored files the Owner may download come through as files: the certificate and the signed deed.
+    for (const path of [`/documents/${f.proposalId}/certificate`, `/deeds/${f.deedId}/pdf/signed`]) {
+      const res = await call(path, { cookie: o.cookie });
+      expect([res.status, res.headers.get("Content-Type")], path).toEqual([200, "application/pdf"]);
+    }
   });
 });
 
