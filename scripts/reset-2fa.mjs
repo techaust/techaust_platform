@@ -25,6 +25,7 @@ import {
   checkBreakGlass,
   normaliseEmail,
   readBackProblem,
+  reinviteExpected,
   reinviteStatements,
   resetStatements,
 } from "./reset-2fa-sql.mjs";
@@ -133,17 +134,26 @@ if (onlyOwner) {
   process.exit(0);
 }
 
-// Already "invited" (an earlier reset whose link was lost): only a fresh invite; staff_users is not touched.
+// Already "invited" (an earlier reset whose link was lost): only a fresh invite; staff_users is not touched. M7.5 (L36): if that earlier reset was a run cut
+// short (no `user.reset_2fa` row since the member's `updated_at`), this run writes its `user.reset_2fa` and `alert.2fa_change` rows too.
 const alertId = randomUUID();
+const resetAuditId = randomUUID();
 runFile(
   user.status === "invited"
-    ? reinviteStatements({ ...common, email })
+    ? reinviteStatements({ ...common, email, resetAuditId, alertId })
     : resetStatements({ ...common, email, alertId }),
 );
 
 const [after] = rows(`SELECT status FROM staff_users WHERE email = ${q(email)}`);
 if (after?.status !== "invited") throw new Error("The reset did not apply; nothing was changed.");
-readBack(user.status === "invited" ? [common.auditId] : [common.auditId, alertId]);
+let recordedReset = false;
+if (user.status === "invited") {
+  const found = rows(auditReadBackSql([common.auditId, resetAuditId, alertId])).map((r) => r.id);
+  const r = reinviteExpected({ found, auditId: common.auditId, resetAuditId, alertId });
+  recordedReset = r.recordedReset;
+  const problem = readBackProblem({ found, expected: r.expected });
+  if (problem) throw new Error(problem);
+} else readBack([common.auditId, alertId]);
 console.log(
-  `${user.status === "invited" ? "New link issued" : "Reset done"} for ${email}: password, authenticator and recovery codes cleared, sessions ended.\nNo email is sent about this reset: tell the member yourself.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
+  `${user.status === "invited" ? "New link issued" : "Reset done"} for ${email}: password, authenticator and recovery codes cleared, sessions ended.${recordedReset ? "\nThe earlier reset had not been recorded in the audit log; it is now (user.reset_2fa and alert.2fa_change)." : ""}\nNo email is sent about this reset: tell the member yourself.\nOne-time link, valid ${hours} h:\n${origin}/invite#t=${token}`,
 );
