@@ -350,6 +350,12 @@ export const DOC_PENDING = {
   searchNumber: "Search by number",
   /** M7.3 C23 (ADM-G-05): the list's search, by a number or a client's code or name. */
   searchNumberOrClient: "Search by number or client",
+  /**
+   * M7.3, the lead's triage of D1 (Q2): a search that matches nothing, "No proposals or estimates match. Search for the start of a number, a client code or a
+   * client name." Its first sentence is the empty state's heading (without its full stop, the M3.4 pattern), the second its body.
+   */
+  searchNoMatchTitle: "No proposals or estimates match",
+  searchNoMatchBody: "Search for the start of a number, a client code or a client name.",
   searchNoMatch: "No proposal or estimate has a number starting with that.",
   customLinesCount: (n: number) => (n === 1 ? "1 custom line" : `${n} custom lines`),
   customLinesHint: "Custom lines don't count towards the discount limit.",

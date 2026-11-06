@@ -175,11 +175,13 @@ function DocumentList() {
               <EmptyState
                 icon={filtered ? <Search /> : <FileText />}
                 title={
-                  filtered
-                    ? DOC_PENDING.listNoMatchTitle
-                    : type
-                      ? LIST_EMPTY_BY_TYPE[type]
-                      : DOC_COPY.listEmptyTitle
+                  query.q
+                    ? DOC_PENDING.searchNoMatchTitle
+                    : filtered
+                      ? DOC_PENDING.listNoMatchTitle
+                      : type
+                        ? LIST_EMPTY_BY_TYPE[type]
+                        : DOC_COPY.listEmptyTitle
                 }
                 action={
                   filtered ? (
@@ -194,7 +196,13 @@ function DocumentList() {
                   ) : undefined
                 }
               >
-                <p>{filtered ? DOC_COPY.listNoMatch : DOC_COPY.listEmptyBody}</p>
+                <p>
+                  {query.q
+                    ? DOC_PENDING.searchNoMatchBody
+                    : filtered
+                      ? DOC_COPY.listNoMatch
+                      : DOC_COPY.listEmptyBody}
+                </p>
               </EmptyState>
             }
           />
