@@ -171,7 +171,9 @@ describe("POST /contacts/:id/export [ADM-CLI-05]", () => {
     expect(Object.keys(out.client).sort()).toEqual(["code", "display_name"]); // a business client: code and name only
     expect(out.suppression).toMatchObject({ email: c.email, reason: "hard_bounce" });
     // a business client: every part except the notes and files that go only with an individual client's last contact
-    expect(out.manifest).toEqual(Object.keys(EXPORT_PARTS).filter((p) => p !== "notes" && p !== "files"));
+    expect(out.manifest).toEqual(
+      Object.keys(EXPORT_PARTS).filter((p) => p !== "notes" && p !== "files" && p !== "time_notes"),
+    );
     // An individual client's own record is the person's data: the full row.
     const ind = await mkClient({
       type: "individual",

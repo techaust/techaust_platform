@@ -54,6 +54,8 @@
     "./permissions": "./src/permissions.ts",
     "./portal": "./src/portal.ts",
     "./portal-schemas": "./src/schemas/portal.ts",
+    "./dp-schemas": "./src/schemas/data-protection.ts",
+    "./processors": "./src/processors.ts",
     "./pa-cb": "./src/pa-cb.ts",
     "./receipts": "./src/receipts.ts",
     "./recon": "./src/recon.ts",

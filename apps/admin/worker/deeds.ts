@@ -54,6 +54,7 @@ import {
 } from "@techaust/db/deeds";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { storedPdfRefusal } from "./anonymised.ts";
 import {
   type ApiError,
   type AppEnv,
@@ -536,6 +537,17 @@ function deedView(c: Ctx, b: Bundle) {
 
 const deedRow = (c: Ctx, id: string) => c.env.DB.prepare(DEED_BY_ID).bind(id).first<DeedRow>();
 
+/** M7.4 (Q4 A, L43): the stored PDFs' row, with the client's anonymised state (an anonymised client's deeds are the Owner's and the Accountant's only). */
+const DEED_PDF_SQL =
+  "SELECT d.unsigned_r2_key, d.signed_r2_key, d.number_display, EXISTS (SELECT 1 FROM clients z WHERE z.id = d.client_id AND z.anonymised_at IS NOT NULL) AS gone FROM deeds d WHERE d.id = ?1";
+type DeedPdfRow = {
+  unsigned_r2_key: string | null;
+  signed_r2_key: string | null;
+  number_display: string | null;
+  gone: number;
+};
+const deedPdfRow = (c: Ctx, id: string) => c.env.DB.prepare(DEED_PDF_SQL).bind(id).first<DeedPdfRow>();
+
 /** Why a deed write wrote nothing: the row, the session, then the caller's cause. */
 async function explain(
   c: Ctx,
@@ -889,8 +901,10 @@ export const deeds = new Hono<AppEnv>()
   })
 
   .get("/:id/pdf/unsigned", param(idParam), async (c) => {
-    const row = await deedRow(c, c.req.valid("param").id);
+    const row = await deedPdfRow(c, c.req.valid("param").id);
     if (!row) return err(c, NOT_FOUND, 404);
+    const refused = storedPdfRefusal(c, row.gone);
+    if (refused) return refused;
     if (row.unsigned_r2_key === null) return err(c, PDF_NOT_READY, 404);
     return (
       (await docDownload(c, row.unsigned_r2_key, "application/pdf", fileName(row.number_display, ""))) ??
@@ -899,8 +913,10 @@ export const deeds = new Hono<AppEnv>()
   })
 
   .get("/:id/pdf/signed", param(idParam), async (c) => {
-    const row = await deedRow(c, c.req.valid("param").id);
+    const row = await deedPdfRow(c, c.req.valid("param").id);
     if (!row?.signed_r2_key) return err(c, NOT_FOUND, 404);
+    const refused = storedPdfRefusal(c, row.gone);
+    if (refused) return refused;
     return (
       (await docDownload(c, row.signed_r2_key, "application/pdf", fileName(row.number_display, "-signed"))) ??
       err(c, NOT_FOUND, 404)

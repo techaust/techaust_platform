@@ -38,6 +38,16 @@ export const TOO_MANY_OFFERS: ApiError = {
 };
 
 const ELIGIBLE = REDACTABLE_OFFER_SQL("d", "c", "cl");
+
+/**
+ * M7.4 (L24, L37, round 5): the distinct lower-cased addresses of the leads an erase or anonymise of contact `c` matches (`MATCHED_LEADS` of clients.ts: made
+ * from the contact, or by its address at its client or at none), as a JSON array, leaving out a lead already marked erased or one whose address is already
+ * the placeholder (`anonymised+<id>@invalid`). Each lead takes the keyed hash of its own address.
+ */
+export const MATCHED_LEAD_EMAILS_SQL = (c: string) =>
+  `(SELECT json_group_array(DISTINCT lower(l.contact_email)) FROM leads l
+     WHERE (l.contact_id = ${c}.id OR (lower(l.contact_email) = lower(${c}.email) AND (l.client_id IS NULL OR l.client_id = ${c}.client_id)))
+       AND l.erased_hash IS NULL AND lower(l.contact_email) NOT GLOB 'anonymised+*@invalid')`;
 const FROM_CONTACT = "FROM contacts c JOIN clients cl ON cl.id = c.client_id";
 /** The ids of the eligible offers of contact `?1` (at most one more than the cap, so the cap can be told apart). */
 const OFFER_IDS = `SELECT d.id ${FROM_CONTACT} JOIN documents d ON ${ELIGIBLE} WHERE c.id = ?1 ORDER BY d.id LIMIT ${MAX_REDACTED_OFFERS + 1}`;
@@ -49,7 +59,7 @@ const OFFER_IDS = `SELECT d.id ${FROM_CONTACT} JOIN documents d ON ${ELIGIBLE} W
  * - `children`: the text of every section, line and schedule row of those offers, one list (`k` = `s`, `l` or `p`; `a`, `b` its two text columns).
  */
 export const REDACTION_READ_SQL = {
-  offers: `SELECT c.id, c.name, c.email, c.phone, c.updated_at AS contact_updated_at, c.anonymised_at, cl.type AS client_type, cl.legal_name, cl.display_name, cl.gstin, cl.updated_at AS client_updated_at, (cl.type = 'individual' AND ${LAST_LIVE_SQL("c")}) AS last_live, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held,
+  offers: `SELECT c.id, c.name, c.email, c.phone, c.updated_at AS contact_updated_at, c.anonymised_at, cl.type AS client_type, cl.legal_name, cl.display_name, cl.gstin, cl.updated_at AS client_updated_at, (cl.type = 'individual' AND ${LAST_LIVE_SQL("c")}) AS last_live, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${MATCHED_LEAD_EMAILS_SQL("c")} AS lead_emails,
      d.id AS d_id, d.type AS d_type, d.fy AS d_fy, d.number AS d_number, d.version AS d_version, d.recipient AS d_recipient, d.title AS d_title, d.decision_note AS d_decision_note, d.contact_id AS d_contact_id, d.snapshot_r2_key AS d_snapshot_r2_key, d.pdf_r2_key AS d_pdf_r2_key, d.redacted_at AS d_redacted_at
      ${FROM_CONTACT} LEFT JOIN documents d ON ${ELIGIBLE} WHERE c.id = ?1 ORDER BY d.id LIMIT ${MAX_REDACTED_OFFERS + 1}`,
   children: `SELECT 's' AS k, id, document_id, title AS a, body_md AS b FROM document_sections WHERE document_id IN (${OFFER_IDS})
@@ -59,6 +69,8 @@ export const REDACTION_READ_SQL = {
 
 type Head = {
   id: string;
+  /** M7.4 (L24, L37): the distinct lower-cased addresses of the leads the anonymise matches (a JSON array), read here so no statement is added. */
+  lead_emails: string;
   name: string | null;
   email: string | null;
   phone: string | null;
@@ -111,10 +123,18 @@ export type RedactionPlan = {
   schedule: string;
   /** The R2 objects to delete after the batch (envelope and PDF of each offer, derived and stored keys). */
   keys: string[];
+  /** C.10: more eligible offers than one part takes (the read found an 11th). */
+  more: boolean;
+  /** C.10: a part: only these offers are redacted, the contact is not anonymised, and the guard checks only these. */
+  part: boolean;
 };
 
 /** Reads the contact and its eligible offers with their text in ONE batch, and works out what the anonymise batch writes. */
-export async function readRedactionPlan(db: D1Database, contactId: string): Promise<RedactionPlan> {
+export async function readRedactionPlan(
+  db: D1Database,
+  contactId: string,
+  opts: { part?: boolean } = {},
+): Promise<RedactionPlan> {
   const q = REDACTION_READ_SQL;
   const [o, k] = await db.batch([
     db.prepare(q.offers).bind(contactId),
@@ -122,7 +142,10 @@ export async function readRedactionPlan(db: D1Database, contactId: string): Prom
   ]);
   const found = (o?.results ?? []) as (Head & OfferRow)[];
   const head: Head | null = found[0] ?? null;
-  const offers = found.filter((r) => r.d_id !== null);
+  const all = found.filter((r) => r.d_id !== null);
+  // C.10 (F5, L18): in parts, the first 10 offers (by id) are taken and the rest wait for the next part.
+  const more = all.length > MAX_REDACTED_OFFERS;
+  const offers = opts.part ? all.slice(0, MAX_REDACTED_OFFERS) : all;
   const empty = {
     head,
     tooMany: false,
@@ -134,6 +157,8 @@ export async function readRedactionPlan(db: D1Database, contactId: string): Prom
     lines: "[]",
     schedule: "[]",
     keys: [],
+    more,
+    part: opts.part === true,
   };
   if (!head) return empty;
   if (offers.length > MAX_REDACTED_OFFERS) return { ...empty, tooMany: true };
@@ -245,6 +270,8 @@ export async function readRedactionPlan(db: D1Database, contactId: string): Prom
     lines: JSON.stringify(lineRows),
     schedule: JSON.stringify(scheduleRows),
     keys: [...keys],
+    more,
+    part: opts.part === true,
   };
 }
 
@@ -257,8 +284,13 @@ export function redactionGuard(plan: RedactionPlan, at: number): { sql: string; 
   const head = plan.head as Head;
   return {
     sql: [
-      `(SELECT count(*) FROM documents d WHERE ${ELIGIBLE}) = ?${at}`,
-      `NOT EXISTS (SELECT 1 FROM documents d WHERE ${ELIGIBLE} AND d.id NOT IN (SELECT value FROM json_each(?${at + 1})))`,
+      // A part (C.10) proves only that each of its offers is still eligible; the whole anonymise proves the eligible set is exactly the one read.
+      plan.part
+        ? `(SELECT count(*) FROM documents d WHERE ${ELIGIBLE} AND d.id IN (SELECT value FROM json_each(?${at + 1}))) = ?${at}`
+        : `(SELECT count(*) FROM documents d WHERE ${ELIGIBLE}) = ?${at}`,
+      plan.part
+        ? "1 = 1"
+        : `NOT EXISTS (SELECT 1 FROM documents d WHERE ${ELIGIBLE} AND d.id NOT IN (SELECT value FROM json_each(?${at + 1})))`,
       `c.updated_at = ?${at + 2}`,
       `(cl.type = 'individual' AND ${LAST_LIVE_SQL("c")}) = ?${at + 3}`,
       `(?${at + 3} = 0 OR cl.updated_at = ?${at + 4})`,

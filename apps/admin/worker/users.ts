@@ -272,7 +272,14 @@ export const users = new Hono<AppEnv>()
         entityType: "staff_user",
         entityId: id,
         summary: { status: { before: "active", after: "deactivated" } },
-        side: (g) => [revokeSessionsOf(c, id, t)(g)],
+        // M7.4 (L39, L47): the member's known devices (their browser, the new-device alert's reference) end with the account, in the same batch.
+        side: (g) => [
+          revokeSessionsOf(c, id, t)(g),
+          c.env.DB.prepare(`DELETE FROM staff_known_devices WHERE user_id = ?1 AND ${g.sql(2)}`).bind(
+            id,
+            ...g.params,
+          ),
+        ],
       }),
     );
     if (result instanceof Response) return result;

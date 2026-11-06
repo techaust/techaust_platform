@@ -11,6 +11,7 @@ import { catalogue, templates } from "./catalogue.ts";
 import { clientRequests } from "./client-requests.ts";
 import { clientTabs } from "./client-tabs.ts";
 import { clients, contacts } from "./clients.ts";
+import { legalHolds, retention, suppressions } from "./data-protection.ts";
 import { deeds, projectDeed } from "./deeds.ts";
 import { documentConvert } from "./document-convert.ts";
 import { documentFill } from "./document-fill.ts";
@@ -22,6 +23,7 @@ import { documentStart } from "./document-start.ts";
 import { documents } from "./documents.ts";
 import { contactUnsuppress, emails } from "./emails.ts";
 import { files } from "./files.ts";
+import { leadData } from "./lead-data.ts";
 import { leads } from "./leads.ts";
 import { notes } from "./notes.ts";
 import { notifications } from "./notifications.ts";
@@ -37,6 +39,8 @@ export function mountApi(app: App) {
   app.route("/v1/settings", settings);
   app.route("/v1/settings", settingsSignature);
   app.route("/v1/leads", leads);
+  // M7.4 (C.8): a lead's export, erase and consent withdrawal.
+  app.route("/v1/leads", leadData);
   app.route("/v1/catalogue", catalogue);
   app.route("/v1/templates", templates);
   app.route("/v1/clients", clients);
@@ -67,6 +71,10 @@ export function mountApi(app: App) {
   app.route("/v1/notifications", notifications);
   // M7.1 (POR-09, POR-11, L8): the requests clients send from the portal.
   app.route("/v1/client-requests", clientRequests);
+  // M7.4 (ADM-SET-09, ADM-CLI-05; C.5–C.7): legal holds, the erased-address lift, the clean-up report and the real-deletion switch.
+  app.route("/v1/legal-holds", legalHolds);
+  app.route("/v1/suppressions", suppressions);
+  app.route("/v1/retention", retention);
   // M7.3 (C3, C4): the pipeline and care plan hours reports.
   app.route("/v1/reports", deliveryReports);
   app.route("/v1/search", search);

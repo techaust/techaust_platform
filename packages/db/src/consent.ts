@@ -10,6 +10,11 @@ import { LEAD_WITH_ADDRESS_SQL } from "./triggers-data-protection.ts";
 export const INSERT_RECEIPT_SQL = `INSERT INTO consent_receipts (id, subject_hash, lead_id, contact_id, event, source, notice_version, purposes, marketing, ip_hash, at)
   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`;
 
+/** `INSERT_RECEIPT_SQL` written only while `guard` holds (its placeholders from `?12`): a route's receipt in its audited batch. */
+export const INSERT_RECEIPT_GUARDED_SQL = (guard: string) =>
+  `INSERT INTO consent_receipts (id, subject_hash, lead_id, contact_id, event, source, notice_version, purposes, marketing, ip_hash, at)
+  SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 WHERE ${guard}`;
+
 /**
  * The routine lead purge (D, round 3, L30), placed BEFORE its DELETE (the lead's receipts are unlinked by ON DELETE SET NULL after it) and guarded like it
  * (`guard`, SQL from `?4`): the lead's receipts take the keyed hash of its address (`?2`), then one `ended` receipt (source `retention`, at `?3`) records its

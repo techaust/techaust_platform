@@ -43,3 +43,20 @@ export function hex32(sig: string): Uint8Array<ArrayBuffer> | null {
 /** Bytes to lower-case hex. */
 export const toHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+/**
+ * M7.4 (A.3, A.6; run file docs/runs/m7.4-data-protection.md L23, L24): the keyed hash of an address, HMAC-SHA256(`ERASURE_HASH_KEY`, lower-cased address),
+ * as 64 lower-case hex characters. It is what an erasure keeps (the `h:` stop row, `erased_hash`, the consent receipts' `subject_hash`), never the address:
+ * Settled by the lead on the safest reading, 2026-11-06 (08-C RB-46). The key is imported once per isolate (`keyOf`). The admin API and the jobs Worker hold
+ * the same secret, so both reach the same hash. A key shorter than 32 characters is refused (a missing or truncated secret never hashes).
+ */
+export async function addressHash(secret: string, email: string): Promise<string> {
+  if (typeof secret !== "string" || secret.length < 32)
+    throw new RangeError("ERASURE_HASH_KEY is missing or shorter than 32 characters");
+  const key = await hmacSignKey(secret);
+  const mac = await crypto.subtle.sign("HMAC", key, enc.encode(email.trim().toLowerCase()));
+  return toHex(new Uint8Array(mac));
+}
+
+/** The stop row's key of a hash (`email_suppressions.email`). */
+export const erasedStopKey = (hash: string): string => `h:${hash}`;
