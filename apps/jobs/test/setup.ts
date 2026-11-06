@@ -36,8 +36,8 @@ vi.mock("../src/index.ts", async (importOriginal) => {
         invocation(`${req.method} ${new URL(req.url).pathname}`, () => w.fetch(req, e, ctx)),
       scheduled: (c: ScheduledController, e: Env, ctx: ExecutionContext) =>
         invocation(`scheduled ${c.cron}`, () => w.scheduled(c, e, ctx)),
-      queue: (batch: MessageBatch<unknown>, e: Env, ctx: ExecutionContext) =>
-        invocation(queueLabel(batch), () => w.queue(batch, e, ctx)),
+      queue: (batch: MessageBatch<unknown>, e: Env) =>
+        invocation(queueLabel(batch), () => w.queue(batch, e)),
     },
   };
 });

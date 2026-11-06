@@ -40,7 +40,7 @@ export async function processUsage(env: Env, body: unknown, now = Date.now()): P
     return "ack";
   }
   const token = (Reflect.get(env, "CF_ANALYTICS_TOKEN") as string | undefined) ?? "";
-  const account = env.CF_ACCOUNT_TAG ?? "";
+  const account = String(Reflect.get(env, "CF_ACCOUNT_TAG") ?? "");
   if (!token || !account) {
     logEvent("usage.not_configured", { token: token !== "", account: account !== "" });
     return "ack";
