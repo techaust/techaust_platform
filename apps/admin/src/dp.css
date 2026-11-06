@@ -788,8 +788,9 @@
 
 .dp-refs__list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
-  gap: var(--space-1) var(--space-3);
+  /* a reference (L- and five characters) is about 3.7rem in the mono face at text-sm: four columns in the dialog, three on a phone */
+  grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr));
+  gap: var(--space-1) var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
