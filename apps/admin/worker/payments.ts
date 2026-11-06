@@ -55,7 +55,7 @@ import {
 import { receiptVoidStatement } from "@techaust/db/refunds";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
-import { CLIENT_GONE } from "./anonymised.ts";
+import { CLIENT_GONE, clientGoneSql, storedPdfRefusal } from "./anonymised.ts";
 import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { docDownload, dropDoc, extOfMime, streamToDocs, uploadHead } from "./docs-upload.ts";
 import { gatewayPaymentOf, refundNeededOf } from "./gateway/messages.ts";
@@ -1188,10 +1188,15 @@ export const payments = new Hono<AppEnv>()
 
   .get("/:id/proof", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
-    const row = await c.env.DB.prepare("SELECT proof_r2_key, proof_mime FROM payments WHERE id = ?1")
+    const row = await c.env.DB.prepare(
+      `SELECT proof_r2_key, proof_mime, ${clientGoneSql("payments.client_id")} AS gone FROM payments WHERE id = ?1`,
+    )
       .bind(id)
-      .first<{ proof_r2_key: string | null; proof_mime: string | null }>();
+      .first<{ proof_r2_key: string | null; proof_mime: string | null; gone: number }>();
     if (!row?.proof_r2_key || !row.proof_mime) return err(c, NOT_FOUND, 404);
+    // L53 (Q4 A): a proof may name the payer and show bank details; an anonymised client's is the Owner's and the Accountant's only.
+    const refused = storedPdfRefusal(c, row.gone);
+    if (refused) return refused;
     const res = await docDownload(
       c,
       row.proof_r2_key,

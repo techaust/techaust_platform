@@ -28,6 +28,7 @@ import {
 } from "@techaust/db/advices";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
+import { clientGoneSql, storedPdfRefusal } from "./anonymised.ts";
 import { type AppEnv, actor, BAD_REQUEST, err, mutate, NOT_FOUND } from "./context.ts";
 import { docDownload, dropDoc, extOfMime, streamToDocs, uploadHead } from "./docs-upload.ts";
 import {
@@ -44,6 +45,15 @@ import { body, idParam, isoDate, param, STALE_VERSION } from "./http.ts";
 /** The lists of 0067/0068 (the db schema's `ADVICE_PROVIDERS`, `ADVICE_KINDS`; a test holds them equal, the schema module is not bundled here). */
 export const ADVICE_PROVIDERS = ["paypal", "stripe", "bank"] as const;
 export const ADVICE_KINDS = ["efira", "fira", "firc", "brc", "settlement_report", "other"] as const;
+/**
+ * The advice's file and whether any payment ever linked to it (a link taken off included: the file was about that payment) is an anonymised client's
+ * (review 1 medium 2, L53; `realisation_advice_payments_advice` index). `?1` the advice.
+ */
+export const ADVICE_FILE_READ_SQL = `SELECT a.file_r2_key, a.file_mime,
+     EXISTS (SELECT 1 FROM realisation_advice_payments l JOIN payments p ON p.id = l.payment_id
+       WHERE l.advice_id = a.id AND ${clientGoneSql("p.client_id")}) AS gone
+   FROM realisation_advices a WHERE a.id = ?1`;
+
 /** The lists the "Without advice" view takes: a gateway, or `manual` for the bank's (bank transfers from abroad). */
 const WITHOUT_PROVIDERS = ["paypal", "stripe", "manual"] as const;
 
@@ -197,10 +207,13 @@ export const advices = new Hono<AppEnv>()
   })
   .get("/advices/:id/file", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
-    const row = await c.env.DB.prepare(ADVICE_READ_SQL)
+    const row = await c.env.DB.prepare(ADVICE_FILE_READ_SQL)
       .bind(id)
-      .first<{ file_r2_key: string | null; file_mime: string | null }>();
+      .first<{ file_r2_key: string | null; file_mime: string | null; gone: number }>();
     if (!row?.file_r2_key || !row.file_mime) return err(c, NOT_FOUND, 404);
+    // L53 (Q4 A): the file may name the payer; when any payment it was ever linked to is an anonymised client's, only the Owner and the Accountant read it.
+    const refused = storedPdfRefusal(c, row.gone);
+    if (refused) return refused;
     const res = await docDownload(
       c,
       row.file_r2_key,

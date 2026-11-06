@@ -15,9 +15,10 @@ import { issueReceipt } from "./receipt-issue.ts";
 import { insert, mkClient, mkContact, mkDoc, mkLead } from "./test-clients.ts";
 import { finalisedDeed, putSigned } from "./test-deeds.ts";
 import { bodyOf, call, countingEnv, countOf, one, rows, sessionFor } from "./test-helpers.ts";
-import { putCompany } from "./test-invoices.ts";
-import { recordBody, recorded } from "./test-payments.ts";
+import { mkOverseasClient, putCompany } from "./test-invoices.ts";
+import { putDoc, recordBody, recorded } from "./test-payments.ts";
 import { mkPortalClient, mkRequest } from "./test-portal.ts";
+import { PDF_BYTES } from "./test-projects.ts";
 import { addDoc, line } from "./test-reports.ts";
 
 const DAY = 86_400_000;
@@ -506,6 +507,33 @@ describe("a lead's erase, export and consent withdrawal [ADM-CLI-05, FRM-05; C.8
       "nothing_to_withdraw",
     );
   });
+
+  it("review 1 medium 1: a lead marked erased or holding the anonymise placeholder is 409 anonymised, with no receipt and no change", async () => {
+    const o = await owner();
+    const withdraw = (lead: string) =>
+      call(`/leads/${lead}/consent/withdraw`, { cookie: o.cookie, body: {} });
+    // the placeholder address (any case)
+    const placeholder = await mkLead(`Anonymised+${uuidv7()}@invalid`, { consent: consent() });
+    expect(await code(await withdraw(placeholder))).toBe("anonymised");
+    // a converted lead the contact's anonymise marked erased (L24)
+    const client = await mkClient();
+    const c = await mkContact(client, { email: `gone-${uuidv7()}@example.test` });
+    const erased = await mkLead(c.email, { contact_id: c.id, client_id: client, consent: consent() });
+    expect(
+      (
+        await call(`/contacts/${c.id}/erase`, {
+          cookie: o.cookie,
+          body: { mode: "anonymise", reason: "requested" },
+        })
+      ).status,
+    ).toBe(200);
+    const before = await one<{ consent: string | null }>("SELECT consent FROM leads WHERE id = ?", erased);
+    expect(await code(await withdraw(erased))).toBe("anonymised");
+    expect(await one("SELECT consent FROM leads WHERE id = ?", erased)).toEqual(before);
+    expect(
+      await countOf("consent_receipts", "lead_id IN (?, ?) AND event = 'withdraw'", placeholder, erased),
+    ).toBe(0);
+  });
 });
 
 describe("the erasure hashes of the contact erase and anonymise (L24, L27, L37) [ADM-CLI-05]", () => {
@@ -713,6 +741,59 @@ describe("Q4 A (L43): an anonymised client's stored PDFs are the Owner's and the
       const res = await call(path, { cookie: o.cookie });
       expect([res.status, res.headers.get("Content-Type")], path).toEqual([200, "application/pdf"]);
     }
+  });
+
+  // Review 1 medium 2 (L53): a payment's proof and a remittance advice's file (the client of any payment linked to it, a link taken off included) follow Q4 A.
+  it("L53: a payment proof and a remittance advice file of an anonymised client: Owner and Accountant get the file, Staff 403, others forbidden", async () => {
+    await putCompany();
+    const o = await owner();
+    const { clientId } = await mkOverseasClient();
+    const pay = await recorded(o, recordBody(clientId, 2_000, [], { currency: "USD" }));
+    expect(await one("SELECT status FROM payments WHERE id = ?", pay.id)).toEqual({ status: "confirmed" });
+    const proof = await putDoc(`/payments/${pay.id}/proof`, PDF_BYTES, {
+      cookie: o.cookie,
+      headers: { "X-Proof-Kind": "Bank%20advice" },
+    });
+    expect(proof.status, await proof.clone().text()).toBe(200);
+    const made = await call("/payments/advices", {
+      cookie: o.cookie,
+      body: { provider: "bank", kind: "firc", adviceRef: `FIRC-${uuidv7().slice(-8)}`, issuedOn: dayAgo(0) },
+    });
+    expect(made.status, await made.clone().text()).toBe(201);
+    const adviceId = (await bodyOf(made)).id as string;
+    expect((await putDoc(`/payments/advices/${adviceId}/file`, PDF_BYTES, { cookie: o.cookie })).status).toBe(
+      200,
+    );
+    const link = await call(`/payments/advices/${adviceId}/payments`, {
+      cookie: o.cookie,
+      body: { paymentIds: [pay.id] },
+    });
+    expect(link.status, await link.clone().text()).toBe(200);
+    const paths: [string, Action][] = [
+      [`/payments/${pay.id}/proof`, "payments.read"],
+      [`/payments/advices/${adviceId}/file`, "payments.read"],
+    ];
+    // before the anonymise, Staff read both as before
+    for (const [path] of paths)
+      expect((await call(path, { cookie: (await sessionFor("staff")).cookie })).status, path).toBe(200);
+    await env.DB.prepare("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1")
+      .bind(clientId, Date.now())
+      .run();
+    for (const [path, action] of paths) {
+      for (const role of ROLES) {
+        const res = await call(path, { cookie: (await sessionFor(role)).cookie });
+        const label = `${role} ${path}`;
+        if (decide(role, action) === "deny") {
+          expect([res.status, await code(res)], label).toEqual([403, "forbidden"]);
+        } else if (role === "owner" || role === "accountant") {
+          expect([res.status, res.headers.get("Content-Type")], label).toEqual([200, "application/pdf"]);
+        } else {
+          expect([res.status, await code(res)], label).toEqual([403, "client_anonymised_pdf"]);
+        }
+      }
+    }
+    expect(decide("staff", "payments.read")).not.toBe("deny");
+    expect(decide("accountant", "payments.read")).not.toBe("deny");
   });
 });
 

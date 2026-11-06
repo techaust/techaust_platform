@@ -3,6 +3,9 @@
 // (08-C RB-28); the keyed hash after an erasure and the end: Settled by the lead on the safest reading, 2026-11-06 (08-C RB-46).
 import { LEAD_WITH_ADDRESS_SQL } from "./dp-shared.ts";
 
+/** Re-exported for the admin lead routes (review 1 medium 1: a consent change needs the lead's own address). */
+export { LEAD_WITH_ADDRESS_SQL };
+
 /**
  * One receipt (`?1` id, `?2` subject hash or NULL, `?3` lead id, `?4` contact id, `?5` event, `?6` source, `?7` notice version, `?8` purposes JSON, `?9`
  * marketing 0/1, `?10` ip hash, `?11` time). Core `receiptOf` / `withdrawalOf` give the values; the trigger `consent_receipts_values` checks them.

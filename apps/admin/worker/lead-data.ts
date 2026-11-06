@@ -8,13 +8,14 @@
 //                                      DELETE. 409 `lead_converted` (use the contact's erase), `legal_hold` (any of them held: the hold is read in the batch's
 //                                      first row, so `leads_held_no_erase` never surfaces, N4), `too_many_leads` (more than 50, with the refs).
 //   POST /leads/:id/consent/withdraw   the lead's consent withdrawn (`leads.write`): the stored consent gains `withdrawnAt` and one `withdraw` receipt with the
-//                                      keyed hash of the address is appended, in one batch.
+//                                      keyed hash of the address is appended, in one batch. 409 `anonymised` for a lead already marked erased or holding
+//                                      the anonymise placeholder address, in the read and in the UPDATE's WHERE (review 1 medium 1).
 // Researched 2026-10-29, DPDP s.8(7), s.12(3) (08-C RB-37) for the erasure; the keyed hash kept after it: Settled by the lead on the safest reading, 2026-11-06
 // (08-C RB-46); the consent receipt: Researched 2026-10-28, DPDP Act s.6, s.6(10) (08-C RB-28).
 import { withdrawalOf } from "@techaust/core/consent";
 import { leadEraseBody } from "@techaust/core/dp-schemas";
 import { uuidv7 } from "@techaust/core/ids";
-import { INSERT_RECEIPT_GUARDED_SQL } from "@techaust/db/consent";
+import { INSERT_RECEIPT_GUARDED_SQL, LEAD_WITH_ADDRESS_SQL } from "@techaust/db/consent";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { auditFirstRow } from "./audit-row.ts";
@@ -54,6 +55,17 @@ const NOTHING_TO_WITHDRAW: ApiError = {
   message: "This lead has no consent to withdraw",
 };
 const STALE: ApiError = { code: "stale_version", message: "This lead changed. Reload and try again" };
+/**
+ * Review 1 medium 1: a lead already marked erased, or one an anonymise gave the placeholder address, takes no consent change: its receipts carry the real
+ * address's keyed hash already, and a receipt keyed on the placeholder would be a record never deleted.
+ */
+const LEAD_ANONYMISED: ApiError = {
+  code: "anonymised",
+  message: "This lead's personal details were removed",
+};
+/** The placeholder address an anonymise gives (core `anonymisedEmail`), read as `LEAD_WITH_ADDRESS_SQL` reads it (`GLOB 'anonymised+*@invalid'`). */
+const isPlaceholderAddress = (email: string): boolean =>
+  /^anonymised\+.*@invalid$/s.test(email.toLowerCase());
 
 const exportRequest = z.strictObject({
   part: z.optional(z.enum(["lead_activities", "email_log", "consent_receipts"])),
@@ -225,10 +237,19 @@ export const leadData = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const db = c.env.DB;
     const lead = await db
-      .prepare("SELECT id, ref, source, consent, contact_email FROM leads WHERE id = ?1")
+      .prepare("SELECT id, ref, source, consent, contact_email, erased_hash FROM leads WHERE id = ?1")
       .bind(id)
-      .first<{ id: string; ref: string; source: string; consent: string | null; contact_email: string }>();
+      .first<{
+        id: string;
+        ref: string;
+        source: string;
+        consent: string | null;
+        contact_email: string;
+        erased_hash: string | null;
+      }>();
     if (!lead) return err(c, NOT_FOUND, 404);
+    if (lead.erased_hash !== null || isPlaceholderAddress(lead.contact_email))
+      return err(c, LEAD_ANONYMISED, 409);
     const now = Date.now();
     const parsed = lead.consent === null ? null : (JSON.parse(lead.consent) as never);
     const w = withdrawalOf(
@@ -237,12 +258,13 @@ export const leadData = new Hono<AppEnv>()
       "staff",
     );
     if (!w) return err(c, NOTHING_TO_WITHDRAW, 409);
-    const hash = await erasureHash(c.env, lead.contact_email);
+    // As jobs' `purgeLead`: a hash already set wins (unreachable after the refusal above; kept so the two paths read alike).
+    const hash = lead.erased_hash ?? (await erasureHash(c.env, lead.contact_email));
     const r = w.receipt;
     const done = await mutate(c, {
       main: db
         .prepare(
-          "UPDATE leads SET consent = ?2, updated_at = max(updated_at + 1, ?3) WHERE id = ?1 AND consent IS ?4",
+          `UPDATE leads SET consent = ?2, updated_at = max(updated_at + 1, ?3) WHERE id = ?1 AND consent IS ?4 AND ${LEAD_WITH_ADDRESS_SQL("leads")}`,
         )
         .bind(id, JSON.stringify(w.consent), now, lead.consent),
       action: "lead.consent_withdraw",
@@ -268,6 +290,15 @@ export const leadData = new Hono<AppEnv>()
           ),
       ],
     });
-    if (!done) return err(c, STALE, 409);
+    if (!done) {
+      // Erased or anonymised between the read and the batch: say so; else the lead changed.
+      const again = await db
+        .prepare(`SELECT ${LEAD_WITH_ADDRESS_SQL("leads")} AS own FROM leads WHERE id = ?1`)
+        .bind(id)
+        .first<{ own: number }>();
+      if (!again) return err(c, NOT_FOUND, 404);
+      if (again.own !== 1) return err(c, LEAD_ANONYMISED, 409);
+      return err(c, STALE, 409);
+    }
     return c.json({ ok: true, withdrawnAt: now });
   });
