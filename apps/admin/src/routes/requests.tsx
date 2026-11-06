@@ -241,7 +241,6 @@ function RequestsInbox() {
           rowKey={(r) => r.id}
           loading={list.state === "loading"}
           skeletonRows={4}
-          cardSub={(r) => subjectOf(r).name}
           empty={
             <EmptyState icon={<Inbox />} title={(ZR_REQ.empty[show] ?? "").replace(/\.$/, "")}>
               <p>{ZR_REQ.emptyHint}</p>

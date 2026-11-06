@@ -322,7 +322,7 @@ test("Settings › Data retention: six figures, the trial report, real deletion 
   ])
     await expect(page.locator(".settings-rows").getByText(label, { exact: true })).toBeVisible();
   const report = page.getByRole("region", { name: "Clean-up reports" });
-  await expect(report.getByRole("cell", { name: "Expired sign-in sessions and links" })).toBeVisible();
+  await expect(report.getByRole("rowheader", { name: "Expired sign-in sessions and links" })).toBeVisible();
   await expect(report.getByRole("columnheader", { name: "Would delete" })).toBeVisible();
   await shot(page, "retention-1280");
   // the switch: on (confirm), then off
@@ -358,11 +358,16 @@ test("the erase dialog's in-parts state (F5; the API's answers mocked)", async (
   await stepUp(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   let parts = 0;
+  // the second part waits until the test has seen the progress line (released below)
+  let release: () => void = () => {};
+  const seen = new Promise<void>((r) => {
+    release = r;
+  });
   await page.route("**/api/v1/contacts/*/erase", async (route) => {
     const body = route.request().postDataJSON() as { mode: string; part?: string };
     if (body.part === "offers") {
       parts++;
-      await new Promise((r) => setTimeout(r, 400));
+      if (parts === 2) await seen;
       return route.fulfill({
         json: { ok: true, mode: "anonymise", part: "offers", redacted: 10, more: parts < 2 },
       });
@@ -392,6 +397,7 @@ test("the erase dialog's in-parts state (F5; the API's answers mocked)", async (
   await dialog.getByRole("button", { name: "Anonymise in parts" }).click();
   await expect(dialog.getByText("Details removed from 10 offers so far.")).toBeVisible();
   await shot(page, "erase-parts-running-1280", false);
+  release();
   await expect(page.getByText("Contact anonymised.")).toBeVisible();
   expect(parts).toBe(2);
 });
