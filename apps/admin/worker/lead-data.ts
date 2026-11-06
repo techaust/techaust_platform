@@ -127,9 +127,12 @@ export const leadData = new Hono<AppEnv>()
     } else {
       const cur = f.after === undefined ? null : decodeCursor(f.after);
       if (f.after !== undefined && !cur) return err(c, BAD_REQUEST, 400);
+      const sql = EXPORT_PARTS[f.part](cur !== null);
+      // Bind exactly as many values as the statement has parameters (D1 refuses extra ones).
+      const params = Math.max(...[...sql.matchAll(/\?(\d+)/g)].map((m) => Number(m[1])));
       const { results } = await db
-        .prepare(EXPORT_PARTS[f.part](cur !== null))
-        .bind(id, email, ...(cur ? [cur.k, cur.id] : []))
+        .prepare(sql)
+        .bind(...[id, email, ...(cur ? [cur.k, cur.id] : [])].slice(0, params))
         .all<Record<string, unknown>>();
       const more = results.length > 50;
       const items = more ? results.slice(0, 50) : results;
@@ -155,17 +158,14 @@ export const leadData = new Hono<AppEnv>()
     const { id } = c.req.valid("param");
     const { reason } = c.req.valid("json");
     const db = c.env.DB;
-    const read = await db
-      .prepare(LEAD_ERASE_READ_SQL)
-      .bind(id)
-      .first<{
-        id: string;
-        ref: string;
-        client_id: string | null;
-        legal_hold: number;
-        email: string;
-        same: string;
-      }>();
+    const read = await db.prepare(LEAD_ERASE_READ_SQL).bind(id).first<{
+      id: string;
+      ref: string;
+      client_id: string | null;
+      legal_hold: number;
+      email: string;
+      same: string;
+    }>();
     if (!read) return err(c, NOT_FOUND, 404);
     if (read.client_id !== null) return err(c, LEAD_CONVERTED, 409);
     const same = JSON.parse(read.same) as { id: string; ref: string; held: number }[];

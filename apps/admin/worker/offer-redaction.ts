@@ -37,7 +37,14 @@ export const TOO_MANY_OFFERS: ApiError = {
     "This person is named on more than 10 offers, so they can't be anonymised in one go. Nothing was changed. Ask your developer to anonymise them in parts.",
 };
 
-const ELIGIBLE = REDACTABLE_OFFER_SQL("d", "c", "cl");
+/**
+ * M7.4 C.10 (F5, L18): an offer already redacted FOR THIS PERSON (a `document.redact` audit row naming the contact, written by an earlier part) holds nothing
+ * of theirs any more, so it no longer counts for them: the parts shrink what remains, and the final anonymise takes only the rest. An offer redacted for
+ * someone else still counts (T7: it is redacted again for this person). Before M7.4 a contact's redaction rows exist only once it is anonymised, so T7's
+ * paths are unchanged. Through `audit_log_entity`.
+ */
+const REDACTED_FOR_CONTACT = `EXISTS (SELECT 1 FROM audit_log ra WHERE ra.entity_type = 'document' AND ra.entity_id = d.id AND ra.action = 'document.redact' AND json_extract(ra.summary, '$.contactId') = c.id)`;
+const ELIGIBLE = `(${REDACTABLE_OFFER_SQL("d", "c", "cl")} AND NOT ${REDACTED_FOR_CONTACT})`;
 
 /**
  * M7.4 (L24, L37, round 5): the distinct lower-cased addresses of the leads an erase or anonymise of contact `c` matches (`MATCHED_LEADS` of clients.ts: made

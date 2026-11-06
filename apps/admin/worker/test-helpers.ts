@@ -539,3 +539,38 @@ export function captureQueue(base: Env = env, fail?: () => unknown): CapturedQue
   };
   return Object.assign(out, { env: withEnv(base, { EMAIL_QUEUE: queue }) });
 }
+
+/** `env` whose DB counts every statement it runs (a batch counts each of its statements), as offer-erasure.test.ts "D1 statements per request". */
+export function countingEnv() {
+  let n = 0;
+  class S {
+    constructor(readonly real: D1PreparedStatement) {}
+    bind(...v: unknown[]) {
+      return new S(this.real.bind(...v));
+    }
+    first(...a: unknown[]) {
+      n++;
+      return (this.real.first as (...x: unknown[]) => Promise<unknown>)(...a);
+    }
+    run() {
+      n++;
+      return this.real.run();
+    }
+    all() {
+      n++;
+      return this.real.all();
+    }
+    raw(...a: unknown[]) {
+      n++;
+      return (this.real.raw as (...x: unknown[]) => Promise<unknown>)(...a);
+    }
+  }
+  const db = {
+    prepare: (q: string) => new S(env.DB.prepare(q)),
+    batch: async (stmts: S[]) => {
+      n += stmts.length;
+      return env.DB.batch(stmts.map((s) => s.real));
+    },
+  } as unknown as D1Database;
+  return { env: withDb(db), count: () => n };
+}
