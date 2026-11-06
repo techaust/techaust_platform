@@ -555,7 +555,7 @@ function Unmatched(props: { which: UnmatchedTab; owner: boolean; onWhich: (w: Un
                 : undefined
             }
             empty={
-              <EmptyState icon={<CheckCircle />} title={empty.replace(/\.$/, "")} headingLevel={3}>
+              <EmptyState icon={<CheckCircle />} title={empty.replace(/\.$/, "")}>
                 {null}
               </EmptyState>
             }
