@@ -69,13 +69,16 @@ describe("an erased offer", () => {
 });
 
 describe("the Erase or anonymise dialog [ADM-CLI-05]", () => {
-  it("shows 409 `too_many_offers` as its refusal, with line 3, and keeps the button off", () => {
+  // M7.4 (G.5, F5): line 3's "ask your developer" predates the parts route; the dialog now offers "Anonymise in parts" (07-ZR, ZR_PARTS) in its place
+  it("answers 409 `too_many_offers` with the in-parts state, never a dead end", () => {
     expect(dataToolsSource).toMatch(
       /e\.code === "on_issued_document" \|\| e\.code === "legal_hold" \|\| e\.code === "too_many_offers"/,
     );
+    expect(dataToolsSource).toMatch(/if \(e\.code === "too_many_offers"\) setParts\(\{ step: "offer" \}\)/);
     expect(dataToolsSource).toMatch(
-      /e\.code === "too_many_offers" \? TOO_MANY_OFFERS_LINE : sentence\(e\.message\)/,
+      /e\.code === "too_many_offers" \? ZR_PARTS\.explain : sentence\(e\.message\)/,
     );
-    expect(dataToolsSource).toMatch(/blocked\?\.code === "too_many_offers"\s*\n?\s*\}/);
+    expect(dataToolsSource).toContain("m74Api.redactOffersPart(c.id, reason)");
+    expect(dataToolsSource).not.toContain("TOO_MANY_OFFERS_LINE");
   });
 });
