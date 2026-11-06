@@ -32,8 +32,14 @@ describe("bench-auth cleanup", () => {
     }
   });
 
-  it("deletes the probes' counters along with the bench users'", () => {
-    expect(cleanup).toContain("...probeEmails");
-    expect(source).toContain("probeEmails.push(email)");
+  it("leaves the `acct:` counters it cannot name (HMAC under SALT_PEPPER since M7.5 B1 L8) and says why", () => {
+    // No delete names an `acct:` key (the comment may name them).
+    expect(cleanup).not.toMatch(/DELETE[^;]*acct/);
+    expect(source).not.toMatch(/const acctKey/);
+    expect(cleanup).toContain("HMAC(SALT_PEPPER, email)");
+    // Only the `code:<user id>` counters of the bench users are deleted, by exact key.
+    expect(cleanup).toMatch(
+      /DELETE FROM auth_attempts WHERE key IN \(SELECT 'code:' \|\| id FROM staff_users WHERE email IN/,
+    );
   });
 });

@@ -113,6 +113,26 @@ describe("web binding guard (docs/05 §1.1)", () => {
   });
 });
 
+describe("the website's rate limiter ids (M7.5, L22)", () => {
+  it("each scope that declares RL_FORMS has its own namespace id, never the admin's or the portal's", () => {
+    const scopes = [config, ...Object.values(config.env as Record<string, typeof config>)];
+    const ids = scopes.flatMap((s) =>
+      (s.ratelimits ?? []).map((r: { namespace_id: string }) => r.namespace_id),
+    );
+    expect(ids).toEqual(["4101", "4201"]);
+    expect(new Set(ids).size).toBe(ids.length);
+    const others = ["../../admin/wrangler.jsonc", "../../portal/wrangler.jsonc"].map((p) =>
+      guard.parseJsonc(readFileSync(new URL(p, import.meta.url), "utf8")),
+    );
+    const theirs = others.flatMap((c) =>
+      [c, ...Object.values(c.env ?? {})].flatMap((s) =>
+        ((s as { ratelimits?: { namespace_id: string }[] }).ratelimits ?? []).map((r) => r.namespace_id),
+      ),
+    );
+    for (const id of ids) expect(theirs).not.toContain(id);
+  });
+});
+
 describe("form bindings (M2.4)", () => {
   it("top level and staging declare the queue, the rate limiter and both secrets; production has none", () => {
     for (const scope of [config, config.env.staging]) {
