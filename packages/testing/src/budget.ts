@@ -80,7 +80,7 @@ export const SCAN_ALLOWED: { table: string; sql?: RegExp; reason: string }[] = [
   },
   {
     table: "documents",
-    sql: /^DELETE FROM contacts\b/,
+    sql: /^DELETE\sFROM\scontacts\b/,
     reason:
       "M7.5 B2 finding S1 (for the lead): SQLite's foreign-key check of `documents.contact_id` (no index on that child column) scans documents when a contact row is deleted (a contact never named on a document). Fix: CREATE INDEX on documents (contact_id), a migration the lead numbers; then delete this entry.",
   },
