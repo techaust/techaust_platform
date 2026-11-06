@@ -85,6 +85,14 @@ const EXPECTED: Record<Exclude<Action, "proposals.send" | "requests.close">, str
   "audit.export": "S--S",
   "approvals.decide": "A---",
   "approvals.readOwn": "AAA-",
+  // M7.4 (B.8)
+  "requests.log": "AA--",
+  "legalHold.manage": "S---",
+  "retention.read": "A---",
+  "retention.live": "S---",
+  "leads.dataExport": "S---",
+  "leads.dataErase": "S---",
+  "suppressions.lift": "S---",
 };
 const CODE: Record<string, Decision> = { A: "allow", S: "step-up", P: "approval", "-": "deny" };
 

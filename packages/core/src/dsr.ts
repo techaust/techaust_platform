@@ -4,8 +4,9 @@
 //
 // The reply date: the end of the IST day of the EARLIER of 30 days and one calendar month after the request arrived (the month clamped to its last day), with
 // no pause and no extension. It meets the published privacy page (07-A §6 "respond within 30 days"), 07-A §7 and SPDI Rule 5(9) ("within one month"), far
-// inside DPDP Rule 14(3)'s 90 days. Researched 2026-10-28, SPDI Rules 2011 Rule 5(9) and DPDP Rules 2025 Rule 14(3) (08-C RB-13). The clock with no pause
-// or extension is the brief's M.2, whose 08-C row the analyst adds for M7.4; this comment takes that row's tag once it exists.
+// inside DPDP Rule 14(3)'s 90 days. Researched 2026-11-06, DPDP Rules 2025 r.14(3); SPDI r.5(9); privacy notice 07-A §§7–8 (08-C RB-47). No pause and no
+// extension; a requester who can't be identified in time is declined `identity_not_confirmed` within the period; the 48 hours are calendar hours: Settled by
+// the lead on the safest reading, 2026-11-06 (08-C RB-47).
 import {
   addDays,
   addMonths,
