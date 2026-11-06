@@ -122,15 +122,23 @@ export function useTip() {
 }
 
 export function ChartTip({ tip, width }: { tip: TipState; width: number }) {
+  // The box sits above the point; measured before paint, so a point near the top keeps the box inside the plot rather than over the chart's title (review 1,
+  // finding 8).
+  const box = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (tip && box.current) setHeight(box.current.offsetHeight);
+  }, [tip]);
   if (!tip) return null;
   // keep the box inside the chart: flip to the left of the point past the middle
   const left = tip.x > width / 2;
   return (
     <div
+      ref={box}
       className="chart-tip"
       aria-hidden="true"
       style={{
-        top: `${Math.max(0, tip.y)}px`,
+        top: `${Math.max(0, tip.y - height)}px`,
         ...(left ? { right: `${Math.max(0, width - tip.x + 8)}px` } : { left: `${tip.x + 8}px` }),
       }}
     >

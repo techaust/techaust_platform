@@ -458,7 +458,6 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-2);
   pointer-events: none;
-  transform: translateY(-100%);
   font-size: var(--text-sm);
   line-height: var(--text-sm--line-height);
 }
@@ -544,24 +543,15 @@
   line-height: var(--text-sm--line-height);
 }
 
-/* The meter: an 8 px track a light step of the fill's own hue, the fill the accent. */
+/* The meter: an 8 px neutral track (the care list's own recessive track, in both themes), the fill the accent. A hue on the track read as a filled bar
+   at 0 % in dark (review 1, finding 7). */
 .chart-meter {
   position: relative;
   height: 8px;
   margin: var(--space-2) 0 0;
   border-radius: 999px;
-  background: var(--color-verdigris-100);
+  background: color-mix(in srgb, var(--color-border-control) 40%, var(--color-surface));
   overflow: hidden;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .chart-meter {
-    background: var(--color-verdigris-900);
-  }
-}
-
-:root[data-theme="dark"] .chart-meter {
-  background: var(--color-verdigris-900);
 }
 
 .chart-meter__fill {
