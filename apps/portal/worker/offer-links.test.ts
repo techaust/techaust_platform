@@ -192,7 +192,7 @@ describe("a link grants its own offer and nothing else of the organisation [POR-
     const res = await call("/t/offer/pdf", { body: { token, documentId: offer.id } });
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("application/pdf");
-    expect(res.headers.get("Content-Security-Policy")).toBe("sandbox");
+    expect(res.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox");
     expect(await res.text()).toContain("%PDF-1.4");
   });
 });
