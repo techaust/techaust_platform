@@ -1,7 +1,7 @@
 # gitleaks configuration (CI's secret scan, `./gitleaks git .` in .github/workflows/ci.yml, reads this file from the repository root: gitleaks 8.30.1 takes
 # `(target path)/.gitleaks.toml` when no --config flag or GITLEAKS_CONFIG variable is given). Every built-in rule stays on (`useDefault`); the only addition is
-# one reviewed path allow-list (lead decision 6, docs/runs/cpu-warmup.md, 2026-11-02).
-title = "TecHaust platform: gitleaks defaults plus one reviewed path"
+# one reviewed path allow-list (lead decision 6, docs/runs/cpu-warmup.md, 2026-11-02; its second path, the portal's fixtures, M7.5 L39).
+title = "TecHaust platform: gitleaks defaults plus one reviewed path allow-list"
 
 [extend]
 useDefault = true
@@ -10,7 +10,10 @@ useDefault = true
 # Workers' start-up dry run (apps/admin/worker/warm-routes.ts). The front fixture holds a made-up Owner's sign-in rows (password HMAC, salt, client hash,
 # sealed TOTP secret, signed challenge) that are credential-shaped by design: they were made under the admin tests' fixed TEST_KEY values
 # (apps/admin/vitest.config.ts), never under a real key, and apps/admin/worker/warm-fixtures.test.ts proves each one verifies only under those test keys.
-# Only that folder is allowed; anything credential-shaped anywhere else is still a finding.
+# M7.5 L39: apps/portal/worker/warm-fixtures/*.ts are generated the same way for the portal's start-up dry run (apps/portal/worker/warm-routes.ts): the
+# probe's made-up sample rows, a made-up link token of words in the sign-in call's body, and statement keys; apps/portal/worker/warm-fixtures.test.ts proves the
+# body's token is that made-up one and that no other string has a credential or secret shape.
+# Only those two folders are allowed; anything credential-shaped anywhere else is still a finding.
 [[allowlists]]
-description = "Generated warm-up fixtures: made-up values sealed under the admin tests' TEST_KEY values only (warm-fixtures.test.ts)"
-paths = ['''^apps/admin/worker/warm-fixtures/''']
+description = "Generated warm-up fixtures: made-up values (admin: sealed under the admin tests' TEST_KEY values only; portal: made-up words), each folder checked by its warm-fixtures.test.ts"
+paths = ['''^apps/admin/worker/warm-fixtures/''', '''^apps/portal/worker/warm-fixtures/''']

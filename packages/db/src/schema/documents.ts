@@ -304,6 +304,9 @@ export const documents = sqliteTable(
       .on(t.sourceDocumentId, t.sourceStep)
       .where(sql`${t.sourceDocumentId} is not null`),
     index("documents_contact").on(t.contactId),
+    // M7.5 L38 (B2 sweep finding S1): SQLite's foreign-key check on `DELETE FROM contacts` looks up `decided_contact_id`; without an index it scans
+    // documents. Partial: the column is set only on a decided offer (every invoice and every open offer leaves it NULL), and `= ?` implies NOT NULL.
+    index("documents_decided_contact").on(t.decidedContactId).where(sql`${t.decidedContactId} is not null`),
     // M5.3 (LD38): one open (unfrozen) note draft per parent and type. A draft discarded, issued or deleted with its parent frees the slot.
     uniqueIndex("documents_open_note")
       .on(t.parentId, t.type)
@@ -565,6 +568,10 @@ export const paymentSchedules = sqliteTable(
   },
   (t) => [
     uniqueIndex("payment_schedules_position").on(t.documentId, t.position),
+    // M7.5 L38 (B2 sweep finding S2): SQLite's foreign-key check on `DELETE FROM milestones` looks up `milestone_id`; without an index it scans
+    // payment_schedules. Partial: no schedule write sets the column today (quote-model's child columns leave it NULL), so the index stays empty
+    // until a line is tied to a milestone; `= ?` implies NOT NULL.
+    index("payment_schedules_milestone").on(t.milestoneId).where(sql`${t.milestoneId} is not null`),
     check("payment_schedules_trigger", oneOf(t.trigger, SCHEDULE_TRIGGERS)),
     check("payment_schedules_pct", sql`${t.pctBp} between 0 and 10000`),
   ],

@@ -78,18 +78,6 @@ export const SCAN_ALLOWED: { table: string; sql?: RegExp; reason: string }[] = [
     reason:
       '"Sign out everyone": every live staff session is the point (2 to 5 staff, sessions purged as they lapse)',
   },
-  {
-    table: "documents",
-    sql: /^DELETE\sFROM\scontacts\b/,
-    reason:
-      "M7.5 B2 finding S1 (for the lead): SQLite's foreign-key check of `documents.contact_id` (no index on that child column) scans documents when a contact row is deleted (a contact never named on a document). Fix: CREATE INDEX on documents (contact_id), a migration the lead numbers; then delete this entry.",
-  },
-  {
-    table: "payment_schedules",
-    sql: /^DELETE FROM milestones\b/,
-    reason:
-      "M7.5 B2 finding S2 (for the lead): SQLite's foreign-key check of `payment_schedules` (no index on its milestone column) scans it when a pending milestone is deleted. Fix: CREATE INDEX on that column, a migration the lead numbers; then delete this entry.",
-  },
 ];
 
 const als = new AsyncLocalStorage<Invocation>();

@@ -28,9 +28,11 @@ import {
   magicVerifyRequest,
   newPortalSession,
   newToken,
+  PORTAL_ABS_MS,
   PORTAL_FAIL_LIMIT,
   PORTAL_FAIL_LOCK_MS,
   PORTAL_FAIL_WINDOW_MS,
+  PORTAL_IDLE_MS,
   portalFailKey,
   portalMailKey,
   portalReqKey,
@@ -69,6 +71,21 @@ const TURNSTILE_FAILED: ApiError = {
 };
 
 const now = () => Date.now();
+
+/**
+ * M7.5 L39: the start-up dry run's link use (createApp `warm`, warm-routes.ts). Global scope refuses random values, so the warm app's verify takes this
+ * made-up session token and these made-up row ids in place of `newPortalSession`'s token and the log rows' UUIDv7s. Only the warm app sets `warm`; its D1 is
+ * the made-up answer book (nothing is stored) and its answer has no body or cookie that leaves it. A real request never takes this path.
+ */
+const WARM_SESSION_TOKEN = "warm-up-session-not-a-real-one";
+const WARM_AUDIT_ID = "00000000-0000-7000-8000-00000000a001";
+const WARM_ACCESS_ID = "00000000-0000-7000-8000-00000000a002";
+const warmSession = async (t: number) => ({
+  token: WARM_SESSION_TOKEN,
+  id: await tokenHash(WARM_SESSION_TOKEN),
+  idleExpiresAt: t + PORTAL_IDLE_MS,
+  absExpiresAt: t + PORTAL_ABS_MS,
+});
 
 /** Eligible contacts of an email, one row per organisation (`contacts_email`); tests EXPLAIN it. */
 export const CONTACT_READ =
@@ -199,7 +216,8 @@ export const authRoutes = new Hono<AppEnv>()
     const failKey = await portalFailKey(c.env.PORTAL_KEY_PEPPER, callerAddress(c));
     // A token of the wrong shape is just a failed check: its hash matches nothing, and it counts like any other.
     const hash = await tokenHash(token);
-    const s = await newPortalSession(t);
+    const warm = c.var.warm === true;
+    const s = warm ? await warmSession(t) : await newPortalSession(t);
     const info = requestInfo(c);
     const live = { clientSessionId: s.id };
     const results = await db.batch([
@@ -210,6 +228,7 @@ export const authRoutes = new Hono<AppEnv>()
         db,
         {
           ...info,
+          ...(warm ? { id: WARM_AUDIT_ID } : {}),
           actorType: "contact",
           actorId: null,
           actorFromClientSession: s.id,
@@ -221,7 +240,15 @@ export const authRoutes = new Hono<AppEnv>()
         },
         live,
       ),
-      accessStmt(db, { ...accessEntry(c, 200, null), actorFromClientSession: s.id }, live),
+      accessStmt(
+        db,
+        {
+          ...accessEntry(c, 200, null),
+          ...(warm ? { id: WARM_ACCESS_ID } : {}),
+          actorFromClientSession: s.id,
+        },
+        live,
+      ),
     ]);
     const lock = (results[0]?.results[0] as { locked_until: number | null } | undefined)?.locked_until;
     if (lock && lock > t) {
