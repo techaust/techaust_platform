@@ -383,10 +383,12 @@ export const ZR_LEAD = {
   refused: {
     legal_hold: "A legal hold stands on this person. Lift it before erasing.",
     lead_converted: "This lead became a client. Erase or anonymise its contact instead.",
-    too_many_leads: (refs: string[]) =>
-      `This person has too many enquiries to erase at once${refs.length ? ` (${refs.slice(0, 5).join(", ")}${refs.length > 5 ? " and more" : ""})` : ""}. Ask your developer to help.`,
+    too_many_leads: "This person has too many enquiries to erase at once. Ask your developer to help.",
     stale_version: "This lead changed. Reload and try again.",
   },
+  /** Under the `too_many_leads` refusal: the references the server names (`details.refs`, at most 50; review low 11). */
+  tooManyRefs: (n: number) => (n === 1 ? "1 of their enquiries:" : `${n} of their enquiries:`),
+  copyRefs: "Copy references",
   withdrawTitle: (name: string) => `Withdraw ${name}'s marketing consent?`,
   withdrawBody:
     "Their consent record shows it withdrawn from today, and the withdrawal is added to their consent history.",

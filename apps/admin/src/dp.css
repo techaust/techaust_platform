@@ -756,3 +756,47 @@
   font-weight: 600;
   text-align: start;
 }
+
+/* ---------- a lead erase refused as too_many_leads: the references the server names (review low 11) ----------
+   The notice's own continuation, not a second alert: the same surface and left rule (neutral, so only the sentence reads as the error), its text
+   column lined up with the notice's words (rule + padding + icon + gap = space-12), the references in the document-number face on a grid so they
+   scan in columns, and one button that copies them all, one per line, for the developer. */
+.dialog .notice:has(+ .dp-refs) {
+  margin-bottom: 0;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.dp-refs {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-1) var(--space-4) var(--space-4) var(--space-12);
+  border-inline-start: 3px solid var(--color-border);
+  border-end-start-radius: var(--radius-sm);
+  border-end-end-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.dp-refs__h {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.dp-refs__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-refs .btn {
+  justify-self: start;
+}

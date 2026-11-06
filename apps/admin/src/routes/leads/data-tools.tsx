@@ -15,7 +15,7 @@ import { VerifyNote } from "../../components/form.tsx";
 import { Download, MoreHorizontal } from "../../components/icons.tsx";
 import { MenuButton } from "../../components/popover.tsx";
 import { useToast } from "../../components/toast.tsx";
-import { CodeField, FieldError, Notice, useFieldError } from "../../components/ui.tsx";
+import { CodeField, CopyButton, FieldError, Notice, useFieldError } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { ERASE_REASON_LABELS, ERASE_REASONS } from "../../lib/clients.ts";
 import { REQUESTS_CHANGED, ZR_LEAD } from "../../lib/copy-zr.ts";
@@ -286,6 +286,8 @@ function LeadEraseDialog(props: { lead: LeadDetail; onClose: () => void; onDone:
   const [code, setCode] = useState("");
   const [codeError, setCodeError, codeErrorKey] = useFieldError();
   const [failure, setFailure] = useState<string | null>(null);
+  // `too_many_leads` names the address's enquiries (`details.refs`, review low 11): listed under the refusal for the developer
+  const [refs, setRefs] = useState<readonly string[]>([]);
   const [blocked, setBlocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const refusal = useRefusalFocus();
@@ -305,6 +307,7 @@ function LeadEraseDialog(props: { lead: LeadDetail; onClose: () => void; onDone:
     setCodeError(null);
     setBusy(true);
     setFailure(null);
+    setRefs([]);
     try {
       const r = await withCode(needsCode ? code : undefined, () => m74Api.leadErase(l.id, reason));
       props.onDone(r.erased);
@@ -322,6 +325,7 @@ function LeadEraseDialog(props: { lead: LeadDetail; onClose: () => void; onDone:
       )
         setBlocked(true);
       setFailure(eraseRefusal(e));
+      setRefs(tooManyRefs(e));
       refusal.show();
     }
   }
@@ -371,6 +375,21 @@ function LeadEraseDialog(props: { lead: LeadDetail; onClose: () => void; onDone:
           {failure}
         </Notice>
       )}
+      {refs.length > 0 && (
+        <section className="dp-refs" aria-labelledby={`${id}-refs`}>
+          <h3 className="dp-refs__h" id={`${id}-refs`}>
+            {ZR_LEAD.tooManyRefs(refs.length)}
+          </h3>
+          <ul className="dp-refs__list">
+            {refs.map((r) => (
+              <li key={r} className="docno">
+                {r}
+              </li>
+            ))}
+          </ul>
+          <CopyButton text={refs.join("\n")} label={ZR_LEAD.copyRefs} />
+        </section>
+      )}
       <div className="dialog__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
           Cancel
@@ -389,12 +408,19 @@ function LeadEraseDialog(props: { lead: LeadDetail; onClose: () => void; onDone:
   );
 }
 
+/** The references a `too_many_leads` refusal names (`details.refs`: api.ts keeps only a list of strings there); [] for anything else. */
+export function tooManyRefs(e: unknown): readonly string[] {
+  if (!(e instanceof RequestError) || e.code !== "too_many_leads") return [];
+  const refs = e.extra.details?.refs;
+  return Array.isArray(refs) ? refs : [];
+}
+
 /** A lead erase refused, by its code. */
 export function eraseRefusal(e: unknown): string {
   if (e instanceof RequestError) {
     if (e.code === "legal_hold") return ZR_LEAD.refused.legal_hold;
     if (e.code === "lead_converted") return ZR_LEAD.refused.lead_converted;
-    if (e.code === "too_many_leads") return ZR_LEAD.refused.too_many_leads([]);
+    if (e.code === "too_many_leads") return ZR_LEAD.refused.too_many_leads;
     if (e.code === "stale_version") return ZR_LEAD.refused.stale_version;
   }
   return errorText(e);

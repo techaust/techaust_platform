@@ -119,6 +119,32 @@ describe("API client: step-up and expired sessions [ADM-AUTH-08, ADM-AUTH-05]", 
     expect(other.extra).toEqual({});
   });
 
+  it("keeps a list of strings under `error.details.refs` (too_many_leads), and nothing looser: no other list, no mixed or non-string list, no top-level refs (M7.4 review low 11) [ADM-CLI-05]", async () => {
+    const refs = Array.from({ length: 50 }, (_, i) => `L-${1000 + i}`);
+    const tooMany = (details: unknown) =>
+      json(409, { error: { code: "too_many_leads", message: "x", ...(details ? { details } : {}) } });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(tooMany({ refs }))
+        .mockResolvedValueOnce(tooMany({ refs: ["L-1", 2] }))
+        .mockResolvedValueOnce(tooMany({ refs: [{ ref: "L-1" }] }))
+        .mockResolvedValueOnce(tooMany({ refs: "L-1" }))
+        .mockResolvedValueOnce(tooMany({ refs: [...refs, "L-2000"] }))
+        .mockResolvedValueOnce(tooMany({ documentId: ["d1"], stated: ["14"], other: ["x"] }))
+        .mockResolvedValueOnce(json(409, { error: { code: "too_many_leads", message: "x" }, refs })),
+    );
+    const listed = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    expect(listed).toBeInstanceOf(RequestError);
+    expect(listed.extra).toEqual({ details: { refs } });
+    for (let i = 0; i < 6; i++) {
+      const dropped = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+      expect(dropped.code).toBe("too_many_leads");
+      expect(dropped.extra).toEqual({});
+    }
+  });
+
   it("a cancelled step-up sends nothing more and reports that nothing changed", async () => {
     const fetchFn = vi.fn().mockResolvedValueOnce(json(403, STEP_UP));
     vi.stubGlobal("fetch", fetchFn);
