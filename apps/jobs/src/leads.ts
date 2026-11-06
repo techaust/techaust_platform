@@ -28,6 +28,7 @@ import {
 } from "@techaust/core";
 import { firstNameOf } from "@techaust/core/offers";
 import { CATALOGUE } from "@techaust/db/catalogue";
+import { erasureHashOf } from "./erasure.ts";
 import { countStatements, limitKeys, withinLimitsSql } from "./form-limits.ts";
 import { logEvent } from "./log.ts";
 
@@ -180,6 +181,28 @@ function insertStatement(env: Env, m: LeadMessage, ref: string): D1PreparedState
   );
 }
 
+/**
+ * M7.4 (A.3, FRM-05; Researched 2026-10-28, DPDP Act s.6, s.6(10) (08-C RB-28)): the lead's `grant` receipt, in the lead's own batch, with the keyed hash of the
+ * address computed at insert (L23; Settled by the lead on the safest reading, 2026-11-06 (08-C RB-46)), so the proof outlives the lead purge. Written only
+ * when the lead was (`EXISTS`), once per lead (a redelivery never reaches the batch).
+ */
+function receiptStatement(env: Env, m: LeadMessage, hash: string): D1PreparedStatement {
+  const marketing = m.payload.marketing === true;
+  return env.DB.prepare(
+    `INSERT INTO consent_receipts (id, subject_hash, lead_id, contact_id, event, source, notice_version, purposes, marketing, ip_hash, at)
+     SELECT lower(hex(randomblob(16))), ?1, ?2, NULL, 'grant', 'web_form', ?3, ?4, ?5, ?6, ?7
+     WHERE EXISTS (SELECT 1 FROM leads WHERE id = ?2) AND NOT EXISTS (SELECT 1 FROM consent_receipts r WHERE r.lead_id = ?2 AND r.event = 'grant')`,
+  ).bind(
+    hash,
+    leadId(m),
+    m.noticeVersion,
+    JSON.stringify(["respond_to_enquiry", ...(marketing ? ["marketing_updates"] : [])]),
+    marketing ? 1 : 0,
+    m.ipHash,
+    m.submittedAt,
+  );
+}
+
 export async function processLead(env: Env, body: unknown, now = Date.now()): Promise<LeadResult> {
   const parsed = leadMessage.safeParse(body);
   if (!parsed.success) {
@@ -203,6 +226,7 @@ export async function processLead(env: Env, body: unknown, now = Date.now()): Pr
   };
   if (await redelivered()) return "duplicate";
 
+  const hash = await erasureHashOf(env, m.payload.email);
   let ref = m.ref;
   for (let attempt = 0; ; attempt++) {
     try {
@@ -211,6 +235,7 @@ export async function processLead(env: Env, body: unknown, now = Date.now()): Pr
         ...countStatements(env.DB, m.ipHash, now),
         insertStatement(env, m, ref),
         notifyStatement(env, m),
+        receiptStatement(env, m, hash),
       ]);
       if ((results[2]?.meta.changes ?? 0) === 0) {
         logEvent("lead.rate_limited", { kind: m.kind });
