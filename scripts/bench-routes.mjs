@@ -424,19 +424,11 @@ async function main() {
       return client.call("admin", "GET", r.url, { cookie: owner.cookie });
     };
     const safeWrites = async () => {
-      // Mark-read and the switches re-saved unchanged (BENCH_WRITES); each is undone by its nature.
+      // Mark-read (BENCH_WRITES): undone by its nature. (The switches' PUT takes another shape than their GET answers, so it is not re-saved here: a proxy row.)
       await client.call("admin", "POST", "/api/v1/notifications/read-all", {
         body: {},
         cookie: owner.cookie,
       });
-      const prefs = await client.call("admin", "GET", "/api/v1/notifications/prefs", {
-        cookie: owner.cookie,
-      });
-      if (prefs.status === 200)
-        await client.call("admin", "PUT", "/api/v1/notifications/prefs", {
-          body: prefs.data,
-          cookie: owner.cookie,
-        });
     };
     const webRows = rows
       .filter((r) => r.worker === "web" && r.method === "GET")
@@ -499,6 +491,10 @@ async function main() {
     requests: budget.sent,
     stopped,
     unresolved: unresolvedAll,
+    // Rows whose every answer was a refusal (4xx): the call needs a query or data the bench did not give, so its CPU is not the row's real work.
+    refusedOnly: Object.entries(by)
+      .filter(([, ts]) => ts.every((t) => t.status >= 400 && t.status < 500))
+      .map(([k]) => k),
     statuses: Object.fromEntries(
       Object.entries(by).map(([k, ts]) => [
         k,

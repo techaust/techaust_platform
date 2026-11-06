@@ -166,7 +166,6 @@ export const BENCH_WRITES = new Set([
   "admin-front POST /api/v1/auth/invite/start",
   "admin-front POST /api/v1/auth/invite/finish",
   "admin-front POST /api/v1/auth/invite/totp",
-  "admin-api PUT /api/v1/notifications/prefs",
   "admin-api POST /api/v1/notifications/read-all",
   "portal POST /api/v1/auth/magic",
   "portal POST /api/v1/auth/magic/verify",
