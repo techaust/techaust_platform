@@ -25,7 +25,15 @@ import {
 } from "../src/triggers.ts";
 import { dataProtectionTriggerStatements } from "../src/triggers-data-protection.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember } from "./billing-helpers.ts";
-import { all, first, insertDraftInvoice, rejects, run } from "./helpers.ts";
+import {
+  all,
+  first,
+  insertDraftInvoice,
+  REQUEST_CLOCK_COLS,
+  rejects,
+  requestClockOf,
+  run,
+} from "./helpers.ts";
 
 const migration = (name: string) => env.TEST_MIGRATIONS.find((m) => m.name === name);
 /** A migration's statements without their comment lines and breakpoints. */
@@ -76,8 +84,8 @@ function insertRequest(r: Req) {
   const contactId = r.contactId ?? null;
   const leadId = r.leadId ?? null;
   return run(
-    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, requester_email, kind, details, status, outcome, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1000, 1000)`,
+    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, requester_email, kind, details, status, outcome, created_at, updated_at, ${REQUEST_CLOCK_COLS})
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1000, 1000, ${requestClockOf("1000")})`,
     r.id ?? uuidv7(),
     r.clientId === undefined ? null : r.clientId,
     contactId,

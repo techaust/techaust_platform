@@ -35,7 +35,7 @@ import {
   RETENTION_MODES_0079,
 } from "../src/triggers-data-protection.ts";
 import { mkClientRow, mkContact, mkMember } from "./billing-helpers.ts";
-import { all, first, rejects, run } from "./helpers.ts";
+import { all, first, REQUEST_CLOCK_COLS, rejects, requestClockOf, run } from "./helpers.ts";
 import { mkQuote, send } from "./quotes.ts";
 
 const DAY = 86_400_000;
@@ -194,7 +194,7 @@ describe("floors no setting can cross (366 days, L34)", () => {
     const mk = async (closedDaysAgo: number | null) => {
       const id = uuidv7();
       await run(
-        "INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at) VALUES (?1, ?2, 'grievance', 'x', ?3, ?3)",
+        `INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, 'grievance', 'x', ?3, ?3, ${requestClockOf("?3")})`,
         id,
         client,
         ago(800),
@@ -570,12 +570,36 @@ describe("the erasure stop (A.5; RB-46; L20, L24, L26, L27, round 5)", () => {
 });
 
 describe("client_requests: kinds, clock, steps and close (A.1, A.6, L28; RB-47)", () => {
-  it("a portal request takes its clock from created_at (core requestDueAt, 48 hours)", async () => {
+  it("a portal request is refused without its clock, or with one not from its created_at", async () => {
+    const client = await mkClientRow();
+    const at = Date.UTC(2027, 0, 31, 4, 30);
+    await rejects(
+      run(
+        "INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at) VALUES (?1, ?2, 'grievance', 'x', ?3, ?3)",
+        uuidv7(),
+        client,
+        at,
+      ),
+      /client_requests_clock_insert/,
+    );
+    await rejects(
+      run(
+        `INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, 'grievance', 'x', ?3, ?3, ${requestClockOf("?4")})`,
+        uuidv7(),
+        client,
+        at,
+        at - DAY,
+      ),
+      /client_requests_clock_insert/,
+    );
+  });
+
+  it("a portal request writes its clock from created_at (core requestDueAt, 48 hours)", async () => {
     const client = await mkClientRow();
     const id = uuidv7();
-    const at = Date.UTC(2027, 0, 31, 4, 30);
+    const at = Date.UTC(2026, 0, 31, 4, 30); // a past day: a request never arrives in the future
     await run(
-      "INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at) VALUES (?1, ?2, 'consent_withdrawal', NULL, ?3, ?3)",
+      `INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, 'consent_withdrawal', NULL, ?3, ?3, ${requestClockOf("?3")})`,
       id,
       client,
       at,
@@ -660,9 +684,10 @@ describe("client_requests: kinds, clock, steps and close (A.1, A.6, L28; RB-47)"
     const client = await mkClientRow();
     const id = uuidv7();
     await run(
-      "INSERT INTO client_requests (id, client_id, kind, details) VALUES (?1, ?2, 'grievance', 'x')",
+      `INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, 'grievance', 'x', ?3, ?3, ${requestClockOf("?3")})`,
       id,
       client,
+      Date.now(),
     );
     const up = (sql: string, ...p: unknown[]) =>
       run(`UPDATE client_requests SET ${sql} WHERE id = ?1`, id, ...p);
@@ -682,11 +707,12 @@ describe("client_requests: kinds, clock, steps and close (A.1, A.6, L28; RB-47)"
     const mk = async (kind: string, email: string | null = null) => {
       const id = uuidv7();
       await run(
-        "INSERT INTO client_requests (id, client_id, requester_email, kind, details) VALUES (?1, ?2, ?3, ?4, NULL)",
+        `INSERT INTO client_requests (id, client_id, requester_email, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?5, ${requestClockOf("?5")})`,
         id,
         email ? null : client,
         email,
         kind,
+        Date.now(),
       );
       return id;
     };
@@ -751,11 +777,12 @@ describe("client_requests: kinds, clock, steps and close (A.1, A.6, L28; RB-47)"
     const req = async (o: { contactId?: string; leadId?: string }) => {
       const id = uuidv7();
       await run(
-        "INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, kind, details) VALUES (?1, ?2, ?3, ?3, ?4, ?4, 'data_erasure', NULL)",
+        `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, ?3, ?3, ?4, ?4, 'data_erasure', NULL, ?5, ?5, ${requestClockOf("?5")})`,
         id,
         o.contactId ? client : null,
         o.contactId ?? null,
         o.leadId ?? null,
+        Date.now(),
       );
       return id;
     };

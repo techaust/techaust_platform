@@ -230,12 +230,13 @@ export function dataProtectionTriggerStatements(): string[] {
   ];
 
   // ---- 6. client_requests: the kinds, the clock, the steps and the close
-  // The portal's insert (M7.1's, unchanged) gives no clock: `client_requests_clock_fill` sets it from `created_at` right after. A request staff log gives the
-  // clock, and the trigger checks it against the SQL twin of core `requestDueAt` (never a future day: 5 minutes of clock skew allowed).
+  // Every insert gives the clock (the portal: `received_at` = `created_at`; staff: the start of the IST day typed), checked against the SQL twin of core
+  // `requestDueAt` (never a future day: 5 minutes of clock skew allowed). No trigger fills it afterwards: D1 counts a trigger's writes in `meta.changes`, and
+  // the portal's insert reads `changes === 1`.
   const clockInsertBad = `NEW.channel NOT IN (${q(CHANNELS_0079)})
-    OR (NEW.received_at IS NULL AND (NEW.channel <> 'portal' OR NEW.due_at IS NOT NULL OR NEW.ack_due_at IS NOT NULL))
-    OR (NEW.received_at IS NOT NULL AND (NEW.received_at > ${NOW} + 300000 OR NEW.received_at > NEW.created_at + 300000
-      OR NEW.due_at IS NOT ${requestDueAtSql("NEW.received_at")} OR NEW.ack_due_at IS NOT NEW.received_at + 172800000))
+    OR NEW.received_at IS NULL OR NEW.received_at > ${NOW} + 300000 OR NEW.received_at > NEW.created_at + 300000
+    OR (NEW.channel = 'portal' AND NEW.received_at IS NOT NEW.created_at)
+    OR NEW.due_at IS NOT ${requestDueAtSql("NEW.received_at")} OR NEW.ack_due_at IS NOT NEW.received_at + 172800000
     OR (NEW.channel = 'portal') IS NOT (NEW.logged_by IS NULL)
     OR (NEW.logged_by IS NOT NULL AND NOT EXISTS (SELECT 1 FROM staff_users s WHERE s.id = NEW.logged_by AND s.status = 'active'))
     OR NEW.acknowledged_at IS NOT NULL OR NEW.identity_checked_at IS NOT NULL OR NEW.identity_checked_by IS NOT NULL
@@ -243,9 +244,7 @@ export function dataProtectionTriggerStatements(): string[] {
     OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL AND NEW.requester_email IS NULL)
     OR (NEW.lead_id IS NOT NULL AND EXISTS (SELECT 1 FROM leads cl WHERE cl.id = NEW.lead_id AND cl.client_id IS NOT NULL))`;
   const set = (col: string) => `(OLD.${col} IS NOT NULL AND NEW.${col} IS NOT OLD.${col})`;
-  const stepsBad = `${changed(["channel", "logged_by"])}
-    OR ${set("received_at")} OR ${set("due_at")} OR ${set("ack_due_at")}
-    OR (NEW.received_at IS NOT OLD.received_at AND (NEW.received_at IS NOT NEW.created_at OR NEW.due_at IS NOT ${requestDueAtSql("NEW.received_at")} OR NEW.ack_due_at IS NOT NEW.received_at + 172800000))
+  const stepsBad = `${changed(["channel", "logged_by", "received_at", "due_at", "ack_due_at"])}
     OR ${set("acknowledged_at")} OR ${set("identity_checked_at")} OR ${set("identity_checked_by")}
     OR (NEW.identity_checked_at IS NULL) IS NOT (NEW.identity_checked_by IS NULL)
     OR (NEW.identity_checked_by IS NOT NULL AND NEW.identity_checked_by IS NOT OLD.identity_checked_by AND NOT EXISTS (SELECT 1 FROM staff_users s WHERE s.id = NEW.identity_checked_by AND s.status = 'active'))
@@ -265,9 +264,6 @@ export function dataProtectionTriggerStatements(): string[] {
     "DROP TRIGGER `client_requests_kind`;",
     `CREATE TRIGGER \`client_requests_kind\` BEFORE INSERT ON \`client_requests\` WHEN NEW.kind NOT IN (${q(REQUEST_KINDS_0079)}) BEGIN ${named("client_requests_kind", "a request is of a known kind")} END;`,
     `CREATE TRIGGER \`client_requests_clock_insert\` BEFORE INSERT ON \`client_requests\` WHEN ${clockInsertBad} BEGIN ${named("client_requests_clock_insert", "a request starts with its known channel, its clock (received, reply due, acknowledgement due) and no step or close detail; staff log the requests that did not come through the portal; an erasure request names a contact, a lead or an address; a converted lead is never a subject")} END;`,
-    `CREATE TRIGGER \`client_requests_clock_fill\` AFTER INSERT ON \`client_requests\` WHEN NEW.received_at IS NULL BEGIN
-       UPDATE client_requests SET received_at = created_at, due_at = ${requestDueAtSql("created_at")}, ack_due_at = created_at + 172800000 WHERE id = NEW.id;
-     END;`,
     `CREATE TRIGGER \`client_requests_steps\` BEFORE UPDATE ON \`client_requests\` WHEN ${stepsBad} BEGIN ${named("client_requests_steps", "a request keeps its clock and channel; it is acknowledged and its identity checked once each; the decline reason, the fulfilling action and the export date are set only by the close")} END;`,
     `CREATE TRIGGER \`client_requests_close_rules\` BEFORE UPDATE OF status ON \`client_requests\` WHEN ${closeBad} BEGIN ${named("client_requests_close_rules", "a declined request has a known reason; a done erasure names the erase or anonymise of its own contact or lead, made after it arrived; a request naming only an address is declined; only a done access request has an export date")} END;`,
   ];

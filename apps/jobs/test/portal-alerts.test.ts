@@ -3,6 +3,7 @@
 // request or notice is refused. Invented test data.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
+import { requestDueAtSql } from "@techaust/core/dsr";
 import { describe, expect, it, vi } from "vitest";
 import { processPortalAlert } from "../src/portal-alerts.ts";
 import { handleQueue } from "../src/queue.ts";
@@ -75,11 +76,14 @@ async function request(kind: string) {
   const w = await world();
   const id = uuidv7();
   await run(
-    "INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details) VALUES (?1, ?2, ?3, ?3, ?4, 'Words')",
+    // M7.4 (0079): the clock is written with the row, as the portal writes it.
+    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, created_at, updated_at, received_at, due_at, ack_due_at)
+     VALUES (?1, ?2, ?3, ?3, ?4, 'Words', ?5, ?5, ?5, ${requestDueAtSql("?5")}, ?5 + 172800000)`,
     id,
     w.client,
     w.contact,
     kind,
+    Date.now(),
   );
   return { ...w, id, auditId: await audit("portal.request", "client_request", id, "contact", w.contact) };
 }

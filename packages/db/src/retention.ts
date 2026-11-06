@@ -167,7 +167,7 @@ type FamilyTable = {
   readonly held: string | null;
   readonly oldest: string;
   readonly order: string;
-  /** The live action: delete (default) or the audit scrub's UPDATE. */
+  /** What a live page does to the rows: a delete (by default) or the audit scrub's UPDATE. */
   readonly scrub?: string;
 };
 

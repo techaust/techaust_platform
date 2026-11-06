@@ -265,11 +265,14 @@ describe("an anonymised individual client takes nothing new [ADM-PRJ-01..04; Res
     expect(
       ((await one("SELECT anonymised_at FROM clients WHERE id = ?", clientId)) as J).anonymised_at,
     ).not.toBeNull();
-    // any later change to the row (here straight in the database) cannot unlock it
-    await env.DB.prepare("UPDATE clients SET display_name = 'Acme Ltd', type = 'business' WHERE id = ?")
-      .bind(clientId)
-      .run();
-    await mkContact(clientId);
+    // any later change to the row (here straight in the database) cannot unlock it; since M7.4 (0079) the database refuses the rename, the retype and a
+    // new contact outright (`clients_anonymised_frozen`, `contacts_anonymised_lock`)
+    await expect(
+      env.DB.prepare("UPDATE clients SET display_name = 'Acme Ltd', type = 'business' WHERE id = ?")
+        .bind(clientId)
+        .run(),
+    ).rejects.toThrow(/clients_anonymised_frozen/);
+    await expect(mkContact(clientId)).rejects.toThrow(/contacts_anonymised_lock/);
     const res = await call(`/clients/${clientId}/notes`, { cookie: o.cookie, body: { bodyMd: "x" } });
     expect(res.status).toBe(409);
     expect(await code(res)).toBe("client_anonymised");

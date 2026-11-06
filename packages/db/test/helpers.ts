@@ -1,8 +1,16 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
+import { requestDueAtSql } from "@techaust/core/dsr";
 import { ISSUABLE_STATUSES } from "../src/triggers.ts";
 
 export const db = () => env.DB;
+
+/**
+ * M7.4 (0079): every `client_requests` insert writes its clock. `REQUEST_CLOCK_COLS` names the columns; `requestClockOf(x)` gives their values from an SQL
+ * expression of the time it arrived (a placeholder or a literal, the same as `created_at` for a portal request).
+ */
+export const REQUEST_CLOCK_COLS = "received_at, due_at, ack_due_at";
+export const requestClockOf = (at: string) => `${at}, ${requestDueAtSql(at)}, ${at} + 172800000`;
 
 export const run = (sql: string, ...params: unknown[]) =>
   env.DB.prepare(sql)

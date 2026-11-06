@@ -147,7 +147,8 @@ type ExportOver = {
 /** An overseas client (in INR for an INR export) and one issued export invoice for it. */
 async function mkExport(issueDate: string, o: ExportOver = {}) {
   const currency = o.currency ?? "USD";
-  const clientId = await mkClient({ currency: "USD", ...(o.anonymised ? { anonymised: true } : {}) });
+  // M7.4 (0079): an anonymised client takes no new document, so the fixture anonymises it after its export exists (below).
+  const clientId = await mkClient({ currency: "USD" });
   if (currency === "INR") await run("UPDATE clients SET currency = 'INR' WHERE id = ?1", clientId);
   const doc = await mkDoc(clientId, null, {
     type: "export_invoice",
@@ -163,6 +164,7 @@ async function mkExport(issueDate: string, o: ExportOver = {}) {
       country: "US",
     }),
   });
+  if (o.anonymised) await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", clientId);
   return { ...doc, clientId };
 }
 

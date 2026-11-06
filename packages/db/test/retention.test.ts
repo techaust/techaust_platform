@@ -20,7 +20,7 @@ import {
 } from "../src/retention.ts";
 import * as schema from "../src/schema/index.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember } from "./billing-helpers.ts";
-import { all, db, first, run } from "./helpers.ts";
+import { all, db, first, REQUEST_CLOCK_COLS, requestClockOf, run } from "./helpers.ts";
 
 const DAY = 86_400_000;
 const ago = (days: number) => Date.now() - days * DAY;
@@ -216,7 +216,7 @@ async function seed() {
   ] as const) {
     const id = uuidv7();
     await run(
-      "INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at) VALUES (?1, ?2, 'grievance', 'x', ?3, ?3)",
+      `INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, 'grievance', 'x', ?3, ?3, ${requestClockOf("?3")})`,
       id,
       client,
       ago(1600),

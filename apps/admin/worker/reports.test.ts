@@ -4,6 +4,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
+import { unAnonymise } from "./test-clients.ts";
 import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
 import { putTax } from "./test-invoice-types.ts";
 import { type J, json, putCompany } from "./test-invoices.ts";
@@ -723,7 +724,7 @@ describe("the statement PDF", { timeout: 30_000 }, () => {
     await env.DB.prepare("UPDATE clients SET anonymised_at = ?1 WHERE id = ?2").bind(Date.now(), c).run();
     const anon = await get(c, id);
     expect([anon.status, ((await json(anon)) as J).error.code]).toEqual([409, "client_anonymised"]);
-    await env.DB.prepare("UPDATE clients SET anonymised_at = NULL WHERE id = ?1").bind(c).run();
+    await unAnonymise(c);
     expect((await get(c, id)).status).toBe(200);
     // M2: the key is set but the object is gone from R2 (purged): a 409 `statement_failed`, never "pending" for ever and never a 500
     await env.DOCS.delete(key);

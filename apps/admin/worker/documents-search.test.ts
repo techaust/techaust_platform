@@ -68,7 +68,6 @@ beforeAll(async () => {
     code: "GNE01",
     display_name: "Anonymised client",
     legal_name: "Anonymised client",
-    anonymised_at: 5,
   });
   ids.acme = acme;
   ids.p1 = await offer({ client: bolt, number: "PR/2627/0007", at: 1_000 });
@@ -78,6 +77,8 @@ beforeAll(async () => {
   ids.est = await offer({ client: acme, type: "estimate", number: "ES/2627/0003", at: 4_000 });
   ids.acmeDraft = await offer({ client: acme, number: null, at: 5_000 });
   ids.goneOffer = await offer({ client: gone, number: "PR/2627/0099", at: 6_000 });
+  // M7.4 (0079): an anonymised client takes no new document, so the client is anonymised after its offer exists.
+  await env.DB.prepare("UPDATE clients SET anonymised_at = 5 WHERE id = ?1").bind(gone).run();
   // an invoice whose number starts like a proposal's: never in the list
   ids.inv = await offer({
     client: bolt,

@@ -15,6 +15,25 @@ export async function insert(table: string, row: Record<string, unknown>) {
     .run();
 }
 
+/**
+ * Test-only: takes an anonymised client back (M7.4's `clients_anonymised_frozen`, 0079, refuses that in every real path). The trigger is dropped for the one
+ * UPDATE and put back exactly as installed (its text read from `sqlite_master`).
+ */
+export async function unAnonymise(clientId: string) {
+  const t = await env.DB.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'clients_anonymised_frozen'",
+  ).first<{
+    sql: string;
+  }>();
+  if (!t) throw new Error("clients_anonymised_frozen is not installed");
+  await env.DB.prepare("DROP TRIGGER `clients_anonymised_frozen`").run();
+  try {
+    await env.DB.prepare("UPDATE clients SET anonymised_at = NULL WHERE id = ?1").bind(clientId).run();
+  } finally {
+    await env.DB.prepare(t.sql).run();
+  }
+}
+
 /** A client with codes `T0001`... (the lead conversion's `C####` sequence is not disturbed). */
 export async function mkClient(over: Record<string, unknown> = {}) {
   const n = ++seq;

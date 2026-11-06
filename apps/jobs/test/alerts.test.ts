@@ -53,10 +53,8 @@ async function milestone(
     title?: string;
   } = {},
 ) {
-  const clientId = await mkClient({
-    ...(o.client?.anonymised ? { anonymised: true } : {}),
-    displayName: "Sample Traders",
-  });
+  // M7.4 (0079): an anonymised client takes nothing new, so the fixture anonymises it after its rows exist (below).
+  const clientId = await mkClient({ displayName: "Sample Traders" });
   const contact = await mkContact(clientId);
   const projectId = uuidv7();
   await run(
@@ -86,6 +84,7 @@ async function milestone(
     o.deliveredAt ?? at("2026-10-16", 12),
     documentId,
   );
+  if (o.client?.anonymised) await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", clientId);
   return { id, clientId, projectId, proforma };
 }
 const queued = () => emailsQueued().filter((m) => m.template !== undefined) as EmailMessage[];

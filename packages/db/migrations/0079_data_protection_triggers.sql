@@ -131,9 +131,9 @@ DROP TRIGGER `client_requests_kind`;
 CREATE TRIGGER `client_requests_kind` BEFORE INSERT ON `client_requests` WHEN NEW.kind NOT IN ('contact_change', 'data_access', 'data_correction', 'data_erasure', 'grievance', 'consent_withdrawal', 'nomination') BEGIN SELECT RAISE(ABORT, 'client_requests_kind: a request is of a known kind'); END;
 --> statement-breakpoint
 CREATE TRIGGER `client_requests_clock_insert` BEFORE INSERT ON `client_requests` WHEN NEW.channel NOT IN ('portal', 'email', 'post', 'phone', 'in_person')
-    OR (NEW.received_at IS NULL AND (NEW.channel <> 'portal' OR NEW.due_at IS NOT NULL OR NEW.ack_due_at IS NOT NULL))
-    OR (NEW.received_at IS NOT NULL AND (NEW.received_at > CAST(unixepoch('subsec') * 1000 AS INTEGER) + 300000 OR NEW.received_at > NEW.created_at + 300000
-      OR NEW.due_at IS NOT ((CAST(strftime('%s', min(date(date(((NEW.received_at) + 19800000) / 1000, 'unixepoch'), '+30 days'), date(date(((NEW.received_at) + 19800000) / 1000, 'unixepoch'), '+1 month'), date(date(((NEW.received_at) + 19800000) / 1000, 'unixepoch'), 'start of month', '+2 months', '-1 day'))) AS INTEGER) + 86400 - 19800) * 1000 - 1) OR NEW.ack_due_at IS NOT NEW.received_at + 172800000))
+    OR NEW.received_at IS NULL OR NEW.received_at > CAST(unixepoch('subsec') * 1000 AS INTEGER) + 300000 OR NEW.received_at > NEW.created_at + 300000
+    OR (NEW.channel = 'portal' AND NEW.received_at IS NOT NEW.created_at)
+    OR NEW.due_at IS NOT ((CAST(strftime('%s', min(date(date(((NEW.received_at) + 19800000) / 1000, 'unixepoch'), '+30 days'), date(date(((NEW.received_at) + 19800000) / 1000, 'unixepoch'), '+1 month'), date(date(((NEW.received_at) + 19800000) / 1000, 'unixepoch'), 'start of month', '+2 months', '-1 day'))) AS INTEGER) + 86400 - 19800) * 1000 - 1) OR NEW.ack_due_at IS NOT NEW.received_at + 172800000
     OR (NEW.channel = 'portal') IS NOT (NEW.logged_by IS NULL)
     OR (NEW.logged_by IS NOT NULL AND NOT EXISTS (SELECT 1 FROM staff_users s WHERE s.id = NEW.logged_by AND s.status = 'active'))
     OR NEW.acknowledged_at IS NOT NULL OR NEW.identity_checked_at IS NOT NULL OR NEW.identity_checked_by IS NOT NULL
@@ -141,13 +141,7 @@ CREATE TRIGGER `client_requests_clock_insert` BEFORE INSERT ON `client_requests`
     OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL AND NEW.requester_email IS NULL)
     OR (NEW.lead_id IS NOT NULL AND EXISTS (SELECT 1 FROM leads cl WHERE cl.id = NEW.lead_id AND cl.client_id IS NOT NULL)) BEGIN SELECT RAISE(ABORT, 'client_requests_clock_insert: a request starts with its known channel, its clock (received, reply due, acknowledgement due) and no step or close detail; staff log the requests that did not come through the portal; an erasure request names a contact, a lead or an address; a converted lead is never a subject'); END;
 --> statement-breakpoint
-CREATE TRIGGER `client_requests_clock_fill` AFTER INSERT ON `client_requests` WHEN NEW.received_at IS NULL BEGIN
-       UPDATE client_requests SET received_at = created_at, due_at = ((CAST(strftime('%s', min(date(date(((created_at) + 19800000) / 1000, 'unixepoch'), '+30 days'), date(date(((created_at) + 19800000) / 1000, 'unixepoch'), '+1 month'), date(date(((created_at) + 19800000) / 1000, 'unixepoch'), 'start of month', '+2 months', '-1 day'))) AS INTEGER) + 86400 - 19800) * 1000 - 1), ack_due_at = created_at + 172800000 WHERE id = NEW.id;
-     END;
---> statement-breakpoint
-CREATE TRIGGER `client_requests_steps` BEFORE UPDATE ON `client_requests` WHEN NEW.`channel` IS NOT OLD.`channel` OR NEW.`logged_by` IS NOT OLD.`logged_by`
-    OR (OLD.received_at IS NOT NULL AND NEW.received_at IS NOT OLD.received_at) OR (OLD.due_at IS NOT NULL AND NEW.due_at IS NOT OLD.due_at) OR (OLD.ack_due_at IS NOT NULL AND NEW.ack_due_at IS NOT OLD.ack_due_at)
-    OR (NEW.received_at IS NOT OLD.received_at AND (NEW.received_at IS NOT NEW.created_at OR NEW.due_at IS NOT ((CAST(strftime('%s', min(date(date(((NEW.received_at) + 19800000) / 1000, 'unixepoch'), '+30 days'), date(date(((NEW.received_at) + 19800000) / 1000, 'unixepoch'), '+1 month'), date(date(((NEW.received_at) + 19800000) / 1000, 'unixepoch'), 'start of month', '+2 months', '-1 day'))) AS INTEGER) + 86400 - 19800) * 1000 - 1) OR NEW.ack_due_at IS NOT NEW.received_at + 172800000))
+CREATE TRIGGER `client_requests_steps` BEFORE UPDATE ON `client_requests` WHEN NEW.`channel` IS NOT OLD.`channel` OR NEW.`logged_by` IS NOT OLD.`logged_by` OR NEW.`received_at` IS NOT OLD.`received_at` OR NEW.`due_at` IS NOT OLD.`due_at` OR NEW.`ack_due_at` IS NOT OLD.`ack_due_at`
     OR (OLD.acknowledged_at IS NOT NULL AND NEW.acknowledged_at IS NOT OLD.acknowledged_at) OR (OLD.identity_checked_at IS NOT NULL AND NEW.identity_checked_at IS NOT OLD.identity_checked_at) OR (OLD.identity_checked_by IS NOT NULL AND NEW.identity_checked_by IS NOT OLD.identity_checked_by)
     OR (NEW.identity_checked_at IS NULL) IS NOT (NEW.identity_checked_by IS NULL)
     OR (NEW.identity_checked_by IS NOT NULL AND NEW.identity_checked_by IS NOT OLD.identity_checked_by AND NOT EXISTS (SELECT 1 FROM staff_users s WHERE s.id = NEW.identity_checked_by AND s.status = 'active'))

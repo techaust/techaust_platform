@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CLAIM_TIMEOUT_MS, emailLogId, processDeadLetter, processEmail } from "../src/email.ts";
 import { processLead } from "../src/leads.ts";
 import { dlqRetryDelay, emailRetryDelay, handleQueue } from "../src/queue.ts";
+import { wipe } from "./wipe.ts";
 
 const T0 = 1_760_000_000_000;
 const HASH = "a".repeat(64);
@@ -96,12 +97,8 @@ const count = async (table: string) =>
 
 beforeEach(async () => {
   queued = [];
-  await realEnv.DB.batch([
-    realEnv.DB.prepare("DELETE FROM leads"),
-    realEnv.DB.prepare("DELETE FROM email_log"),
-    realEnv.DB.prepare("DELETE FROM email_suppressions"),
-    realEnv.DB.prepare("DELETE FROM auth_attempts"),
-  ]);
+  // M7.4 (0079): the email log keeps its 366-day floor; the test wipe passes it (wipe.ts).
+  await wipe("leads", "email_log", "email_suppressions", "auth_attempts");
 });
 
 describe("lead pipeline [ADM-LEAD-01, FRM-05, FRM-06]", () => {

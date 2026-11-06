@@ -13,6 +13,7 @@ import worker from "../src/index.ts";
 import { processLead } from "../src/leads.ts";
 import { enqueueDue, PURGE_CRON, purgeLead, SCAN_SQL } from "../src/purge.ts";
 import { handleQueue } from "../src/queue.ts";
+import { wipe } from "./wipe.ts";
 
 const NOW = 1_800_000_000_000;
 const DAY = 86_400_000;
@@ -80,11 +81,8 @@ beforeEach(async () => {
   console.log = (...a: unknown[]) => {
     logs.push(a.map(String).join(" "));
   };
-  await realEnv.DB.batch([
-    realEnv.DB.prepare("DELETE FROM notifications"),
-    realEnv.DB.prepare("DELETE FROM leads"),
-    realEnv.DB.prepare("DELETE FROM clients"),
-  ]);
+  // M7.4 (0079): a held lead is never deleted; the test wipe passes the guard (wipe.ts).
+  await wipe("notifications", "leads", "clients");
   return () => {
     console.log = origLog;
   };
