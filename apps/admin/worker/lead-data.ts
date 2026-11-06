@@ -20,7 +20,7 @@ import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { auditFirstRow } from "./audit-row.ts";
 import { type ApiError, type AppEnv, actor, BAD_REQUEST, err, mutate, NOT_FOUND } from "./context.ts";
-import { erasureHash } from "./erasure-key.ts";
+import { erasureHash, receiptHashOrNull } from "./erasure-key.ts";
 import { body, idParam, param } from "./http.ts";
 import { decodeCursor, encodeCursor } from "./keyset.ts";
 
@@ -267,8 +267,9 @@ export const leadData = new Hono<AppEnv>()
       "staff",
     );
     if (!w) return err(c, NOTHING_TO_WITHDRAW, 409);
-    // As jobs' `purgeLead`: a hash already set wins (unreachable after the refusal above; kept so the two paths read alike).
-    const hash = lead.erased_hash ?? (await erasureHash(c.env, lead.contact_email));
+    // As jobs' `purgeLead`: a hash already set wins (unreachable after the refusal above; kept so the two paths read alike). Without the key the receipt is
+    // saved with a NULL hash, which the nightly `consent.hash` fills (review 1, the builder's question 1; as the contact's consent change).
+    const hash = lead.erased_hash ?? (await receiptHashOrNull(c.env, lead.contact_email, "lead.consent.withdraw"));
     const r = w.receipt;
     const done = await mutate(c, {
       main: db

@@ -633,6 +633,30 @@ describe("a lead's erase, export and consent withdrawal [ADM-CLI-05, FRM-05; C.8
     );
   });
 
+  it("review 1 (builder's question 1): without the key a lead's consent withdrawal saves with a NULL receipt hash and logs erasure.key_missing", async () => {
+    const o = await owner();
+    const noKey = new Proxy(env, {
+      get: (t, k) => (k === "ERASURE_HASH_KEY" ? undefined : Reflect.get(t, k)),
+    }) as Env;
+    const email = `wdk-${uuidv7()}@example.test`;
+    const lead = await mkLead(email, { consent: consent() });
+    const logs = vi.spyOn(console, "log");
+    try {
+      const res = await call(`/leads/${lead}/consent/withdraw`, { cookie: o.cookie, body: {} }, noKey);
+      expect(res.status, await res.clone().text()).toBe(200);
+      const logged = logs.mock.calls.map((a) => String(a[0]));
+      expect(
+        logged.some((l) => l.includes('"ev":"erasure.key_missing"') && l.includes("lead.consent.withdraw")),
+      ).toBe(true);
+      for (const l of logged) expect(l).not.toContain(email);
+    } finally {
+      logs.mockRestore();
+    }
+    expect(
+      await one("SELECT subject_hash FROM consent_receipts WHERE lead_id = ? AND event = 'withdraw'", lead),
+    ).toEqual({ subject_hash: null });
+  });
+
   it("review 1 medium 1: a lead marked erased or holding the anonymise placeholder is 409 anonymised, with no receipt and no change", async () => {
     const o = await owner();
     const withdraw = (lead: string) =>
