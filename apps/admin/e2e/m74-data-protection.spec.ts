@@ -402,6 +402,37 @@ test("the erase dialog's in-parts state (F5; the API's answers mocked)", async (
   expect(parts).toBe(2);
 });
 
+test("the keyboard: Show by arrow keys, a request opened with Enter, Escape back to its link, a visible focus ring", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/requests");
+  await expect(page.getByRole("heading", { level: 1, name: "Requests" })).toBeVisible();
+  const open = page.getByRole("radio", { name: "Open" });
+  await open.focus();
+  // the focus ring is drawn around the chosen pill (2 px, the focus colour)
+  const ring = await page.evaluate(() => {
+    const opt = document.activeElement?.closest("label");
+    return opt ? getComputedStyle(opt).outlineWidth : "";
+  });
+  expect(ring).toBe("2px");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("radio", { name: "Overdue" })).toBeChecked();
+  await expect(page).toHaveURL(/show=overdue/);
+  const link = page.locator("tbody .dp-row-open").first();
+  await link.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  // Tab stays inside the dialog
+  for (let i = 0; i < 8; i++) await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => !!document.activeElement?.closest("dialog"))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(page).not.toHaveURL(/id=/);
+  await expect(link).toBeFocused();
+});
+
 for (const theme of ["light", "dark"] as const)
   for (const width of [390, 1280] as const)
     test(`the M7.4 screens pass axe at ${width} px, in-app ${theme} against the OS's other theme`, async ({

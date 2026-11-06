@@ -133,6 +133,21 @@ test("profile: save, a stale save, and a new request", async ({ page }) => {
   await dialog.getByRole("radio", { name: /Nominate someone to act for me$/ }).check();
   await dialog.getByRole("button", { name: `${P}Send` }).click();
   await expect(page.locator(".m71-req").first()).toContainText("Nominate someone to act for me");
+  // M74_SHOTS=<dir>: the requests with their reply dates, at 1280 and 390 px, for the designer's visual check
+  const shots = process.env.M74_SHOTS;
+  if (shots) {
+    for (const [w, theme] of [
+      [1280, "light"],
+      [390, "light"],
+      [390, "dark"],
+    ] as const) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await page.emulateMedia({ colorScheme: theme });
+      await page.locator(".m71-requests").screenshot({ path: `${shots}/portal-requests-${w}-${theme}.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.emulateMedia({ colorScheme: "light" });
+  }
 
   // a second open request of a kind is refused by its code (C24)
   await page.getByRole("button", { name: `${P}New request` }).click();
