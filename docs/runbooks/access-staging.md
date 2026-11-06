@@ -43,7 +43,7 @@ The staging admin Worker needs four random secrets. The deploy **fails without t
 2. Paste this line and press **Enter**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\staging-login-secrets.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\owner\staging-login-secrets.ps1"
 ```
 
 3. When it finishes, copy back to me **only the line that starts with `RESULT:`**.
@@ -51,7 +51,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJE
 If the result says you are not logged in to Cloudflare, run these two lines one at a time (a browser window opens; approve it), then run step 2 again:
 
 ```powershell
-cd "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\apps\admin"
+cd "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\apps\admin"
 ```
 
 ```powershell
@@ -76,7 +76,7 @@ The benchmark sends 100+ automated test logins to the staging admin, and a robot
 1. In PowerShell, paste this line and press **Enter**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\set-bench-token.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\owner\set-bench-token.ps1"
 ```
 
 2. It asks for the Client ID, then the Client Secret: copy each from the Cloudflare page and paste it (the typing stays hidden), then press **Enter**.
@@ -110,7 +110,7 @@ After each staging deploy, the workflow asks every Worker "are you healthy?" (fu
 1. In PowerShell, paste this line and press **Enter**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\set-deploy-token.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\owner\set-deploy-token.ps1"
 ```
 
 2. Paste the Client ID, then the Client Secret (the typing stays hidden), pressing **Enter** after each.

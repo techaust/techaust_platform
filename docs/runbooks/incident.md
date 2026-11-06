@@ -84,7 +84,7 @@ Read the "Breaks" column before rotating anything. A `wrangler secret put` **dep
 | `ERASURE_HASH_KEY` | admin API (`wrangler.api.jsonc`) **and** jobs, same value | hex | **People erased before could be emailed again** (environments.md "Losing or changing the key") | **Never by re-running** `scripts/set-erasure-hash-key.ps1`. A change is its own task |
 | `UNSUBSCRIBE_KEY` | jobs | hex | One-click links in digests already sent stop working (no `_PREVIOUS`, `apps/jobs/src/unsubscribe.ts`). Owners can switch the digest off in **Your account › Notifications** | `tools/set-gateway-keys.ps1 -Gateway unsubscribe-key -Configs "apps\jobs\wrangler.jsonc"` |
 | `SES_EVENTS_TOKEN` | jobs + the EventBridge connection | hex | SES events are refused until both sides match. EventBridge retries for up to 24 h (m7.2 run file). `SES_EVENTS_TOKEN_PREVIOUS` allows an overlap, but no script sets it (F3) | `-Gateway ses-events` (on the clipboard), then paste it into the connection's API key value at once |
-| `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` | jobs | from AWS IAM | See 2.5 | ses-and-turnstile.md Part 8; **its script is missing** (F4) |
+| `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` | jobs | from AWS IAM | See 2.5 | ses-and-turnstile.md Part 8; `scripts\set-ses-keys.ps1` (M7.5 L26) |
 | Gateway keys and webhook secrets | See 2.4 | | | `tools/set-gateway-keys.ps1` |
 
 **The owner's line for the existing scripts** (staging; paste in PowerShell, copy back only the `RESULT:` line):
@@ -135,7 +135,7 @@ Follow `docs/runbooks/ses-and-turnstile.md` Part 8 with two changes for an incid
 - In D, deactivate the old key **straight after** the check, not the next day.
 - If the AWS sign-in itself is suspect, the owner also checks IAM › Users for unknown keys or users and CloudTrail › Event history (labels unverified).
 
-**The Part 8 B script (`.logs\owner\m2.4-ses-keys.ps1`) no longer exists on this PC (F4).** Until it is rewritten, the lead stores the two values with wrangler's hidden prompt (form above, `--filter @techaust/jobs`, `SES_ACCESS_KEY_ID` then `SES_SECRET_ACCESS_KEY`). Expect one failed email in the seconds between them (Part 8's note).
+**The Part 8 B script is `scripts\set-ses-keys.ps1`** (M7.5 L26, replacing the lost `.logs\owner\m2.4-ses-keys.ps1`, F4): hidden input for both values, both checked before either is stored, `RESULT:` line only. Expect one failed email in the seconds between the two stores (Part 8's note).
 
 ### 2.6 GitHub, Cloudflare and Access tokens (labels unverified)
 - **`CF_API_TOKEN_STAGING`** (GitHub secret):

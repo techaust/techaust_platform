@@ -2,7 +2,7 @@
 # Keys are read with hidden input, checked to be test keys, tried once against the provider's test API, then sent
 # straight to Cloudflare with `wrangler secret put --env staging`. They are never shown, saved or copied.
 # Uses your own `wrangler login`. The lead gives you the exact line, for example:
-#   powershell -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\tools\set-gateway-keys.ps1" -Gateway razorpay -Configs "apps\jobs\wrangler.jsonc"
+#   powershell -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\tools\set-gateway-keys.ps1" -Gateway razorpay -Configs "apps\jobs\wrangler.jsonc"
 # M6.2: `-Gateway razorpay-webhook` makes the Razorpay WEBHOOK secret instead (32 random bytes as hex), stores it as RAZORPAY_WEBHOOK_SECRET on the named
 # configs (the jobs Worker: "apps\jobs\wrangler.jsonc") and puts it on the clipboard, to paste into Razorpay's webhook Secret box at once. It is never shown.
 # M6.3: `-Gateway stripe` takes a RESTRICTED rk_test_ key only and probes its permissions (and that Customers is refused); `-Gateway stripe-webhook` stores the
