@@ -165,6 +165,7 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
           k !== "documents.expire" &&
           k !== "statement.purge" && // M5.5b: the statement PDF cache clean-up rides the same daily tick (changed on purpose)
           k !== "retention.start" && // M7.4: the clean-up's start (changed on purpose)
+          k !== "usage.daily" && // M7.5 D1: yesterday's Free-plan usage (changed on purpose)
           k !== "r2.sweep",
       ),
     ).toHaveLength(0);
