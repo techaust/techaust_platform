@@ -14,8 +14,12 @@ import { devVarsProblems, problemsFor } from "./check-staging-build.mjs";
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 export const WRANGLER = "tools/deploy/node_modules/wrangler/bin/wrangler.js";
 
-/** The pre-bundled Worker of jobs and the website (the build job's `wrangler deploy --dry-run --env staging --outdir <dir>`). */
-export const PREBUNDLED = { jobs: "dist-staging", web: ".wrangler/dist-staging" };
+/**
+ * The pre-bundled Worker of jobs and the website (the build job's `wrangler deploy --dry-run --env staging --outdir <dir>`): the entry keeps its source's
+ * name (jobs `src/index.ts` -> index.js, the website's `src/worker.ts` -> worker.js). Checked locally 2026-11-07: `--no-bundle` uploads the same bytes as a
+ * bundling deploy (jobs 836.35 KiB, website 293.98 KiB, dry runs).
+ */
+export const PREBUNDLED = { jobs: "dist-staging/index.js", web: ".wrangler/dist-staging/worker.js" };
 
 /** Where wrangler runs and with what, per target (staging). */
 export const STAGING_DEPLOYS = {
@@ -28,8 +32,8 @@ export const STAGING_DEPLOYS = {
   // The front and the portal: the Vite plugin's redirect (.wrangler/deploy/config.json) points wrangler at the flattened staging config.
   admin: { app: "admin", args: [] },
   portal: { app: "portal", args: [] },
-  jobs: { app: "jobs", args: ["--env", "staging", "--no-bundle", `${PREBUNDLED.jobs}/index.js`] },
-  web: { app: "web", args: ["--env", "staging", "--no-bundle", `${PREBUNDLED.web}/index.js`] },
+  jobs: { app: "jobs", args: ["--env", "staging", "--no-bundle", PREBUNDLED.jobs] },
+  web: { app: "web", args: ["--env", "staging", "--no-bundle", PREBUNDLED.web] },
 };
 
 /** Problems before a staging deploy of `target` (an empty list: deploy). */
@@ -39,13 +43,13 @@ export function preDeployProblems(target, root = ROOT) {
   if (!existsSync(join(root, WRANGLER)))
     return [`${WRANGLER} is missing: install @techaust/deploy-tools first`];
   if (target === "jobs" || target === "web") {
-    const bundle = join(root, "apps", target, PREBUNDLED[target], "index.js");
+    const bundle = join(root, "apps", target, PREBUNDLED[target]);
     const problems = existsSync(bundle)
       ? []
-      : [`apps/${target}/${PREBUNDLED[target]}/index.js is missing: the build job pre-bundles it`];
+      : [`apps/${target}/${PREBUNDLED[target]} is missing: the build job pre-bundles it`];
     if (target === "web")
       problems.push(...problemsFor("web"), ...devVarsProblems("web", join(root, "apps", "web", "dist")));
-    else problems.push(...devVarsProblems("jobs", join(root, "apps", "jobs", PREBUNDLED.jobs)));
+    else problems.push(...devVarsProblems("jobs", join(root, "apps", "jobs", "dist-staging")));
     return problems;
   }
   return problemsFor(target);

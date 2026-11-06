@@ -263,6 +263,12 @@ describe("scripts/deploy-worker.mjs (M7.5, owner's Q3 A)", () => {
       ["admin", "admin-api", "admin-finance", "admin-invoices", "jobs", "portal", "web"].sort(),
     );
     expect(d.STAGING_DEPLOYS.jobs.args).toEqual(["--env", "staging", "--no-bundle", "dist-staging/index.js"]);
+    expect(d.STAGING_DEPLOYS.web.args).toEqual([
+      "--env",
+      "staging",
+      "--no-bundle",
+      ".wrangler/dist-staging/worker.js",
+    ]);
     expect(d.STAGING_DEPLOYS.web.args).toContain("--no-bundle");
     expect(d.WRANGLER).toBe("tools/deploy/node_modules/wrangler/bin/wrangler.js");
   });
