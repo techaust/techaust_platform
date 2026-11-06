@@ -203,6 +203,11 @@ try {
       // `code:<user id>` counters first (they need the ids); known devices and recovery codes go with the user (cascade).
       `DELETE FROM auth_attempts WHERE key IN (SELECT 'code:' || id FROM staff_users WHERE email IN (${emails}));`,
       `DELETE FROM staff_sessions WHERE user_id IN (SELECT id FROM staff_users WHERE email IN (${emails}));`,
+      // M7.5 L21 (A2): the rows that name a bench user by foreign key, before the user (with no cascade, the user's DELETE fails on them): the unfinished
+      // sign-in marker (0075, written after a correct password whose code failed), the notification switches (0073) and the bells (0014).
+      `DELETE FROM staff_signin_pending WHERE user_id IN (SELECT id FROM staff_users WHERE email IN (${emails}));`,
+      `DELETE FROM staff_notification_prefs WHERE user_id IN (SELECT id FROM staff_users WHERE email IN (${emails}));`,
+      `DELETE FROM notifications WHERE user_id IN (SELECT id FROM staff_users WHERE email IN (${emails}));`,
       `DELETE FROM staff_users WHERE email IN (${emails});`,
       `DELETE FROM staff_invites WHERE email IN (${emails});`,
       `DELETE FROM auth_attempts WHERE key IN (${keys});`,

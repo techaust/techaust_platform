@@ -16,7 +16,7 @@ export function adminRows(text) {
   const table = end > 0 ? body.slice(0, end) : body;
   const rows = [];
   for (const m of table.matchAll(/\b([RFXI])\(\s*"(GET|POST|PUT|PATCH|DELETE)",\s*"([^"]+)",\s*"([^"]+)"/g))
-    rows.push({ worker: ADMIN_HELPER[m[1]], method: m[2], path: `/api/v1${m[3]}`, action: m[4] });
+    rows.push({ worker: ADMIN_HELPER[m[1]], method: m[2], path: `/api/v1${m[3]}`, permission: m[4] });
   return rows;
 }
 
@@ -29,7 +29,7 @@ export function portalRows(text) {
     worker: "portal",
     method: m[1],
     path: `/api/v1${m[2]}`,
-    action: m[3],
+    permission: m[3],
   }));
 }
 
@@ -153,34 +153,24 @@ export const LOGIN_ROWS = new Set([
 export const LOGIN_EXCEPTIONS = new Set(["admin-front POST /api/v1/auth/login"]);
 
 /**
- * Writes the bench makes and undoes on staging (I1: "drafts created then deleted, settings re-saved unchanged with expectedUpdatedAt, mark-read"), each called
- * at least 5 times by `scripts/bench-routes.mjs`. Keyed `<worker> <METHOD> <path>`.
+ * Writes a bench suite makes on staging, keyed `<worker> <METHOD> <path>`: the sign-in rows by `suite: auth` (scripts/bench-auth.mjs: salt, login, code,
+ * step-up), the enrolment, mark-read, the notification switches re-saved unchanged and the portal's link sign-in by `suite: routes`, and the refusal
+ * paths (portal link with no token, the contact form) by `suite: load`'s burst. Only what the scripts really call is listed: the drafts I1 also names
+ * (create, save, delete) are not scripted yet, so their rows stay proxies (M7.5 B2 report).
  */
 export const BENCH_WRITES = new Set([
   "admin-front POST /api/v1/auth/salt",
   "admin-front POST /api/v1/auth/login",
   "admin-front POST /api/v1/auth/totp",
   "admin-front POST /api/v1/auth/step-up",
-  "admin-front POST /api/v1/auth/logout",
-  "admin-api PUT /api/v1/settings/groups/:group",
+  "admin-front POST /api/v1/auth/invite/start",
+  "admin-front POST /api/v1/auth/invite/finish",
+  "admin-front POST /api/v1/auth/invite/totp",
   "admin-api PUT /api/v1/notifications/prefs",
   "admin-api POST /api/v1/notifications/read-all",
-  "admin-api POST /api/v1/notifications/:id/read",
-  "admin-api POST /api/v1/documents",
-  "admin-api PATCH /api/v1/documents/:id",
-  "admin-api DELETE /api/v1/documents/:id",
-  "admin-invoices POST /api/v1/invoices",
-  "admin-invoices PATCH /api/v1/invoices/:id",
-  "admin-invoices DELETE /api/v1/invoices/:id",
-  "admin-api POST /api/v1/time",
-  "admin-api PATCH /api/v1/time/:id",
-  "admin-api DELETE /api/v1/time/:id",
-  "admin-api POST /api/v1/clients/:id/notes",
-  "admin-api PATCH /api/v1/notes/:id",
-  "admin-api DELETE /api/v1/notes/:id",
   "portal POST /api/v1/auth/magic",
   "portal POST /api/v1/auth/magic/verify",
-  "portal POST /api/v1/auth/logout",
+  "web POST /api/forms/:kind",
 ]);
 
 /**
@@ -213,7 +203,6 @@ export function plannedMeasure(row) {
     return { type: "reading", via: "staging-logs" };
   if (row.method === "GET" || BENCH_WRITES.has(id)) return { type: "reading", via: "bench" };
   if (OWNER_SESSION_WRITES.has(id)) return { type: "reading", via: "owner-session" };
-  if (row.worker === "web") return { type: "reading", via: "bench" };
   return { type: "proxy", name: "local-first-request-probe", reason: PROXY_REASON };
 }
 

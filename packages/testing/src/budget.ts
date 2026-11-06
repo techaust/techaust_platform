@@ -47,10 +47,48 @@ export const KNOWN_OVER: { label: RegExp; what: "batch" | "calls"; reason: strin
  */
 export const SCAN_ALLOWED: { table: string; sql?: RegExp; reason: string }[] = [
   {
-    table: "offer_links",
-    sql: /^INSERT INTO acceptances\b/,
+    table: "settings",
+    reason: "one row per settings group (about a dozen); the whole table is the settings read",
+  },
+  { table: "doc_counters", reason: "one row per number series per FY (about ten a year)" },
+  {
+    table: "catalogue_items",
     reason:
-      "M7.5 B2 finding S1: SQLite's foreign-key check of `offer_links.acceptance_id` (no index on that child column) scans offer_links on every acceptance insert. Fix: CREATE INDEX offer_links_acceptance ON offer_links (acceptance_id), a migration the lead numbers after B1's; then delete this entry.",
+      "the catalogue: the 18 seeded services and the owner's own items (tens), read whole for the editor and the snapshot",
+  },
+  { table: "bank_accounts", reason: "at most one INR and one USD account, plus retired ones" },
+  {
+    table: "site_snapshots",
+    reason: "one row per catalogue publish (a few a month); the newest is compared before a new one",
+  },
+  {
+    table: "retention_runs",
+    sql: /^SELECT/,
+    reason:
+      "one row per retention run (one a night at most, M7.4); the Owner's screen reads the latest dry run",
+  },
+  {
+    table: "retention_runs",
+    sql: /^INSERT INTO retention_switches\b/,
+    reason: "the Owner's switch checks the latest dry run (one row a night at most)",
+  },
+  {
+    table: "staff_sessions",
+    sql: /^UPDATE staff_sessions SET revoked_at\b/,
+    reason:
+      '"Sign out everyone": every live staff session is the point (2 to 5 staff, sessions purged as they lapse)',
+  },
+  {
+    table: "documents",
+    sql: /^DELETE FROM contacts\b/,
+    reason:
+      "M7.5 B2 finding S1 (for the lead): SQLite's foreign-key check of `documents.contact_id` (no index on that child column) scans documents when a contact row is deleted (a contact never named on a document). Fix: CREATE INDEX on documents (contact_id), a migration the lead numbers; then delete this entry.",
+  },
+  {
+    table: "payment_schedules",
+    sql: /^DELETE FROM milestones\b/,
+    reason:
+      "M7.5 B2 finding S2 (for the lead): SQLite's foreign-key check of `payment_schedules` (no index on its milestone column) scans it when a pending milestone is deleted. Fix: CREATE INDEX on that column, a migration the lead numbers; then delete this entry.",
   },
 ];
 
@@ -238,6 +276,16 @@ export async function explainSweep(
       await db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all<{ name: string }>()
     ).results.map((r) => r.name),
   );
+  // parent table -> its child tables (the tables whose foreign keys name it), for telling SQLite's foreign-key checks from the statement's own scans.
+  // (D1 refuses `pragma_foreign_key_list`, so the REFERENCES clauses are read from each table's own CREATE text.)
+  const children = new Map<string, Set<string>>();
+  for (const r of (
+    await db
+      .prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table'")
+      .all<{ name: string; sql: string | null }>()
+  ).results)
+    for (const m of (r.sql ?? "").matchAll(/REFERENCES\s+[`"[]?(\w+)/gi))
+      if (m[1]) children.set(m[1], (children.get(m[1]) ?? new Set()).add(r.name));
   const problems: string[] = [];
   let checked = 0;
   let skipped = 0;
@@ -253,13 +301,27 @@ export async function explainSweep(
       continue;
     }
     checked++;
+    // The statement's target: `INSERT INTO t`, `REPLACE INTO t`, `DELETE FROM t`, `UPDATE t`.
+    const target =
+      /^\s*(?:(INSERT|REPLACE)(?:\s+OR\s+\w+)?\s+INTO|DELETE\s+FROM|(UPDATE)(?:\s+OR\s+\w+)?)\s+[`"[]?(\w+)/i.exec(
+        text,
+      );
+    const insert = target?.[1] !== undefined;
+    const fkChildren = target?.[3] ? (children.get(target[3]) ?? new Set<string>()) : new Set<string>();
     for (const d of details) {
       const table = bareScanOf(d, tables);
+      if (!table) continue;
+      // A scan of a child table of the target is SQLite's foreign-key check. On an INSERT into the parent it is compiled but runs only while a deferred
+      // violation is pending (never here: every key is immediate), so it isn't a scan of the request; on a DELETE or a key UPDATE it runs, and is reported.
+      const fk = fkChildren.has(table);
+      if (fk && insert) continue;
       const allowed = SCAN_ALLOWED.some(
         (a) => a.table === table && (a.sql === undefined || a.sql.test(text)),
       );
-      if (table && !allowed)
-        problems.push(`SCAN ${table} (no index) in: ${text.replace(/\s+/g, " ").slice(0, 200)}`);
+      if (!allowed)
+        problems.push(
+          `SCAN ${table} (${fk ? "foreign-key check, no index on the child column" : "no index"}) in: ${text.replace(/\s+/g, " ").slice(0, 200)}`,
+        );
     }
   }
   return { problems: [...new Set(problems)], checked, skipped };

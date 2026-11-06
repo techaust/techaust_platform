@@ -52,8 +52,8 @@ export type InventoryRow = {
   kind: InventoryKind;
   method?: string;
   path?: string;
-  /** The ROUTES row's permission action (admin), when there is one. */
-  action?: string;
+  /** The ROUTES row's permission (its `access`), when there is one. */
+  permission?: string;
   limits: Limits;
   measure: Measure | null;
   d1: D1Figures | null;

@@ -7,8 +7,8 @@ import guardText from "./guard.ts?raw";
 
 describe("route inventory parity: portal (M7.5 B2)", () => {
   it("the parser reads exactly the ROUTES table", () => {
-    const parsed = (portalRows(guardText) as { method: string; path: string; action: string }[])
-      .map((r) => `${r.method} ${r.path} ${r.action}`)
+    const parsed = (portalRows(guardText) as { method: string; path: string; permission: string }[])
+      .map((r) => `${r.method} ${r.path} ${r.permission}`)
       .sort();
     const real = ROUTES.map((r) => `${r.method} ${r.path} ${String(r.access)}`).sort();
     expect(parsed).toEqual(real);

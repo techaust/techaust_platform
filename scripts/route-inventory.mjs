@@ -53,7 +53,7 @@ export function buildRows(src = read) {
       kind,
       method: r.method,
       path: r.path,
-      ...(r.action ? { action: r.action } : {}),
+      ...(r.permission ? { permission: r.permission } : {}),
       limits: limitsFor(kind, { loginException: LOGIN_EXCEPTIONS.has(id) }),
       measure: plannedMeasure({ ...r, kind }),
       d1: null,

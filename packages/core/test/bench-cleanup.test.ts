@@ -22,6 +22,16 @@ describe("bench-auth cleanup", () => {
     expect(cleanup).not.toContain("acct:%");
   });
 
+  it("deletes the rows that name a bench user by foreign key before the user (M7.5 L21)", () => {
+    const at = (s: string) => cleanup.indexOf(s);
+    const user = at("DELETE FROM staff_users");
+    expect(user).toBeGreaterThan(0);
+    for (const t of ["staff_signin_pending", "staff_notification_prefs", "notifications", "staff_sessions"]) {
+      expect(at(`DELETE FROM ${t} WHERE user_id IN`), t).toBeGreaterThan(0);
+      expect(at(`DELETE FROM ${t} WHERE user_id IN`), t).toBeLessThan(user);
+    }
+  });
+
   it("deletes the probes' counters along with the bench users'", () => {
     expect(cleanup).toContain("...probeEmails");
     expect(source).toContain("probeEmails.push(email)");
