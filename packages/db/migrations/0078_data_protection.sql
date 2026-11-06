@@ -67,6 +67,17 @@ CREATE TABLE `retention_runs` (
 );
 --> statement-breakpoint
 CREATE INDEX `retention_runs_started` ON `retention_runs` (`started_at`,`id`);--> statement-breakpoint
+CREATE TABLE `retention_switches` (
+	`id` text PRIMARY KEY NOT NULL,
+	`live` integer DEFAULT false NOT NULL,
+	`by` text NOT NULL,
+	`run_id` text,
+	`at` integer DEFAULT (cast(unixepoch('subsec') * 1000 as integer)) NOT NULL,
+	FOREIGN KEY (`by`) REFERENCES `staff_users`(`id`) ON UPDATE no action ON DELETE no action,
+	CONSTRAINT "retention_switches_run" CHECK("retention_switches"."live" = 0 or "retention_switches"."run_id" is not null)
+);
+--> statement-breakpoint
+CREATE INDEX `retention_switches_at` ON `retention_switches` (`at`,`id`);--> statement-breakpoint
 ALTER TABLE `contacts` ADD `erased_hash` text;--> statement-breakpoint
 ALTER TABLE `leads` ADD `erased_hash` text;--> statement-breakpoint
 CREATE INDEX `leads_contact_email_lower` ON `leads` (lower("contact_email"));--> statement-breakpoint

@@ -1,6 +1,6 @@
 {
-  "id": "26072384-afd9-4460-9ab6-dfc33a256d71",
-  "prevId": "cc852f73-47aa-4fda-a350-96511314c1f2",
+  "id": "da9a7561-d464-4b74-9473-a393e7500088",
+  "prevId": "14149357-cf55-475f-ba37-a7234d446c66",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -3310,6 +3310,74 @@
         "retention_runs_families": {
           "name": "retention_runs_families",
           "value": "\"retention_runs\".\"families\" > 0"
+        }
+      }
+    },
+    "retention_switches": {
+      "name": "retention_switches",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "live": {
+          "name": "live",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "by": {
+          "name": "by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "at": {
+          "name": "at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast(unixepoch('subsec') * 1000 as integer))"
+        }
+      },
+      "indexes": {
+        "retention_switches_at": {
+          "name": "retention_switches_at",
+          "columns": ["at", "id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "retention_switches_by_staff_users_id_fk": {
+          "name": "retention_switches_by_staff_users_id_fk",
+          "tableFrom": "retention_switches",
+          "columnsFrom": ["by"],
+          "tableTo": "staff_users",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "retention_switches_run": {
+          "name": "retention_switches_run",
+          "value": "\"retention_switches\".\"live\" = 0 or \"retention_switches\".\"run_id\" is not null"
         }
       }
     },

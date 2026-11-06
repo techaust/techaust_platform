@@ -156,6 +156,7 @@ export const RETENTION_MATRIX: Record<string, RetentionRule> = {
   settings: record("settings: kept"),
   bank_accounts: financial,
   legal_holds: record("the legal hold history: append-only, never deleted"),
+  retention_switches: record("the real-deletion switch history (C.7): append-only, never deleted"),
   deeds: record(
     "T11: a final or signed deed is the legal record of a transfer of rights (RB-38(a)); a draft goes only with an anonymised client",
   ),

@@ -17,6 +17,8 @@ const named = (name: string, message: string) => {
 };
 const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
 const NOW = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
+/** A trial report older than this can't turn real deletion on (core `TRIAL_REPORT_MAX_AGE_MS`, 7 days; a db test pins them). */
+export const TRIAL_REPORT_MAX_AGE_MS_0079 = 7 * 86_400_000;
 /** 366 days in milliseconds (L34). */
 export const FLOOR_MS_0079 = 366 * 86_400_000;
 /** Older than the floor: `col` is before now minus 366 days. */
@@ -351,6 +353,14 @@ export function dataProtectionTriggerStatements(): string[] {
     `CREATE TRIGGER \`retention_runs_fixed\` BEFORE UPDATE ON \`retention_runs\` WHEN ${changed(["id", "as_of", "mode", "started_at", "families"])} OR (OLD.finished_at IS NOT NULL AND NEW.finished_at IS NOT OLD.finished_at) BEGIN ${named("retention_runs_fixed", "a clean-up run keeps its time and mode and finishes once")} END;`,
     `CREATE TRIGGER \`retention_run_counts_values\` BEFORE INSERT ON \`retention_run_counts\` WHEN NEW.family NOT IN (${q(RETENTION_FAMILIES_0079)}) OR NEW.done NOT IN (0, 1) BEGIN ${named("retention_run_counts_values", "a clean-up count is of a known family")} END;`,
     `CREATE TRIGGER \`retention_run_counts_fixed\` BEFORE UPDATE ON \`retention_run_counts\` WHEN ${changed(["run_id", "family"])} OR NEW.done NOT IN (0, 1) OR (OLD.done = 1 AND NEW.done = 0) BEGIN ${named("retention_run_counts_fixed", "a clean-up count keeps its run and family and is done once")} END;`,
+    // C.7 (Q1 A; B2: the switch is its own append-only table, `settings.key` being held by a CHECK): an active Owner turns it; on only with a dry run that
+    // finished within the last 7 days (core `TRIAL_REPORT_MAX_AGE_MS`), named by `run_id`; never changed, never deleted.
+    `CREATE TRIGGER \`retention_switches_values\` BEFORE INSERT ON \`retention_switches\` WHEN NEW.live NOT IN (0, 1)
+       OR NOT EXISTS (SELECT 1 FROM staff_users o WHERE o.id = NEW.by AND o.role = 'owner' AND o.status = 'active')
+       OR (NEW.live = 1 AND NOT EXISTS (SELECT 1 FROM retention_runs r WHERE r.id = NEW.run_id AND r.mode = 'dry_run' AND r.finished_at IS NOT NULL AND r.finished_at >= ${NOW} - ${TRIAL_REPORT_MAX_AGE_MS_0079}))
+       BEGIN ${named("retention_switches_values", "real deletion is turned on or off by an active Owner, and on only after a trial run that finished within 7 days")} END;`,
+    `CREATE TRIGGER \`retention_switches_no_update\` BEFORE UPDATE ON \`retention_switches\` BEGIN ${named("retention_switches_no_update", "the real-deletion switch history is never changed")} END;`,
+    `CREATE TRIGGER \`retention_switches_no_delete\` BEFORE DELETE ON \`retention_switches\` BEGIN ${named("retention_switches_no_delete", "the real-deletion switch history is never deleted")} END;`,
   ];
 
   // ---- 8. Q3 A, L33: the audit scrub (ip and user agent to NULL, three alert summaries' ua, city and country removed) past 366 days, never for a held

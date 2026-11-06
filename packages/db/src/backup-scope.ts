@@ -71,6 +71,7 @@ export const BACKUP_SCOPE: Record<string, BackupScope> = {
   lead_activities: R,
   leads: R,
   legal_holds: R,
+  retention_switches: R,
   magic_link_tokens: R,
   milestones: R,
   notes: R,

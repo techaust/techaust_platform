@@ -113,6 +113,30 @@ export const retentionRuns = sqliteTable(
   ],
 );
 
+/**
+ * The real-deletion switch (C.7, Q1 A, L4): one row per turn on or off, append-only (triggers in `data_protection_triggers`); the newest row is the state, no
+ * row is "off". B2 (2026-11-06): the brief's `retention_live` settings row can't exist, because `settings.key` is held by the CHECK `settings_key` (0000) and
+ * a CHECK changes only by a rebuild; this table replaces it. `run_id` names the dry run the Owner read before turning it on (plain text: runs are deleted
+ * after 13 months, the decision stays).
+ */
+export const retentionSwitches = sqliteTable(
+  "retention_switches",
+  {
+    /** UUIDv7. */
+    id: id(),
+    live: flag("live"),
+    by: text("by")
+      .notNull()
+      .references(() => staffUsers.id),
+    runId: text("run_id"),
+    at: integer("at").notNull().default(nowMs),
+  },
+  (t) => [
+    index("retention_switches_at").on(t.at, t.id),
+    check("retention_switches_run", sql`${t.live} = 0 or ${t.runId} is not null`),
+  ],
+);
+
 export const retentionRunCounts = sqliteTable(
   "retention_run_counts",
   {

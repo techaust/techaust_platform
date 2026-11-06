@@ -216,6 +216,15 @@ CREATE TRIGGER `retention_run_counts_values` BEFORE INSERT ON `retention_run_cou
 --> statement-breakpoint
 CREATE TRIGGER `retention_run_counts_fixed` BEFORE UPDATE ON `retention_run_counts` WHEN NEW.`run_id` IS NOT OLD.`run_id` OR NEW.`family` IS NOT OLD.`family` OR NEW.done NOT IN (0, 1) OR (OLD.done = 1 AND NEW.done = 0) BEGIN SELECT RAISE(ABORT, 'retention_run_counts_fixed: a clean-up count keeps its run and family and is done once'); END;
 --> statement-breakpoint
+CREATE TRIGGER `retention_switches_values` BEFORE INSERT ON `retention_switches` WHEN NEW.live NOT IN (0, 1)
+       OR NOT EXISTS (SELECT 1 FROM staff_users o WHERE o.id = NEW.by AND o.role = 'owner' AND o.status = 'active')
+       OR (NEW.live = 1 AND NOT EXISTS (SELECT 1 FROM retention_runs r WHERE r.id = NEW.run_id AND r.mode = 'dry_run' AND r.finished_at IS NOT NULL AND r.finished_at >= CAST(unixepoch('subsec') * 1000 AS INTEGER) - 604800000))
+       BEGIN SELECT RAISE(ABORT, 'retention_switches_values: real deletion is turned on or off by an active Owner, and on only after a trial run that finished within 7 days'); END;
+--> statement-breakpoint
+CREATE TRIGGER `retention_switches_no_update` BEFORE UPDATE ON `retention_switches` BEGIN SELECT RAISE(ABORT, 'retention_switches_no_update: the real-deletion switch history is never changed'); END;
+--> statement-breakpoint
+CREATE TRIGGER `retention_switches_no_delete` BEFORE DELETE ON `retention_switches` BEGIN SELECT RAISE(ABORT, 'retention_switches_no_delete: the real-deletion switch history is never deleted'); END;
+--> statement-breakpoint
 DROP TRIGGER `audit_log_no_update`;
 --> statement-breakpoint
 CREATE TRIGGER `audit_log_no_update` BEFORE UPDATE ON `audit_log` WHEN NOT (OLD.at < CAST(unixepoch('subsec') * 1000 AS INTEGER) - 31622400000 AND NOT (NEW.`id` IS NOT OLD.`id` OR NEW.`at` IS NOT OLD.`at` OR NEW.`actor_type` IS NOT OLD.`actor_type` OR NEW.`actor_id` IS NOT OLD.`actor_id` OR NEW.`role` IS NOT OLD.`role` OR NEW.`action` IS NOT OLD.`action` OR NEW.`entity_type` IS NOT OLD.`entity_type` OR NEW.`entity_id` IS NOT OLD.`entity_id` OR NEW.`request_id` IS NOT OLD.`request_id`)
