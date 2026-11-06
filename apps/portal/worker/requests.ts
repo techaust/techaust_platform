@@ -32,9 +32,10 @@ const OPEN_OF_KIND =
  * holds the anonymised-client lock itself (not only through the guard's session read).
  */
 // M7.4 (A.1; RB-47): the request clock is written with the row: received when sent (`created_at`), the reply date (core `requestDueAt`, its SQL twin),
-// the acknowledgement 48 hours on; the trigger `client_requests_clock_insert` checks all three.
-export const REQUEST_INSERT_SQL = `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, status, created_at, updated_at, received_at, due_at, ack_due_at)
-   SELECT ?3, c.client_id, c.id, c.id, ?4, ?5, 'open', ?6, ?6, ?6, ${requestDueAtSql("?6")}, ?6 + 172800000 FROM contacts c
+// the acknowledgement 48 hours on; the trigger `client_requests_clock_insert` checks all three. L42: a portal request is identity-checked by the sign-in that
+// sent it, so `identity_checked_at` is the time it arrived (no staff member: the trigger allows that only for `channel = 'portal'`).
+export const REQUEST_INSERT_SQL = `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, status, created_at, updated_at, received_at, due_at, ack_due_at, identity_checked_at)
+   SELECT ?3, c.client_id, c.id, c.id, ?4, ?5, 'open', ?6, ?6, ?6, ${requestDueAtSql("?6")}, ?6 + 172800000, ?6 FROM contacts c
      JOIN clients k ON k.id = c.client_id AND k.anonymised_at IS NULL
    WHERE c.client_id = ?1 AND c.id = ?2 AND c.portal_access = 1 AND c.anonymised_at IS NULL
      AND NOT EXISTS (${OPEN_OF_KIND}) AND ${REQUESTS_TODAY_SQL("?2", "?6")} < ${REQUESTS_PER_DAY}`;

@@ -46,6 +46,13 @@ export const EMAIL_ONLY_DECLINE_REASONS_0079 = [
   "duplicate",
   "other",
 ] as const;
+/** L42: the kinds closed `done` only once the identity is checked (core `IDENTITY_CHECKED_KINDS`). */
+export const IDENTITY_CHECKED_KINDS_0079 = [
+  "data_access",
+  "data_correction",
+  "data_erasure",
+  "nomination",
+] as const;
 export const ERASURE_ACTIONS_0079 = ["contact.erase", "contact.anonymise", "lead.erase"] as const;
 export const LEGAL_HOLD_ENTITY_TYPES_0079 = ["client", "contact", "lead"] as const;
 export const LEGAL_HOLD_ACTIONS_0079 = ["set", "clear"] as const;
@@ -98,10 +105,14 @@ export const PDF_STEM_SQL = (a: string) =>
      AND ${a}.number BETWEEN 1 AND 999999999 AND ${a}.version BETWEEN 1 AND 999
    THEN 'docs/' || ${a}.type || '/' || (2000 + CAST(substr(${a}.fy, 1, 2) AS INTEGER)) || '-' || substr(${a}.fy, 3, 2) || '/' || printf('%04d', ${a}.number) || '-v' || CAST(${a}.version AS INTEGER) END`;
 
-/** A contact row `a` is held: itself, its client, or a lead of the person (the `HELD_LEAD_SQL` rule of `contact-access.ts`, over `a`). */
+/**
+ * A contact row `a` is held: itself, its client, or a lead of the person (the `HELD_LEAD_SQL` rule of `contact-access.ts`, over `a`; early check 1 M1: the
+ * lead's address lower-cased, one EXISTS per index).
+ */
 const contactHeld = (a: string) =>
   `(${a}.legal_hold = 1 OR EXISTS (SELECT 1 FROM clients hc WHERE hc.id = ${a}.client_id AND hc.legal_hold = 1)
-    OR EXISTS (SELECT 1 FROM leads hl WHERE hl.legal_hold = 1 AND (hl.contact_id = ${a}.id OR (hl.contact_email = ${a}.email AND (hl.client_id IS NULL OR hl.client_id = ${a}.client_id)))))`;
+    OR EXISTS (SELECT 1 FROM leads hl WHERE hl.contact_id = ${a}.id AND hl.legal_hold = 1)
+    OR EXISTS (SELECT 1 FROM leads hl WHERE lower(hl.contact_email) = lower(${a}.email) AND hl.legal_hold = 1 AND (hl.client_id IS NULL OR hl.client_id = ${a}.client_id)))`;
 const clientHeld = (client: string) =>
   `EXISTS (SELECT 1 FROM clients hc WHERE hc.id = ${client} AND hc.legal_hold = 1)`;
 const clientGone = (client: string) =>
@@ -130,17 +141,50 @@ const receiptStatements = (col: "contact_id" | "lead_id") =>
      SELECT lower(hex(randomblob(16))), NEW.erased_hash, NEW.id, 'ended', 'erasure', NULL, '[]', 0, NULL, ${NOW}
      WHERE EXISTS (SELECT 1 FROM consent_receipts r WHERE r.${col} = NEW.id);`;
 
-/** The one-off back-fills, before any trigger of this set exists (A.1 clock of existing requests; A.3 one `grant` receipt per lead with consent, no hash). */
+/**
+ * A lead whose consent the back-fill and the `consent.hash` page may read: a lead with its own address (early check 1 M4: never one an anonymise turned into
+ * the placeholder `anonymised+<id>@invalid`, core `anonymisedEmail`, nor one already marked erased). `l` is the alias.
+ */
+export const LEAD_WITH_ADDRESS_SQL = (l: string) =>
+  `(${l}.erased_hash IS NULL AND lower(${l}.contact_email) NOT GLOB 'anonymised+*@invalid')`;
+
+/** The lead's stored purposes the trigger knows, as a JSON array. */
+const leadPurposes = `(SELECT coalesce(json_group_array(p.value), '[]') FROM json_each(json_extract(l.consent, '$.purposes')) p WHERE p.value IN (${q(PURPOSES_0079)}))`;
+const RECEIPT_COLS =
+  "(id, subject_hash, lead_id, contact_id, event, source, notice_version, purposes, marketing, ip_hash, at)";
+const LEAD_CONSENT_OK = `l.consent IS NOT NULL AND json_valid(l.consent) AND json_type(l.consent, '$.at') = 'integer' AND json_type(l.consent, '$.purposes') = 'array' AND ${LEAD_WITH_ADDRESS_SQL("l")}`;
+/** A contact's marketing consent that was granted (still, or until it was withdrawn: the grant's `at` is kept by the withdraw, `apps/admin/worker/clients.ts`). */
+const CONTACT_CONSENT_OK = `c.anonymised_at IS NULL AND c.erased_hash IS NULL AND c.marketing_consent IS NOT NULL AND json_valid(c.marketing_consent)
+       AND json_type(c.marketing_consent, '$.at') = 'integer'
+       AND (json_type(c.marketing_consent, '$.granted') = 'true' OR json_type(c.marketing_consent, '$.withdrawnAt') = 'integer')`;
+
+/**
+ * The one-off back-fills, before any trigger of this set exists:
+ * - A.1: the clock of existing requests; L42: an existing (portal) request counts as identity-checked by its sign-in, when it arrived;
+ * - A.3: one `grant` receipt per lead with consent (as the jobs Worker stores it, `apps/jobs/src/leads.ts`), no hash; L41: one `grant` receipt per live
+ *   contact whose marketing consent was granted (source `staff`, no notice version, marketing only, as core `receiptOf`); early check 1 H3: one `withdraw`
+ *   receipt (source `staff`, as core `withdrawalOf`) for each of those whose consent carries `withdrawnAt`. M4: no anonymised or erased lead.
+ */
 export function dataProtectionBackfill(): string[] {
   return [
     `UPDATE client_requests SET received_at = created_at, due_at = ${requestDueAtSql("created_at")}, ack_due_at = created_at + 172800000 WHERE received_at IS NULL;`,
-    `INSERT INTO consent_receipts (id, subject_hash, lead_id, contact_id, event, source, notice_version, purposes, marketing, ip_hash, at)
+    "UPDATE client_requests SET identity_checked_at = received_at WHERE channel = 'portal' AND identity_checked_at IS NULL;",
+    `INSERT INTO consent_receipts ${RECEIPT_COLS}
      SELECT lower(hex(randomblob(16))), NULL, l.id, NULL, 'grant', CASE l.source WHEN 'web' THEN 'web_form' ELSE 'staff' END,
-       json_extract(l.consent, '$.noticeVersion'),
-       (SELECT coalesce(json_group_array(p.value), '[]') FROM json_each(json_extract(l.consent, '$.purposes')) p WHERE p.value IN (${q(PURPOSES_0079)})),
+       json_extract(l.consent, '$.noticeVersion'), ${leadPurposes},
        CASE WHEN json_extract(l.consent, '$.marketing') = 1 THEN 1 ELSE 0 END,
        json_extract(l.consent, '$.ipHash'), json_extract(l.consent, '$.at')
-     FROM leads l WHERE l.consent IS NOT NULL AND json_valid(l.consent) AND json_type(l.consent, '$.at') = 'integer' AND json_type(l.consent, '$.purposes') = 'array';`,
+     FROM leads l WHERE ${LEAD_CONSENT_OK};`,
+    `INSERT INTO consent_receipts ${RECEIPT_COLS}
+     SELECT lower(hex(randomblob(16))), NULL, l.id, NULL, 'withdraw', 'staff', json_extract(l.consent, '$.noticeVersion'), ${leadPurposes}, 0, NULL,
+       json_extract(l.consent, '$.withdrawnAt')
+     FROM leads l WHERE ${LEAD_CONSENT_OK} AND json_type(l.consent, '$.withdrawnAt') = 'integer';`,
+    `INSERT INTO consent_receipts ${RECEIPT_COLS}
+     SELECT lower(hex(randomblob(16))), NULL, NULL, c.id, 'grant', 'staff', NULL, '["marketing_updates"]', 1, NULL, json_extract(c.marketing_consent, '$.at')
+     FROM contacts c WHERE ${CONTACT_CONSENT_OK};`,
+    `INSERT INTO consent_receipts ${RECEIPT_COLS}
+     SELECT lower(hex(randomblob(16))), NULL, NULL, c.id, 'withdraw', 'staff', NULL, '["marketing_updates"]', 0, NULL, json_extract(c.marketing_consent, '$.withdrawnAt')
+     FROM contacts c WHERE ${CONTACT_CONSENT_OK} AND json_type(c.marketing_consent, '$.withdrawnAt') = 'integer';`,
   ];
 }
 
@@ -177,9 +221,12 @@ export function dataProtectionTriggerStatements(): string[] {
     `CREATE TRIGGER \`leads_held_no_delete\` BEFORE DELETE ON \`leads\` WHEN OLD.legal_hold = 1 BEGIN ${named("leads_held_no_delete", "a lead under a legal hold is not deleted")} END;`,
     `CREATE TRIGGER \`files_held_no_delete\` BEFORE DELETE ON \`files\` WHEN ${clientHeld(filesClient)} BEGIN ${named("files_held_no_delete", "a file of a client under a legal hold is not deleted")} END;`,
     `CREATE TRIGGER \`notes_held_no_delete\` BEFORE DELETE ON \`notes\` WHEN ${clientHeld(filesClient)} BEGIN ${named("notes_held_no_delete", "a note of a client under a legal hold is not deleted")} END;`,
+    // Early check 1 M2: the offer's contact counts as held the same way as for its erase (itself, its client or a lead of the person).
     `CREATE TRIGGER \`documents_held_no_redact\` BEFORE UPDATE OF redacted_at ON \`documents\` WHEN OLD.redacted_at IS NULL AND NEW.redacted_at IS NOT NULL
-       AND (${clientHeld("OLD.client_id")} OR EXISTS (SELECT 1 FROM contacts hk WHERE hk.id = OLD.contact_id AND hk.legal_hold = 1))
-       BEGIN ${named("documents_held_no_redact", "an offer of a client or contact under a legal hold is not redacted")} END;`,
+       AND (${clientHeld("OLD.client_id")} OR EXISTS (SELECT 1 FROM contacts hk WHERE hk.id = OLD.contact_id AND ${contactHeld("hk")}))
+       BEGIN ${named("documents_held_no_redact", "an offer of a client or contact under a legal hold (on itself, its client or a lead of the person) is not redacted")} END;`,
+    // Early check 1 M2: a held lead is never marked erased (the lead erase sets the hash before its DELETE, the anonymise in its matched-leads UPDATE).
+    `CREATE TRIGGER \`leads_held_no_erase\` BEFORE UPDATE OF erased_hash ON \`leads\` WHEN OLD.legal_hold = 1 AND NEW.erased_hash IS NOT OLD.erased_hash BEGIN ${named("leads_held_no_erase", "a lead under a legal hold is not erased")} END;`,
   ];
 
   // ---- 3. the anonymised lock (never on payments or payment notices: review fix 20)
@@ -189,9 +236,10 @@ export function dataProtectionTriggerStatements(): string[] {
   );
   const changed = (cols: readonly string[]) =>
     cols.map((c) => `NEW.\`${c}\` IS NOT OLD.\`${c}\``).join(" OR ");
-  // Step 0.3(b): the anonymise batch clears a registered individual's GSTIN in the statement after it sets `anonymised_at`; exactly that move stays allowed.
+  // Step 0.3(b): the anonymise batch clears a registered individual's GSTIN in the statement after it sets `anonymised_at`; exactly that move stays allowed,
+  // and only for an individual (early check 1 L3: a business keeps its GSTIN, a business's own identifier, not a person's).
   const gstinCleared =
-    "NEW.gstin IS NULL AND OLD.gst_status = 'registered' AND NEW.gst_status = 'unregistered' AND OLD.gstin IS NOT NULL";
+    "OLD.type = 'individual' AND NEW.gstin IS NULL AND OLD.gst_status = 'registered' AND NEW.gst_status = 'unregistered' AND OLD.gstin IS NOT NULL";
   lock.push(
     `CREATE TRIGGER \`clients_anonymised_frozen\` BEFORE UPDATE ON \`clients\` WHEN OLD.anonymised_at IS NOT NULL
        AND (${changed(["legal_name", "display_name", "billing_address", "service_address", "notes", "tags", "type", "anonymised_at"])}
@@ -199,15 +247,18 @@ export function dataProtectionTriggerStatements(): string[] {
        BEGIN ${named("clients_anonymised_frozen", "an anonymised client keeps its removed details removed")} END;`,
   );
 
-  // ---- 4. the R2 outbox (zero batch statements)
+  // ---- 4. the R2 outbox (zero batch statements). Early check 1 L8 (B1's choice): a key already queued is skipped by `ON CONFLICT (bucket, key) DO NOTHING`
+  // only; any other failure (a key over 512 characters, the CHECK) aborts the delete or the redaction instead of losing the object silently, as `INSERT OR
+  // IGNORE` would. Every key family written today is bounded far under 512 (a db test).
   const outbox = [
-    `CREATE TRIGGER \`files_r2_outbox\` AFTER DELETE ON \`files\` BEGIN INSERT OR IGNORE INTO r2_deletions (bucket, key, reason) VALUES ('files', OLD.r2_key, 'row_deleted'); END;`,
+    `CREATE TRIGGER \`files_r2_outbox\` AFTER DELETE ON \`files\` BEGIN INSERT INTO r2_deletions (bucket, key, reason) VALUES ('files', OLD.r2_key, 'row_deleted') ON CONFLICT (bucket, key) DO NOTHING; END;`,
     `CREATE TRIGGER \`documents_redact_outbox\` AFTER UPDATE OF redacted_at ON \`documents\` WHEN OLD.redacted_at IS NULL AND NEW.redacted_at IS NOT NULL BEGIN
-       INSERT OR IGNORE INTO r2_deletions (bucket, key, reason)
+       INSERT INTO r2_deletions (bucket, key, reason)
          SELECT 'docs', k, 'redacted' FROM (
            SELECT OLD.snapshot_r2_key AS k UNION ALL SELECT OLD.pdf_r2_key
            UNION ALL SELECT (${PDF_STEM_SQL("OLD")}) || '.json' UNION ALL SELECT (${PDF_STEM_SQL("OLD")}) || '.pdf'
-         ) WHERE k IS NOT NULL;
+         ) WHERE k IS NOT NULL
+         ON CONFLICT (bucket, key) DO NOTHING;
      END;`,
   ];
 
@@ -223,7 +274,7 @@ export function dataProtectionTriggerStatements(): string[] {
     }),
     `CREATE TRIGGER \`contacts_erased_hash\` BEFORE UPDATE OF erased_hash ON \`contacts\` WHEN (OLD.erased_hash IS NOT NULL AND NEW.erased_hash IS NOT OLD.erased_hash) OR (NEW.erased_hash IS NOT NULL AND NOT ${isHex64("NEW.erased_hash")}) BEGIN ${named("contacts_erased_hash", "an erased hash is 64 lower-case hex characters, set once")} END;`,
     `CREATE TRIGGER \`leads_erased_hash\` BEFORE UPDATE OF erased_hash ON \`leads\` WHEN (OLD.erased_hash IS NOT NULL AND NEW.erased_hash IS NOT OLD.erased_hash) OR (NEW.erased_hash IS NOT NULL AND NOT ${isHex64("NEW.erased_hash")}) BEGIN ${named("leads_erased_hash", "an erased hash is 64 lower-case hex characters, set once")} END;`,
-    `CREATE TRIGGER \`contacts_erased_suppress\` AFTER UPDATE OF erased_hash ON \`contacts\` WHEN OLD.erased_hash IS NULL AND NEW.erased_hash IS NOT NULL AND NOT ${liveHolder("OLD.email", { contact: "OLD.id" })} BEGIN ${stopStatements("OLD.email")} END;`,
+    `CREATE TRIGGER \`contacts_erased_suppress\` AFTER UPDATE OF erased_hash ON \`contacts\` WHEN OLD.erased_hash IS NULL AND NEW.erased_hash IS NOT NULL AND NOT ${liveHolder("lower(OLD.email)", { contact: "OLD.id" })} BEGIN ${stopStatements("lower(OLD.email)")} END;`,
     `CREATE TRIGGER \`contacts_erased_receipts\` AFTER UPDATE OF erased_hash ON \`contacts\` WHEN OLD.erased_hash IS NULL AND NEW.erased_hash IS NOT NULL BEGIN ${receiptStatements("contact_id")} END;`,
     `CREATE TRIGGER \`leads_erased_suppress\` AFTER UPDATE OF erased_hash ON \`leads\` WHEN OLD.erased_hash IS NULL AND NEW.erased_hash IS NOT NULL AND NOT ${liveHolder("lower(OLD.contact_email)", { lead: "OLD.id" })} BEGIN ${stopStatements("lower(OLD.contact_email)")} END;`,
     `CREATE TRIGGER \`leads_erased_receipts\` AFTER UPDATE OF erased_hash ON \`leads\` WHEN OLD.erased_hash IS NULL AND NEW.erased_hash IS NOT NULL BEGIN ${receiptStatements("lead_id")} END;`,
@@ -239,14 +290,17 @@ export function dataProtectionTriggerStatements(): string[] {
     OR NEW.due_at IS NOT ${requestDueAtSql("NEW.received_at")} OR NEW.ack_due_at IS NOT NEW.received_at + 172800000
     OR (NEW.channel = 'portal') IS NOT (NEW.logged_by IS NULL)
     OR (NEW.logged_by IS NOT NULL AND NOT EXISTS (SELECT 1 FROM staff_users s WHERE s.id = NEW.logged_by AND s.status = 'active'))
-    OR NEW.acknowledged_at IS NOT NULL OR NEW.identity_checked_at IS NOT NULL OR NEW.identity_checked_by IS NOT NULL
+    OR NEW.acknowledged_at IS NOT NULL OR NEW.identity_checked_by IS NOT NULL
+    OR (NEW.identity_checked_at IS NOT NULL AND (NEW.channel <> 'portal' OR NEW.identity_checked_at IS NOT NEW.received_at))
     OR NEW.decline_reason IS NOT NULL OR NEW.action_audit_id IS NOT NULL OR NEW.export_sent_at IS NOT NULL
     OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL AND NEW.requester_email IS NULL)
     OR (NEW.lead_id IS NOT NULL AND EXISTS (SELECT 1 FROM leads cl WHERE cl.id = NEW.lead_id AND cl.client_id IS NOT NULL))`;
   const set = (col: string) => `(OLD.${col} IS NOT NULL AND NEW.${col} IS NOT OLD.${col})`;
   const stepsBad = `${changed(["channel", "logged_by", "received_at", "due_at", "ack_due_at"])}
     OR ${set("acknowledged_at")} OR ${set("identity_checked_at")} OR ${set("identity_checked_by")}
-    OR (NEW.identity_checked_at IS NULL) IS NOT (NEW.identity_checked_by IS NULL)
+    OR (NEW.identity_checked_by IS NOT NULL AND NEW.identity_checked_at IS NULL)
+    OR (NEW.identity_checked_at IS NOT NULL AND NEW.identity_checked_by IS NULL AND (NEW.channel <> 'portal' OR NEW.identity_checked_at IS NOT NEW.received_at))
+    OR (OLD.identity_checked_at IS NOT NULL AND NEW.identity_checked_by IS NOT OLD.identity_checked_by)
     OR (NEW.identity_checked_by IS NOT NULL AND NEW.identity_checked_by IS NOT OLD.identity_checked_by AND NOT EXISTS (SELECT 1 FROM staff_users s WHERE s.id = NEW.identity_checked_by AND s.status = 'active'))
     OR (NEW.acknowledged_at IS NOT NULL AND NEW.acknowledged_at < NEW.received_at)
     OR (NOT (OLD.status = 'open' AND NEW.status = 'closed') AND (${changed(["decline_reason", "action_audit_id", "export_sent_at"])}))`;
@@ -256,6 +310,7 @@ export function dataProtectionTriggerStatements(): string[] {
   const closeBad = `OLD.status = 'open' AND NEW.status = 'closed' AND (
        (NEW.outcome = 'declined' AND (NEW.decline_reason IS NULL OR NEW.decline_reason NOT IN (${q(DECLINE_REASONS_0079)}) OR NEW.action_audit_id IS NOT NULL OR NEW.export_sent_at IS NOT NULL))
     OR (NEW.outcome = 'done' AND NEW.decline_reason IS NOT NULL)
+    OR (NEW.outcome = 'done' AND NEW.kind IN (${q(IDENTITY_CHECKED_KINDS_0079)}) AND NEW.identity_checked_at IS NULL)
     OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL
         AND (NEW.outcome IS NOT 'declined' OR NEW.decline_reason NOT IN (${q(EMAIL_ONLY_DECLINE_REASONS_0079)})))
     OR (NEW.kind = 'data_erasure' AND NEW.outcome = 'done' AND NOT ${erasureAction})
@@ -263,9 +318,9 @@ export function dataProtectionTriggerStatements(): string[] {
   const requests = [
     "DROP TRIGGER `client_requests_kind`;",
     `CREATE TRIGGER \`client_requests_kind\` BEFORE INSERT ON \`client_requests\` WHEN NEW.kind NOT IN (${q(REQUEST_KINDS_0079)}) BEGIN ${named("client_requests_kind", "a request is of a known kind")} END;`,
-    `CREATE TRIGGER \`client_requests_clock_insert\` BEFORE INSERT ON \`client_requests\` WHEN ${clockInsertBad} BEGIN ${named("client_requests_clock_insert", "a request starts with its known channel, its clock (received, reply due, acknowledgement due) and no step or close detail; staff log the requests that did not come through the portal; an erasure request names a contact, a lead or an address; a converted lead is never a subject")} END;`,
-    `CREATE TRIGGER \`client_requests_steps\` BEFORE UPDATE ON \`client_requests\` WHEN ${stepsBad} BEGIN ${named("client_requests_steps", "a request keeps its clock and channel; it is acknowledged and its identity checked once each; the decline reason, the fulfilling action and the export date are set only by the close")} END;`,
-    `CREATE TRIGGER \`client_requests_close_rules\` BEFORE UPDATE OF status ON \`client_requests\` WHEN ${closeBad} BEGIN ${named("client_requests_close_rules", "a declined request has a known reason; a done erasure names the erase or anonymise of its own contact or lead, made after it arrived; a request naming only an address is declined; only a done access request has an export date")} END;`,
+    `CREATE TRIGGER \`client_requests_clock_insert\` BEFORE INSERT ON \`client_requests\` WHEN ${clockInsertBad} BEGIN ${named("client_requests_clock_insert", "a request starts with its known channel, its clock (received, reply due, acknowledgement due) and no step or close detail (a portal request may start with its identity checked by the sign-in, when it arrived); staff log the requests that did not come through the portal; an erasure request names a contact, a lead or an address; a converted lead is never a subject")} END;`,
+    `CREATE TRIGGER \`client_requests_steps\` BEFORE UPDATE ON \`client_requests\` WHEN ${stepsBad} BEGIN ${named("client_requests_steps", "a request keeps its clock and channel; it is acknowledged and its identity checked once each, the check by an active staff member (only a portal request is checked by its sign-in, when it arrived, with no staff member); the decline reason, the fulfilling action and the export date are set only by the close")} END;`,
+    `CREATE TRIGGER \`client_requests_close_rules\` BEFORE UPDATE OF status ON \`client_requests\` WHEN ${closeBad} BEGIN ${named("client_requests_close_rules", "a declined request has a known reason; an access, correction, erasure or nomination request is done only once its identity is checked; a done erasure names the erase or anonymise of its own contact or lead, made after it arrived; a request naming only an address is declined; only a done access request has an export date")} END;`,
   ];
 
   // ---- 7. consent receipts, the outbox and the run tables

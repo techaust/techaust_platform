@@ -10,6 +10,7 @@ import {
   DECLINE_REASONS,
   EMAIL_ONLY_DECLINE_REASONS,
   ERASURE_ACTIONS,
+  IDENTITY_CHECKED_KINDS,
   REQUEST_KINDS,
   requestDueAt,
 } from "@techaust/core/dsr";
@@ -17,15 +18,18 @@ import { LEGAL_HOLD_ACTIONS, LEGAL_HOLD_ENTITY_TYPES } from "@techaust/core/lega
 import { pdfKeys } from "@techaust/core/pdf-jobs";
 import { FLOORED_FAMILIES, RETENTION_FAMILIES, RETENTION_MODES } from "@techaust/core/retention";
 import { describe, expect, it } from "vitest";
+import { HELD_LEAD_SQL } from "../src/contact-access.ts";
 import { triggerMigrationSql } from "../src/triggers.ts";
 import {
   CHANNELS_0079,
   CONSENT_EVENTS_0079,
   CONSENT_SOURCES_0079,
   DECLINE_REASONS_0079,
+  dataProtectionBackfill,
   dataProtectionTriggerStatements,
   EMAIL_ONLY_DECLINE_REASONS_0079,
   ERASURE_ACTIONS_0079,
+  IDENTITY_CHECKED_KINDS_0079,
   LEGAL_HOLD_ACTIONS_0079,
   LEGAL_HOLD_ENTITY_TYPES_0079,
   PDF_STEM_SQL,
@@ -117,6 +121,7 @@ describe("0078 and 0079 [run file A, I]", () => {
     expect(DECLINE_REASONS_0079).toEqual(DECLINE_REASONS);
     expect(EMAIL_ONLY_DECLINE_REASONS_0079).toEqual(EMAIL_ONLY_DECLINE_REASONS);
     expect(ERASURE_ACTIONS_0079).toEqual(ERASURE_ACTIONS);
+    expect(IDENTITY_CHECKED_KINDS_0079).toEqual(IDENTITY_CHECKED_KINDS);
     expect(LEGAL_HOLD_ENTITY_TYPES_0079).toEqual(LEGAL_HOLD_ENTITY_TYPES);
     expect(LEGAL_HOLD_ACTIONS_0079).toEqual(LEGAL_HOLD_ACTIONS);
     expect(CONSENT_EVENTS_0079).toEqual(CONSENT_EVENTS);
@@ -303,6 +308,74 @@ describe("legal hold (A.2, L3, L6)", () => {
     await hold(owner, "client", q.clientId, "clear");
     await redact();
   });
+
+  it("early check 1 M2: an offer whose contact has a held lead (its address in another case) is not redacted; a held lead is never marked erased", async () => {
+    const owner = await mkMember("owner");
+    const q = await mkQuote({ type: "proposal" });
+    const contact = await mkContact(q.clientId, { email: "mixed.case@example.test" });
+    await run("UPDATE documents SET contact_id = ?2 WHERE id = ?1", q.id, contact);
+    await send(q);
+    const redact = () =>
+      run(
+        "UPDATE documents SET title = 'Website for Anonymised client', redacted_at = ?2, updated_at = updated_at + 1 WHERE id = ?1",
+        q.id,
+        Date.now(),
+      );
+    const lead = await mkLead({ email: "Mixed.Case@Example.TEST" });
+    await hold(owner, "lead", lead, "set");
+    await rejects(redact(), /documents_held_no_redact/);
+    await rejects(
+      run("UPDATE leads SET erased_hash = ?2 WHERE id = ?1", lead, H("e")),
+      /leads_held_no_erase/,
+    );
+    // writing the column without changing it is not an erasure (the anonymise's matched-leads UPDATE binds NULL for another address)
+    await run("UPDATE leads SET erased_hash = NULL WHERE id = ?1", lead);
+    await hold(owner, "lead", lead, "clear");
+    await run("UPDATE leads SET erased_hash = ?2 WHERE id = ?1", lead, H("e"));
+    await redact();
+  });
+
+  it("early check 1 M1: a lead held under its address in capitals holds the contact (erase and anonymise), and HELD_LEAD_SQL sees it", async () => {
+    const owner = await mkMember("owner");
+    const client = await mkClientRow();
+    const c = await mkContact(client, { email: "capitals@example.test" });
+    const lead = await mkLead({ email: "Capitals@Example.Test" });
+    const held = () =>
+      first<{ held: number }>(`SELECT ${HELD_LEAD_SQL} AS held FROM contacts c WHERE c.id = ?1`, c).then(
+        (r) => r?.held,
+      );
+    expect(await held()).toBe(0);
+    await hold(owner, "lead", lead, "set");
+    expect(await held()).toBe(1);
+    await rejects(run("DELETE FROM contacts WHERE id = ?1", c), /contacts_held_no_delete/);
+    await rejects(
+      run("UPDATE contacts SET anonymised_at = 9 WHERE id = ?1", c),
+      /contacts_held_no_anonymise/,
+    );
+    await hold(owner, "lead", lead, "clear");
+    expect(await held()).toBe(0);
+    // a held lead converted to another client, under the same address in capitals, does not hold this contact
+    const other = await mkLead({ email: "CAPITALS@example.test", clientId: await mkClientRow(), held: true });
+    expect(await held()).toBe(0);
+    expect(
+      (await first<{ legal_hold: number }>("SELECT legal_hold FROM leads WHERE id = ?1", other))?.legal_hold,
+    ).toBe(1);
+    await run("DELETE FROM contacts WHERE id = ?1", c);
+  });
+
+  it("early check 1 M1: HELD_LEAD_SQL reads leads_contact and leads_contact_email_lower (EXPLAIN; the trigger's check has the same shape)", async () => {
+    const plan = (
+      await all<{ detail: string }>(
+        `EXPLAIN QUERY PLAN SELECT ${HELD_LEAD_SQL} FROM contacts c WHERE c.id = ?1`,
+        "x",
+      )
+    )
+      .map((r) => r.detail)
+      .join(" | ");
+    expect(plan).toMatch(/leads_contact_email_lower/);
+    expect(plan).toMatch(/USING INDEX leads_contact\b/);
+    expect(plan).not.toMatch(/SCAN l\b|SCAN leads\b/);
+  });
 });
 
 describe("the anonymised lock (A.3; never on payments, review fix 20)", () => {
@@ -359,12 +432,8 @@ describe("the anonymised lock (A.3; never on payments, review fix 20)", () => {
     );
   });
 
-  it("an anonymised client keeps its removed details removed, except the GSTIN step of the anonymise batch (Step 0.3(b))", async () => {
+  it("an anonymised client keeps its removed details removed (the GSTIN step: the next test)", async () => {
     const client = await mkClientRow();
-    await run(
-      "UPDATE clients SET gst_status = 'registered', gstin = '19ABCDE1234F1Z5' WHERE id = ?1",
-      client,
-    ).catch(() => undefined);
     await run("UPDATE clients SET legal_name = 'Anonymised client', anonymised_at = 9 WHERE id = ?1", client);
     await rejects(
       run("UPDATE clients SET legal_name = 'Back' WHERE id = ?1", client),
@@ -375,10 +444,33 @@ describe("the anonymised lock (A.3; never on payments, review fix 20)", () => {
       run("UPDATE clients SET anonymised_at = NULL WHERE id = ?1", client),
       /clients_anonymised_frozen/,
     );
-    const row = await first<{ gst_status: string }>("SELECT gst_status FROM clients WHERE id = ?1", client);
-    if (row?.gst_status === "registered")
-      await run("UPDATE clients SET gstin = NULL, gst_status = 'unregistered' WHERE id = ?1", client);
     await run("UPDATE clients SET updated_at = updated_at + 1 WHERE id = ?1", client);
+  });
+
+  it("early check 1 L3 (Step 0.3(b)): the GSTIN step is allowed for an anonymised individual only; a business keeps its GSTIN", async () => {
+    const registered = async (type: "individual" | "business", gstin: string) => {
+      const id = uuidv7();
+      await run(
+        `INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, gstin, state_code, currency)
+         VALUES (?1, ?2, 'Legal', 'Display', ?3, 'IN', 'registered', ?4, '19', 'INR')`,
+        id,
+        `C-G${id.slice(-6)}`,
+        type,
+        gstin,
+      );
+      await run("UPDATE clients SET legal_name = 'Anonymised client', anonymised_at = 9 WHERE id = ?1", id);
+      return id;
+    };
+    const clear = (id: string) =>
+      run("UPDATE clients SET gstin = NULL, gst_status = 'unregistered' WHERE id = ?1", id);
+    const business = await registered("business", "19ABCDE1234F1Z5");
+    await rejects(clear(business), /clients_anonymised_frozen/);
+    const person = await registered("individual", "19AAACT2727Q1ZA");
+    await clear(person);
+    expect(await first("SELECT gstin, gst_status FROM clients WHERE id = ?1", person)).toEqual({
+      gstin: null,
+      gst_status: "unregistered",
+    });
   });
 });
 
@@ -397,6 +489,35 @@ describe("the R2 outbox (A.4; T7 F2)", () => {
     expect(
       await all("SELECT bucket, key, reason, attempts FROM r2_deletions WHERE key = ?1", `files/${id}`),
     ).toEqual([{ bucket: "files", key: `files/${id}`, reason: "row_deleted", attempts: 0 }]);
+  });
+
+  it("early check 1 L8: a key already queued is skipped; a key that can't fit (over 512) aborts the delete instead of losing the object", async () => {
+    const client = await mkClientRow();
+    const file = async (key: string) => {
+      const id = uuidv7();
+      await run(
+        "INSERT INTO files (id, client_id, r2_key, filename, mime, size, sha256) VALUES (?1, ?2, ?3, 'a.pdf', 'application/pdf', 1, ?4)",
+        id,
+        client,
+        key,
+        H("f"),
+      );
+      return id;
+    };
+    const queued = `files/${uuidv7()}`;
+    await run("INSERT INTO r2_deletions (bucket, key, reason) VALUES ('files', ?1, 'orphan')", queued);
+    await run("DELETE FROM files WHERE id = ?1", await file(queued));
+    expect(await all("SELECT reason FROM r2_deletions WHERE key = ?1", queued)).toEqual([
+      { reason: "orphan" },
+    ]);
+    const long = await file(`files/${"x".repeat(520)}`);
+    await rejects(run("DELETE FROM files WHERE id = ?1", long), /r2_deletions_key_length|CHECK/);
+    expect(await count("SELECT count(*) AS n FROM files WHERE id = ?1", long)).toBe(1);
+    // the longest key the redaction derives is far under 512
+    const longest = await first<{ n: number }>(
+      `SELECT length(${PDF_STEM_SQL("d")} || '.json') AS n FROM (SELECT 'abcdefghijklmnopqrstuvwx' AS type, '9900' AS fy, 999999999 AS number, 999 AS version) d`,
+    );
+    expect(longest?.n).toBeLessThan(80);
   });
 
   it("a redacted offer queues its stored keys and the keys pdfKeys derives (the SQL twin)", async () => {
@@ -693,12 +814,137 @@ describe("client_requests: kinds, clock, steps and close (A.1, A.6, L28; RB-47)"
       run(`UPDATE client_requests SET ${sql} WHERE id = ?1`, id, ...p);
     await up("acknowledged_at = ?2", Date.now());
     await rejects(up("acknowledged_at = ?2", Date.now() + 5), /client_requests_steps/);
-    await rejects(up("identity_checked_at = ?2", Date.now()), /client_requests_steps/);
+    // L42: with no staff member, only the portal sign-in's check (at the time the request arrived)
+    await rejects(up("identity_checked_at = received_at + 5"), /client_requests_steps/);
+    await rejects(up("identity_checked_by = ?2", staff), /client_requests_steps/);
     await up("identity_checked_at = ?2, identity_checked_by = ?3", Date.now(), staff);
     await rejects(up("identity_checked_by = NULL, identity_checked_at = NULL"), /client_requests_steps/);
     await rejects(up("due_at = due_at + 1"), /client_requests_steps/);
     await rejects(up("channel = 'email'"), /client_requests_steps/);
     await rejects(up("decline_reason = 'other'"), /client_requests_steps/);
+  });
+
+  it("L42: a portal request may start checked by its sign-in (when it arrived, no staff member); a staff-logged one never; the check then stays", async () => {
+    const staff = await mkMember("staff");
+    const client = await mkClientRow();
+    const at = Date.now();
+    const portal = (checkedAt: number | null, by: string | null = null) =>
+      run(
+        `INSERT INTO client_requests (id, client_id, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}, identity_checked_at, identity_checked_by)
+         VALUES (?1, ?2, 'data_access', NULL, ?3, ?3, ${requestClockOf("?3")}, ?4, ?5)`,
+        uuidv7(),
+        client,
+        at,
+        checkedAt,
+        by,
+      );
+    await rejects(portal(at + 1), /client_requests_clock_insert/);
+    await rejects(portal(at, staff), /client_requests_clock_insert/);
+    await portal(null);
+    await portal(at);
+    const checked = await first<{ id: string }>(
+      "SELECT id FROM client_requests WHERE client_id = ?1 AND identity_checked_at IS NOT NULL",
+      client,
+    );
+    if (!checked) throw new Error("no checked portal request");
+    // the sign-in's check is never taken over by a staff member, nor removed
+    await rejects(
+      run("UPDATE client_requests SET identity_checked_by = ?2 WHERE id = ?1", checked.id, staff),
+      /client_requests_steps/,
+    );
+    await rejects(
+      run("UPDATE client_requests SET identity_checked_at = NULL WHERE id = ?1", checked.id),
+      /client_requests_steps/,
+    );
+    // a staff-logged request is never checked "by the sign-in", at insert or later
+    const received = ago(2);
+    const logged = (checkedAt: number | null) =>
+      run(
+        `INSERT INTO client_requests (id, client_id, kind, details, channel, logged_by, received_at, due_at, ack_due_at, created_at, updated_at, identity_checked_at)
+         VALUES (?1, ?2, 'data_access', NULL, 'email', ?3, ?4, ?5, ?6, ?7, ?7, ?8)`,
+        uuidv7(),
+        client,
+        staff,
+        received,
+        requestDueAt(received),
+        received + 48 * 3_600_000,
+        Date.now(),
+        checkedAt,
+      );
+    await rejects(logged(received), /client_requests_clock_insert/);
+    await logged(null);
+    await rejects(
+      run(
+        "UPDATE client_requests SET identity_checked_at = received_at WHERE client_id = ?1 AND channel = 'email'",
+        client,
+      ),
+      /client_requests_steps/,
+    );
+  });
+
+  it("L42: done on access, correction, erasure and nomination needs the identity check; declined does not; other kinds never", async () => {
+    const owner = await mkMember("owner");
+    const staff = await mkMember("staff");
+    const client = await mkClientRow();
+    const contact = await mkContact(client);
+    const mk = async (kind: string, checked: boolean) => {
+      const id = uuidv7();
+      const at = Date.now();
+      await run(
+        `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}, identity_checked_at)
+         VALUES (?1, ?2, ?3, ?3, ?4, NULL, ?5, ?5, ${requestClockOf("?5")}, ?6)`,
+        id,
+        client,
+        contact,
+        kind,
+        at,
+        checked ? at : null,
+      );
+      return id;
+    };
+    const close = (id: string, set: string) =>
+      run(
+        `UPDATE client_requests SET status = 'closed', closed_by = ?2, closed_at = ?3, ${set} WHERE id = ?1`,
+        id,
+        owner,
+        Date.now(),
+      );
+    for (const kind of ["data_access", "data_correction", "nomination"]) {
+      const unchecked = await mk(kind, false);
+      await rejects(close(unchecked, "outcome = 'done'"), /client_requests_close_rules/);
+      // a staff member checks, then it closes
+      await run(
+        "UPDATE client_requests SET identity_checked_at = ?2, identity_checked_by = ?3 WHERE id = ?1",
+        unchecked,
+        Date.now(),
+        staff,
+      );
+      await close(unchecked, "outcome = 'done'");
+      await close(await mk(kind, true), "outcome = 'done'");
+      await close(await mk(kind, false), "outcome = 'declined', decline_reason = 'identity_not_confirmed'");
+    }
+    const erase = await mk("data_erasure", false);
+    const auditId = uuidv7();
+    await run(
+      "INSERT INTO audit_log (id, at, actor_type, actor_id, role, action, entity_type, entity_id, summary) VALUES (?1, ?2, 'staff', ?3, 'owner', 'contact.anonymise', 'client', ?4, ?5)",
+      auditId,
+      Date.now() + 1_000,
+      owner,
+      client,
+      JSON.stringify({ contactId: contact }),
+    );
+    await rejects(
+      close(erase, `outcome = 'done', action_audit_id = '${auditId}'`),
+      /client_requests_close_rules/,
+    );
+    for (const kind of ["grievance", "contact_change", "consent_withdrawal"])
+      await close(await mk(kind, false), "outcome = 'done'");
+  });
+
+  it("back-fill (L42): an existing portal request counts as checked by its sign-in, when it arrived", () => {
+    expect(dataProtectionBackfill()).toContain(
+      "UPDATE client_requests SET identity_checked_at = received_at WHERE channel = 'portal' AND identity_checked_at IS NULL;",
+    );
   });
 
   it("close: a declined request names a known reason; an address-only erasure only declines, for an L28 reason; 'Export sent' only on a done access request", async () => {
@@ -707,7 +953,7 @@ describe("client_requests: kinds, clock, steps and close (A.1, A.6, L28; RB-47)"
     const mk = async (kind: string, email: string | null = null) => {
       const id = uuidv7();
       await run(
-        `INSERT INTO client_requests (id, client_id, requester_email, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?5, ${requestClockOf("?5")})`,
+        `INSERT INTO client_requests (id, client_id, requester_email, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}, identity_checked_at) VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?5, ${requestClockOf("?5")}, ?5)`,
         id,
         email ? null : client,
         email,
@@ -777,7 +1023,7 @@ describe("client_requests: kinds, clock, steps and close (A.1, A.6, L28; RB-47)"
     const req = async (o: { contactId?: string; leadId?: string }) => {
       const id = uuidv7();
       await run(
-        `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, ?3, ?3, ?4, ?4, 'data_erasure', NULL, ?5, ?5, ${requestClockOf("?5")})`,
+        `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}, identity_checked_at) VALUES (?1, ?2, ?3, ?3, ?4, ?4, 'data_erasure', NULL, ?5, ?5, ${requestClockOf("?5")}, ?5)`,
         id,
         o.contactId ? client : null,
         o.contactId ?? null,

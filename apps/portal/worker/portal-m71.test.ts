@@ -404,6 +404,13 @@ describe("requests [POR-09, POR-11, L8, L9]", () => {
       details: "My title is wrong.\nIt is Director.",
       status: "open",
     });
+    // M7.4 L42: the sign-in is the identity check, at the time the request arrived, by no staff member.
+    expect(
+      await one(
+        "SELECT channel, identity_checked_at = received_at AS checked_on_arrival, identity_checked_by FROM client_requests WHERE id = ?1",
+        id,
+      ),
+    ).toEqual({ channel: "portal", checked_on_arrival: 1, identity_checked_by: null });
     const audit = await one<{ id: string; summary: string }>(
       "SELECT id, summary FROM audit_log WHERE action = 'portal.request' AND entity_id = ?1",
       id,

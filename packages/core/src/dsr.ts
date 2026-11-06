@@ -143,7 +143,20 @@ export type CloseRow = {
   readonly status: string;
   readonly contactRef: string | null;
   readonly leadRef: string | null;
+  /** When the requester's identity was checked (a portal request: when it arrived, the sign-in being the check; L42), or null. */
+  readonly identityCheckedAt: number | null;
 };
+
+/**
+ * L42 (Q2 A, "after checking who they are"): the kinds that close `done` only once the requester's identity is checked (the route, its SQL and the trigger
+ * `client_requests_close_rules` hold the same list). Settled by the lead on the safest reading, 2026-11-06 (08-C RB-47).
+ */
+export const IDENTITY_CHECKED_KINDS = [
+  "data_access",
+  "data_correction",
+  "data_erasure",
+  "nomination",
+] as const satisfies readonly DsrKind[];
 
 export type CloseInput = {
   readonly outcome: "done" | "declined";
@@ -158,12 +171,14 @@ export type CloseRefusal =
   | "decline_reason_not_allowed"
   | "action_required"
   | "action_not_allowed"
-  | "export_sent_not_allowed";
+  | "export_sent_not_allowed"
+  | "identity_not_checked";
 
 /**
  * Whether a close may go ahead, before the route's SQL checks it again (C.4; the trigger holds the same rules, A.6). A declined request names a known reason
  * (and only a declined one does); a `done` erasure names the audit row of the erase or anonymise that fulfilled it (the SQL then matches that row to the exact
- * contact or lead, round 4); a request naming only an address can close only as declined, for an L28 reason; "Export sent" (Q2 A) is a `done` access request's.
+ * contact or lead, round 4); a request naming only an address can close only as declined, for an L28 reason; "Export sent" (Q2 A) is a `done` access request's;
+ * L42: a `done` access, correction, erasure or nomination request needs its identity check (`IDENTITY_CHECKED_KINDS`).
  * Who may close (Owner only for the data-rights kinds) is `requests.close`, not this.
  */
 export function closeVerdict(
@@ -186,6 +201,9 @@ export function closeVerdict(
     return { ok: true };
   }
   if (reason !== null) return no("decline_reason_not_allowed");
+  // L42: an access, correction, erasure or nomination request is fulfilled only for a requester whose identity was checked.
+  if (isKnown(IDENTITY_CHECKED_KINDS, row.kind) && row.identityCheckedAt === null)
+    return no("identity_not_checked");
   if (row.kind === "data_erasure") {
     // L28: an address-only erasure request is never `done` (nothing in our records was erased against it).
     if (unmatched) return no("action_not_allowed");

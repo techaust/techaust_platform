@@ -11,6 +11,7 @@ import {
   daysLeft,
   dueSoonBound,
   EMAIL_ONLY_DECLINE_REASONS,
+  IDENTITY_CHECKED_KINDS,
   isChannel,
   isDeclineReason,
   isDsrKind,
@@ -197,9 +198,10 @@ describe("enumerations (pinned to the M7.4 triggers in A)", () => {
 });
 
 describe("closeVerdict (C.4; the trigger holds the same rules, A.6)", () => {
-  const contactErase = { kind: "data_erasure", status: "open", contactRef: "c1", leadRef: null };
-  const emailOnly = { kind: "data_erasure", status: "open", contactRef: null, leadRef: null };
-  const access = { kind: "data_access", status: "open", contactRef: "c1", leadRef: null };
+  const checked = { identityCheckedAt: 1_000 };
+  const contactErase = { kind: "data_erasure", status: "open", contactRef: "c1", leadRef: null, ...checked };
+  const emailOnly = { kind: "data_erasure", status: "open", contactRef: null, leadRef: null, ...checked };
+  const access = { kind: "data_access", status: "open", contactRef: "c1", leadRef: null, ...checked };
   const no = (code: string) => ({ ok: false, code });
   it("a closed request can't be closed again", () => {
     expect(closeVerdict({ ...access, status: "closed" }, { outcome: "done" })).toEqual(no("request_closed"));
@@ -263,5 +265,25 @@ describe("closeVerdict (C.4; the trigger holds the same rules, A.6)", () => {
     expect(closeVerdict(contactErase, { outcome: "done", actionAuditId: "a1", exportSentAt: 1_000 })).toEqual(
       no("export_sent_not_allowed"),
     );
+  });
+  it("L42: access, correction, erasure and nomination close done only once the identity is checked; declined and the other kinds need no check", () => {
+    expect(IDENTITY_CHECKED_KINDS).toEqual(["data_access", "data_correction", "data_erasure", "nomination"]);
+    const unchecked = { identityCheckedAt: null };
+    for (const kind of IDENTITY_CHECKED_KINDS)
+      expect(
+        closeVerdict({ ...access, ...unchecked, kind }, { outcome: "done", actionAuditId: "a1" }),
+        kind,
+      ).toEqual(no("identity_not_checked"));
+    expect(closeVerdict(access, { outcome: "done" })).toEqual({ ok: true });
+    expect(
+      closeVerdict(
+        { ...access, ...unchecked },
+        { outcome: "declined", declineReason: "identity_not_confirmed" },
+      ),
+    ).toEqual({ ok: true });
+    for (const kind of ["grievance", "contact_change", "consent_withdrawal"])
+      expect(closeVerdict({ ...access, ...unchecked, kind }, { outcome: "done" }), kind).toEqual({
+        ok: true,
+      });
   });
 });
