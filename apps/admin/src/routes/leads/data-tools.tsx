@@ -30,7 +30,11 @@ const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
 
 /** Whether the lead's consent can be withdrawn (a consent record, not withdrawn already: core `withdrawalOf`; the server says `nothing_to_withdraw` otherwise). */
 export const canWithdrawConsent = (l: Pick<LeadDetail, "consent">): boolean =>
-  l.consent !== null && typeof l.consent.at === "number" && (l.consent.withdrawnAt ?? null) === null;
+  l.consent !== null &&
+  typeof l.consent.at === "number" &&
+  typeof l.consent.noticeVersion === "string" &&
+  Array.isArray(l.consent.purposes) &&
+  (l.consent.withdrawnAt ?? null) === null;
 
 export function LeadDataTools(props: { lead: LeadDetail; converted: boolean; onChanged: () => void }) {
   const user = useUser();

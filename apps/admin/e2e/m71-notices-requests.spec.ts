@@ -145,16 +145,21 @@ test("the client's Requests panel: close one, and the Clients count", async ({ p
   const href = (await link.getAttribute("href")) ?? "";
   await page.goto(`${href}?tab=requests`);
   await expect(page.getByRole("heading", { name: "Requests", level: 2 })).toBeVisible();
-  // the open count on Clients in the navigation, its words read out
+  // the open count, on Requests in the navigation since M7.4 (G.1), its words read out
   await expect(
     page
       .getByRole("navigation")
-      .getByText(/open client request/)
+      .getByText(/open requests?$/)
       .first(),
   ).toBeAttached();
   const row = page.locator("tr", { hasText: "We got an email meant for another company (sample)." });
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-requests-1280.png`, fullPage: true });
-  await row.getByRole("button", { name: /Close/ }).click();
+  // M7.4: the request opens its dialog (steps, close); Close request turns it into the close form
+  await row.getByRole("button", { name: "Concern about how we handle their data" }).click();
+  await page
+    .getByRole("dialog", { name: "Concern about how we handle their data" })
+    .getByRole("button", { name: "Close request" })
+    .click();
   const dialog = page.getByRole("dialog", { name: "Close this request?" });
   await dialog.getByRole("button", { name: "Close request" }).click();
   await expect(dialog.getByText("Choose Done or Declined.")).toBeVisible();
