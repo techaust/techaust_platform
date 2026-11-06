@@ -574,6 +574,20 @@
   overflow: visible;
 }
 
+/* ---------- The limit strip (M7.5 G): a sparkline on a fixed 0-to-limit scale, its alert lines as dashed hairlines with their words ---------- */
+
+.limit-strip {
+  min-width: 0;
+  height: 56px;
+}
+
+.limit-strip__mark {
+  stroke: var(--color-border-control);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  shape-rendering: crispEdges;
+}
+
 /* Forced colours: marks take the system's text colour, so a part is still a shape; its words and the table carry the rest. */
 @media (forced-colors: active) {
   .chart-seg__part,
