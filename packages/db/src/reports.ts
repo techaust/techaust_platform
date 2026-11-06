@@ -843,12 +843,14 @@ const SUCCEEDED_REFUNDS = "f.status = 'succeeded' AND fp.status = 'confirmed' AN
 
 /**
  * The columns of one revenue row from three JSON values (`inv`, `pay`, `ref`: `invoicedJson`, `collectedJson`, `refundedJson`) at JSON path `at` (an SQL
- * expression: `'$'`, or `'$.' || cur.currency`), named as `RevenueSqlRow`; the INR figures are NULL when a value is missing (L4).
+ * expression: `'$'`, or `'$.' || cur.currency`), named as `RevenueSqlRow`; the INR figures are NULL when a value is missing (L4), and
+ * `documents_inr_missing` says how many documents lack one (review 1 finding 4: the count the SPA's line names).
  */
 const revenueColumns = (inv: string, pay: string, ref: string, at: string) => {
   const j = (v: string, i: number) => `coalesce(json_extract(${v}, ${at} || '[${i}]'), 0)`;
   return `${j(inv, 0)} AS documents, ${j(inv, 1)} AS taxable, ${j(inv, 2)} AS total,
        CASE WHEN ${j(inv, 3)} < ${j(inv, 0)} THEN NULL ELSE ${j(inv, 4)} END AS inr_taxable, CASE WHEN ${j(inv, 3)} < ${j(inv, 0)} THEN NULL ELSE ${j(inv, 5)} END AS inr_total,
+       ${j(inv, 0)} - ${j(inv, 3)} AS documents_inr_missing,
        ${j(pay, 0)} AS payments, ${j(pay, 1)} AS received, ${j(ref, 0)} AS refunds, ${j(ref, 1)} AS refunded, ${j(pay, 1)} - ${j(ref, 1)} AS collected, ${j(pay, 2)} AS tds_n, ${j(pay, 3)} AS tds,
        ${j(pay, 5)} + ${j(ref, 3)} AS inr_missing, CASE WHEN ${j(pay, 5)} + ${j(ref, 3)} > 0 THEN NULL ELSE ${j(pay, 4)} - ${j(ref, 2)} END AS inr_collected`;
 };
@@ -861,6 +863,8 @@ export type RevenueSqlRow = {
   total: number;
   inr_taxable: number | null;
   inr_total: number | null;
+  /** the documents counted in `documents` without both INR values (0 for INR; `inr_taxable` and `inr_total` are NULL when it is above 0) */
+  documents_inr_missing: number;
   payments: number;
   received: number;
   refunds: number;
@@ -907,7 +911,8 @@ export type RevenueMonthSqlRow = RevenueSqlRow & { month: string };
 export const REVENUE_MONTHS_GROUPED_SQL = /* @__PURE__ */ (() => ({
   invoiced: `SELECT substr(d.issue_date, 1, 7) AS month, d.currency, count(*) AS documents, sum(${SIGN} * d.taxable_minor) AS taxable, sum(${SIGN} * d.total_minor) AS total,
        CASE WHEN count(${inrDocTaxable("d.currency")}) < count(*) OR count(${inrDocTotal("d.currency")}) < count(*) THEN NULL ELSE sum(${SIGN} * (${inrDocTaxable("d.currency")})) END AS inr_taxable,
-       CASE WHEN count(${inrDocTaxable("d.currency")}) < count(*) OR count(${inrDocTotal("d.currency")}) < count(*) THEN NULL ELSE sum(${SIGN} * (${inrDocTotal("d.currency")})) END AS inr_total
+       CASE WHEN count(${inrDocTaxable("d.currency")}) < count(*) OR count(${inrDocTotal("d.currency")}) < count(*) THEN NULL ELSE sum(${SIGN} * (${inrDocTotal("d.currency")})) END AS inr_total,
+       count(*) - count(CASE WHEN (${inrDocTaxable("d.currency")}) IS NOT NULL AND (${inrDocTotal("d.currency")}) IS NOT NULL THEN 1 END) AS documents_inr_missing
      FROM documents d WHERE ${ISSUED_IN("?1", "?2")} GROUP BY month, d.currency ORDER BY month, d.currency`,
   collected: `SELECT substr(p.received_on, 1, 7) AS month, p.currency, count(CASE p.kind WHEN 'payment' THEN 1 END) AS payments,
        coalesce(sum(CASE p.kind WHEN 'payment' THEN p.amount_minor END), 0) AS received, coalesce(sum(CASE p.kind WHEN 'tds' THEN p.amount_minor END), 0) AS tds
@@ -958,14 +963,15 @@ const keyedPivot = (keys: readonly string[], rows: string, roundOff = false) => 
     ...(roundOff ? roundCols : []),
   ];
   return `SELECT kc.k AS key, kc.currency, ${p("n")} AS documents, ${p("tx")} AS taxable, ${p("tt")} AS total,
-       CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("ix")} END AS inr_taxable, CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("it")} END AS inr_total${roundSelect}
+       CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("ix")} END AS inr_taxable, CASE WHEN ${p("ic")} < ${p("n")} THEN NULL ELSE ${p("it")} END AS inr_total,
+       ${p("n")} - ${p("ic")} AS documents_inr_missing${roundSelect}
    FROM (SELECT ${cols.join(",\n         ")}
          FROM (${rows} LIMIT -1) z) t
    JOIN (${keyRows(keys)}) kc
    WHERE ${p("n")} > 0`;
 };
 
-/** One row of the category and kind statements as D1 returns it (`documents` counts lines for a category). */
+/** One row of the category and kind statements as D1 returns it (`documents` counts lines for a category, and `documents_inr_missing` the lines without an INR view). */
 export type KeyedSqlRow = {
   key: string;
   currency: "INR" | "USD";
@@ -974,6 +980,7 @@ export type KeyedSqlRow = {
   total: number;
   inr_taxable: number | null;
   inr_total: number | null;
+  documents_inr_missing: number;
 };
 /** A category row also carries its currency's round-off (the same on every row of the currency). */
 export type CategorySqlRow = KeyedSqlRow & { round_off: number; inr_round_off: number | null };
@@ -1040,10 +1047,12 @@ export type RoundOffSqlRow = { currency: "INR" | "USD"; round_off: number; inr_r
 
 /** The reference twins of the kind and category pivots (tests only). */
 export const REVENUE_KIND_GROUPED_SQL = /* @__PURE__ */ (() =>
-  `SELECT x.k AS key, x.cu AS currency, count(*) AS documents, sum(x.sgn * x.taxable) AS taxable, sum(x.sgn * x.total) AS total
+  `SELECT x.k AS key, x.cu AS currency, count(*) AS documents, sum(x.sgn * x.taxable) AS taxable, sum(x.sgn * x.total) AS total,
+     count(*) - count(CASE WHEN x.inr_taxable IS NOT NULL AND x.inr_total IS NOT NULL THEN 1 END) AS documents_inr_missing
    FROM (${DOC_ROWS.replace(" INDEXED BY documents_issued_on", "")}) x GROUP BY x.k, x.cu ORDER BY x.k, x.cu`)();
 export const REVENUE_CATEGORY_GROUPED_SQL = /* @__PURE__ */ (() =>
-  `SELECT x.k AS key, x.cu AS currency, count(*) AS documents, sum(x.sgn * x.taxable) AS taxable, sum(x.sgn * x.total) AS total
+  `SELECT x.k AS key, x.cu AS currency, count(*) AS documents, sum(x.sgn * x.taxable) AS taxable, sum(x.sgn * x.total) AS total,
+     count(*) - count(CASE WHEN x.inr_taxable IS NOT NULL AND x.inr_total IS NOT NULL THEN 1 END) AS documents_inr_missing
    FROM (${LINE_ROWS(false)}) x GROUP BY x.k, x.cu ORDER BY x.k, x.cu`)();
 
 /**

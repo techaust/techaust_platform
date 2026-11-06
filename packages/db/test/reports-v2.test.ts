@@ -486,6 +486,9 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
         expect(r.inr_taxable, k).toBe(i.inr_taxable);
         expect(r.inr_total, k).toBe(i.inr_total);
       }
+      // review 1 finding 4: the documents without an INR value, = the grouped twin's count; INR figures null exactly when it is above 0
+      expect(r.documents_inr_missing, k).toBe(i?.documents_inr_missing ?? 0);
+      expect(r.inr_taxable === null, k).toBe(r.documents_inr_missing > 0);
       expect(r.payments, k).toBe(col.get(k)?.payments ?? 0);
       expect(r.received, k).toBe(col.get(k)?.received ?? 0);
       expect(r.tds, k).toBe(col.get(k)?.tds ?? 0);
@@ -507,9 +510,17 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
     // a USD month with its INR view, and one where a document and a payment lack it
     const aug = rows.find((r) => r.month === "2026-08" && r.currency === "USD");
     expect(aug?.inr_taxable).not.toBeNull();
-    expect(aug).toMatchObject({ inr_missing: 0, inr_collected: 41_000_00 });
+    expect(aug).toMatchObject({ inr_missing: 0, inr_collected: 41_000_00, documents_inr_missing: 0 });
     const sep = rows.find((r) => r.month === "2026-09" && r.currency === "USD");
-    expect(sep).toMatchObject({ inr_taxable: null, inr_total: null, inr_missing: 1, inr_collected: null });
+    expect(sep).toMatchObject({
+      inr_taxable: null,
+      inr_total: null,
+      inr_missing: 1,
+      inr_collected: null,
+      documents: 1,
+      documents_inr_missing: 1, // exp2
+    });
+    expect(rows.filter((r) => r.currency === "INR").every((r) => r.documents_inr_missing === 0)).toBe(true);
     // nothing of March 2026 (the FY before), and every month is in the FY
     expect(rows.every((r) => r.month >= "2026-04" && r.month <= "2027-03")).toBe(true);
   });
@@ -565,10 +576,11 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
     expect(rows.map(keyOf).sort()).toEqual(twin.map((r) => keyOf(r as never)).sort());
     for (const t of twin) {
       const r = rows.find((x) => keyOf(x) === keyOf(t as never));
-      expect({ d: r?.documents, x: r?.taxable, t: r?.total }).toEqual({
+      expect({ d: r?.documents, x: r?.taxable, t: r?.total, m: r?.documents_inr_missing }).toEqual({
         d: t.documents,
         x: t.taxable,
         t: t.total,
+        m: t.documents_inr_missing,
       });
     }
     const inrKinds = Object.fromEntries(
@@ -600,10 +612,11 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
     expect(rows.map(keyOf).sort()).toEqual(twin.map((r) => keyOf(r as never)).sort());
     for (const t of twin) {
       const r = rows.find((x) => keyOf(x) === keyOf(t as never));
-      expect({ d: r?.documents, x: r?.taxable, t: r?.total }).toEqual({
+      expect({ d: r?.documents, x: r?.taxable, t: r?.total, m: r?.documents_inr_missing }).toEqual({
         d: t.documents,
         x: t.taxable,
         t: t.total,
+        m: t.documents_inr_missing,
       });
     }
     const get = (k: string, c: string) => rows.find((r) => r.key === k && r.currency === c);
@@ -613,6 +626,8 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
     expect(get("none", "INR")?.taxable).toBe(2_000_00);
     expect(get("build", "USD")?.inr_taxable).toBe(f.exp1.computed.lines[0]?.inr?.taxableMinor);
     expect(get("run", "USD")?.inr_taxable).toBeNull(); // exp2 has no INR view
+    expect(get("run", "USD")?.documents_inr_missing).toBe(1); // its one line
+    expect(get("build", "USD")?.documents_inr_missing).toBe(0);
     const round = await all<{ currency: string; round_off: number; inr_round_off: number | null }>(
       REVENUE_ROUND_OFF_GROUPED_SQL,
       FY.from,
@@ -677,6 +692,18 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
         expect(a.k > b.k || (a.k === b.k && a.client_id < b.client_id)).toBe(true);
       }
     }
+    // the USD client: exp1 has its INR view, exp2 none (review 1 finding 4)
+    const usdRows = await all<RevenueClientSqlRow>(
+      REVENUE_CLIENTS_SQL(false),
+      ...revenueClientsBinds(FY.from, FY.to, "USD"),
+    );
+    expect(usdRows.find((r) => r.client_id === f.usd)).toMatchObject({
+      documents: 2,
+      documents_inr_missing: 1,
+      inr_taxable: null,
+      inr_total: null,
+    });
+    expect(inr.every((r) => r.documents_inr_missing === 0)).toBe(true);
     const mine = inr.find((r) => r.client_id === f.inr);
     expect(mine).toMatchObject({
       currency: "INR",

@@ -204,7 +204,8 @@ export type DashboardReportLinks = {
 /**
  * Invoiced figures of one currency (C1, C2): tax invoices, export invoices and debit notes add, credit notes subtract, voided documents and proformas never.
  * `count` is documents (lines for a category). The INR equivalents are the frozen INR values (RA-21: the time-of-supply rate on the invoice, never converted
- * again); null when any USD document lacks one (L4).
+ * again); null when any USD document lacks one (L4). `inrMissing`: how many of the `count` documents (lines for a category) have no INR value, `count` less
+ * those with one (review 1 finding 4; 0 for INR, and above 0 exactly when the INR figures are null): the SPA's "{count} USD invoices have no INR value" line.
  */
 export type InvoicedFigures = {
   currency: Currency;
@@ -213,6 +214,7 @@ export type InvoicedFigures = {
   totalMinor: number;
   inrTaxableMinor: number | null;
   inrTotalMinor: number | null;
+  inrMissing: number;
 };
 
 /**
