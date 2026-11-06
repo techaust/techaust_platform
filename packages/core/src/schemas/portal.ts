@@ -5,6 +5,7 @@
 // `@techaust/core/portal-schemas`.
 import * as z from "zod/mini";
 import { parseIsoDate } from "../dates.ts";
+import { REQUEST_KINDS as DSR_REQUEST_KINDS } from "../dsr.ts";
 import { normaliseReference } from "../export-invoice.ts";
 import {
   detailsRequired,
@@ -13,8 +14,8 @@ import {
   NOTICE_REFERENCE_MAX,
   REQUEST_CLOSE_NOTE_MAX,
   REQUEST_DETAILS_MAX,
-  REQUEST_KINDS,
   REQUEST_OUTCOMES,
+  type RequestKind,
 } from "../portal.ts";
 
 // C0 and C1 control characters: a single-line field allows none; a multi-line one only tab and line feed (a carriage return is folded into a line feed first).
@@ -64,7 +65,8 @@ export const storedPhone = (phone: string | null): string | null =>
  */
 export const clientRequest = z
   .strictObject({
-    kind: z.enum(REQUEST_KINDS),
+    // M7.4 (E, L9): M7.1's five kinds and the two 07-A §6 promises, consent withdrawal and nomination (07-ZR C5, C6).
+    kind: z.enum(DSR_REQUEST_KINDS),
     details: z.optional(z.nullable(z.string())),
   })
   .check(
@@ -72,7 +74,7 @@ export const clientRequest = z
       message: "details_invalid",
       path: ["details"],
     }),
-    z.refine((v) => !detailsRequired(v.kind) || !blank(v.details), {
+    z.refine((v) => !detailsRequired(v.kind as RequestKind) || !blank(v.details), {
       message: "details_required",
       path: ["details"],
     }),

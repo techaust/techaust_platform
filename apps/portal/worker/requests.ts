@@ -9,7 +9,7 @@
 // `client_requests_open_kind` backs it) and it sent fewer than 5 today in IST (429 `too_many_requests`, `REQUESTS_TODAY_SQL`). The audit row is written only if
 // the insert happened, the access row only if the audit row exists; a read in the same batch explains a refusal. Then the staff bell is asked of the jobs
 // Worker (`portal.alert`, L9: portal SQL never names a staff table). No email in M7.1 (L16): the screen acknowledges.
-import { requestDueAtSql } from "@techaust/core/dsr";
+import { requestDueAt, requestDueAtSql } from "@techaust/core/dsr";
 import { uuidv7 } from "@techaust/core/ids";
 import { portalAlertMessage, REQUESTS_PER_DAY } from "@techaust/core/portal";
 import { clientRequest, requestDetailsOf } from "@techaust/core/portal-schemas";
@@ -126,6 +126,7 @@ export const requests = new Hono<AppEnv>().post("/", json(clientRequest), async 
     outcome: null,
     created_at: now,
     closed_at: null,
+    due_at: requestDueAt(now),
   };
   return c.json({ request: requestOf(row) }, 201);
 });
