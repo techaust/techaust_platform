@@ -247,12 +247,12 @@
   color: var(--color-text);
 }
 
-/* Q5: nothing collected this month, last month's comparison under the empty line. */
+/* Q5: nothing collected this month, last month's comparison under the empty line, aligned with its words (after the 20 px icon and its gap). */
 .fin-deltas {
   display: grid;
   gap: var(--space-1);
-  margin: var(--space-3) 0 0;
-  padding: 0;
+  margin: var(--space-2) 0 0;
+  padding: 0 0 0 calc(var(--space-5) + var(--space-3));
   list-style: none;
 }
 

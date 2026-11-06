@@ -276,6 +276,25 @@ test("care plan hours: the month's periods with the used meter and the billed st
     await expect(table.getByRole("columnheader", { name: col })).toBeVisible();
 });
 
+test("care plan hours: a period that has not begun says when it starts, in place of its usage and billed state (a mocked answer)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const later = addDays(istToday(), 9);
+  await page.route(/\/api\/v1\/reports\/care-hours\?/, async (route) => {
+    const res = await route.fetch();
+    const body = (await res.json()) as { rows: { period: { start: string; end: string } }[] };
+    const r = body.rows[0];
+    if (r) r.period = { start: later, end: addDays(later, 29) };
+    await route.fulfill({ response: res, json: body });
+  });
+  await page.goto("/reports/care-hours");
+  const table = page.getByRole("table", { name: /Care plan hours/ });
+  await expect(table.getByText(/^Starts \d{2} [A-Z][a-z]{2} \d{4}$/)).toBeVisible();
+  await expect(table.getByText("Not billed yet")).toHaveCount(0);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/care-hours-starts-1280.png`, fullPage: true });
+});
+
 test("dashboard v2: deltas in words, the overdue buckets, the leads trend and the reports", async ({
   page,
 }) => {
@@ -301,8 +320,10 @@ test("All payments reads newest received first (C8), the date received leading e
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/payments?tab=all");
   const table = page.getByRole("table").first();
-  await expect(table.locator("tbody tr").first()).toBeVisible();
-  const days = await table.locator("tbody tr > :first-child").allInnerTexts();
+  // the rows themselves, not the loading skeleton's (hidden from assistive technology)
+  await expect(page.getByText("Loading payments")).toHaveCount(0);
+  await expect(table.locator("tbody tr:not([aria-hidden])").first()).toBeVisible();
+  const days = await table.locator("tbody tr:not([aria-hidden]) > :first-child").allInnerTexts();
   // the date cell may carry words for a screen reader beside the day: read the day alone
   const iso = days
     .map((d) => /\d{2} [A-Z][a-z]{2} \d{4}/.exec(d)?.[0])
@@ -339,6 +360,8 @@ test("revenue: USD invoices with no INR value say so, and the INR totals are not
     const body = (await res.json()) as {
       months: { month: string; invoiced: Record<string, unknown>[]; collected: Record<string, unknown>[] }[];
     };
+    // B3's answer: every invoiced figure carries `inrMissing` (0 unless a USD document lacks its INR value)
+    for (const month of body.months) for (const i of month.invoiced) i.inrMissing ??= 0;
     const m = body.months[0];
     if (m) {
       m.invoiced = [
