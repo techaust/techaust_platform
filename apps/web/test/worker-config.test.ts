@@ -10,6 +10,8 @@ import { describe, expect, it } from "vitest";
 import * as bindingGuard from "../../../scripts/check-web-bindings.mjs";
 // @ts-expect-error plain .mjs without types
 import * as guard from "../../../scripts/check-worker-config.mjs";
+// @ts-expect-error plain .mjs without types
+import * as inventory from "../../../scripts/route-inventory-lib.mjs";
 import app from "../src/worker.ts";
 
 const config = guard.parseJsonc(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
@@ -36,6 +38,24 @@ describe("web run_worker_first (audit L1)", () => {
         `${r.method} ${r.path} must be in run_worker_first`,
       ).toBe(true);
     }
+  });
+
+  it("the route inventory's web rows (scripts/route-inventory-lib.mjs) are the Worker's routes, each covered by run_worker_first (M7.5 B2)", () => {
+    const text = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
+    const rows = inventory.webRows(text("../src/worker.ts"), text("../src/forms.ts")) as {
+      method: string;
+      path: string;
+    }[];
+    const real = app.routes
+      .filter((r) => !r.path.endsWith("*"))
+      .map((r) => r.path)
+      .sort();
+    expect(rows.map((r) => r.path).sort()).toEqual(real);
+    for (const r of rows)
+      expect(
+        patterns.some((p) => matches(p, r.path.replace(/:kind$/, "contact"))),
+        r.path,
+      ).toBe(true);
   });
 
   it.each(["/api/nope", "/api/x", "/api", "/api/geo2", "/api/form/x"])(

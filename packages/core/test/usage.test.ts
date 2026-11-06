@@ -24,9 +24,19 @@ const answer = (account: unknown, errors: unknown = null) =>
 describe("usage message and day", () => {
   it("the UTC day before the cron's run, and a message only with a real ISO day", () => {
     expect(usageDayOf(Date.UTC(2026, 0, 1, 22))).toBe("2025-12-31");
-    expect(usageMessageOf(Date.UTC(2026, 10, 7, 22))).toEqual({ v: 1, kind: "usage.daily", day: "2026-11-06" });
+    expect(usageMessageOf(Date.UTC(2026, 10, 7, 22))).toEqual({
+      v: 1,
+      kind: "usage.daily",
+      day: "2026-11-06",
+    });
     expect(isUsageMessage({ v: 1, kind: "usage.daily", day: "2026-11-06" })).toBe(true);
-    for (const bad of [null, "x", { kind: "usage.daily" }, { v: 2, kind: "usage.daily", day: "2026-11-06" }, { v: 1, kind: "usage.daily", day: "6 Nov" }])
+    for (const bad of [
+      null,
+      "x",
+      { kind: "usage.daily" },
+      { v: 2, kind: "usage.daily", day: "2026-11-06" },
+      { v: 1, kind: "usage.daily", day: "6 Nov" },
+    ])
       expect(isUsageMessage(bad)).toBe(false);
     expect(isUsageKind({ kind: "usage.daily" })).toBe(true);
     expect(isUsageKind({ kind: "stats.metric" })).toBe(false);
@@ -34,7 +44,11 @@ describe("usage message and day", () => {
   });
 
   it("the query names the three datasets, and the variables cover exactly one UTC day", () => {
-    for (const ds of ["workersInvocationsAdaptive", "d1AnalyticsAdaptiveGroups", "queueMessageOperationsAdaptiveGroups"])
+    for (const ds of [
+      "workersInvocationsAdaptive",
+      "d1AnalyticsAdaptiveGroups",
+      "queueMessageOperationsAdaptiveGroups",
+    ])
       expect(USAGE_QUERY).toContain(ds);
     expect(usageVariables("tag", "2026-02-28")).toEqual({
       a: "tag",
@@ -85,7 +99,10 @@ describe("parseUsage", () => {
       missing: ["d1", "queues"],
       errors: 1,
     });
-    expect(parseUsage(answer({ w: null, d: null, q: null }, [{}]))).toEqual({ ok: false, reason: "graphql_error" });
+    expect(parseUsage(answer({ w: null, d: null, q: null }, [{}]))).toEqual({
+      ok: false,
+      reason: "graphql_error",
+    });
     expect(parseUsage(answer(undefined))).toEqual({ ok: false, reason: "no_account" });
     expect(parseUsage(JSON.stringify({ errors: [{}] }))).toEqual({ ok: false, reason: "graphql_error" });
     expect(parseUsage("nope")).toEqual({ ok: false, reason: "not_json" });
@@ -94,9 +111,13 @@ describe("parseUsage", () => {
   it("never keeps a value that isn't a count, nor a dimension that isn't a plain code (property)", () => {
     fc.assert(
       fc.property(fc.anything(), fc.anything(), (requests, name) => {
-        const r = parseUsage(answer({ w: [{ sum: { requests }, dimensions: { scriptName: name } }], d: null, q: null }));
+        const r = parseUsage(
+          answer({ w: [{ sum: { requests }, dimensions: { scriptName: name } }], d: null, q: null }),
+        );
         if (!r.ok) return true;
-        return r.rows.every((x) => Number.isSafeInteger(x.value) && x.value >= 0 && /^[A-Za-z0-9._-]{0,80}$/.test(x.dimension));
+        return r.rows.every(
+          (x) => Number.isSafeInteger(x.value) && x.value >= 0 && /^[A-Za-z0-9._-]{0,80}$/.test(x.dimension),
+        );
       }),
     );
   });
@@ -116,12 +137,17 @@ describe("alert lines", () => {
 
   it("the bell title names the metric, the line, the day and both figures", () => {
     expect(
-      usageBellTitle({ metric: "cf.d1.rows_written", threshold: 50, value: 51_000, limit: 100_000 }, "2026-11-06"),
+      usageBellTitle(
+        { metric: "cf.d1.rows_written", threshold: 50, value: 51_000, limit: 100_000 },
+        "2026-11-06",
+      ),
     ).toBe("Free plan: D1 rows written at 50 % of the daily limit on 2026-11-06 (51,000 of 1,00,000)");
   });
 
   it("the newest day among recorded rows", () => {
     expect(newestUsageDay([])).toBeNull();
-    expect(newestUsageDay([{ date: "2026-11-05" }, { date: "2026-11-06" }, { date: "2026-11-04" }])).toBe("2026-11-06");
+    expect(newestUsageDay([{ date: "2026-11-05" }, { date: "2026-11-06" }, { date: "2026-11-04" }])).toBe(
+      "2026-11-06",
+    );
   });
 });
