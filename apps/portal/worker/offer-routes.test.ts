@@ -349,12 +349,14 @@ describe("downloads: streamed, with the safe headers [POR-04]", () => {
     const res = await call(`/offers/${o.id}/pdf`, { cookie: await sign(f.a.finance) });
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toBe("application/pdf");
+    // M7.5 (C3b, L12): the shared download headers: contentDisposition() (both filename forms), `default-src 'none'; sandbox`, never indexed.
     expect(res.headers.get("Content-Disposition")).toMatch(
-      /^attachment; filename="TH-PRP-2627-\d{4}-v1\.pdf"$/,
+      /^attachment; filename="TH-PRP-2627-\d{4}-v1\.pdf"; filename\*=UTF-8''TH-PRP-2627-\d{4}-v1\.pdf$/,
     );
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(res.headers.get("Content-Security-Policy")).toBe("sandbox");
+    expect(res.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox");
+    expect(res.headers.get("X-Robots-Tag")).toBe("noindex");
     expect(await res.text()).toContain(`%PDF-1.4 sample ${o.id}`);
   });
   it("the body is a stream: the handler never reads it into memory", async () => {
@@ -413,7 +415,9 @@ describe("downloads: streamed, with the safe headers [POR-04]", () => {
       .run();
     const ok = await call(`/offers/${o.id}/certificate`, { cookie });
     expect(ok.status).toBe(200);
-    expect(ok.headers.get("Content-Disposition")).toMatch(/-certificate\.pdf"$/);
+    expect(ok.headers.get("Content-Disposition")).toMatch(
+      /-certificate\.pdf"; filename\*=UTF-8''.*-certificate\.pdf$/,
+    );
     expect(await ok.text()).toContain("certificate");
   });
 });
