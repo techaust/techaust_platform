@@ -3,7 +3,7 @@
 // over, and whether the period is billed (its care invoice's day and number, a draft, "Not billed yet" or "Draft discarded"). Hours only: an overage is
 // priced on the care invoice (C19), never here. The month is in the URL; "Show more" reads the next 50 plans; "Export CSV" writes the rows on screen.
 import type { CareHoursRow } from "@techaust/core/reports";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RequestError } from "../../api.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
 import { EmptyState } from "../../components/display.tsx";
@@ -18,6 +18,7 @@ import {
   M73_TITLES,
   monthChoices,
   monthName,
+  notStarted,
   REVENUE_COPY,
 } from "../../lib/m73-reports.ts";
 import { todayIst } from "../../lib/payments.ts";
@@ -33,31 +34,40 @@ export function CareHoursReport() {
   const m = params.get("month") ?? "";
   const month = choices.some((c) => c.value === m) ? m : (choices[0]?.value ?? today.slice(0, 7));
   const first = useLoad(() => m73Api.careHours(month), month);
+  // the API's own IST day (a period starting after it hasn't begun: "Starts {date}")
+  const day = first.state === "ready" ? first.data.today : today;
   const [more, setMore] = useState<CareHoursRow[]>([]);
   const [next, setNext] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string | null>(null);
+  // a new month starts a new list; a late "Show more" page of the old one is dropped (review 1, finding 13)
+  const listRun = useRef(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new first page starts the list again
   useEffect(() => {
+    listRun.current++;
     setMore([]);
     setMoreError(null);
+    setLoadingMore(false);
     setNext(first.state === "ready" ? first.data.next : null);
   }, [first.state, month]);
   const rows = first.state === "ready" ? [...first.data.rows, ...more] : [];
   async function showMore() {
     if (!next) return;
+    const run = listRun.current;
     setLoadingMore(true);
     setMoreError(null);
     try {
       const p = await m73Api.careHours(month, next);
+      if (run !== listRun.current) return;
       setMore((x) => [...x, ...p.rows]);
       setNext(p.next);
     } catch (e) {
-      setMoreError(
-        e instanceof RequestError && e.code === "month_invalid" ? C.monthInvalid : reportErrorText(e),
-      );
+      if (run === listRun.current)
+        setMoreError(
+          e instanceof RequestError && e.code === "month_invalid" ? C.monthInvalid : reportErrorText(e),
+        );
     } finally {
-      setLoadingMore(false);
+      if (run === listRun.current) setLoadingMore(false);
     }
   }
   const columns: Column<CareHoursRow>[] = [
@@ -88,38 +98,53 @@ export function CareHoursReport() {
     {
       key: "used",
       header: C.used,
-      cell: (r) => (
-        <div className="m73-care-used">
-          <HoursBar
-            usage={{
-              used: r.usedMinutes,
-              available: r.availableMinutes,
-              flag: r.flag,
-              overageMinutes: r.overageMinutes,
-            }}
-            label={r.client.name}
-          />
-          <FlagPill flag={r.flag} />
-        </div>
-      ),
+      cell: (r) =>
+        notStarted(r.period, day) ? (
+          <span className="m73-care-starts">{C.starts(isoDayText(r.period.start))}</span>
+        ) : (
+          <div className="m73-care-used">
+            <HoursBar
+              usage={{
+                used: r.usedMinutes,
+                available: r.availableMinutes,
+                flag: r.flag,
+                overageMinutes: r.overageMinutes,
+              }}
+              label={r.client.name}
+            />
+            <FlagPill flag={r.flag} />
+          </div>
+        ),
     },
     {
       key: "over",
       header: C.over,
       align: "end",
-      cell: (r) => <span className="tnum">{r.overageMinutes > 0 ? hoursText(r.overageMinutes) : "–"}</span>,
+      cell: (r) =>
+        notStarted(r.period, day) ? (
+          <span className="m73-zero" aria-hidden="true">
+            –
+          </span>
+        ) : (
+          <span className="tnum">{r.overageMinutes > 0 ? hoursText(r.overageMinutes) : "–"}</span>
+        ),
     },
     {
       key: "billed",
       header: C.billedOn,
-      cell: (r) => (
-        <span className="m73-billed">
-          <span>{billedText(r.billed, isoDayText)}</span>
-          {r.overageBilled && (
-            <span className="m73-money__inr">{C.overageOn(billedText(r.overageBilled, isoDayText))}</span>
-          )}
-        </span>
-      ),
+      cell: (r) =>
+        notStarted(r.period, day) ? (
+          <span className="m73-zero" aria-hidden="true">
+            –
+          </span>
+        ) : (
+          <span className="m73-billed">
+            <span>{billedText(r.billed, isoDayText)}</span>
+            {r.overageBilled && (
+              <span className="m73-money__inr">{C.overageOn(billedText(r.overageBilled, isoDayText))}</span>
+            )}
+          </span>
+        ),
     },
   ];
   const caption = `${M73_TITLES.careHours}, ${monthName(month)}`;
@@ -137,7 +162,7 @@ export function CareHoursReport() {
             <ExportButton<CareHoursRow>
               local
               read={async () => rows}
-              build={(all) => careHoursCsv(all, month)}
+              build={(all) => careHoursCsv(all, month, day)}
               filename={`care-plan-hours-${month}.csv`}
               progress={() => ""}
             />

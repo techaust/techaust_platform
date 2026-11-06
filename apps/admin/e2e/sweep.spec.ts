@@ -166,10 +166,11 @@ test.describe("admin sweep", () => {
     }
   }
 
-  // The other widths of the audit's set (a phone, a laptop, a wide screen): no sideways page scroll, in the light theme.
-  test("every route at 375, 1280 and 1600 px: no sideways page scroll", async ({ page }) => {
-    const problems: string[] = [];
-    for (const width of [375, 1280, 1600]) {
+  // The other widths of the audit's set (a phone, a laptop, a wide screen): no sideways page scroll, in the light theme. One test per width: the three
+  // together visit every route three times (about 180 page loads), more than one test's 15 minutes once M7.3 added its routes (M7.3 D2).
+  for (const width of [375, 1280, 1600] as const) {
+    test(`every route at ${width} px: no sideways page scroll`, async ({ page }) => {
+      const problems: string[] = [];
       await page.setViewportSize({ width, height: 900 });
       for (const route of routes) {
         await page.goto(route);
@@ -180,9 +181,9 @@ test.describe("admin sweep", () => {
         ]);
         if ((d[0] ?? 0) > (d[1] ?? 0)) problems.push(`${route} at ${width}: ${d[0]} > ${d[1]}`);
       }
-    }
-    expect(problems, problems.join("\n")).toEqual([]);
-  });
+      expect(problems, problems.join("\n")).toEqual([]);
+    });
+  }
 
   test("a table wider than its box is a keyboard stop that the arrow keys scroll", async ({ page }) => {
     // Every route at 768, and Settings › Numbering at 1024, where its table sits beside the settings menu and is known to scroll in its

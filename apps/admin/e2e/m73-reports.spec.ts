@@ -119,9 +119,14 @@ async function axe(page: Page) {
   return r.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`);
 }
 
-/** The page never scrolls sideways (a wide table scrolls inside its own box, a named keyboard stop). */
-async function noSideways(page: Page) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
+/** The page never scrolls sideways (a wide table scrolls inside its own box, a named keyboard stop): the sweep's measure, `scrollWidth` against `clientWidth`
+ * (review 1, finding 15c; `innerWidth` counts a scrollbar and allowed a pixel). */
+async function noSideways(page: Page, at: string) {
+  const [scroll, client] = await page.evaluate(() => [
+    document.documentElement.scrollWidth,
+    document.documentElement.clientWidth,
+  ]);
+  expect(scroll, `${at}: ${scroll} > ${client}`).toBeLessThanOrEqual(client ?? 0);
 }
 
 const SCREENS: [string, string, string][] = [
@@ -153,7 +158,7 @@ for (const theme of ["light", "dark"] as const)
           await expect(page.getByRole("heading", { name: "Reports", level: 2 })).toBeVisible();
         expect(await page.locator("html").getAttribute("data-theme")).toBe(theme);
         if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}-${width}-${theme}.png`, fullPage: true });
-        await noSideways(page);
+        await noSideways(page, `${name} at ${width} (${theme})`);
         expect.soft(await axe(page), `${name} at ${width} (${theme})`).toEqual([]);
       }
     });
@@ -316,7 +321,59 @@ test("the offer list searches by a client's name, in the URL", async ({ page }) 
   await expect(page).toHaveURL(/q=Riverside/);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/proposals-search-1280.png`, fullPage: true });
   await box.fill("zzzz-no-such-client");
+  // the lead's triage of D1 (Q2): a search that matches nothing says what the search reads
+  await expect(page.getByRole("heading", { name: "No proposals or estimates match" })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "No proposals or estimates match these filters" }),
+    page.getByText("Search for the start of a number, a client code or a client name."),
   ).toBeVisible();
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/proposals-no-match-1280.png`, fullPage: true });
+});
+
+test("revenue: USD invoices with no INR value say so, and the INR totals are not shown (a mocked answer with `inrMissing`)", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  // The real answer, with one month's USD invoices made to lack their INR values (B3's `inrMissing` on the invoiced figures) and its USD collections too.
+  await page.route(/\/api\/v1\/reports\/revenue\?/, async (route) => {
+    const res = await route.fetch();
+    const body = (await res.json()) as {
+      months: { month: string; invoiced: Record<string, unknown>[]; collected: Record<string, unknown>[] }[];
+    };
+    const m = body.months[0];
+    if (m) {
+      m.invoiced = [
+        ...m.invoiced.filter((i) => i.currency !== "USD"),
+        {
+          currency: "USD",
+          count: 2,
+          taxableMinor: 200_000,
+          totalMinor: 200_000,
+          inrTaxableMinor: null,
+          inrTotalMinor: null,
+          inrMissing: 2,
+        },
+      ];
+      m.collected = [
+        ...m.collected.filter((c) => c.currency !== "USD"),
+        {
+          currency: "USD",
+          payments: 1,
+          receivedMinor: 50_000,
+          refundedMinor: 0,
+          collectedMinor: 50_000,
+          tdsMinor: 0,
+          inrCollectedMinor: null,
+          inrMissing: 1,
+        },
+      ];
+    }
+    await route.fulfill({ response: res, json: body });
+  });
+  await page.goto("/reports/revenue");
+  await expect(
+    page.getByText("2 USD invoices have no INR value, so the INR total is not shown."),
+  ).toBeVisible();
+  await expect(page.getByText(/USD payments? or refunds? ha(s|ve) no INR amount recorded/)).toBeVisible();
+  await expect(page.getByText("Total in INR", { exact: true })).toHaveCount(0);
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/revenue-inr-missing-1280.png`, fullPage: true });
 });

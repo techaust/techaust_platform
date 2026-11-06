@@ -5,7 +5,7 @@
 // a fresh code and reads every page through the audited export twin.
 import type { AgeingRow } from "@techaust/core/reports";
 import { AGEING_BUCKETS, type AgeingBucket } from "@techaust/core/reports";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
 import { ChartFrame, Legend, SegmentedBar, type Tone } from "../../components/chart/index.ts";
@@ -41,23 +41,32 @@ export function AgeingReport() {
   const [next, setNext] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string | null>(null);
+  // a reload starts a new list; a late "Show more" page of the old one is dropped (review 1, finding 13)
+  const listRun = useRef(0);
+  // the export's own "As at": its first page's, never the screen's (review 1, finding 11)
+  const exportAsOf = useRef("");
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new first page starts the list again
   useEffect(() => {
+    listRun.current++;
     setMore([]);
+    setMoreError(null);
+    setLoadingMore(false);
     setNext(first.state === "ready" ? first.data.next : null);
   }, [first.state]);
   async function showMore() {
     if (!next) return;
+    const run = listRun.current;
     setLoadingMore(true);
     setMoreError(null);
     try {
       const p = await m73Api.ageing(next);
+      if (run !== listRun.current) return;
       setMore((m) => [...m, ...p.rows]);
       setNext(p.next);
     } catch (e) {
-      setMoreError(reportErrorText(e));
+      if (run === listRun.current) setMoreError(reportErrorText(e));
     } finally {
-      setLoadingMore(false);
+      if (run === listRun.current) setLoadingMore(false);
     }
   }
   const asOf = first.state === "ready" ? first.data.asOf : null;
@@ -84,10 +93,12 @@ export function AgeingReport() {
             <ExportButton<AgeingRow>
               read={async (onProgress, stopped) => {
                 const r = await readPages((after) => m73Api.ageingExport(after), onProgress, stopped);
-                return r ? r.rows : null;
+                if (!r) return null;
+                exportAsOf.current = r.first.asOf;
+                return r.rows;
               }}
-              build={(all) => ageingCsv(all, asOf ?? "", AGEING_BUCKETS)}
-              filename={`outstanding-and-ageing-${asOf ?? "today"}.csv`}
+              build={(all) => ageingCsv(all, exportAsOf.current, AGEING_BUCKETS)}
+              filename={() => `outstanding-and-ageing-${exportAsOf.current}.csv`}
               progress={REVENUE_COPY.exporting}
             />
           </div>

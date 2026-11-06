@@ -1153,6 +1153,12 @@
   flex: 1 1 9rem;
 }
 
+/* A period that hasn't begun (finding 6): its start in words where the usage would be. */
+.m73-care-starts {
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 .m73-billed {
   display: grid;
 }

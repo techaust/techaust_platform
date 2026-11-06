@@ -4,15 +4,24 @@
 import type {
   AgeingRow,
   CareHoursRow,
+  RevenueByKey as CoreByKey,
+  RevenueByMonth as CoreByMonth,
+  RevenueClientRow as CoreClientRow,
   PipelineReport,
-  RevenueByKey,
-  RevenueByMonth,
-  RevenueClientRow,
 } from "@techaust/core/reports";
 import { type Currency, qs, request } from "../api.ts";
+import type { Invoiced } from "./m73-reports.ts";
 
 export type RevenueView = "month" | "category" | "kind";
-export type RevenueAnswer = RevenueByMonth | RevenueByKey<string>;
+/** The revenue answers with `inrMissing` on every invoiced figure (`Invoiced`: review 1, finding 4). */
+export type RevenueByMonth = Omit<CoreByMonth, "months"> & {
+  months: (Omit<CoreByMonth["months"][number], "invoiced"> & { invoiced: Invoiced[] })[];
+};
+export type RevenueByKey = Omit<CoreByKey<string>, "rows"> & {
+  rows: { key: string; invoiced: Invoiced[] }[];
+};
+export type RevenueClientRow = Omit<CoreClientRow, "invoiced"> & { invoiced: Invoiced };
+export type RevenueAnswer = RevenueByMonth | RevenueByKey;
 
 export type RevenueClientsPage = {
   fy: string;

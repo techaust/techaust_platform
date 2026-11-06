@@ -1,14 +1,15 @@
 // The words and the pure rules of the M7.3 screens (ADM-REP-01, -02, -03, -05, -06; ADM-DASH-01; ADM-G-05): the four management reports (revenue and
 // collections, outstanding and ageing, pipeline and win rate, care plan hours), the dashboard v2 additions and the offer list's search. Copy C1 to C24 is the run
 // file's section H (docs/runs/m7.3-reports.md), word for word, approved by the lead under the owner's delegation (staff screens); C18b and the `month_invalid`
-// line are the lead's triage. A line H lacks is marked DRAFT here, listed in the designer's report for the lead's approval, and never invented elsewhere.
+// line are the lead's triage. The lines H lacked were drafted by D1 and approved by the lead under the delegation (lead's triage of D1); the review-1 lines
+// (C7 for payments and refunds, the invoices' INR line, "Starts {date}", "{to} on {date}", the offer search's no-match line) are the lead's own words; the
+// pipeline's per-block empty lines were drafted by D2 for the lead's approval at the re-check (review 1, finding 1). Nothing here is invented elsewhere.
 //
 // Money: every figure is the API's integer minor units; the only arithmetic here goes through core (`sum`, `negate`, `formatMoney`), never rupees and dollars
 // together except the labelled "Total in INR", which adds INR amounts only (INR documents and the frozen INR values of USD ones, L4) and is shown only when every
 // USD figure has its INR value (C7 otherwise). Reports are not tax documents (Researched 2026-10-28 (08-C RA-28)).
-import { type Currency, formatMoney, money, negate, sum } from "@techaust/core";
+import { type Currency, formatMoney, money, negate, sum, toDecimalString } from "@techaust/core";
 import { CATALOGUE_CATEGORIES } from "@techaust/core/catalogue";
-import { parseIsoDate } from "@techaust/core/dates";
 import type {
   AgeingBucket,
   CareBilled,
@@ -17,7 +18,7 @@ import type {
   RevenueKind,
   TimeToWinBand,
 } from "@techaust/core/reports";
-import { csvCell, plainAmount } from "./payments.ts";
+import { csvCell } from "./payments.ts";
 
 // ---- C1 to C4: the report names (the section index) ---------------------------------------------------------------------------------------------------
 
@@ -43,8 +44,16 @@ export const REVENUE_COPY = {
   /** C6 (M6.1 L15; RA-21: the invoice's frozen INR, never converted again) */
   inrNote:
     "INR equivalent: invoices at the rate on the invoice; payments at the INR amount on the bank advice.",
-  /** C7 */
-  inrMissing: (n: number) => `${n} USD payments have no INR amount recorded, so the INR total is not shown.`,
+  /** C7 (lead's triage of review 1, finding 5: payments and refunds alike, singular handled) */
+  inrMissing: (n: number) =>
+    n === 1
+      ? "1 USD payment or refund has no INR amount recorded, so the INR total is not shown."
+      : `${n} USD payments or refunds have no INR amount recorded, so the INR total is not shown.`,
+  /** Lead's triage of D1 (Q3) and review 1 (finding 4): USD invoices the API counts as lacking an INR value (`inrMissing` on the invoiced figures). */
+  invoicedInrMissing: (n: number) =>
+    n === 1
+      ? "1 USD invoice has no INR value, so the INR total is not shown."
+      : `${n} USD invoices have no INR value, so the INR total is not shown.`,
   /** C10 */
   noCategory: "Not from the catalogue",
   /** C11 (L8) */
@@ -53,37 +62,37 @@ export const REVENUE_COPY = {
   empty: (fy: string) => `Nothing invoiced in ${fy}.`,
   /** C21 */
   exportCsv: "Export CSV",
-  // ---- DRAFT (not in H; for the lead's approval) ----
-  /** DRAFT: the view switch's legend and options (the brief's `by=month|category|kind`). */
+  // ---- not in H: drafted by D1, approved by the lead (triage of D1) ----
+  /** the view switch's legend and options (the brief's `by=month|category|kind`) */
   view: "Show by",
   byMonth: "Month",
   byCategory: "Category",
   byKind: "Kind of work",
-  /** DRAFT: the currency switch's legend (shown only when the year has both currencies). */
+  /** the currency switch's legend (shown only when the year has both currencies). */
   currency: "Currency",
-  /** DRAFT: the shared rules' "Total in INR" (brief C, shared rules), the label of the INR figure across both currencies. */
+  /** the shared rules' "Total in INR" (brief C, shared rules), the label of the INR figure across both currencies. */
   totalInInr: "Total in INR",
-  /** DRAFT: the closing row of a table (the financial year's figures). */
+  /** the closing row of a table (the financial year's figures). */
   fyTotal: (fy: string) => `Total for ${fy}`,
-  /** DRAFT: the category table's columns (C5 has the money columns). */
+  /** the category table's columns (C5 has the money columns). */
   category: "Category",
   kind: "Kind",
-  /** DRAFT: a category counts lines, not documents (analyst's note). */
+  /** a category counts lines, not documents (analyst's note). */
   lines: "Lines",
   documents: "Documents",
   /** existing word (documents.ts `roundOff`): the documents' round-off, one row per currency, in no category */
   roundOff: "Round-off",
-  /** DRAFT: the per-client block (C2 of the routes) and its client column (PAY_UI.colClient). */
+  /** the per-client block (C2 of the routes) and its client column (PAY_UI.colClient). */
   perClient: "By client",
   client: "Client",
   showMore: "Show more",
-  /** DRAFT: the chart titles (single series: the title names it). */
+  /** the chart titles (single series: the title names it). */
   chartMonths: (currency: Currency) => `Invoiced and collected by month, ${currency}`,
   chartCategories: (currency: Currency) => `Invoiced by category before GST, ${currency}`,
   chartKinds: (currency: Currency) => `Invoiced by kind of work before GST, ${currency}`,
-  /** DRAFT: an empty view of one currency (the year has the other currency only). */
+  /** an empty view of one currency (the year has the other currency only). */
   emptyCurrency: (currency: Currency, fy: string) => `Nothing invoiced in ${currency} in ${fy}.`,
-  /** DRAFT: the export's progress and refusal lines. */
+  /** the export's progress and refusal lines. */
   exporting: (n: number) => (n === 1 ? "1 client read so far" : `${n} clients read so far`),
   exportCancelled: "Cancelled. No file was made.",
 } as const;
@@ -121,16 +130,15 @@ export const AGEING_COPY = {
     `As at today (${date}). Credit held is shown apart and is not taken off the amounts due.`,
   /** C20 */
   empty: "Nothing outstanding.",
-  // ---- DRAFT ----
-  /** DRAFT: the total column (07-V's "Total", Table 13's column word). */
+  // ---- not in H: drafted by D1, approved by the lead ----
+  /** the total column (07-V's "Total", Table 13's column word). */
   total: "Total",
   client: "Client",
-  /** DRAFT: the statement link's words for a screen reader and the cell's visible text. */
+  /** the statement link's words for a screen reader and the cell's visible text. */
   openStatement: "Open statement",
-  /** DRAFT: the per-currency heading and the totals row. */
+  /** the per-currency heading and the totals row. */
   owedIn: (currency: Currency) => `Owed in ${currency}`,
   allClients: "All clients",
-  /** DRAFT: the dashboard tile's link to the report (C2's own name). */
 } as const;
 
 // ---- C14 to C16, C20, C24: pipeline and win rate --------------------------------------------------------------------------------------------------------
@@ -148,7 +156,7 @@ export const PIPELINE_COPY = {
   empty: "No leads in this period.",
   /** C24 (Q1 A) */
   usdNote: "USD offers are shown in USD: an offer has no exchange rate until it is invoiced.",
-  // ---- DRAFT ----
+  // ---- not in H: drafted by D1, approved by the lead ----
   from: "From",
   to: "To",
   show: "Show",
@@ -182,15 +190,19 @@ export const PIPELINE_COPY = {
   ofDecided: (accepted: number, decided: number) => `${accepted} accepted of ${decided} decided`,
   wins: (n: number) => (n === 1 ? "1 win" : `${n} wins`),
   noTrend: "No daily counts in this period yet.",
+  /** Review 1, finding 1: each block says what it lacks (drafted by D2, "No {thing} in this period.", for the lead's approval at the re-check). */
+  emptyLost: "No leads were lost in this period.",
+  emptySources: "No lead sources recorded in this period.",
+  emptyWins: "No wins in this period.",
   noOffers: "No offers were sent in this period.",
-  /** DRAFT: the disclosure that shows a chart's figures as a table (the chart's accessible twin). */
+  /** the disclosure that shows a chart's figures as a table (the chart's accessible twin). */
   asTable: "Show as a table",
   /** the server's range refusals (report-delivery.ts, B1), said before asking */
   rangeInvalid: "Choose a start date on or before the end date",
   rangeTooLong: "Choose a period of up to 366 days",
 } as const;
 
-/** DRAFT: the time-to-win bands, in `TIME_TO_WIN_BANDS` order (the C12 style). */
+/** the time-to-win bands, in `TIME_TO_WIN_BANDS` order (the C12 style). */
 export const BAND_LABELS: Record<TimeToWinBand, string> = {
   d0_7: "0–7 days",
   d8_30: "8–30 days",
@@ -217,14 +229,16 @@ export const CARE_HOURS_COPY = {
   empty: "No active care plans this month.",
   /** the lead's triage of B2 (4): the server's `month_invalid` */
   monthInvalid: "Choose a month up to this one",
-  // ---- DRAFT ----
+  // ---- not in H: drafted by D1, approved by the lead ----
   month: "Month",
   plan: "Care plan",
-  /** DRAFT: a care invoice still a draft, and a voided one (the document words of 07, "Draft" and "Void"). */
+  /** a care invoice still a draft, and a voided one (the document words of 07, "Draft" and "Void"). */
   draft: "Draft",
   void: "Void",
-  /** DRAFT: the overage's own invoice, under the plan's. */
+  /** the overage's own invoice, under the plan's. */
   overageOn: (text: string) => `Overage: ${text}`,
+  /** Lead's triage of review 1 (finding 6): a period that has not begun yet (this month, a plan billing later in it). */
+  starts: (date: string) => `Starts ${date}`,
 } as const;
 
 // ---- C22, C23: the dashboard and the search ----------------------------------------------------------------------------------------------------------------
@@ -239,10 +253,11 @@ export function deltaText(minor: number, currency: Currency, period: string): st
 /** C23 lives with the offer list's words (lib/documents.ts `DOC_PENDING.searchNumberOrClient`), so that chunk doesn't carry this module. */
 
 export const DASH_M73 = {
-  /** DRAFT: the sparkline's accessible name. */
-  trendLabel: (from: number, to: number) => `Open leads over the last 30 days: ${from} then, ${to} now`,
+  /** the sparkline's accessible name; its last point is the nightly count of `date`, not the live Open figure (lead's triage of review 1, finding 12). */
+  trendLabel: (from: number, to: number, date: string) =>
+    `Open leads over the last 30 days: ${from} then, ${to} on ${date}`,
   trendCaption: "Last 30 days",
-  /** DRAFT: the reports tile's heading is 07-V's "Reports"; its links are C1 to C4. */
+  // the reports tile's heading is 07-V's "Reports"; its links are C1 to C4
 } as const;
 
 // ---- months and periods --------------------------------------------------------------------------------------------------------------------------------
@@ -279,14 +294,6 @@ export function monthShort(iso: string): string {
 export const fyLabel = (token: string) =>
   /^\d{4}$/.test(token) ? `20${token.slice(0, 2)}-${token.slice(2)}` : token;
 
-/** The FY token of an IST date ("2026-11-06" → "2627"). */
-export function fyTokenOf(iso: string): string {
-  const d = parseIsoDate(iso);
-  if (!d) return "";
-  const start = d.month >= 4 ? d.year : d.year - 1;
-  return `${String(start % 100).padStart(2, "0")}${String((start + 1) % 100).padStart(2, "0")}`;
-}
-
 /** The months a care-hours report can be read for: this IST month and the eleven before it, newest first (C4 refuses a later month). */
 export function monthChoices(todayIso: string): { value: string; label: string }[] {
   const y = Number(todayIso.slice(0, 4));
@@ -307,8 +314,14 @@ export const sumMinor = (values: readonly number[], currency: Currency): number 
     currency,
   ).amount;
 
+/**
+ * The revenue API's invoiced figures with `inrMissing`: how many USD documents have no INR value, so the INR total is null (review 1, finding 4; B3 adds the
+ * field to core's `InvoicedFigures`, the contract this screen reads; the intersection is then the same type).
+ */
+export type Invoiced = InvoicedFigures & { inrMissing: number };
+
 /** One currency's figures of a month, or zeros when the month has none. */
-export const invoicedOf = (rows: readonly InvoicedFigures[], currency: Currency): InvoicedFigures =>
+export const invoicedOf = (rows: readonly Invoiced[], currency: Currency): Invoiced =>
   rows.find((r) => r.currency === currency) ?? {
     currency,
     count: 0,
@@ -316,6 +329,7 @@ export const invoicedOf = (rows: readonly InvoicedFigures[], currency: Currency)
     totalMinor: 0,
     inrTaxableMinor: 0,
     inrTotalMinor: 0,
+    inrMissing: 0,
   };
 export const collectedOf = (rows: readonly CollectedFigures[], currency: Currency): CollectedFigures =>
   rows.find((r) => r.currency === currency) ?? {
@@ -345,6 +359,50 @@ export function totalInInr(
   return sumMinor(inr, "INR");
 }
 
+/**
+ * The year's "Total in INR" figures and the lines under the months (revenue by month): `usd`/`inr` whether the year has each currency; the invoiced total is
+ * null while `invMissing` USD invoices lack an INR value (lead's Q3 line), the collected total while `missing` USD payments or refunds lack one (C7).
+ */
+export function yearInInr(
+  months: readonly {
+    invoiced: readonly Invoiced[];
+    collected: readonly CollectedFigures[];
+  }[],
+): {
+  usd: boolean;
+  inr: boolean;
+  invInr: number | null;
+  colInr: number | null;
+  invMissing: number;
+  missing: number;
+} {
+  const has = (c: Currency) =>
+    months.some((m) => m.invoiced.some((i) => i.currency === c) || m.collected.some((x) => x.currency === c));
+  const inv = months.flatMap((m) =>
+    m.invoiced.map((i) => ({ currency: i.currency, minor: i.totalMinor, inrMinor: i.inrTotalMinor })),
+  );
+  const col = months.flatMap((m) =>
+    m.collected.map((c) => ({
+      currency: c.currency,
+      minor: c.collectedMinor,
+      inrMinor: c.inrCollectedMinor,
+    })),
+  );
+  const count = (pick: (m: (typeof months)[number]) => number) => months.reduce((n, m) => n + pick(m), 0);
+  const invMissing = count((m) =>
+    m.invoiced.reduce((k, i) => k + (i.currency === "USD" ? i.inrMissing : 0), 0),
+  );
+  const missing = count((m) => m.collected.reduce((k, c) => k + c.inrMissing, 0));
+  return {
+    usd: has("USD"),
+    inr: has("INR"),
+    invInr: invMissing > 0 ? null : totalInInr(inv),
+    colInr: missing > 0 ? null : totalInInr(col),
+    invMissing,
+    missing,
+  };
+}
+
 /** A rate in basis points as "42 %" or "42.5 %" (whole tenths; never a float sum: the digits of the integer). */
 export function rateText(bp: number): string {
   const tenths = Math.round(bp / 10); // basis points → tenths of a per cent, for display only (no money)
@@ -367,16 +425,24 @@ export function billedText(b: CareBilled | null, day: (iso: string) => string): 
 
 // ---- CSV built from the screen's data (L6: pipeline and care; the per-client finance CSVs come from the /export routes) -----------------------------------
 
-const line = (cells: readonly string[]) => cells.map(csvCell).join(",");
-const csv = (rows: readonly (readonly string[])[]) => `${rows.map(line).join("\r\n")}\r\n`;
-const amount = (minor: number | null, currency: Currency) =>
-  minor === null ? "" : plainAmount(minor, currency);
+/**
+ * A CSV cell: text is defused against spreadsheet formulas (`csvCell`); an amount is a number the sheet adds up, written plain (`-1234.50`: ASCII minus, no
+ * grouping, never defused), so a negative isn't read as text (review 1, finding 10; core's `gst/csv.ts` keeps numeric cells apart the same way).
+ */
+type CsvCell = string | { readonly num: string };
+const line = (cells: readonly CsvCell[]) =>
+  cells.map((c) => (typeof c === "string" ? csvCell(c) : c.num)).join(",");
+const csv = (rows: readonly (readonly CsvCell[])[]) => `${rows.map(line).join("\r\n")}\r\n`;
+/** An amount cell: minor units as an exact decimal through core (`toDecimalString`); an unknown value is an empty cell. */
+export const csvAmount = (minor: number | null, currency: Currency): CsvCell =>
+  minor === null ? "" : { num: toDecimalString(money(minor, currency)) };
+const amount = csvAmount;
 
 /** The revenue-per-client CSV (C6's export twin): one row per client, in the API's order; the INR column empty where the value is unknown. */
 export function revenueClientsCsv(
   rows: readonly {
     client: { code: string; name: string };
-    invoiced: InvoicedFigures;
+    invoiced: Invoiced;
     collected: CollectedFigures;
   }[],
   currency: Currency,
@@ -443,7 +509,13 @@ export function ageingCsv(
   ]);
 }
 
-/** The care-hours CSV, from the rows on screen (hours as decimal hours of whole minutes: "1:30" style would be misread by a spreadsheet). */
+/** A care period that has not begun by `today` (IST): the screen shows "Starts {date}" in place of its usage and billed state (review 1, finding 6). */
+export const notStarted = (period: { start: string }, today: string): boolean => period.start > today;
+
+/**
+ * The care-hours CSV, from the rows on screen (minutes as whole numbers: "1:30" style would be misread by a spreadsheet). A period that starts after `today`
+ * says so in the billed column, as on screen.
+ */
 export function careHoursCsv(
   rows: readonly {
     client: { code: string; name: string };
@@ -455,6 +527,7 @@ export function careHoursCsv(
     billed: CareBilled | null;
   }[],
   month: string,
+  today = "",
 ): string {
   const mins = (n: number) => String(n);
   return csv([
@@ -480,7 +553,9 @@ export function careHoursCsv(
       mins(r.availableMinutes),
       mins(r.usedMinutes),
       mins(r.overageMinutes),
-      billedText(r.billed, (d) => d),
+      today && notStarted(r.period, today)
+        ? CARE_HOURS_COPY.starts(r.period.start)
+        : billedText(r.billed, (d) => d),
     ]),
   ]);
 }

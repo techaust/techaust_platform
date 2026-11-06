@@ -143,7 +143,8 @@ export function ReportSkeleton({ label }: { label: string }) {
 export function ExportButton<R>(props: {
   read: (onProgress: (n: number) => void, stopped: () => boolean) => Promise<R[] | null>;
   build: (rows: R[]) => string;
-  filename: string;
+  /** a name, or one made once the rows are read (the ageing file takes its export's own "As at") */
+  filename: string | (() => string);
   progress: (n: number) => string;
   /** pipeline and care: the screen's own rows, no code asked */
   local?: boolean;
@@ -169,7 +170,10 @@ export function ExportButton<R>(props: {
       }
       const rows = await props.read((k) => !stopped() && setPhase({ kind: "reading", n: k }), stopped);
       if (!rows || stopped()) return;
-      saveFile(csvBlob(props.build(rows)), props.filename);
+      saveFile(
+        csvBlob(props.build(rows)),
+        typeof props.filename === "string" ? props.filename : props.filename(),
+      );
       setPhase({ kind: "idle" });
     } catch (e) {
       if (!stopped()) setPhase({ kind: "failed", text: reportErrorText(e) });

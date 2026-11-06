@@ -3,9 +3,8 @@
 // for one currency (never rupees and dollars together; "Total in INR" only from frozen INR values, L4), then the clients of that year and currency with
 // "Show more" and "Export CSV" (a fresh code, one audited request per page). Every chart has its table below it. The filters sit in one row above, in the URL.
 import { formatMoney, money } from "@techaust/core";
-import type { InvoicedFigures, RevenueByKey, RevenueByMonth, RevenueClientRow } from "@techaust/core/reports";
 import { REVENUE_KINDS } from "@techaust/core/reports";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import type { Currency } from "../../api.ts";
 import {
@@ -22,12 +21,20 @@ import { BarChart, Receipt } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { CATEGORY_LABELS } from "../../lib/catalogue.ts";
 import { moneyText } from "../../lib/documents.ts";
-import { m73Api, type RevenueView, readPages } from "../../lib/m73-api.ts";
+import {
+  m73Api,
+  type RevenueByKey,
+  type RevenueByMonth,
+  type RevenueClientRow,
+  type RevenueView,
+  readPages,
+} from "../../lib/m73-api.ts";
 import {
   CATEGORY_ORDER,
   categoryLabel,
   collectedOf,
   fyLabel,
+  type Invoiced,
   invoicedOf,
   KIND_LABELS,
   M73_TITLES,
@@ -36,7 +43,7 @@ import {
   REVENUE_COPY as R,
   revenueClientsCsv,
   sumMinor,
-  totalInInr,
+  yearInInr,
 } from "../../lib/m73-reports.ts";
 import { fyChoices, PAY_UI } from "../../lib/payments.ts";
 import { reportErrorText } from "../../lib/reports.ts";
@@ -119,9 +126,9 @@ export function RevenueReport() {
           {report.data.by === "month" ? (
             <MonthsView data={report.data as RevenueByMonth} currency={currency} fy={fy} />
           ) : report.data.by === "category" ? (
-            <CategoryView data={report.data as RevenueByKey<string>} currency={currency} fy={fy} />
+            <CategoryView data={report.data as RevenueByKey} currency={currency} fy={fy} />
           ) : (
-            <KindView data={report.data as RevenueByKey<string>} currency={currency} fy={fy} />
+            <KindView data={report.data as RevenueByKey} currency={currency} fy={fy} />
           )}
           <ClientsBlock fy={fy} currency={currency} />
         </div>
@@ -131,14 +138,14 @@ export function RevenueReport() {
 }
 
 /** The currencies the year has any figure in, INR first. */
-function currenciesOf(d: RevenueByMonth | RevenueByKey<string>): Currency[] {
+function currenciesOf(d: RevenueByMonth | RevenueByKey): Currency[] {
   const set = new Set<Currency>();
   if (d.by === "month")
     for (const m of (d as RevenueByMonth).months) {
       for (const i of m.invoiced) set.add(i.currency);
       for (const c of m.collected) set.add(c.currency);
     }
-  else for (const r of (d as RevenueByKey<string>).rows) for (const i of r.invoiced) set.add(i.currency);
+  else for (const r of (d as RevenueByKey).rows) for (const i of r.invoiced) set.add(i.currency);
   return (["INR", "USD"] as const).filter((c) => set.has(c));
 }
 
@@ -161,7 +168,7 @@ function NothingIn({ currency, fy }: { currency: Currency; fy: string }) {
 type MonthRow = {
   key: string;
   label: string;
-  inv: InvoicedFigures;
+  inv: Invoiced;
   col: ReturnType<typeof collectedOf>;
 };
 
@@ -172,7 +179,10 @@ function MonthsView({ data, currency, fy }: { data: RevenueByMonth; currency: Cu
     inv: invoicedOf(m.invoiced, currency),
     col: collectedOf(m.collected, currency),
   }));
-  const any = rows.some((r) => r.inv.count > 0 || r.col.payments > 0 || r.col.tdsMinor !== 0);
+  // a currency with only a refund in the year still has a figure to show (review 1, finding 9)
+  const any = rows.some(
+    (r) => r.inv.count > 0 || r.col.payments > 0 || r.col.tdsMinor !== 0 || r.col.refundedMinor !== 0,
+  );
   if (!any) return <NothingIn currency={currency} fy={fy} />;
   const usd = currency === "USD";
   const s = (pick: (r: MonthRow) => number) => sumMinor(rows.map(pick), currency);
@@ -190,6 +200,7 @@ function MonthsView({ data, currency, fy }: { data: RevenueByMonth; currency: Cu
       totalMinor: s((r) => r.inv.totalMinor),
       inrTaxableMinor: inrOf((r) => r.inv.inrTaxableMinor),
       inrTotalMinor: inrOf((r) => r.inv.inrTotalMinor),
+      inrMissing: rows.reduce((n, r) => n + r.inv.inrMissing, 0),
     },
     col: {
       currency,
@@ -282,31 +293,16 @@ function MonthsView({ data, currency, fy }: { data: RevenueByMonth; currency: Cu
 }
 
 /**
- * Under the months: C6 (what the INR equivalents are) in the USD view, and "Total in INR" across both currencies when the year has both: shown only when every
- * USD figure has its INR value; collected with USD payments lacking one says C7 instead.
+ * Under the months: C6 (what the INR equivalents are) in the USD view, and "Total in INR" across both currencies when the year has both: each figure shown only
+ * when every USD figure has its INR value; otherwise its line says how many lack one (invoices: the lead's Q3 line from `inrMissing`; payments and refunds: C7).
  */
 function InrLines({ data, currency }: { data: RevenueByMonth; currency: Currency }) {
-  const has = (c: Currency) =>
-    data.months.some(
-      (m) => m.invoiced.some((i) => i.currency === c) || m.collected.some((x) => x.currency === c),
-    );
-  if (!has("USD")) return null;
-  const inv = data.months.flatMap((m) =>
-    m.invoiced.map((i) => ({ currency: i.currency, minor: i.totalMinor, inrMinor: i.inrTotalMinor })),
-  );
-  const col = data.months.flatMap((m) =>
-    m.collected.map((c) => ({
-      currency: c.currency,
-      minor: c.collectedMinor,
-      inrMinor: c.inrCollectedMinor,
-    })),
-  );
-  const missing = data.months.reduce((n, m) => n + m.collected.reduce((k, c) => k + c.inrMissing, 0), 0);
-  const invInr = totalInInr(inv);
-  const colInr = missing > 0 ? null : totalInInr(col);
+  const t = yearInInr(data.months);
+  if (!t.usd) return null;
+  const { invInr, colInr, invMissing, missing } = t;
   return (
     <div className="m73-inr">
-      {has("INR") && (invInr !== null || colInr !== null || missing > 0) && (
+      {t.inr && (invInr !== null || colInr !== null) && (
         <div className="m73-inr__figures">
           <p className="m73-inr__head" id="rev-inr-h">
             {R.totalInInr}
@@ -327,18 +323,19 @@ function InrLines({ data, currency }: { data: RevenueByMonth; currency: Currency
           </dl>
         </div>
       )}
+      {invMissing > 0 && <p className="m73-note">{R.invoicedInrMissing(invMissing)}</p>}
       {missing > 0 && <p className="m73-note">{R.inrMissing(missing)}</p>}
-      {(currency === "USD" || has("INR")) && <p className="m73-note">{R.inrNote}</p>}
+      {(currency === "USD" || t.inr) && <p className="m73-note">{R.inrNote}</p>}
     </div>
   );
 }
 
 // ---- by category -----------------------------------------------------------------------------------------------------------------------------------------
 
-type KeyRow = { key: string; label: string; inv: InvoicedFigures; round?: boolean };
+type KeyRow = { key: string; label: string; inv: Invoiced; round?: boolean };
 
 function keyedRows(
-  data: RevenueByKey<string>,
+  data: RevenueByKey,
   currency: Currency,
   label: (k: string) => string,
   order: readonly string[],
@@ -363,6 +360,7 @@ function totalOf(rows: readonly KeyRow[], currency: Currency, label: string, ext
       totalMinor: sumMinor([...rows.map((r) => r.inv.totalMinor), extra], currency),
       inrTaxableMinor: null,
       inrTotalMinor: null,
+      inrMissing: rows.reduce((n, r) => n + r.inv.inrMissing, 0),
     },
   };
 }
@@ -408,15 +406,7 @@ function keyColumns(first: string, countHeader: string, currency: Currency): Col
   ];
 }
 
-function CategoryView({
-  data,
-  currency,
-  fy,
-}: {
-  data: RevenueByKey<string>;
-  currency: Currency;
-  fy: string;
-}) {
+function CategoryView({ data, currency, fy }: { data: RevenueByKey; currency: Currency; fy: string }) {
   const rows = keyedRows(data, currency, (k) => categoryLabel(k, CATEGORY_LABELS), CATEGORY_ORDER);
   if (rows.length === 0) return <NothingIn currency={currency} fy={fy} />;
   const round = data.roundOff?.find((r) => r.currency === currency);
@@ -433,6 +423,7 @@ function CategoryView({
             totalMinor: round.roundOffMinor,
             inrTaxableMinor: null,
             inrTotalMinor: round.inrRoundOffMinor,
+            inrMissing: 0,
           },
         }
       : null;
@@ -469,7 +460,7 @@ function CategoryView({
 
 const KIND_TONES: Record<string, Tone> = { recurring: "k1", project: "k2", other: "k3" };
 
-function KindView({ data, currency, fy }: { data: RevenueByKey<string>; currency: Currency; fy: string }) {
+function KindView({ data, currency, fy }: { data: RevenueByKey; currency: Currency; fy: string }) {
   const rows = keyedRows(
     data,
     currency,
@@ -527,26 +518,33 @@ function ClientsBlock({ fy, currency }: { fy: string; currency: Currency }) {
   const [next, setNext] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<string | null>(null);
+  // A "Show more" answer belongs to the list it was asked for: a change of year or currency starts a new list, and a late page of the old one is dropped
+  // (review 1, finding 13).
+  const listRun = useRef(0);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new first page starts the list again
   useEffect(() => {
+    listRun.current++;
     setMore([]);
     setMoreError(null);
+    setLoadingMore(false);
     setNext(first.state === "ready" ? first.data.next : null);
   }, [first.state, fy, currency]);
   const rows = first.state === "ready" ? [...first.data.rows, ...more] : [];
   const usd = currency === "USD";
   async function showMore() {
     if (!next) return;
+    const run = listRun.current;
     setLoadingMore(true);
     setMoreError(null);
     try {
       const p = await m73Api.revenueClients(fy, currency, next);
+      if (run !== listRun.current) return;
       setMore((m) => [...m, ...p.rows]);
       setNext(p.next);
     } catch (e) {
-      setMoreError(reportErrorText(e));
+      if (run === listRun.current) setMoreError(reportErrorText(e));
     } finally {
-      setLoadingMore(false);
+      if (run === listRun.current) setLoadingMore(false);
     }
   }
   const columns: Column<RevenueClientRow>[] = [

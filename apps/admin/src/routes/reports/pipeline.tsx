@@ -156,12 +156,14 @@ function Body({ r }: { r: Report }) {
           <Counted
             id="pipe-stage"
             title={P.byStage}
+            empty={P.empty}
             keepOrder
             rows={STAGE_ORDER.map((s) => ({ key: s, label: STAGE_LABELS[s], n: L.byStage[s] ?? 0 }))}
           />
           <Counted
             id="pipe-lost"
             title={P.lostReasons}
+            empty={P.emptyLost}
             rows={Object.entries(L.lostByReason)
               .filter(([, n]) => n > 0)
               .map(([k, n]) => ({
@@ -173,6 +175,7 @@ function Body({ r }: { r: Report }) {
           <Counted
             id="pipe-source"
             title={P.bySource}
+            empty={P.emptySources}
             rows={Object.entries(L.bySource).map(([k, n]) => ({
               key: k,
               label: SOURCE_LABELS[k as keyof typeof SOURCE_LABELS] ?? k,
@@ -191,8 +194,8 @@ function Body({ r }: { r: Report }) {
 
 type CountRow = { key: string; label: string; n: number };
 
-/** Counts as ranked bars (or in their own order), with the same counts as a table behind "Show as a table". */
-function Counted(props: { id: string; title: string; rows: CountRow[]; keepOrder?: boolean }) {
+/** Counts as ranked bars (or in their own order), with the same counts as a table behind "Show as a table"; `empty` says what the block lacks (finding 1). */
+function Counted(props: { id: string; title: string; empty: string; rows: CountRow[]; keepOrder?: boolean }) {
   const columns: Column<CountRow>[] = [
     { key: "label", header: props.title, card: "title", cell: (r) => r.label },
     { key: "n", header: P.created, align: "end", cell: (r) => <span className="tnum">{r.n}</span> },
@@ -200,7 +203,7 @@ function Counted(props: { id: string; title: string; rows: CountRow[]; keepOrder
   return (
     <ChartFrame id={props.id} title={props.title}>
       {props.rows.length === 0 ? (
-        <p className="m73-note">{P.empty}</p>
+        <p className="m73-note">{props.empty}</p>
       ) : (
         <>
           <RankedBars
@@ -228,7 +231,7 @@ function TimeToWin({ r }: { r: Report }) {
   return (
     <ChartFrame id="pipe-ttw" title={P.timeToWin}>
       {t.count === 0 ? (
-        <p className="m73-note">{P.noMedian}</p>
+        <p className="m73-note">{P.emptyWins}</p>
       ) : (
         <>
           <ColumnChart

@@ -10,9 +10,10 @@ import {
   billedText,
   CARE_HOURS_COPY,
   careHoursCsv,
+  csvAmount,
+  DASH_M73,
   deltaText,
   fyLabel,
-  fyTokenOf,
   KIND_LABELS,
   M73_TITLES,
   monthChoices,
@@ -25,6 +26,7 @@ import {
   revenueClientsCsv,
   sumMinor,
   totalInInr,
+  yearInInr,
 } from "./m73-reports.ts";
 import { REPORTS } from "./reports.ts";
 
@@ -55,9 +57,16 @@ describe("copy C1 to C24 (run file H), word for word", () => {
     expect(R.inrNote).toBe(
       "INR equivalent: invoices at the rate on the invoice; payments at the INR amount on the bank advice.",
     );
+    // review 1, finding 5: payments and refunds alike, the singular apart (lead's words)
     expect(R.inrMissing(3)).toBe(
-      "3 USD payments have no INR amount recorded, so the INR total is not shown.",
+      "3 USD payments or refunds have no INR amount recorded, so the INR total is not shown.",
     );
+    expect(R.inrMissing(1)).toBe(
+      "1 USD payment or refund has no INR amount recorded, so the INR total is not shown.",
+    );
+    // the lead's triage of D1, Q3 (the same singular rule)
+    expect(R.invoicedInrMissing(2)).toBe("2 USD invoices have no INR value, so the INR total is not shown.");
+    expect(R.invoicedInrMissing(1)).toBe("1 USD invoice has no INR value, so the INR total is not shown.");
     expect(R.lede).toBe(
       "Management figures, not a GST return. Credit notes count on the day they are issued.",
     );
@@ -96,6 +105,12 @@ describe("copy C1 to C24 (run file H), word for word", () => {
       "Leads are deleted 12 months after their last activity, so older periods are not shown.",
     );
     expect(P.empty).toBe("No leads in this period.");
+    // review 1, finding 1: each block's own empty line (drafted by D2 for the re-check)
+    expect([P.emptyLost, P.emptySources, P.emptyWins]).toEqual([
+      "No leads were lost in this period.",
+      "No lead sources recorded in this period.",
+      "No wins in this period.",
+    ]);
     expect(P.usdNote).toBe(
       "USD offers are shown in USD: an offer has no exchange rate until it is invoiced.",
     );
@@ -116,10 +131,21 @@ describe("copy C1 to C24 (run file H), word for word", () => {
     expect(C.overageNote).toBe("Overage is priced on the care invoice.");
     expect(C.empty).toBe("No active care plans this month.");
     expect(C.monthInvalid).toBe("Choose a month up to this one");
+    // review 1, finding 6 (lead's words)
+    expect(C.starts("15 Nov 2026")).toBe("Starts 15 Nov 2026");
   });
 
-  it("places C23 on the offer list's search", () => {
+  it("names the leads sparkline by the day of its last nightly count (review 1, finding 12)", () => {
+    expect(DASH_M73.trendLabel(4, 6, "05 Nov 2026")).toBe(
+      "Open leads over the last 30 days: 4 then, 6 on 05 Nov 2026",
+    );
+  });
+
+  it("places C23 on the offer list's search, and its no-match line (lead's triage of D1, Q2)", () => {
     expect(DOC_PENDING.searchNumberOrClient).toBe("Search by number or client");
+    expect(`${DOC_PENDING.searchNoMatchTitle}. ${DOC_PENDING.searchNoMatchBody}`).toBe(
+      "No proposals or estimates match. Search for the start of a number, a client code or a client name.",
+    );
   });
 });
 
@@ -142,9 +168,6 @@ describe("months and years", () => {
     expect(monthName("bad")).toBe("bad");
     expect(monthShort("2027-03")).toBe("Mar");
     expect(fyLabel("2627")).toBe("2026-27");
-    expect(fyTokenOf("2026-11-06")).toBe("2627");
-    expect(fyTokenOf("2027-03-31")).toBe("2627");
-    expect(fyTokenOf("2027-04-01")).toBe("2728");
   });
 
   it("offers this month and the eleven before it, newest first, across a year end", () => {
@@ -206,6 +229,7 @@ describe("CSVs from the screen's data", () => {
     totalMinor: 118_00,
     inrTaxableMinor: c === "USD" ? 8_500_00 : null,
     inrTotalMinor: c === "USD" ? 8_500_00 : null,
+    inrMissing: 0,
   });
   const col = (c: "INR" | "USD") => ({
     currency: c,
@@ -258,6 +282,19 @@ describe("CSVs from the screen's data", () => {
     expect(text.trim().split("\r\n")[1]).toBe("2026-11-06,X1,A,INR,10.00,0.00,0.00,0.00,0.00,10.00,5.00");
   });
 
+  it("writes a negative amount as a number a spreadsheet adds up: ASCII minus, never defused (review 1, finding 10)", () => {
+    expect(csvAmount(-1_234_50, "INR")).toEqual({ num: "-1234.50" });
+    expect(csvAmount(null, "USD")).toBe("");
+    const credit = { ...inv("INR"), taxableMinor: -100_00, totalMinor: -118_00 };
+    const text = revenueClientsCsv(
+      [{ client: { code: "X1", name: "-Sample" }, invoiced: credit, collected: col("INR") }],
+      "INR",
+    );
+    const row = text.trim().split("\r\n")[1] ?? "";
+    expect(row).toBe("X1,'-Sample,INR,-100.00,-118.00,50.00,0.00,0.00");
+    expect(row).not.toContain("\u2212");
+  });
+
   it("writes care hours in minutes and the pipeline as section, item, value", () => {
     const text = careHoursCsv(
       [
@@ -276,6 +313,87 @@ describe("CSVs from the screen's data", () => {
     expect(text.trim().split("\r\n")[1]).toBe(
       "2026-11,X1,A,2026-11-01,2026-11-30,600,600,90,0,Not billed yet",
     );
+    // a period that starts after today says so, as on screen (finding 6)
+    const later = careHoursCsv(
+      [
+        {
+          client: { code: "X1", name: "A" },
+          period: { start: "2026-11-20", end: "2026-12-19" },
+          includedMinutes: 600,
+          availableMinutes: 600,
+          usedMinutes: 0,
+          overageMinutes: 0,
+          billed: null,
+        },
+      ],
+      "2026-11",
+      "2026-11-06",
+    );
+    expect(later.trim().split("\r\n")[1]).toBe(
+      "2026-11,X1,A,2026-11-20,2026-12-19,600,600,0,0,Starts 2026-11-20",
+    );
     expect(pipelineCsv([["Won", "", "3"]])).toBe("Section,Item,Value\r\nWon,,3\r\n");
+  });
+});
+
+describe("Total in INR over the year, from a revenue answer (mocked: the API's `inrMissing` on invoiced figures, B3's field)", () => {
+  const invoiced = (currency: "INR" | "USD", inrTotalMinor: number | null, inrMissing: number) => ({
+    currency,
+    count: 2,
+    taxableMinor: 1_000_00,
+    totalMinor: 1_180_00,
+    inrTaxableMinor: currency === "USD" ? inrTotalMinor : null,
+    inrTotalMinor: currency === "USD" ? inrTotalMinor : null,
+    inrMissing,
+  });
+  const collected = (currency: "INR" | "USD", inrCollectedMinor: number | null, inrMissing: number) => ({
+    currency,
+    payments: 1,
+    receivedMinor: 500_00,
+    refundedMinor: 0,
+    collectedMinor: 500_00,
+    tdsMinor: 0,
+    inrCollectedMinor,
+    inrMissing,
+  });
+
+  it("adds INR and the frozen INR values of USD when every USD figure has one", () => {
+    const t = yearInInr([
+      {
+        invoiced: [invoiced("INR", null, 0), invoiced("USD", 99_000_00, 0)],
+        collected: [collected("INR", null, 0)],
+      },
+    ]);
+    expect(t).toEqual({
+      usd: true,
+      inr: true,
+      invInr: 1_00_180_00,
+      colInr: 500_00,
+      invMissing: 0,
+      missing: 0,
+    });
+  });
+
+  it("counts the USD invoices with no INR value across months and hides the invoiced total", () => {
+    const t = yearInInr([
+      { invoiced: [invoiced("USD", null, 2)], collected: [] },
+      {
+        invoiced: [invoiced("INR", null, 0), invoiced("USD", null, 1)],
+        collected: [collected("USD", null, 1)],
+      },
+    ]);
+    expect(t.invMissing).toBe(3);
+    expect(t.invInr).toBeNull();
+    expect(t.missing).toBe(1);
+    expect(t.colInr).toBeNull();
+    expect(R.invoicedInrMissing(t.invMissing)).toBe(
+      "3 USD invoices have no INR value, so the INR total is not shown.",
+    );
+  });
+
+  it("says nothing of INR for a year in rupees only", () => {
+    const t = yearInInr([{ invoiced: [invoiced("INR", null, 0)], collected: [collected("INR", null, 0)] }]);
+    expect(t.usd).toBe(false);
+    expect(t.invMissing).toBe(0);
   });
 });
