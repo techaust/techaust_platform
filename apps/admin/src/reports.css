@@ -1018,23 +1018,15 @@
 .m73-statement {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: var(--target-min);
   min-height: var(--target-min);
-  border-radius: var(--radius-sm);
   color: var(--color-text);
 }
 
+/* The icon starts where the column's heading and a card's label start; the 44 px target reaches past it. */
 .m73-statement:hover {
   color: var(--color-text-accent);
-  background: var(--color-surface-alt);
-}
-
-/* The totals row has no statement: its dash sits where the icons do. */
-.m73-statement-none {
-  display: inline-flex;
-  justify-content: center;
-  min-width: var(--target-min);
 }
 
 .m73-note {

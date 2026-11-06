@@ -202,7 +202,7 @@ function CurrencyBlock(props: { currency: Currency; rows: AgeingRow[]; total: Ag
       header: A.statement,
       cell: (r) =>
         r.isTotal ? (
-          <span className="m73-zero m73-statement-none" aria-hidden="true">
+          <span className="m73-zero" aria-hidden="true">
             –
           </span>
         ) : (
