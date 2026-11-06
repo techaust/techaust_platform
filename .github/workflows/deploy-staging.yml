@@ -15,22 +15,28 @@ concurrency:
   group: deploy-staging
   cancel-in-progress: false
 
+# Three jobs (M7.5, owner's Q3 A, 2026-11-01): the Cloudflare token is only in the two jobs that install NOTHING but wrangler (`@techaust/deploy-tools`, the
+# apps' pinned version, from the lockfile), and the one job that installs and runs package code (the install, the seed SQL, the astro and vite builds, the
+# Worker bundles) has no token at all, so no package's code can reach it, not even through a file left on the runner (each job has its own runner).
+#   1. prepare (token, wrangler only): the credentials check, the deploy-check token check, migrations (owner decision M1.3: before any Worker deploys),
+#      and the published catalogue snapshot (ADM-CAT-05), handed to the build as an artifact;
+#   2. build (no token): the seed SQL, the three builds and the two pre-bundled Workers (jobs and the website's /api Worker), handed on as an artifact;
+#   3. deploy (token, wrangler only): the seed, then the Workers one per step in the fixed order (from M6.5, owner's Q3 A 2026-11-02: admin API, admin
+#      invoices, admin finance, admin front, portal, jobs, website), each through scripts/deploy-worker.mjs (which first checks it is a staging build), with
+#      a health check through Cloudflare Access after each app (the admin's once its four Workers are new; scripts/staging-health.mjs).
+# Only pushes to THIS repository's main branch; never fork pull requests (the repo is public).
 jobs:
-  deploy:
-    # Only pushes to THIS repository's main branch; never fork pull requests (the repo is public).
+  prepare:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # The Cloudflare credentials are set only on the steps that use them (not job-wide). Full audit A1 5 (owner's yes 2026-10-30): every
-    # step that runs package code (the install, the seed SQL, `astro build`, `vite build`) runs WITHOUT them; only the wrangler steps
-    # (migrate, seed, snapshot read, deploy) and the credentials check get CLOUDFLARE_API_TOKEN. The deploy scripts first check that the
-    # build they upload is a staging build (scripts/check-staging-build.mjs), since a plain build names the production Worker.
-    # Limit: steps share the runner, so this keeps the token out of reach of package code while it runs, not out of reach of files a
-    # malicious package could leave behind for a later step (docs/runbooks/environments.md).
+    timeout-minutes: 10
+    outputs:
+      ready: ${{ steps.creds.outputs.ready }}
+      snapshot: ${{ steps.snapshot.outputs.found }}
     steps:
       - name: Check staging credentials
         id: creds
@@ -44,8 +50,8 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
-      # The deploy-check token (Access Part 4) must be set before anything is uploaded: without it the job would stop at the admin's
-      # health check, after the admin's deploy, and leave staging half updated (workflow review, finding 1). Emptiness only.
+      # The deploy-check token (Access Part 4) must be set before anything is uploaded: without it the deploy job would stop at the admin's health check,
+      # after the admin's deploy, and leave staging half updated (workflow review, finding 1). Emptiness only.
       - if: steps.creds.outputs.ready == 'true'
         name: Check the deploy-check token is set
         env:
@@ -67,117 +73,183 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+      # Wrangler alone (and its own dependencies), from the lockfile: no workspace package is installed or run in this job.
       - if: steps.creds.outputs.ready == 'true'
-        run: pnpm install --frozen-lockfile
-      # The seed is package code (packages/db), so its SQL is written here, without the token; the next step only applies it.
+        name: Install wrangler only
+        run: pnpm install --frozen-lockfile --filter @techaust/deploy-tools
+      # Owner decision (M1.3): staging D1 is migrated on every merge, before the Workers deploy, so new code never runs against an old schema. Migrations are
+      # backward-compatible (docs/05 §5.5). Staging only: production D1 is a Phase 7 decision.
       - if: steps.creds.outputs.ready == 'true'
-        name: Write the seed SQL (no token)
-        run: pnpm --filter @techaust/db seed:sql "$RUNNER_TEMP/seed.sql"
-      # Owner decision (M1.3): staging D1 is migrated and seeded on every merge, before the Workers deploy, so
-      # new code never runs against an old schema. Migrations are backward-compatible (docs/05 §5.5) and the
-      # seed is insert-only (it never overwrites edits). Staging only: production D1 is a Phase 7 decision.
-      - if: steps.creds.outputs.ready == 'true'
-        name: Migrate and seed staging D1
+        name: Migrate staging D1
+        working-directory: apps/jobs
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          pnpm --filter @techaust/jobs exec wrangler d1 migrations apply DB --remote --env staging
-          pnpm --filter @techaust/jobs exec wrangler d1 execute DB --remote --env staging --file "$RUNNER_TEMP/seed.sql"
-      # ADM-CAT-05: the website is built from the newest PUBLISHED catalogue snapshot (admin: Catalogue, Publish). No snapshot yet means no
-      # file, so the web build uses the seed. If a snapshot exists and the fetch fails, this step fails the job: the staging site never
-      # silently falls back to stale seed prices. The same script runs in publish-catalogue.yml. It only runs `wrangler d1 execute`.
+        run: node ../../tools/deploy/node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --remote --env staging
+      # ADM-CAT-05: the website is built from the newest PUBLISHED catalogue snapshot (admin: Catalogue, Publish). No snapshot yet means no file, so the web
+      # build uses the seed. If a snapshot exists and the fetch fails, this step fails the run: the staging site never silently falls back to stale seed
+      # prices. The same script runs in publish-catalogue.yml. It only runs `wrangler d1 execute` (here the deploy-tools wrangler, WRANGLER_BIN).
       - if: steps.creds.outputs.ready == 'true'
         name: Fetch the published catalogue snapshot
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_BIN: tools/deploy/node_modules/wrangler/bin/wrangler.js
         run: node scripts/fetch-catalogue-snapshot.mjs --out apps/web/catalogue-snapshot.json
-      # The builds (A1 5): no token. CLOUDFLARE_ENV=staging is set inside each build:staging script, so the Vite plugin writes the
-      # redirected staging deploy config (.wrangler/deploy/config.json) that the deploy steps upload, and the pages carry staging's keys.
       - if: steps.creds.outputs.ready == 'true'
-        name: Build the admin (staging, no token)
+        id: snapshot
+        name: Was a snapshot published
+        run: if [ -f apps/web/catalogue-snapshot.json ]; then echo "found=true" >> "$GITHUB_OUTPUT"; else echo "found=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.snapshot.outputs.found == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: catalogue-snapshot
+          path: apps/web/catalogue-snapshot.json
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # No secret in this job: it installs and runs package code.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # A published snapshot must arrive (the build never falls back to seed prices when one exists); none published: the seed.
+      - if: needs.prepare.outputs.snapshot == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: catalogue-snapshot
+          path: apps/web
+      # The seed is package code (packages/db), so its SQL is written here; the deploy job only applies it.
+      - name: Write the seed SQL (no token)
+        run: |
+          mkdir -p .deploy
+          pnpm --filter @techaust/db seed:sql "$GITHUB_WORKSPACE/.deploy/seed.sql"
+      # CLOUDFLARE_ENV=staging is set inside each build:staging script, so the Vite plugin writes the redirected staging deploy config
+      # (.wrangler/deploy/config.json) that the deploy uploads, and the pages carry staging's keys.
+      - name: Build the admin (staging, no token)
         run: pnpm --filter @techaust/admin run build:staging
-      - if: steps.creds.outputs.ready == 'true'
-        name: Build the portal (staging, no token)
+      - name: Build the portal (staging, no token)
         run: pnpm --filter @techaust/portal run build:staging
-      - if: steps.creds.outputs.ready == 'true'
-        name: Build the website (staging, no token)
+      - name: Build the website (staging, no token)
         run: pnpm --filter @techaust/web run build:staging
-      # The deploy order (full audit A6 8, owner's yes 2026-10-30), one Worker per step. From M6.5 (owner, Q3 A, approved 2026-11-02): the admin API
-      # (the front binds it as ADMIN_API), the admin invoices Worker (the front binds it as ADMIN_INVOICES, jobs its BillingJobs and GatewayAdvance
-      # entrypoints as ADMIN_JOBS and ADMIN_ADVANCE, finance its GatewayAdvance as ADMIN_ADVANCE), the admin finance Worker (the front binds it as
-      # ADMIN_FINANCE, jobs its GatewayEvents as ADMIN_GATEWAY, the portal its PortalPayments as ADMIN_PAY), the admin front, the portal, jobs and
-      # the website. A deploy that ADDS an entrypoint method jobs calls (M6.5: BillingJobs.issueReceipt, GatewayEvents.checkRefund and
-      # fetchSettlements) deploys the Worker that serves it before jobs; until jobs deploys, the older jobs acknowledges an unknown PDF_QUEUE kind
-      # (logged) and the hourly receipt sweep issues what it skipped. Every Worker a step binds already exists when it deploys, so this deploy has
-      # no gap. A failed step stops the job, so no Worker is deployed after a failed one. After each app, a health check through Cloudflare
-      # Access with the deploy-check service token (scripts/staging-health.mjs; `staging-deploy-check`, a Service Auth policy on all four staging
-      # apps, owner 2026-10-30; docs/runbooks/access-staging.md Part 4); the admin's once all four admin Workers are new.
-      - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 1 of 7, the admin API Worker (staging)
+      # jobs and the website's /api Worker are bundled here (a dry run: nothing is uploaded and no token is needed); the deploy job uploads them unbundled.
+      - name: Bundle the jobs and website Workers (staging, no token)
+        run: |
+          pnpm --filter @techaust/jobs exec wrangler deploy --dry-run --env staging --outdir dist-staging
+          pnpm --filter @techaust/web exec wrangler deploy --dry-run --env staging --outdir .wrangler/dist-staging
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: staging-build
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            .deploy/seed.sql
+            apps/admin/dist
+            apps/admin/.wrangler/deploy
+            apps/portal/dist
+            apps/portal/.wrangler/deploy
+            apps/web/dist
+            apps/web/.wrangler/dist-staging
+            apps/jobs/dist-staging
+
+  deploy:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      # Wrangler alone, from the lockfile; the build arrives as an artifact.
+      - name: Install wrangler only
+        run: pnpm install --frozen-lockfile --filter @techaust/deploy-tools
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: staging-build
+          path: .
+      # The seed is insert-only (it never overwrites edits); applied after the migrations and before the first Worker deploys.
+      - name: Seed staging D1
+        working-directory: apps/jobs
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @techaust/admin run deploy:staging:api
-      - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 2 of 7, the admin invoices Worker (staging)
+        run: node ../../tools/deploy/node_modules/wrangler/bin/wrangler.js d1 execute DB --remote --env staging --file ../../.deploy/seed.sql
+      # The deploy order (full audit A6 8; from M6.5, owner's Q3 A approved 2026-11-02): the admin API (the front binds it as ADMIN_API), the admin invoices
+      # Worker (the front binds it as ADMIN_INVOICES, jobs its BillingJobs and GatewayAdvance entrypoints as ADMIN_JOBS and ADMIN_ADVANCE, finance its
+      # GatewayAdvance as ADMIN_ADVANCE), the admin finance Worker (the front binds it as ADMIN_FINANCE, jobs its GatewayEvents as ADMIN_GATEWAY, the portal
+      # its PortalPayments as ADMIN_PAY), the admin front, the portal, jobs and the website. A deploy that ADDS an entrypoint method jobs calls deploys the
+      # Worker that serves it before jobs. A failed step stops the job, so no Worker is deployed after a failed one.
+      - name: Deploy 1 of 7, the admin API Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @techaust/admin run deploy:staging:invoices
-      - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 3 of 7, the admin finance Worker (staging)
+        run: node scripts/deploy-worker.mjs staging admin-api
+      - name: Deploy 2 of 7, the admin invoices Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @techaust/admin run deploy:staging:finance
-      - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 4 of 7, the admin front Worker (staging)
+        run: node scripts/deploy-worker.mjs staging admin-invoices
+      - name: Deploy 3 of 7, the admin finance Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @techaust/admin run deploy:staging:front
+        run: node scripts/deploy-worker.mjs staging admin-finance
+      - name: Deploy 4 of 7, the admin front Worker (staging)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/deploy-worker.mjs staging admin
       # The front's /api/v1/health, and signed-out requests answered 401 through each binding (not 502): /api/v1/leads by the API Worker,
-      # /api/v1/dashboard by the invoices Worker and (scripts/staging-health.mjs, brief D.5) /api/v1/payments by the finance Worker.
-      - if: steps.creds.outputs.ready == 'true'
-        name: Health check, the admin front, API, invoices and finance Workers (staging)
+      # /api/v1/dashboard by the invoices Worker and /api/v1/payments by the finance Worker.
+      - name: Health check, the admin front, API, invoices and finance Workers (staging)
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
         run: node scripts/staging-health.mjs admin
-      - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 5 of 7, the portal Worker (staging)
+      - name: Deploy 5 of 7, the portal Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @techaust/portal run deploy:staging
-      - if: steps.creds.outputs.ready == 'true'
-        name: Health check, the portal Worker (staging)
+        run: node scripts/deploy-worker.mjs staging portal
+      - name: Health check, the portal Worker (staging)
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
         run: node scripts/staging-health.mjs portal
-      - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 6 of 7, the jobs Worker (staging)
+      - name: Deploy 6 of 7, the jobs Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @techaust/jobs run deploy:staging
-      - if: steps.creds.outputs.ready == 'true'
-        name: Health check, the jobs Worker (staging)
+        run: node scripts/deploy-worker.mjs staging jobs
+      - name: Health check, the jobs Worker (staging)
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}
         run: node scripts/staging-health.mjs jobs
-      - if: steps.creds.outputs.ready == 'true'
-        name: Deploy 7 of 7, the website Worker (staging)
+      - name: Deploy 7 of 7, the website Worker (staging)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: pnpm --filter @techaust/web run deploy:staging
-      - if: steps.creds.outputs.ready == 'true'
-        name: Health check, the website Worker (staging)
+        run: node scripts/deploy-worker.mjs staging web
+      - name: Health check, the website Worker (staging)
         env:
           CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_ID }}
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_DEPLOY_CLIENT_SECRET }}

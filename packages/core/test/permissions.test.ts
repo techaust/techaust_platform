@@ -76,6 +76,7 @@ const EXPECTED: Record<Exclude<Action, "proposals.send" | "requests.close">, str
   "emails.unsuppress": "A---", // M7.2 (L12): only the Owner allows a stopped address again
   "realisation.reduce": "S---", // M6.5 (RB-43): the Owner records the AD bank's Reg. 6 reduction with a fresh code
   "dashboard.read": "AAAA", // M3.5: every role; the handler keeps only the tiles the role may see
+  "usage.read": "A--A", // M7.5 D1/G: the Free-plan usage tile, Owner and Accountant
   "reports.finance": "A--A",
   "reports.delivery": "AA--",
   "reports.pipeline": "A-A-",

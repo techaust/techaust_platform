@@ -177,6 +177,8 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/time/:id", "time.writeOwn", { audit: "time.update" }),
   R("DELETE", "/time/:id", "time.writeOwn", { audit: "time.delete" }),
   I("GET", "/dashboard", "dashboard.read"),
+  // M7.5 D1/G (Q4 A): the Free-plan usage tile's data, Owner and Accountant.
+  I("GET", "/dashboard/usage", "usage.read"),
   // Reports (M5.5b, LD71, LD74): the register page of the GST and CA exports (a fresh step-up on every page: `exports.gst`; one audit row per page), the EDF month and the
   // export realisation list (Owner and Accountant, `reports.finance`, Q56).
   I("GET", "/reports/registers", "exports.gst", { audit: "report.export" }),

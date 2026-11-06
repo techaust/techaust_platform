@@ -1,7 +1,7 @@
 # Sets the staging secret PORTAL_KEY_PEPPER on techaust-platform-portal-staging (M1.6).
 # The value is 32 random bytes made here and sent straight to Cloudflare: it is never shown, saved or copied.
 # Uses your own `wrangler login`. Run from anywhere:
-#   powershell -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\tools\set-portal-pepper.ps1"
+#   powershell -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\tools\set-portal-pepper.ps1"
 $ErrorActionPreference = "Stop"
 $portal = Join-Path $PSScriptRoot "..\apps\portal"
 $wrangler = Join-Path $portal "node_modules\wrangler\bin\wrangler.js"

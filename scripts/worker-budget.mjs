@@ -1,7 +1,8 @@
 // Worker budget guard (M3.4–M4.5 batch, lead decision 2026-10-25; replaces the raw-byte limits of check-admin-bundle.mjs and
 // check-portal-bundle.mjs). Bytes are not what costs metered CPU: a Worker's startup (compile + top-level evaluation) runs
 // before the request, and the Free plan's 10 ms meters the request path. So the guard checks three things:
-//   - a byte ceiling (well under the 3 MB compressed Worker limit),
+//   - a byte ceiling (our own line: Cloudflare's Worker size limit is 64 MiB uncompressed with no compressed limit, docs read
+//     2026-11-07, M7.5 L16; the ceilings below exist for startup time, not for that limit),
 //   - a startup budget: the fastest of compile + top-level evaluation + the start-up work an entry hands to the probe, in a fresh `node:vm` context
 //     under workerd's global-scope rules (a local proxy, not workerd),
 //   - forbidden modules: classic zod (~150 KB), and PDF code that belongs only in the jobs Worker.

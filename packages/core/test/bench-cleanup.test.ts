@@ -22,8 +22,24 @@ describe("bench-auth cleanup", () => {
     expect(cleanup).not.toContain("acct:%");
   });
 
-  it("deletes the probes' counters along with the bench users'", () => {
-    expect(cleanup).toContain("...probeEmails");
-    expect(source).toContain("probeEmails.push(email)");
+  it("deletes the rows that name a bench user by foreign key before the user (M7.5 L21)", () => {
+    const at = (s: string) => cleanup.indexOf(s);
+    const user = at("DELETE FROM staff_users");
+    expect(user).toBeGreaterThan(0);
+    for (const t of ["staff_signin_pending", "staff_notification_prefs", "notifications", "staff_sessions"]) {
+      expect(at(`DELETE FROM ${t} WHERE user_id IN`), t).toBeGreaterThan(0);
+      expect(at(`DELETE FROM ${t} WHERE user_id IN`), t).toBeLessThan(user);
+    }
+  });
+
+  it("leaves the `acct:` counters it cannot name (HMAC under SALT_PEPPER since M7.5 B1 L8) and says why", () => {
+    // No delete names an `acct:` key (the comment may name them).
+    expect(cleanup).not.toMatch(/DELETE[^;]*acct/);
+    expect(source).not.toMatch(/const acctKey/);
+    expect(cleanup).toContain("HMAC(SALT_PEPPER, email)");
+    // Only the `code:<user id>` counters of the bench users are deleted, by exact key.
+    expect(cleanup).toMatch(
+      /DELETE FROM auth_attempts WHERE key IN \(SELECT 'code:' \|\| id FROM staff_users WHERE email IN/,
+    );
   });
 });

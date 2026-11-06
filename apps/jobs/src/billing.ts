@@ -116,6 +116,22 @@ export function hourlyMessages(
   ];
 }
 
+/**
+ * M7.5 L20: the cron branch of a tick, as the route inventory's four cron rows: `daily` (03:30 IST), `h06` (the care scan's hours, 06:00 to 08:00 IST), `h09`
+ * (the alerts' hours, 09:00 to 11:00 IST: alerts, realisation, recon, digest, request clock) and `hourly` (every other hour: reminders and the sweeps).
+ */
+export function cronBranchOf(
+  cron: string,
+  scheduledTime: number,
+  dailyCron: string,
+): "daily" | "h06" | "h09" | "hourly" | "other" {
+  if (cron !== HOURLY_CRON) return cron === dailyCron ? "daily" : "other";
+  const hour = istHourOf(scheduledTime);
+  if (inWindow(hour, CARE_SCAN_HOUR_IST)) return "h06";
+  if (inWindow(hour, ALERTS_HOUR_IST)) return "h09";
+  return "hourly";
+}
+
 /** The IST day before the IST day of `ms`, as ISO text. */
 const yesterdayIst = (ms: number): string => toIsoDate(istDate(ms - 86_400_000));
 

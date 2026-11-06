@@ -24,7 +24,30 @@ export function sha256Source(text) {
   return `'sha256-${createHash("sha256").update(text, "utf8").digest("base64")}'`;
 }
 
-const JS_TYPES = new Set(["", "text/javascript", "application/javascript", "module"]);
+/**
+ * Every `type` a browser runs as JavaScript: empty, `module`, and the HTML standard's JavaScript MIME type essences, legacy ones
+ * included (M7.5 section F, M2.1 follow-up: `text/ecmascript` or `application/x-javascript` would otherwise slip past the hash check).
+ */
+export const JS_TYPES = new Set([
+  "",
+  "module",
+  "application/ecmascript",
+  "application/javascript",
+  "application/x-ecmascript",
+  "application/x-javascript",
+  "text/ecmascript",
+  "text/javascript",
+  "text/javascript1.0",
+  "text/javascript1.1",
+  "text/javascript1.2",
+  "text/javascript1.3",
+  "text/javascript1.4",
+  "text/javascript1.5",
+  "text/jscript",
+  "text/livescript",
+  "text/x-ecmascript",
+  "text/x-javascript",
+]);
 
 /** Inline (no `src`) scripts the browser would execute; data blocks such as ld+json are not governed by the CSP. */
 export function inlineScripts(html) {
@@ -32,11 +55,46 @@ export function inlineScripts(html) {
   for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
     const attrs = m[1];
     if (/\bsrc\s*=/i.test(attrs)) continue;
-    const type = (/\btype\s*=\s*["']?([^"'\s>]+)/i.exec(attrs)?.[1] ?? "").toLowerCase();
+    const raw = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
+    // The MIME type's essence: parameters (`; charset=…`) and surrounding spaces don't change what runs.
+    const type = (raw?.[1] ?? raw?.[2] ?? raw?.[3] ?? "").split(";")[0].trim().toLowerCase();
     if (!JS_TYPES.has(type)) continue;
     found.push(m[2]);
   }
   return found;
+}
+
+/**
+ * The hosts the website's CSP may name, and the directives each may appear in (M7.5 section F, M2.1 follow-up). Cloudflare Web
+ * Analytics (owner, 2026-10-22: the beacon script and its report endpoint) and Turnstile (M2.4: its script and its frame). A new host
+ * (Google Analytics when the GA4 ID is set, say) is added here in the same change as `public/_headers`.
+ */
+export const CSP_HOSTS = {
+  "https://static.cloudflareinsights.com": ["script-src"],
+  "https://cloudflareinsights.com": ["connect-src"],
+  "https://challenges.cloudflare.com": ["script-src", "frame-src"],
+};
+
+/** A source that is a scheme or a wildcard: it allows any host. `data:` is allowed in img-src only. */
+const BROAD_SOURCE = /^(\*|https?:|wss?:|blob:|filesystem:|data:)$|\*/;
+
+/** CSP sources outside the host allow list: an unknown host, a known host in another directive, or a scheme or wildcard source. */
+export function cspHostProblems(csp) {
+  const problems = [];
+  for (const [dir, sources] of Object.entries(csp)) {
+    for (const s of sources) {
+      if (s.startsWith("'")) continue;
+      if (BROAD_SOURCE.test(s)) {
+        if (!(s === "data:" && dir === "img-src")) problems.push(`CSP: ${dir} allows "${s}" (any host)`);
+        continue;
+      }
+      const allowed = CSP_HOSTS[s.replace(/\/+$/, "")];
+      if (!allowed) problems.push(`CSP: ${dir} names ${s}, which is not on the CSP host allow list`);
+      else if (!allowed.includes(dir))
+        problems.push(`CSP: ${s} is allowed in ${allowed.join(", ")} only, not ${dir}`);
+    }
+  }
+  return problems;
 }
 
 const REQUIRED_HEADERS = [
@@ -65,6 +123,7 @@ export function checkHeaders(headersText) {
     if (src.includes("'unsafe-eval'")) problems.push(`CSP: ${dir} must not contain 'unsafe-eval'`);
   }
   if (!csp["script-src"]) problems.push("CSP: no script-src directive");
+  problems.push(...cspHostProblems(csp));
   return problems;
 }
 

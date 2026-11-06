@@ -38,7 +38,10 @@
     // M7.2 (run file C.4, F): this Worker's own public origin (the one-click unsubscribe URL `<PUBLIC_HOOKS_URL>u?t=…` must start with it), and the configuration
     // set of non-transactional email (the weekly digest; docs/05 §11.1). Production has neither until Phase 7 (hooks.techaust.com).
     "PUBLIC_HOOKS_URL": "http://localhost:8787/",
-    "SES_MARKETING_CONFIGURATION_SET": "techaust-marketing"
+    "SES_MARKETING_CONFIGURATION_SET": "techaust-marketing",
+    // M7.5 D1 (Q4 A): the Cloudflare account the `usage.daily` job reads (GraphQL Analytics `accountTag`; an identifier, not a credential). Empty here:
+    // locally the job records nothing. The token is the staging secret CF_ANALYTICS_TOKEN.
+    "CF_ACCOUNT_TAG": ""
   },
   // Daily 22:00 UTC (03:30 IST): enqueues the leads due for deletion (JOB-CRON-01) and one message per nightly statistic for the IST day that
   // just ended (M3.5, stats_daily); it enqueues and reads nothing else. Hourly at :30 UTC (= every IST hour, M5.4, LD61): ONE `sendBatch`, no D1 read;
@@ -178,7 +181,9 @@
         "PDF_MIN_SPACING_MS": "10000",
         "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/",
         "PUBLIC_HOOKS_URL": "https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev/",
-        "SES_MARKETING_CONFIGURATION_SET": "techaust-marketing"
+        "SES_MARKETING_CONFIGURATION_SET": "techaust-marketing",
+        // M7.5 D1: the account's tag (as in docs/runbooks/budget-audit.md); the whole account is read, the live site included.
+        "CF_ACCOUNT_TAG": "153cd8b23edd2bc9dec570ffaf467c2f"
       },
       // Browser Run (PDF rendering, M4.4): `env.BROWSER.quickAction("pdf", ...)`. It needs no API token, but it is not inherited and
       // does not work locally, so only staging has it. The owner switches Browser Run on before the M4.4 merge (run file, H2).
@@ -214,7 +219,9 @@
           "PAYPAL_WEBHOOK_ID",
           "SES_EVENTS_TOKEN",
           "UNSUBSCRIBE_KEY",
-          "ERASURE_HASH_KEY"
+          "ERASURE_HASH_KEY",
+          // M7.5 D1 (Q4 A): the read-only Account Analytics token of `usage.daily` (scripts/set-cf-analytics-token.ps1). Staging only; production at L3.
+          "CF_ANALYTICS_TOKEN"
         ]
       },
       "d1_databases": [

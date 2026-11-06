@@ -79,6 +79,8 @@
     "./terms": "./src/terms.ts",
     "./text": "./src/text.ts",
     "./time": "./src/time.ts",
+    "./usage": "./src/usage.ts",
+    "./route-inventory": "./src/route-inventory.ts",
     "./user-agent": "./src/user-agent.ts"
   },
   "scripts": {

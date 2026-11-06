@@ -1,17 +1,30 @@
-name: Auth CPU benchmark (staging)
+name: CPU benchmark (staging)
 
-# M1.4 gate (docs/09): real logins against the STAGING admin, through Cloudflare Access with a service token.
-# Owner-only and manual: it never runs on pushes or pull requests (the repo is public, so fork PRs can't reach
-# these secrets). CPU per request is then read from Workers Logs for the printed time window.
+# M1.4 gate (docs/09) and M7.5 I1/I2 (owner's Q1 A, 2026-11-01): the owner-only benchmark of the STAGING Workers, through Cloudflare Access with the
+# benchmark service token. Owner-only and manual: it never runs on pushes or pull requests (the repo is public, so fork PRs can't reach these secrets).
+# CPU per request is then read from Workers Logs for the printed time window (docs/runbooks/cpu-baseline.md).
+#   suite: auth    real logins against the staging admin (scripts/bench-auth.mjs; M1.4)
+#   suite: routes  every GET row of the route inventory and the bench's safe writes on admin, portal and website (scripts/bench-routes.mjs --mode routes)
+#   suite: load    5 virtual users for 10 minutes, then the 60-second refusal burst, the wrong-password logins last (scripts/bench-routes.mjs --mode load)
+# Staging only: scripts/bench-routes.mjs refuses every host but the staging ones, at most 5,000 of its requests a UTC day, and stops at once on error 1027 or
+# a 5xx burst.
 on:
   workflow_dispatch:
     inputs:
+      suite:
+        description: What to run (auth = logins; routes = every route; load = the load test and the refusal burst)
+        type: choice
+        options: [auth, routes, load]
+        default: auth
       users:
-        description: Throwaway users (each can log in about twice a minute because of the TOTP replay guard)
+        description: "auth only: throwaway users (each can log in about twice a minute because of the TOTP replay guard)"
         default: "12"
       minutes:
-        description: How long to run logins
+        description: "auth and load: how long to run (load: the virtual users' minutes, 10 by the brief)"
         default: "5"
+      sent_today:
+        description: "routes and load: bench requests already sent today (UTC) by earlier runs, from their summaries (the cap is 5,000 a day)"
+        default: "0"
 
 permissions:
   contents: read
@@ -35,7 +48,8 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Run the benchmark
+      - name: Run the auth benchmark
+        if: inputs.suite == 'auth'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -44,9 +58,23 @@ jobs:
           BENCH_USERS: ${{ inputs.users }}
           BENCH_MINUTES: ${{ inputs.minutes }}
         run: node scripts/bench-auth.mjs
+      - name: Run the route or load benchmark
+        if: inputs.suite == 'routes' || inputs.suite == 'load'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_BENCH_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_BENCH_CLIENT_SECRET }}
+          SUITE: ${{ inputs.suite }}
+          BENCH_MINUTES: ${{ inputs.minutes }}
+          BENCH_SENT_TODAY: ${{ inputs.sent_today }}
+        run: node scripts/bench-routes.mjs --mode "$SUITE"
       - name: Show the result on the run page
         if: always()
+        env:
+          SUITE: ${{ inputs.suite }}
         run: |
-          if [ -f bench-auth-result.json ]; then
-            { echo '### Auth benchmark (wall-clock; CPU comes from Workers Logs)'; echo '```json'; cat bench-auth-result.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$SUITE" = "auth" ]; then file=bench-auth-result.json; else file=".logs/bench-routes-$SUITE.json"; fi
+          if [ -f "$file" ]; then
+            { echo "### $SUITE benchmark (wall-clock; CPU comes from Workers Logs)"; echo '```json'; cat "$file"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           fi

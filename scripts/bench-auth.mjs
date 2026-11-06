@@ -115,9 +115,6 @@ const users = Array.from({ length: USERS }, (_, i) => ({
   password: randomBytes(18).toString("base64url"),
   token: randomBytes(32).toString("base64url"),
 }));
-/** The unknown-email probes' addresses: their `acct:` counters are the only others this run creates. */
-const probeEmails = [];
-const acctKey = (email) => `acct:${createHash("sha256").update(email).digest("hex").slice(0, 32)}`;
 console.log(`Run ${RUN}: ${USERS} throwaway users, ${MINUTES} min of logins against ${ADMIN}`);
 const windowStart = new Date();
 d1(
@@ -182,7 +179,6 @@ try {
       if (logins % 10 === 0) {
         // Unknown-email path (fake salt, no account): must cost the same as a real one.
         const email = `nobody-${RUN}-${logins}@bench.invalid`;
-        probeEmails.push(email);
         const fake = await call("/salt", { email });
         await call("/login", {
           email,
@@ -196,16 +192,21 @@ try {
 } finally {
   // ---------- 4. cleanup ----------
   const emails = users.map((u) => q(u.email)).join(", ");
-  // Only this run's own counters (the bench users' and the probes' accounts), never a real account's.
-  const keys = [...users.map((u) => u.email), ...probeEmails].map((e) => q(acctKey(e))).join(", ");
+  // M7.5 (B1 L8): the per-account `acct:` counters are now HMAC(SALT_PEPPER, email), a key this script never holds, so the bench users' and the probes'
+  // account counters are LEFT: each lapses on its own (a lockout lasts 15 minutes, and they name only @bench.invalid addresses). Nothing here may delete a
+  // counter by pattern or time window instead (that could clear a real account's).
   d1(
     [
       // `code:<user id>` counters first (they need the ids); known devices and recovery codes go with the user (cascade).
       `DELETE FROM auth_attempts WHERE key IN (SELECT 'code:' || id FROM staff_users WHERE email IN (${emails}));`,
       `DELETE FROM staff_sessions WHERE user_id IN (SELECT id FROM staff_users WHERE email IN (${emails}));`,
+      // M7.5 L21 (A2): the rows that name a bench user by foreign key, before the user (with no cascade, the user's DELETE fails on them): the unfinished
+      // sign-in marker (0075, written after a correct password whose code failed), the notification switches (0073) and the bells (0014).
+      `DELETE FROM staff_signin_pending WHERE user_id IN (SELECT id FROM staff_users WHERE email IN (${emails}));`,
+      `DELETE FROM staff_notification_prefs WHERE user_id IN (SELECT id FROM staff_users WHERE email IN (${emails}));`,
+      `DELETE FROM notifications WHERE user_id IN (SELECT id FROM staff_users WHERE email IN (${emails}));`,
       `DELETE FROM staff_users WHERE email IN (${emails});`,
       `DELETE FROM staff_invites WHERE email IN (${emails});`,
-      `DELETE FROM auth_attempts WHERE key IN (${keys});`,
     ].join("\n"),
   );
   console.log("Cleaned up the bench users.");

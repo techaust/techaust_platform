@@ -56,7 +56,11 @@ export const BUNDLES = {
   // The fourth admin Worker (2026-11-03, brief D.6): invoices and notes, statements, reports, approvals, the dashboard, `BillingJobs` and `GatewayAdvance`.
   invoices: "apps/admin/dist/techaust_platform_admin_invoices",
   jobs: "apps/jobs/dist",
+  // M7.5 L20: the portal Worker (`pnpm --filter @techaust/portal exec vite build`).
+  portal: "apps/portal/dist/techaust_platform_portal",
 };
+/** The portal's own origin (its CSRF check wants it on unsafe requests). */
+const PORTAL_ORIGIN = "http://localhost:5174";
 const ORIGIN = "http://localhost:5173";
 /** M7.3 report cases: an IST day `days` from today (ISO), and this IST day's FY token (`2627`). */
 const isoDay = (days) => new Date(Date.now() + 19_800_000 + days * 86_400_000).toISOString().slice(0, 10);
@@ -82,6 +86,8 @@ const SECRETS = {
   SES_SECRET_ACCESS_KEY: madeUp("probe", "ses"),
   // M6.4: a made-up PayPal webhook id (letters and digits: an identifier, not a credential).
   PAYPAL_WEBHOOK_ID: "PROBEPAYPALWEBHOOK01",
+  // M7.5 L20: the portal's key pepper (base64 of 32 bytes, as the real one).
+  PORTAL_KEY_PEPPER: TEST_KEY(5),
 };
 /** M6.4: the local simulator's certificate URL (the hook accepts it while ENVIRONMENT is "local"; the case process answers it in-process). */
 const PROBE_CERT_URL = "http://localhost:8799/__paypal-test-cert";
@@ -230,8 +236,8 @@ const quietConsole = () => {
   return keep;
 };
 
-function requestOf(path, { method, body, cookie, headers = {} } = {}) {
-  const h = { Origin: ORIGIN, ...headers };
+function requestOf(path, { method, body, cookie, headers = {}, origin = ORIGIN } = {}) {
+  const h = { Origin: origin, ...headers };
   if (cookie) h.Cookie = cookie;
   let payload;
   if (body !== undefined) {
@@ -239,7 +245,7 @@ function requestOf(path, { method, body, cookie, headers = {} } = {}) {
     h["Content-Type"] ??= "application/json";
     h["Content-Length"] = String(Buffer.byteLength(payload));
   }
-  return new Request(`${ORIGIN}/api/v1${path}`, {
+  return new Request(`${origin}/api/v1${path}`, {
     method: method ?? (body === undefined ? "GET" : "POST"),
     headers: h,
     body: payload,
@@ -773,6 +779,40 @@ async function seed(dir, extra) {
       returnTo: "invoice",
     });
   }
+  // M7.5 L20: the portal. The sample clients (the `portal:sample` SQL, made-up @example.test contacts), links minted by the `portal:link` SQL for the
+  // finance contact of Sample Client A: one used here for the session cookie, the rest kept for the link sign-in case (each is single use).
+  const { sampleStatements, linkStatements, SAMPLE } = await import("./portal-sql.mjs");
+  for (const s of sampleStatements()) raw.exec(s);
+  const portalContact = SAMPLE[0].contacts.find((x) => x.portal === 1 && x.finance === 1);
+  const mintLink = () => {
+    const token = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    for (const s of linkStatements({
+      contactId: portalContact.id,
+      tokenHash,
+      now: Date.now(),
+      auditId: randomUUID(),
+    }))
+      raw.exec(s);
+    return token;
+  };
+  const portal = await loadWorker("portal");
+  const portalEnv = envOf("portal", shared);
+  const verified = await portal.default.fetch(
+    requestOf("/auth/magic/verify", { body: { token: mintLink() }, origin: PORTAL_ORIGIN }),
+    portalEnv,
+    ctx(),
+  );
+  await drain();
+  const portalCookie =
+    verified.headers
+      .getSetCookie()
+      .find((c) => c.startsWith("__Host-ta_portal="))
+      ?.split(";")[0] ?? null;
+  await verified.text();
+  if (!portalCookie)
+    throw new Error(`cpu-probe: the portal sign-in answered ${verified.status} with no session`);
+  const portalTokens = Array.from({ length: 8 }, mintLink);
   const salted = must("salt", await via("/auth/salt", { body: { email }, cookie: device }));
   const manifest = {
     email,
@@ -794,6 +834,8 @@ async function seed(dir, extra) {
     paypalLinks,
     advances,
     reviews,
+    portalCookie,
+    portalTokens,
   };
   writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
   keep.log(
@@ -957,6 +999,29 @@ export const CASES = {
   // "All payments" (C8, a new statement): in the start-up dry run (B2: 3.5 ms first-run locally without it).
   "GET /payments": { worker: "finance", call: (m) => ({ path: "/payments", cookie: m.cookie }) },
   "rpc GatewayEvents.processEvent": { worker: "finance", rpc: true },
+  // M7.5 L20: the portal's hot rows: health, the link sign-in (a fresh single-use link per attempt), and the signed-in reads.
+  "portal GET /health": { worker: "portal", call: () => ({ path: "/health", origin: PORTAL_ORIGIN }) },
+  "portal POST /auth/magic/verify": {
+    worker: "portal",
+    warm: false,
+    call: (m, i) => ({
+      path: "/auth/magic/verify",
+      body: { token: m.portalTokens[i] },
+      origin: PORTAL_ORIGIN,
+    }),
+  },
+  "portal GET /me": {
+    worker: "portal",
+    call: (m) => ({ path: "/me", cookie: m.portalCookie, origin: PORTAL_ORIGIN }),
+  },
+  "portal GET /home": {
+    worker: "portal",
+    call: (m) => ({ path: "/home", cookie: m.portalCookie, origin: PORTAL_ORIGIN }),
+  },
+  "portal GET /invoices": {
+    worker: "portal",
+    call: (m) => ({ path: "/invoices", cookie: m.portalCookie, origin: PORTAL_ORIGIN }),
+  },
   "jobs POST /razorpay": { worker: "jobs", hook: true },
   // M6.4: the PayPal return's capture RPC (the token, the claim, the capture and the confirmed batch) and the PayPal webhook (the certificate's first fetch
   // and import, CRC32, the RSA verify, two D1 statements, the send). L31 (early check 2 finding 4): the finance Worker's RPC entrypoints are dry-run at start-up
@@ -1409,6 +1474,12 @@ async function main() {
       shell: process.platform === "win32",
     });
     execFileSync(pnpm, ["--filter", "@techaust/jobs", "build"], {
+      cwd: root,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    });
+    // M7.5 L20: the portal.
+    execFileSync(pnpm, ["--filter", "@techaust/portal", "exec", "vite", "build"], {
       cwd: root,
       stdio: "inherit",
       shell: process.platform === "win32",

@@ -124,6 +124,15 @@ describe("staging-health judge [A6-8]", () => {
       ["/api/v1/dashboard", 401],
       ["/api/v1/payments", 401],
     ]);
+    // M7.5 C4: the website's health route names the Worker and the environment (not any 200 from /api/geo).
+    expect(CHECKS.web).toEqual([{ path: "/api/health", status: 200, service: "web" }]);
+    expect(
+      judge(CHECKS.web[0] as never, answer(200, { ok: true, service: "web", env: "staging" })),
+    ).toBeNull();
+    expect(judge(CHECKS.web[0] as never, answer(200, { currency: "INR" }))).toMatch(/does not say ok/);
+    expect(judge(CHECKS.web[0] as never, answer(200, { ok: true, service: "web", env: "local" }))).toMatch(
+      /expected staging/,
+    );
     expect(urlOf("jobs")).toBe(
       "https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev",
     );
@@ -195,7 +204,7 @@ describe("staging-health checkApp [A6-8]", () => {
         throw new TypeError("fetch failed");
       },
     });
-    expect(failures).toEqual(["web /api/geo: request failed: TypeError"]);
+    expect(failures).toEqual(["web /api/health: request failed: TypeError"]);
   });
 
   it("checks the four admin paths (front, API, invoices, finance), and refuses an unknown app", async () => {
@@ -261,7 +270,9 @@ describe("M7.1 L17: no local secrets file in a build output (check-staging-build
   it("both deploy-time guards call it for the SPAs", () => {
     const build = readFileSync(new URL("../../../scripts/check-staging-build.mjs", import.meta.url), "utf8");
     const headers = readFileSync(new URL("../../../scripts/check-spa-headers.mjs", import.meta.url), "utf8");
-    expect(build.match(/devVarsProblems\(/g)?.length).toBe(2); // the SPA targets and the admin aux targets
+    // The SPA targets, the admin aux targets and (M7.5) `dev-vars`, every app's output for deploy-prod.yml's build job.
+    expect(build.match(/devVarsProblems\(/g)?.length).toBe(3);
+    expect(build).toMatch(/if \(target === "dev-vars"\) return devVarsEverywhere\(\);/);
     expect(headers).toMatch(/devVarsProblems\(app, join\(root, "apps", app, "dist"\)\)/);
   });
 });

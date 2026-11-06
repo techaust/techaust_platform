@@ -1,6 +1,8 @@
 packages:
   - apps/*
   - packages/*
+  # M7.5 (owner's Q3 A): wrangler alone, for the deploy jobs (`pnpm install --frozen-lockfile --filter @techaust/deploy-tools`).
+  - tools/deploy
 
 # Supply-chain delay for newly published versions, in minutes (1 day).
 # Renovate adds a further 7-day delay on updates (renovate.json).
