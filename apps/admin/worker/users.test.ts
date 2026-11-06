@@ -18,6 +18,7 @@ import {
   accept,
   bodyOf,
   call,
+  challengeFor,
   counting,
   countOf,
   enrol,
@@ -818,9 +819,10 @@ describe("M7.5 L36: a re-issue after a reset cut short records the reset [ADM-AU
       resetAuditId: crypto.randomUUID(),
       alertId: crypto.randomUUID(),
     };
+    const token = `${crypto.randomUUID().replaceAll("-", "")}${"y".repeat(11)}`; // 43 URL-safe characters
     const sql = reinviteStatements({
       email,
-      tokenHash: await tokenHash(`${crypto.randomUUID().replaceAll("-", "")}${"y".repeat(11)}`),
+      tokenHash: await tokenHash(token),
       now,
       expiresAt: now + INVITE_TTL_MS,
       ...ids,
@@ -830,8 +832,18 @@ describe("M7.5 L36: a re-issue after a reset cut short records the reset [ADM-AU
     const found = (
       await env.DB.prepare(auditReadBackSql(Object.values(ids))).all<{ id: string }>()
     ).results.map((r) => r.id);
-    return { ids, found, ...reinviteExpected({ found, ...ids }) };
+    return { ids, found, token, ...reinviteExpected({ found, ...ids }) };
   };
+  /** What a reset leaves of a member: its row, its recovery codes, known devices and sessions (with when each ended). */
+  const footprint = async (id: string) => ({
+    user: await one("SELECT * FROM staff_users WHERE id = ?", id),
+    codes: await rows("SELECT id, used_at FROM staff_recovery_codes WHERE user_id = ? ORDER BY id", id),
+    devices: await rows(
+      "SELECT device_hash FROM staff_known_devices WHERE user_id = ? ORDER BY device_hash",
+      id,
+    ),
+    sessions: await rows("SELECT id, revoked_at FROM staff_sessions WHERE user_id = ? ORDER BY id", id),
+  });
   /** A reset run that stopped after its first statement: the member is invited, nothing else ran. */
   const cutShort = async (email: string, now = Date.now()) => {
     const [first] = resetStatements({
@@ -933,6 +945,76 @@ describe("M7.5 L36: a re-issue after a reset cut short records the reset [ADM-AU
     expect((await reissue(viaApi.email)).recordedReset).toBe(false);
     expect(await resetRows(viaApi.id)).toBe(1);
     expect(await alertRows(viaApi.id)).toBe(alerts);
+  });
+
+  it("L44: a run cut short, then re-issued: codes, devices and sessions are cleared, and after re-enrolment no old recovery code works", async () => {
+    await sessionFor("owner");
+    const e = await enrol(newEmail(), "staff");
+    const id = await userId(e.email);
+    expect(await countOf("staff_recovery_codes", "user_id = ?", id)).toBe(10);
+    expect(await countOf("staff_known_devices", "user_id = ?", id)).toBe(1);
+    expect(await countOf("staff_sessions", "user_id = ? AND revoked_at IS NULL", id)).toBe(1);
+    await cutShort(e.email);
+    // what the cut-short run left behind
+    expect(await countOf("staff_recovery_codes", "user_id = ?", id)).toBe(10);
+    const r = await reissue(e.email);
+    expect(r.recordedReset).toBe(true);
+    expect(await countOf("staff_recovery_codes", "user_id = ?", id)).toBe(0);
+    expect(await countOf("staff_known_devices", "user_id = ?", id)).toBe(0);
+    expect(await countOf("staff_sessions", "user_id = ? AND revoked_at IS NULL", id)).toBe(0);
+    // the member enrols again through the new link
+    const back = await accept(r.token, "Back Again");
+    expect(back.email).toBe(e.email);
+    expect(await countOf("staff_recovery_codes", "user_id = ?", id)).toBe(10);
+    const old = await call("/auth/recovery", {
+      body: { challenge: await challengeFor(e.email, back.clientHash), code: e.recoveryCodes[0] },
+    });
+    expect(old.status).toBe(401);
+    const fresh = await call("/auth/recovery", {
+      body: { challenge: await challengeFor(e.email, back.clientHash), code: back.recoveryCodes[0] },
+    });
+    expect(fresh.status).toBe(200);
+  });
+
+  it("L44: a re-issue after a reset that ran in full changes nothing of the member (row, codes, devices, sessions)", async () => {
+    await sessionFor("owner");
+    const e = await enrol(newEmail(), "staff");
+    const id = await userId(e.email);
+    const now = Date.now() - 1_000;
+    await env.DB.exec(
+      resetStatements({
+        email: e.email,
+        tokenHash: await tokenHash(`l44${crypto.randomUUID().replaceAll("-", "")}${"k".repeat(8)}`),
+        now,
+        expiresAt: now + INVITE_TTL_MS,
+        auditId: crypto.randomUUID(),
+        alertId: crypto.randomUUID(),
+      }).join("\n"),
+    );
+    const before = await footprint(id);
+    expect(before.sessions.length).toBeGreaterThan(0);
+    expect((await reissue(e.email)).recordedReset).toBe(false);
+    expect(await footprint(id)).toEqual(before);
+  });
+
+  it("L44: an active or deactivated member is untouched (codes, devices and sessions stay)", async () => {
+    await sessionFor("owner");
+    const active = await enrol(newEmail(), "staff");
+    const activeId = await userId(active.email);
+    const gone = await enrol(newEmail(), "staff");
+    const goneId = await userId(gone.email);
+    await env.DB.prepare(
+      "UPDATE staff_users SET status = 'deactivated', pw_hmac = NULL, totp_secret_enc = NULL, totp_enabled_at = NULL WHERE id = ?",
+    )
+      .bind(goneId)
+      .run();
+    const beforeActive = await footprint(activeId);
+    const beforeGone = await footprint(goneId);
+    expect(beforeActive.codes).toHaveLength(10);
+    await reissue(active.email);
+    await reissue(gone.email);
+    expect(await footprint(activeId)).toEqual(beforeActive);
+    expect(await footprint(goneId)).toEqual(beforeGone);
   });
 
   it("an active, deactivated or unknown member: nothing at all", async () => {
