@@ -8,7 +8,9 @@ import {
   breakGlassStatements,
   checkBreakGlass,
   normaliseEmail,
+  RESET_ROW_MARGIN_MS,
   readBackProblem,
+  reinviteExpected,
   reinviteStatements,
   resetStatements,
 } from "../../../scripts/reset-2fa-sql.mjs";
@@ -651,8 +653,13 @@ describe("break-glass: pnpm admin:reset-2fa [ADM-AUTH-07, docs/08 §3.2]", () =>
         now: later,
         expiresAt: later + INVITE_TTL_MS,
         auditId: crypto.randomUUID(),
+        resetAuditId: crypto.randomUUID(),
+        alertId: crypto.randomUUID(),
       }),
     );
+    // L36: the reset was recorded by its own run, so the re-issue writes no second user.reset_2fa or alert.2fa_change
+    expect(await countOf("audit_log", "action = 'user.reset_2fa' AND entity_id = ?", u.id)).toBe(1);
+    expect(await countOf("audit_log", "action = 'alert.2fa_change' AND entity_id = ?", u.id)).toBe(1);
     expect(await one("SELECT status, updated_at FROM staff_users WHERE id = ?", u.id)).toEqual(before);
     expect((await call("/auth/invite/start", { body: { token: "a".repeat(43) } })).status).toBe(400);
     expect((await call("/auth/invite/start", { body: { token: "b".repeat(43) } })).status).toBe(200);
@@ -677,6 +684,8 @@ describe("break-glass: pnpm admin:reset-2fa [ADM-AUTH-07, docs/08 §3.2]", () =>
           now,
           expiresAt: now + INVITE_TTL_MS,
           auditId: crypto.randomUUID(),
+          resetAuditId: crypto.randomUUID(),
+          alertId: crypto.randomUUID(),
         }).join("\n"),
       );
     expect({ invites: await countOf("staff_invites"), audits: await countOf("audit_log") }).toEqual(before);
@@ -799,6 +808,147 @@ describe("break-glass: pnpm admin:reset-2fa [ADM-AUTH-07, docs/08 §3.2]", () =>
     );
     expect(readBackProblem({ found: [ids.auditId], expected })).toMatch(/1 of 2 audit rows missing/);
     expect(auditReadBackSql(["a'b", "c"])).toBe("SELECT id FROM audit_log WHERE id IN ('a''b', 'c')");
+  });
+});
+
+describe("M7.5 L36: a re-issue after a reset cut short records the reset [ADM-AUTH-07, docs/08 §3.2]", () => {
+  const reissue = async (email: string, now = Date.now()) => {
+    const ids = {
+      auditId: crypto.randomUUID(),
+      resetAuditId: crypto.randomUUID(),
+      alertId: crypto.randomUUID(),
+    };
+    const sql = reinviteStatements({
+      email,
+      tokenHash: await tokenHash(`${crypto.randomUUID().replaceAll("-", "")}${"y".repeat(11)}`),
+      now,
+      expiresAt: now + INVITE_TTL_MS,
+      ...ids,
+    });
+    expect(sql.every((s) => !s.includes("\n"))).toBe(true); // one statement per line
+    await env.DB.exec(sql.join("\n"));
+    const found = (
+      await env.DB.prepare(auditReadBackSql(Object.values(ids))).all<{ id: string }>()
+    ).results.map((r) => r.id);
+    return { ids, found, ...reinviteExpected({ found, ...ids }) };
+  };
+  /** A reset run that stopped after its first statement: the member is invited, nothing else ran. */
+  const cutShort = async (email: string, now = Date.now()) => {
+    const [first] = resetStatements({
+      email,
+      tokenHash: await tokenHash("z".repeat(43)),
+      now,
+      expiresAt: now + INVITE_TTL_MS,
+      auditId: crypto.randomUUID(),
+      alertId: crypto.randomUUID(),
+    });
+    await env.DB.exec(first as string);
+  };
+  const resetRows = (id: string) => countOf("audit_log", "action = 'user.reset_2fa' AND entity_id = ?", id);
+  const alertRows = (id: string) => countOf("audit_log", "action = 'alert.2fa_change' AND entity_id = ?", id);
+
+  it("a run cut short after its first UPDATE: the re-issue writes user.reset_2fa and alert.2fa_change (actor system), and the read-back expects both", async () => {
+    await sessionFor("owner"); // keep an owner around
+    const e = await enrol(newEmail(), "staff");
+    const id = await userId(e.email);
+    await cutShort(e.email);
+    expect((await one<{ status: string }>("SELECT status FROM staff_users WHERE id = ?", id))?.status).toBe(
+      "invited",
+    );
+    expect(await resetRows(id)).toBe(0);
+    const r = await reissue(e.email);
+    expect(r.recordedReset).toBe(true);
+    expect(r.expected).toEqual([r.ids.auditId, r.ids.resetAuditId, r.ids.alertId]);
+    expect(readBackProblem({ found: r.found, expected: r.expected })).toBeNull();
+    expect(
+      await one(
+        "SELECT actor_type, actor_id, entity_type, entity_id, summary FROM audit_log WHERE id = ?",
+        r.ids.resetAuditId,
+      ),
+    ).toEqual({
+      actor_type: "system",
+      actor_id: null,
+      entity_type: "staff_user",
+      entity_id: id,
+      summary: '{"via":"cli","resumed":true}',
+    });
+    expect(
+      await one(
+        "SELECT actor_type, entity_type, entity_id, summary FROM audit_log WHERE id = ?",
+        r.ids.alertId,
+      ),
+    ).toEqual({
+      actor_type: "system",
+      entity_type: "staff_user",
+      entity_id: id,
+      summary: '{"via":"cli","change":"reset_by_owner"}',
+    });
+    // a second re-issue finds the row now: nothing more
+    const again = await reissue(e.email);
+    expect(again.recordedReset).toBe(false);
+    expect(again.expected).toEqual([again.ids.auditId]);
+    expect(readBackProblem({ found: again.found, expected: again.expected })).toBeNull();
+    expect(await resetRows(id)).toBe(1);
+    expect(await alertRows(id)).toBe(1);
+  });
+
+  it("a reset recorded by its own run, with the PC's clock ahead of D1's by up to the margin: no second row", async () => {
+    await sessionFor("owner");
+    const e = await enrol(newEmail(), "staff");
+    const id = await userId(e.email);
+    const ahead = Date.now() + RESET_ROW_MARGIN_MS - 30_000;
+    await env.DB.exec(
+      resetStatements({
+        email: e.email,
+        tokenHash: await tokenHash("w".repeat(43)),
+        now: ahead,
+        expiresAt: ahead + INVITE_TTL_MS,
+        auditId: crypto.randomUUID(),
+        alertId: crypto.randomUUID(),
+      }).join("\n"),
+    );
+    expect(await resetRows(id)).toBe(1);
+    expect((await reissue(e.email)).recordedReset).toBe(false);
+    expect(await resetRows(id)).toBe(1);
+    expect(await alertRows(id)).toBe(1);
+  });
+
+  it("an enrolment begun since (a password set) or a reset recorded by the API: no row", async () => {
+    const o = await owner();
+    const begun = await enrol(newEmail(), "staff");
+    const begunId = await userId(begun.email);
+    await cutShort(begun.email);
+    await env.DB.prepare("UPDATE staff_users SET pw_hmac = 'made-up', pw_salt = 'made-up' WHERE id = ?")
+      .bind(begunId)
+      .run();
+    expect((await reissue(begun.email)).recordedReset).toBe(false);
+    expect(await resetRows(begunId)).toBe(0);
+
+    const viaApi = await sessionFor("staff");
+    expect((await call(`/users/${viaApi.id}/reset-2fa`, { method: "POST", cookie: o.cookie })).status).toBe(
+      200,
+    );
+    expect(await resetRows(viaApi.id)).toBe(1);
+    const alerts = await alertRows(viaApi.id);
+    expect((await reissue(viaApi.email)).recordedReset).toBe(false);
+    expect(await resetRows(viaApi.id)).toBe(1);
+    expect(await alertRows(viaApi.id)).toBe(alerts);
+  });
+
+  it("an active, deactivated or unknown member: nothing at all", async () => {
+    const active = await sessionFor("staff");
+    const gone = await sessionFor("staff");
+    await env.DB.prepare(
+      "UPDATE staff_users SET status = 'deactivated', pw_hmac = NULL, totp_secret_enc = NULL, totp_enabled_at = NULL WHERE id = ?",
+    )
+      .bind(gone.id)
+      .run();
+    const before = await countOf("audit_log");
+    for (const email of [active.email, gone.email, "nobody-l36@example.com"]) {
+      const r = await reissue(email);
+      expect(r.found).toEqual([]);
+    }
+    expect(await countOf("audit_log")).toBe(before);
   });
 });
 

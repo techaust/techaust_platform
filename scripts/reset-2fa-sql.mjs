@@ -38,19 +38,44 @@ export function resetStatements({ email, tokenHash, now, expiresAt, auditId, ale
 }
 
 /**
+ * M7.5 (L36, the early check's F6): how far before a member's `updated_at` its reset's `user.reset_2fa` row may be dated and still count as that reset's. The
+ * CLI's `updated_at` comes from the clock of the PC that ran it, the audit row's `at` from D1's; the margin absorbs the difference between the two.
+ */
+export const RESET_ROW_MARGIN_MS = 5 * 60_000;
+
+/**
  * A member who is ALREADY "invited" (a reset was done earlier and the link was lost): a fresh invite only, without
  * touching `staff_users`. Older pending invites stop working; the audit log gets `user.invite` (actor "system").
- * @param {{ email: string, tokenHash: string, now: number, expiresAt: number, auditId: string }} p
+ *
+ * M7.5 (L36): a run of `resetStatements` cut short after its first UPDATE leaves the member "invited" with no `user.reset_2fa` and no `alert.2fa_change`; the
+ * next run takes this path. So when the member carries the reset's own mark (invited, no password, no authenticator) and no `user.reset_2fa` row is dated
+ * since its `updated_at` (less `RESET_ROW_MARGIN_MS`), both rows are written now (`resetAuditId`, then `alertId` guarded on it), as `resetStatements` would
+ * have. A member who already has the row, or who has set a password since (an enrolment begun), gets neither.
+ * @param {{ email: string, tokenHash: string, now: number, expiresAt: number, auditId: string, resetAuditId: string, alertId: string }} p
  * @returns {string[]}
  */
-export function reinviteStatements({ email, tokenHash, now, expiresAt, auditId }) {
+export function reinviteStatements({ email, tokenHash, now, expiresAt, auditId, resetAuditId, alertId }) {
   const e = q(email);
   const invited = `SELECT 1 FROM staff_users WHERE email = ${e} AND status = 'invited'`;
+  const unrecorded = `email = ${e} AND status = 'invited' AND pw_hmac IS NULL AND totp_secret_enc IS NULL AND totp_enabled_at IS NULL AND NOT EXISTS (SELECT 1 FROM audit_log a WHERE a.action = 'user.reset_2fa' AND a.entity_type = 'staff_user' AND a.entity_id = staff_users.id AND a.at >= staff_users.updated_at - ${RESET_ROW_MARGIN_MS})`;
   return [
     `UPDATE staff_invites SET expires_at = ${now} WHERE email = ${e} AND used_at IS NULL AND expires_at > ${now} AND EXISTS (${invited});`,
     `INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) SELECT ${q(tokenHash)}, email, role, NULL, ${expiresAt} FROM staff_users WHERE email = ${e} AND status = 'invited';`,
     `INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, summary) SELECT ${q(auditId)}, 'system', NULL, 'user.invite', 'staff_invite', ${q(tokenHash)}, '{"via":"cli"}' FROM staff_users WHERE email = ${e} AND status = 'invited';`,
+    `INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, summary) SELECT ${q(resetAuditId)}, 'system', NULL, 'user.reset_2fa', 'staff_user', id, '{"via":"cli","resumed":true}' FROM staff_users WHERE ${unrecorded};`,
+    `INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, summary) SELECT ${q(alertId)}, 'system', NULL, 'alert.2fa_change', 'staff_user', entity_id, '{"via":"cli","change":"reset_by_owner"}' FROM audit_log WHERE id = ${q(resetAuditId)} AND action = 'user.reset_2fa';`,
   ];
+}
+
+/**
+ * M7.5 (L36): the audit rows a re-issue must show, by what its read-back found: always the `user.invite` row; and the alert when the run recorded the reset
+ * (the two are written together or not at all).
+ * @param {{ found: string[], auditId: string, resetAuditId: string, alertId: string }} p
+ * @returns {{ expected: string[], recordedReset: boolean }}
+ */
+export function reinviteExpected({ found, auditId, resetAuditId, alertId }) {
+  const recordedReset = found.includes(resetAuditId);
+  return { expected: recordedReset ? [auditId, resetAuditId, alertId] : [auditId], recordedReset };
 }
 
 /**

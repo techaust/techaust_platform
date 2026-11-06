@@ -51,3 +51,16 @@ export function passwordSignIn(deps: PasswordSignInDeps) {
     },
   };
 }
+
+/**
+ * M7.5 (L34): the staff line of 401 `challenge_used` (approved by the lead under the owner's delegation, run file "Lead's triage of the early check"): a right
+ * code on a sign-in another tab has already finished. Nothing was counted; the screen goes back to the password step (the email kept) and shows this line.
+ */
+export const CHALLENGE_USED_LINE = "This sign-in has already been used. Enter your password again.";
+
+/** What the code or recovery step does with a refused request: start again from the password step (`challenge_used`), or stay and show the error. */
+export function codeStepRefusal(error: unknown): { restart: true; text: string } | { restart: false } {
+  return error instanceof RequestError && error.code === "challenge_used"
+    ? { restart: true, text: CHALLENGE_USED_LINE }
+    : { restart: false };
+}

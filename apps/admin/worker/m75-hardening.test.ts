@@ -4,6 +4,7 @@
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import {
+  accountKey,
   CHALLENGE_TTL_MS,
   codeKey,
   currentStep,
@@ -20,7 +21,13 @@ import { API_CSP } from "@techaust/core/file-types";
 import { uuidv7 } from "@techaust/core/ids";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import api from "./api.ts";
-import { enrolCodesGuard, insertRecoveryCodes } from "./auth.ts";
+import {
+  CHALLENGE_USED,
+  CODE_RELEASE_FIRST_SQL,
+  CODE_RELEASE_SQL,
+  enrolCodesGuard,
+  insertRecoveryCodes,
+} from "./auth.ts";
 import front from "./index.ts";
 import { ADDRESS_LIMITED } from "./rate-limit.ts";
 import {
@@ -367,6 +374,184 @@ describe("L4: a login challenge works once [ASVS 6.6.2]", () => {
   });
 });
 
+// ---- L33, L34: the single-use challenge after the early check (F2, F3) ------------------------------------------------------------------------------
+
+/** Every counter row, so a test can prove a request moved none. */
+const allAttempts = async () =>
+  (
+    await env.DB.prepare(
+      "SELECT key, window_start, failures, locked_until FROM auth_attempts ORDER BY key",
+    ).all()
+  ).results;
+const sessionsOf = (id: string) => countOf("staff_sessions", "user_id = ?1", id);
+const alertsOf = (id: string) => countOf("audit_log", "action LIKE 'alert.%' AND entity_id = ?1", id);
+const nowCode = (secret: Uint8Array) => totpCode(secret, currentStep(Date.now()));
+/** A recovery code stored for `id`, unused. */
+async function storedRecoveryCode(id: string) {
+  const code = newRecoveryCodes()[0] as string;
+  await env.DB.prepare("INSERT INTO staff_recovery_codes (id, user_id, code_hash) VALUES (?1, ?2, ?3)")
+    .bind(uuidv7(), id, await recoveryCodeHash(code))
+    .run();
+  return code;
+}
+
+describe("L33: a finished sign-in moves last_login_at to at least the challenge's iat (a clock behind the issuer's can't reopen it)", () => {
+  it("a challenge with iat = now + 60 s signs in once; then a second /totp and a /recovery with it are 401 and make no session", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const iat = Date.now() + 60_000;
+    // the issuing isolate's clock was a minute ahead of this one
+    const challenge = await signChallenge(env.SESSION_HMAC_KEY, {
+      purpose: "login_totp",
+      sub: s.id,
+      exp: iat + CHALLENGE_TTL_MS,
+      iat,
+      ak: await accountKey(env.SALT_PEPPER, s.email),
+    });
+    const first = await call("/auth/totp", { body: { challenge, code: nowCode(s.secret) } });
+    expect(first.status).toBe(200);
+    expect(
+      (await one<{ last_login_at: number }>("SELECT last_login_at FROM staff_users WHERE id = ?1", s.id))
+        ?.last_login_at,
+    ).toBe(iat);
+    const sessions = await sessionsOf(s.id);
+    // a fresh step, so only the single-use rule can refuse it
+    await env.DB.prepare("UPDATE staff_users SET totp_last_step = NULL WHERE id = ?1").bind(s.id).run();
+    const again = await call("/auth/totp", { body: { challenge, code: nowCode(s.secret) } });
+    expect(again.status).toBe(401);
+    const code = await storedRecoveryCode(s.id);
+    const recovery = await call("/auth/recovery", { body: { challenge, code } });
+    expect(recovery.status).toBe(401);
+    expect(await sessionsOf(s.id)).toBe(sessions);
+    expect(
+      (await one("SELECT used_at FROM staff_recovery_codes WHERE user_id = ?1", s.id))?.used_at,
+    ).toBeNull();
+  });
+
+  it("a recovery sign-in writes max(now, iat) too", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const iat = Date.now() + 60_000;
+    const challenge = await signChallenge(env.SESSION_HMAC_KEY, {
+      purpose: "login_totp",
+      sub: s.id,
+      exp: iat + CHALLENGE_TTL_MS,
+      iat,
+      ak: await accountKey(env.SALT_PEPPER, s.email),
+    });
+    const code = await storedRecoveryCode(s.id);
+    expect((await call("/auth/recovery", { body: { challenge, code } })).status).toBe(200);
+    expect(
+      (await one<{ last_login_at: number }>("SELECT last_login_at FROM staff_users WHERE id = ?1", s.id))
+        ?.last_login_at,
+    ).toBe(iat);
+    const sessions = await sessionsOf(s.id);
+    const again = await call("/auth/totp", { body: { challenge, code: nowCode(s.secret) } });
+    expect(again.status).toBe(401);
+    expect(await sessionsOf(s.id)).toBe(sessions);
+  });
+});
+
+describe("L34: a right code on a spent challenge is 401 challenge_used, uncounted", () => {
+  it("/totp: wrong codes on the spent challenge still count; the right one answers challenge_used and moves no counter, makes no session and no alert", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const stale = await challengeFor(s.email, s.clientHash);
+    expect((await signIn(s)).res.status).toBe(200); // another tab finishes first
+    await env.DB.prepare("UPDATE staff_users SET totp_last_step = NULL WHERE id = ?1").bind(s.id).run();
+    for (let i = 1; i <= 2; i++) {
+      const wrong = await call("/auth/totp", { body: { challenge: stale, code: wrongCode(s.secret) } });
+      expect((await bodyOf(wrong)).error).toMatchObject({ code: "invalid_credentials" });
+      expect((await attemptsRow(codeKey(s.id)))?.failures).toBe(i);
+    }
+    const before = await allAttempts();
+    const sessions = await sessionsOf(s.id);
+    const alerts = await alertsOf(s.id);
+    const res = await call("/auth/totp", { body: { challenge: stale, code: nowCode(s.secret) } });
+    expect(res.status).toBe(401);
+    expect((await bodyOf(res)).error).toEqual({
+      code: "challenge_used",
+      message: "This sign-in has already been used. Enter your password again.",
+    });
+    expect(await allAttempts()).toEqual(before);
+    expect(await sessionsOf(s.id)).toBe(sessions);
+    expect(await alertsOf(s.id)).toBe(alerts);
+  });
+
+  it("/totp with no counter row: none is left behind", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const stale = await challengeFor(s.email, s.clientHash);
+    expect((await signIn(s)).res.status).toBe(200);
+    await env.DB.prepare("UPDATE staff_users SET totp_last_step = NULL WHERE id = ?1").bind(s.id).run();
+    expect(await attemptsRow(codeKey(s.id))).toBeNull();
+    const res = await call("/auth/totp", { body: { challenge: stale, code: nowCode(s.secret) } });
+    expect((await bodyOf(res)).error).toMatchObject({ code: "challenge_used" });
+    expect(await attemptsRow(codeKey(s.id))).toBeNull();
+  });
+
+  it("the 10th attempt: the right code on a spent challenge gives back the lock its own reservation set, and raises no lockout alert", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const stale = await challengeFor(s.email, s.clientHash);
+    expect((await signIn(s)).res.status).toBe(200);
+    await env.DB.prepare("UPDATE staff_users SET totp_last_step = NULL WHERE id = ?1").bind(s.id).run();
+    const start = Date.now();
+    await env.DB.prepare(
+      "INSERT INTO auth_attempts (key, window_start, failures, locked_until) VALUES (?1, ?2, ?3, NULL)",
+    )
+      .bind(codeKey(s.id), start, LOCK_AFTER - 1)
+      .run();
+    const alerts = await alertsOf(s.id);
+    const res = await call("/auth/totp", { body: { challenge: stale, code: nowCode(s.secret) } });
+    expect((await bodyOf(res)).error).toMatchObject({ code: "challenge_used" });
+    expect(await attemptsRow(codeKey(s.id))).toEqual({
+      window_start: start,
+      failures: LOCK_AFTER - 1,
+      locked_until: null,
+    });
+    expect(await alertsOf(s.id)).toBe(alerts);
+  });
+
+  it("/recovery: the right recovery code on a spent challenge answers challenge_used, uncounted, and the code stays unused", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const stale = await challengeFor(s.email, s.clientHash);
+    const code = await storedRecoveryCode(s.id);
+    expect((await signIn(s)).res.status).toBe(200);
+    const wrong = await call("/auth/recovery", { body: { challenge: stale, code: "ABCD-EFGH-JKLM-NPQR" } });
+    expect((await bodyOf(wrong)).error).toMatchObject({ code: "invalid_credentials" });
+    expect((await attemptsRow(codeKey(s.id)))?.failures).toBe(1);
+    const before = await allAttempts();
+    const sessions = await sessionsOf(s.id);
+    const res = await call("/auth/recovery", { body: { challenge: stale, code } });
+    expect(res.status).toBe(401);
+    expect((await bodyOf(res)).error).toMatchObject({ code: "challenge_used" });
+    expect(await allAttempts()).toEqual(before);
+    expect(await sessionsOf(s.id)).toBe(sessions);
+    expect(
+      (await one("SELECT used_at FROM staff_recovery_codes WHERE user_id = ?1", s.id))?.used_at,
+    ).toBeNull();
+  });
+
+  it("the release gives back only this request's count: a counter another attempt moved since is left as it is", async () => {
+    const key = `code:release-${uuidv7()}`;
+    const t = Date.now();
+    await env.DB.prepare(
+      "INSERT INTO auth_attempts (key, window_start, failures, locked_until) VALUES (?1, ?2, 4, NULL)",
+    )
+      .bind(key, t)
+      .run();
+    // this request reserved 3, another one has counted since (4): nothing is taken back
+    expect((await env.DB.prepare(CODE_RELEASE_SQL).bind(key, 3, null, 0).run()).meta.changes).toBe(0);
+    expect((await env.DB.prepare(CODE_RELEASE_FIRST_SQL).bind(key, 1, null, t).run()).meta.changes).toBe(0);
+    expect((await attemptsRow(key))?.failures).toBe(4);
+    expect((await env.DB.prepare(CODE_RELEASE_SQL).bind(key, 4, null, 0).run()).meta.changes).toBe(1);
+    expect((await attemptsRow(key))?.failures).toBe(3);
+  });
+
+  it("the server's line is the approved staff line (src/lib/password-sign-in.test.ts pins the SPA's CHALLENGE_USED_LINE to the same words)", () => {
+    expect(CHALLENGE_USED).toEqual({
+      code: "challenge_used",
+      message: "This sign-in has already been used. Enter your password again.",
+    });
+  });
+});
+
 // ---- L5, L9: the invite's authenticator step ---------------------------------------------------------------------------------------------------------
 
 describe("L5: /invite/totp counts failures on the member's code counter and locks after 10", () => {
@@ -499,6 +684,66 @@ describe("L23: TOTP_ENC_KEY rotation through TOTP_ENC_KEY_PREVIOUS", () => {
     expect((await one("SELECT totp_secret_enc FROM staff_users WHERE id = ?1", s.id))?.totp_secret_enc).toBe(
       legacy,
     );
+  });
+
+  it("L35: a right code whose session batch is refused (a concurrent sign-in moved the step) re-seals nothing", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const was = (await one("SELECT totp_secret_enc FROM staff_users WHERE id = ?1", s.id))?.totp_secret_enc;
+    const challenge = await challengeFor(s.email, s.clientHash);
+    await env.DB.prepare("UPDATE staff_users SET totp_last_step = NULL WHERE id = ?1").bind(s.id).run();
+    const sessions = await countOf("staff_sessions", "user_id = ?1", s.id);
+    // Just before the session batch (the first batch of 5 or more statements), another request takes a later step: the guard changes no row.
+    let fired = false;
+    const racing = {
+      prepare: (q: string) => env.DB.prepare(q),
+      batch: async (stmts: D1PreparedStatement[]) => {
+        if (!fired && stmts.length >= 5) {
+          fired = true;
+          await env.DB.prepare("UPDATE staff_users SET totp_last_step = ?2 WHERE id = ?1")
+            .bind(s.id, currentStep(Date.now()) + 10)
+            .run();
+        }
+        return env.DB.batch(stmts);
+      },
+    } as unknown as D1Database;
+    const res = await call(
+      "/auth/totp",
+      { body: { challenge, code: totpCode(s.secret, currentStep(Date.now())) } },
+      withEnv(env, { TOTP_ENC_KEY: NEW_KEY, TOTP_ENC_KEY_PREVIOUS: env.TOTP_ENC_KEY, DB: racing }),
+    );
+    expect(fired).toBe(true);
+    expect(res.status).toBe(401);
+    expect(await countOf("staff_sessions", "user_id = ?1", s.id)).toBe(sessions);
+    expect((await one("SELECT totp_secret_enc FROM staff_users WHERE id = ?1", s.id))?.totp_secret_enc).toBe(
+      was,
+    );
+  });
+
+  it("L35: /invite/totp re-seals a secret sealed under the old key under the new one", async () => {
+    const email = `invite-rotate-${uuidv7()}@example.com`;
+    const f = await finishOnly(await invite(email, "staff"));
+    const id = await userId(email);
+    const was = (
+      await one<{ totp_secret_enc: string }>("SELECT totp_secret_enc FROM staff_users WHERE id = ?1", id)
+    )?.totp_secret_enc as string;
+    // sealed under the key of the invite's start, which is now the previous one
+    expect(await openTotpSecret(env.TOTP_ENC_KEY, id, was)).toEqual(f.secret);
+    const res = await call(
+      "/auth/invite/totp",
+      { body: { challenge: f.challenge, code: totpCode(f.secret, currentStep(Date.now())) } },
+      withEnv(env, { TOTP_ENC_KEY: NEW_KEY, TOTP_ENC_KEY_PREVIOUS: env.TOTP_ENC_KEY }),
+    );
+    expect(res.status).toBe(200);
+    const now = (await one<{ totp_secret_enc: string; status: string }>(
+      "SELECT totp_secret_enc, status FROM staff_users WHERE id = ?1",
+      id,
+    )) as { totp_secret_enc: string; status: string };
+    expect(now.status).toBe("active");
+    expect(now.totp_secret_enc).not.toBe(was);
+    expect(now.totp_secret_enc.startsWith("v1.")).toBe(true);
+    expect(await openTotpSecret(NEW_KEY, id, now.totp_secret_enc)).toEqual(f.secret);
+    // the old key no longer opens it, so _PREVIOUS can be removed
+    await expect(openTotpSecret(env.TOTP_ENC_KEY, id, now.totp_secret_enc)).rejects.toThrow();
   });
 
   it("a step-up re-seals too, in its own batch; a wrong code re-seals nothing", async () => {
