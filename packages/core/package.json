@@ -18,6 +18,7 @@
     "./deeds": "./src/deeds.ts",
     "./digest": "./src/digest.ts",
     "./documents": "./src/documents.ts",
+    "./dsr": "./src/dsr.ts",
     "./expiry": "./src/expiry.ts",
     "./hash": "./src/hash.ts",
     "./hmac": "./src/hmac.ts",
