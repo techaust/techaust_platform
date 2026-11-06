@@ -28,7 +28,7 @@ import {
 } from "@techaust/core";
 import { firstNameOf } from "@techaust/core/offers";
 import { CATALOGUE } from "@techaust/db/catalogue";
-import { erasureHashOf } from "./erasure.ts";
+import { leadHashOrNull } from "./erasure.ts";
 import { countStatements, limitKeys, withinLimitsSql } from "./form-limits.ts";
 import { logEvent } from "./log.ts";
 
@@ -186,7 +186,7 @@ function insertStatement(env: Env, m: LeadMessage, ref: string): D1PreparedState
  * address computed at insert (L23; Settled by the lead on the safest reading, 2026-11-06 (08-C RB-46)), so the proof outlives the lead purge. Written only
  * when the lead was (`EXISTS`), once per lead (a redelivery never reaches the batch).
  */
-function receiptStatement(env: Env, m: LeadMessage, hash: string): D1PreparedStatement {
+function receiptStatement(env: Env, m: LeadMessage, hash: string | null): D1PreparedStatement {
   const marketing = m.payload.marketing === true;
   return env.DB.prepare(
     `INSERT INTO consent_receipts (id, subject_hash, lead_id, contact_id, event, source, notice_version, purposes, marketing, ip_hash, at)
@@ -226,7 +226,10 @@ export async function processLead(env: Env, body: unknown, now = Date.now()): Pr
   };
   if (await redelivered()) return "duplicate";
 
-  const hash = await erasureHashOf(env, m.payload.email);
+  // Early check 2, low 4: without the key the lead is still made (it is the enquiry); its receipt waits with a NULL hash for the nightly `consent.hash`.
+  // The lead's emails stay fail-closed: the email consumer still needs the key to check the erased-address stop.
+  const hash = await leadHashOrNull(env, m.payload.email);
+  if (hash === null) logEvent("erasure.key_missing", { where: "lead", f: 1 });
   let ref = m.ref;
   for (let attempt = 0; ; attempt++) {
     try {

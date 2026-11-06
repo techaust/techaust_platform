@@ -616,6 +616,12 @@
           "name": "audit_log_action",
           "columns": ["action", "at"],
           "isUnique": false
+        },
+        "audit_log_ip_due": {
+          "name": "audit_log_ip_due",
+          "columns": ["at", "id"],
+          "isUnique": false,
+          "where": "(ip IS NOT NULL OR user_agent IS NOT NULL OR (action IN ('alert.new_device', 'alert.2fa_change', 'alert.lockout') AND json_valid(summary) AND (json_type(summary, '$.ua') IS NOT NULL OR json_type(summary, '$.city') IS NOT NULL OR json_type(summary, '$.country') IS NOT NULL)))"
         }
       },
       "foreignKeys": {},

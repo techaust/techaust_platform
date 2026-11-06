@@ -195,6 +195,13 @@ export function retentionLiveVerdict(input: {
 export const RETENTION_SWITCH_SQL =
   "SELECT s.live, s.by, (SELECT name FROM staff_users WHERE id = s.by) AS by_name, s.run_id, s.at FROM retention_switches s INDEXED BY retention_switches_at ORDER BY s.at DESC, s.id DESC LIMIT 1";
 
+/**
+ * Real deletion is on, as a SQL condition (the newest switch row; none: off). Every live page statement carries it (early check 2 M2), so a page already queued when
+ * the Owner turns the switch off deletes nothing; never part of `dueWhere`, which the dry run shares.
+ */
+export const SWITCH_LIVE_SQL =
+  "coalesce((SELECT live FROM retention_switches INDEXED BY retention_switches_at ORDER BY at DESC, id DESC LIMIT 1), 0) = 1";
+
 /** The SQL twin of `retentionLiveVerdict(...) === "ok"` over `retention_runs` (`now` a placeholder or expression giving UTC ms). */
 export const TRIAL_REPORT_FRESH_SQL = (now: string): string =>
   `EXISTS (SELECT 1 FROM retention_runs WHERE mode = 'dry_run' AND finished_at IS NOT NULL AND finished_at >= (${now}) - ${TRIAL_REPORT_MAX_AGE_MS})`;

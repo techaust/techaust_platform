@@ -146,6 +146,9 @@ export const invoiceSupplierPdf = new Hono<AppEnv>().get("/:id/pdf/supplier", pa
   const label = row?.fy ? fyLabelOfToken(row.fy) : null;
   if (!row || row.frozen_at === null || !hasSupplierCopy(row.type) || !row.number || !label)
     return err(c, NOT_FOUND, 404);
+  // M7.4 (Q4 A): the route is the Owner's and the Accountant's already (`invoices.supplierCopy`); the same check as every stored PDF, so a later matrix change can't open it.
+  const refused = storedPdfRefusal(c, row.gone);
+  if (refused) return refused;
   const obj = await c.env.DOCS.get(
     supplierPdfKey({ type: row.type, fy: label, number: row.number, version: 1 }),
   );

@@ -9,8 +9,8 @@
 // `before`), `?2` the second figure (bells: `readBefore`; counters: `asOf`; access_log: `before` in UTC ms, its `at` bound (early check 1 L1); else unused
 // but bound), `?3` the run id, `?4` the family name. `bindsOf` gives them.
 import { istDate, toIsoDate } from "@techaust/core";
-import type { RetentionCutoff, RetentionFamily } from "@techaust/core/retention";
-import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./dp-shared.ts";
+import { type RetentionCutoff, type RetentionFamily, SWITCH_LIVE_SQL } from "@techaust/core/retention";
+import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079, auditIpDueSql } from "./dp-shared.ts";
 
 /** How a table's rows end. */
 export type RetentionRule =
@@ -238,9 +238,8 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
   audit_ip: [
     {
       table: "audit_log",
-      age: `audit_log.at < ?1 AND (audit_log.ip IS NOT NULL OR audit_log.user_agent IS NOT NULL
-        OR (audit_log.action IN (${q(ALERT_ACTIONS_0079)}) AND json_valid(audit_log.summary)
-          AND (${ALERT_SCRUB_KEYS_0079.map((k) => `json_type(audit_log.summary, '${k}') IS NOT NULL`).join(" OR ")})))`,
+      // Early check 2, low 7: the same text as the WHERE of the partial index `audit_log_ip_due` (at, id), so the scan reads only rows still to scrub.
+      age: `audit_log.at < ?1 AND ${auditIpDueSql("audit_log.")}`,
       held: `((audit_log.entity_type = 'client' AND ${HELD_CLIENT("audit_log.entity_id")})
         OR (audit_log.entity_type = 'contact' AND EXISTS (SELECT 1 FROM contacts hc WHERE hc.id = audit_log.entity_id AND hc.legal_hold = 1))
         OR (audit_log.entity_type = 'lead' AND ${HELD_LEAD("audit_log.entity_id")}))`,
@@ -425,6 +424,11 @@ export function dryRunSql(family: RetentionFamily): string {
  * `done` once every table had fewer than a full page), then per table `DELETE … WHERE rowid IN (SELECT rowid …
  * ORDER BY … LIMIT 500)` (never `DELETE … LIMIT`, a build option D1 may lack), or the audit scrub's UPDATE. The consumer sends the family again while
  * `done` is 0. Statements: 1 + the family's tables.
+ *
+ * Early check 2 M2: every statement also holds the real-deletion switch (`SWITCH_LIVE_SQL`; one batch is one transaction, so all of them read the same row).
+ * A page queued before the Owner turned the switch off deletes and scrubs nothing, adds 0 to `due` and marks the family done (`done` 1 whatever the tables
+ * hold), so the consumer stops sending it and the run finishes. CASE runs only the branch it takes, so a stopped page reads none of the tables. The switch is
+ * never part of `dueWhere`: the dry run counts the same rows whatever the switch says.
  */
 export function livePageSql(family: RetentionFamily): string[] {
   const tables = FAMILY_TABLES[family];
@@ -435,14 +439,15 @@ export function livePageSql(family: RetentionFamily): string[] {
   const done = tables.map((t) => `${page(t)} < ${LIVE_PAGE_ROWS}`).join(" AND ");
   const onFirst = (x: string, otherwise: string) =>
     `CASE WHEN NOT EXISTS (SELECT 1 FROM retention_run_counts WHERE run_id = ?3 AND family = ?4) THEN ${x} ELSE ${otherwise} END`;
+  const ifLive = (x: string, off: string) => `CASE WHEN ${SWITCH_LIVE_SQL} THEN ${x} ELSE ${off} END`;
   const upsert = `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done)
-    VALUES (?3, ?4, ${sum(tables.map(page))}, ${helds.length ? onFirst(sum(helds), "0") : "0"}, ${onFirst(minOf(tables.map(oldestOf)), "NULL")}, ${done})
+    VALUES (?3, ?4, ${ifLive(sum(tables.map(page)), "0")}, ${helds.length ? ifLive(onFirst(sum(helds), "0"), "0") : "0"}, ${ifLive(onFirst(minOf(tables.map(oldestOf)), "NULL"), "NULL")}, ${ifLive(`(${done})`, "1")})
     ON CONFLICT(run_id, family) DO UPDATE SET due = retention_run_counts.due + excluded.due, done = excluded.done`;
   const act = tables.map((t) => {
     const ids = `SELECT rowid FROM ${t.table} WHERE ${dueWhere(t)} ORDER BY ${t.order} LIMIT ${LIVE_PAGE_ROWS}`;
     return t.scrub
-      ? `UPDATE ${t.table} SET ${t.scrub} WHERE rowid IN (${ids})`
-      : `DELETE FROM ${t.table} WHERE rowid IN (${ids})`;
+      ? `UPDATE ${t.table} SET ${t.scrub} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL}`
+      : `DELETE FROM ${t.table} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL}`;
   });
   return [upsert, ...act];
 }

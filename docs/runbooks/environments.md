@@ -72,6 +72,18 @@ Setting it (the owner, once, before the M7.4 PR merges):
    ```
 3. Type `YES` and press Enter. The script makes 32 random bytes, puts the same value on both staging Workers with `wrangler secret put`, never shows or copies it, and prints one line starting `RESULT:`. Copy back **only that line**.
 
+**Checking that both Workers hold the same key** (M7.4 early check 2 M3): the key can't be read back, so the only proof is an erased address being stopped by jobs. Do this once after H1 has merged and staging has deployed, and again after any change of the key on either Worker. The lead runs it with the owner (the Owner's sign-in and a fresh code are needed); only made-up `@example.test` data.
+1. Pick a fresh made-up address that nothing on staging holds yet, for example `keycheck-20261107@example.test` (the date of the check; a new one each time).
+2. Add it as a contact of sample client A, in one line in PowerShell:
+   ```
+   pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" portal:sample --staging --email keycheck-20261107@example.test
+   ```
+3. In the staging admin, open sample client A, open that contact, choose **Erase** (not anonymise), give the reason "key check", and confirm with a fresh code. The address has no other live holder (no other contact or unconverted lead), so the admin API writes the erased-address stop with **its** key.
+4. On the staging website, send the contact form with that same address (any made-up name and message). The jobs Worker queues the acknowledgement email to it and checks the stop with **its** key.
+5. In the staging admin, open **Email log** and find the newest `lead.acknowledgement` row to that address (the address shows as written on the form). Expected: status **Skipped** with the error `erased`. The Owner also gets one `email.erased_skip` bell naming the new lead's reference (the lead is a live holder, L25): expected.
+   - Skipped with the error `recipient not in allow-list` (or any error other than `erased`), or **Sent**: the two Workers hold **different keys**. Stop and tell the lead; don't run the script again (see "Losing or changing the key" below).
+6. Clean up: in the admin, open the new lead and **Erase** it (Owner, fresh code). The sample client A's erased contact stays erased; nothing else is left.
+
 Locally, `pnpm dev:secrets` writes one fixed, made-up value into both `apps/admin/.dev.vars` and `apps/jobs/.dev.vars` (they must match); the tests inject their own made-up value.
 
 **Losing or changing the key.** The key can't be read back from Cloudflare, and it can't be rebuilt: every stop already written is the hash under the old key, and the addresses it was made from are gone. With a new key (a second run of the script, a rotation, a new Worker without the old value) those stops no longer match, so **people erased before could be emailed again**, and their consent receipts no longer link to a returning person. So: run the script once per environment, never "to be safe"; if a Worker ever loses the secret (a deploy fails with it missing), stop and ask the lead before setting anything. A planned change of key needs its own task (both keys held for a while, every stored hash moved over in a job), never a plain re-run. Production gets its own key at Phase 7 (owner's yes then).

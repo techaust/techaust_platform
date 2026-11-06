@@ -98,4 +98,5 @@ CREATE INDEX `auth_attempts_window` ON `auth_attempts` (`window_start`);--> stat
 CREATE INDEX `client_sessions_abs` ON `client_sessions` (`abs_expires_at`);--> statement-breakpoint
 CREATE INDEX `magic_link_tokens_expires` ON `magic_link_tokens` (`expires_at`);--> statement-breakpoint
 CREATE INDEX `notifications_created` ON `notifications` (`created_at`,`id`);--> statement-breakpoint
-CREATE INDEX `staff_sessions_abs` ON `staff_sessions` (`abs_expires_at`);
+CREATE INDEX `staff_sessions_abs` ON `staff_sessions` (`abs_expires_at`);--> statement-breakpoint
+CREATE INDEX `audit_log_ip_due` ON `audit_log` (`at`,`id`) WHERE (ip IS NOT NULL OR user_agent IS NOT NULL OR (action IN ('alert.new_device', 'alert.2fa_change', 'alert.lockout') AND json_valid(summary) AND (json_type(summary, '$.ua') IS NOT NULL OR json_type(summary, '$.city') IS NOT NULL OR json_type(summary, '$.country') IS NOT NULL)));

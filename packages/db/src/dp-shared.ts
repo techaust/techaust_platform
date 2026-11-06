@@ -7,6 +7,15 @@ export const ALERT_ACTIONS_0079 = ["alert.new_device", "alert.2fa_change", "aler
 export const ALERT_SCRUB_KEYS_0079 = ["$.ua", "$.city", "$.country"] as const;
 
 /**
+ * An audit row that still holds something the `audit_ip` scrub removes (an IP, a browser, or an alert's `ua`/`city`/`country`). Early check 2, low 7: the
+ * WHERE of the partial index `audit_log_ip_due` (0078) AND the condition of the retention family, the same text, so SQLite's planner sees the family's
+ * term imply the index's WHERE and reads only rows not yet scrubbed (a scrubbed row leaves the index, so the nightly scan never re-reads it). `p` is the
+ * column prefix: "" in the index, "audit_log." in the family.
+ */
+export const auditIpDueSql = (p: string): string =>
+  `(${p}ip IS NOT NULL OR ${p}user_agent IS NOT NULL OR (${p}action IN (${ALERT_ACTIONS_0079.map((a) => `'${a}'`).join(", ")}) AND json_valid(${p}summary) AND (${ALERT_SCRUB_KEYS_0079.map((k) => `json_type(${p}summary, '${k}') IS NOT NULL`).join(" OR ")})))`;
+
+/**
  * A lead whose consent the back-fill and the `consent.hash` page may read: a lead with its own address (early check 1 M4: never one an anonymise turned into
  * the placeholder `anonymised+<id>@invalid`, core `anonymisedEmail`, nor one already marked erased). `l` is the alias.
  */

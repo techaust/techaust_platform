@@ -4,6 +4,7 @@
 import { ROLES } from "@techaust/core";
 import { sql } from "drizzle-orm";
 import { check, index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { auditIpDueSql } from "../dp-shared.ts";
 import { id, nowMs, oneOf } from "./common.ts";
 
 export const ACTOR_TYPES = ["staff", "contact", "system", "webhook"] as const;
@@ -31,6 +32,10 @@ export const auditLog = sqliteTable(
     index("audit_log_actor").on(t.actorId, t.at),
     // The audit viewer's action filter and the accountant's finance-only list (M3.1, ADM-AUD-02).
     index("audit_log_action").on(t.action, t.at),
+    // M7.4 (early check 2, low 7): only rows the `audit_ip` scrub still has to clear, so the nightly scan never re-reads a scrubbed row (run file J).
+    index("audit_log_ip_due")
+      .on(t.at, t.id)
+      .where(sql.raw(auditIpDueSql(""))),
     check("audit_log_actor_type", oneOf(t.actorType, ACTOR_TYPES)),
     check("audit_log_role", sql`${t.role} is null or ${oneOf(t.role, ROLES)}`),
   ],

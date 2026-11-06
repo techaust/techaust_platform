@@ -201,6 +201,8 @@ describe("07-A §3 and 07-ZR", () => {
     expect(BELL_COPY.dueSoon("C0001", 3)).toBe("A data request from C0001 is due in 3 days.");
     expect(requestRef(null, "L-12345")).toBe("L-12345");
     expect(requestRef("C0001", "L-12345")).toBe("C0001");
-    expect(requestRef(null, null)).toContain("[Placeholder]");
+    // the lead's approved staff line (07-ZR, 2026-11-06) for a request that names only an address
+    expect(requestRef(null, null)).toBe("someone not yet matched to a record");
+    expect(BELL_COPY.retentionPageFailed).not.toContain("[Placeholder]");
   });
 });

@@ -128,3 +128,34 @@ export function issueBatch(
     ),
   ]);
 }
+
+let switchTick = 0;
+/**
+ * M7.4 (early check 2 M2): turns the real-deletion switch on or off as the Owner's route does (an active Owner; on names a dry run finished now), so the live
+ * pages, which read it, run. The newest row wins. Invented data only.
+ */
+export async function switchRetention(live: boolean): Promise<void> {
+  const owner = uuidv7();
+  await run(
+    "INSERT INTO staff_users (id, email, name, role, status) VALUES (?1, ?2, 'Owner', 'owner', 'active')",
+    owner,
+    `owner-${owner}@example.test`,
+  );
+  let runId: string | null = null;
+  if (live) {
+    runId = uuidv7();
+    await run(
+      "INSERT INTO retention_runs (id, as_of, mode, started_at, finished_at, families) VALUES (?1, ?2, 'dry_run', ?2, ?2, 11)",
+      runId,
+      Date.now() - 1000,
+    );
+  }
+  await run(
+    "INSERT INTO retention_switches (id, live, by, run_id, at) VALUES (?1, ?2, ?3, ?4, ?5)",
+    uuidv7(),
+    live ? 1 : 0,
+    owner,
+    runId,
+    Date.now() + ++switchTick,
+  );
+}

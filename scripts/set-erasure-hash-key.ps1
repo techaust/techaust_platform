@@ -32,6 +32,17 @@ $value = -join ($bytes | ForEach-Object { $_.ToString("x2") })
 if ($value.Length -ne 64) { Write-Host "RESULT: FAILED: the key was not made. Nothing was stored."; exit 1 }
 
 $stored = @()
+# Early check 2 fix leg: Windows PowerShell writes a child's standard input in the console's input encoding, and when that is UTF-8 WITH a byte-order mark
+# (seen on this PC) the 3 BOM bytes reach wrangler before the key, so Cloudflare would store a 67-byte value. A BOM-free UTF-8 encoding for the two
+# `wrangler` runs (restored at the end); if the window refuses it, nothing is stored.
+$prevEncoding = [Console]::InputEncoding
+try { [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+if ([Console]::InputEncoding.GetPreamble().Length -ne 0) {
+  $value = $null
+  [Array]::Clear($bytes, 0, $bytes.Length)
+  Write-Host "RESULT: FAILED: this PowerShell window would add a byte-order mark to the key. Nothing was stored. Tell the lead."
+  exit 1
+}
 try {
   foreach ($t in $targets) {
     # The value on stdin with no trailing newline; never on the command line.
@@ -44,14 +55,19 @@ try {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $p = [System.Diagnostics.Process]::Start($psi)
+    # Both streams are read at the same time, from the start (early check 2, low 10): reading one to its end while wrangler fills the other's pipe would
+    # leave both waiting for ever.
+    $outTask = $p.StandardOutput.ReadToEndAsync()
+    $errTask = $p.StandardError.ReadToEndAsync()
     $p.StandardInput.Write($value)
     $p.StandardInput.Close()
-    $out = $p.StandardOutput.ReadToEnd() + $p.StandardError.ReadToEnd()
     $p.WaitForExit()
+    $out = $outTask.Result + $errTask.Result
     if ($p.ExitCode -ne 0 -or $out -notmatch "Success") {
-      $out = $out.Replace($value, "<hidden>")
-      Write-Host "RESULT: FAILED at $($t.Worker) (exit $($p.ExitCode)); stored before it: $($stored -join ', '). Tell the lead before running again. Wrangler said:"
-      Write-Host $out
+      # One line only, the value hidden, wrangler's words folded in (shortened), so the RESULT line is the only thing to copy back.
+      $said = (($out.Replace($value, "<hidden>")) -replace "\s+", " ").Trim()
+      if ($said.Length -gt 400) { $said = $said.Substring(0, 400) + " ..." }
+      Write-Host "RESULT: FAILED at $($t.Worker) (exit $($p.ExitCode)); stored before it: $($stored -join ', '). Tell the lead before running again. Wrangler said: $said"
       exit 1
     }
     $stored += $t.Worker
@@ -59,5 +75,6 @@ try {
 } finally {
   $value = $null
   [Array]::Clear($bytes, 0, $bytes.Length)
+  try { [Console]::InputEncoding = $prevEncoding } catch { }
 }
 Write-Host "RESULT: ERASURE_HASH_KEY made and stored on $($stored -join ' and ') (the same value on both); nothing to paste anywhere"
