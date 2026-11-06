@@ -997,6 +997,38 @@ describe("M7.5 L36: a re-issue after a reset cut short records the reset [ADM-AU
     expect(await footprint(id)).toEqual(before);
   });
 
+  it("L46: a member who began enrolment through an older live invite after a cut-short run is cleaned up on re-issue; an active member is untouched", async () => {
+    await sessionFor("owner");
+    const e = await enrol(newEmail(), "staff");
+    const id = await userId(e.email);
+    const older = await invite(e.email, "staff"); // a live invite the cut-short run never expired
+    await cutShort(e.email);
+    await finishOnly(older); // enrolment begun: a password and a secret set, still invited, the old codes kept
+    expect(await one("SELECT status, pw_hmac IS NOT NULL AS pw FROM staff_users WHERE id = ?", id)).toEqual({
+      status: "invited",
+      pw: 1,
+    });
+    expect(await countOf("staff_recovery_codes", "user_id = ?", id)).toBe(10);
+    const active = await enrol(newEmail(), "staff");
+    const activeId = await userId(active.email);
+    const beforeActive = await footprint(activeId);
+    const r = await reissue(e.email);
+    await reissue(active.email);
+    // the audit rows keep the full reset-state check: no row for a member with a password set
+    expect(r.recordedReset).toBe(false);
+    expect(await countOf("staff_recovery_codes", "user_id = ?", id)).toBe(0);
+    expect(await countOf("staff_known_devices", "user_id = ?", id)).toBe(0);
+    expect(await countOf("staff_sessions", "user_id = ? AND revoked_at IS NULL", id)).toBe(0);
+    expect(await footprint(activeId)).toEqual(beforeActive);
+    // enrolment through the new link: no old recovery code works
+    const back = await accept(r.token, "Back Again");
+    expect(await countOf("staff_recovery_codes", "user_id = ?", id)).toBe(10);
+    const old = await call("/auth/recovery", {
+      body: { challenge: await challengeFor(e.email, back.clientHash), code: e.recoveryCodes[0] },
+    });
+    expect(old.status).toBe(401);
+  });
+
   it("L44: an active or deactivated member is untouched (codes, devices and sessions stay)", async () => {
     await sessionFor("owner");
     const active = await enrol(newEmail(), "staff");
