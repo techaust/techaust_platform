@@ -21,7 +21,7 @@ import {
 } from "../src/retention.ts";
 import * as schema from "../src/schema/index.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember } from "./billing-helpers.ts";
-import { all, db, first, REQUEST_CLOCK_COLS, requestClockOf, run } from "./helpers.ts";
+import { all, db, first, REQUEST_CLOCK_COLS, requestClockOf, run, switchRetention } from "./helpers.ts";
 import { seedMoney } from "./money-seed.ts";
 import { mkQuote, send } from "./quotes.ts";
 
@@ -394,6 +394,8 @@ describe("dry run and live (L5): the same rows, only those, held kept, financial
         asOf,
         mode,
       );
+    // early check 2 M2: the live pages run only while the switch is on
+    await switchRetention(true);
     const allTables = Object.keys(RETENTION_MATRIX);
     const before = await countAll(allTables);
     // M3: every money table holds a row, so "untouched" below means something

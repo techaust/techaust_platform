@@ -154,6 +154,58 @@ describe("the nightly start and the pages [JOB-CRON-01; D.1–D.3]", () => {
     expect(await count("magic_link_tokens", "token_hash = ?1", young)).toBe(1);
     await setRetentionMode("dry_run");
   });
+
+  it("early check 2 M2: the switch turned off between page 1 and page 2: page 2 deletes nothing, ends the family and is not sent again", async () => {
+    await setRetentionMode("live");
+    const client = uuidv7();
+    const contact = uuidv7();
+    await run(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency) VALUES (?1, ?2, 'A', 'A', 'business', 'IN', 'unregistered', '19', 'INR')",
+      client,
+      `M${client.slice(-4)}`,
+    );
+    await run(
+      "INSERT INTO contacts (id, client_id, name, email) VALUES (?1, ?2, 'Asha', ?3)",
+      contact,
+      client,
+      `m2-${contact}@example.test`,
+    );
+    // more than a full page (500) of expired links: page 1 leaves some and is sent again
+    await run(
+      `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 520)
+       INSERT INTO magic_link_tokens (token_hash, contact_id, expires_at) SELECT 'm2-' || ?1 || '-' || i, ?1, ?2 FROM n`,
+      contact,
+      Date.now() - 40 * DAY,
+    );
+    const left = () => count("magic_link_tokens", "contact_id = ?1", contact);
+    const asOf = Date.now() + 3000;
+    const env = makeEnv();
+    await processDp(env, { v: 1, kind: "retention.start", asOf });
+    const page = leadsSent().find((b) => b.kind === "retention.page" && b.family === "sessions");
+    expect(page?.mode).toBe("live");
+    fakes.leads.length = 0;
+    expect(await processDp(env, page)).toBe("continued");
+    expect(leadsSent()).toEqual([page]);
+    const afterPage1 = await left();
+    expect(afterPage1).toBeGreaterThan(0);
+    expect(afterPage1).toBeLessThan(520);
+    const due = await one<{ due: number }>(
+      "SELECT due FROM retention_run_counts WHERE run_id = ?1 AND family = 'sessions'",
+      runIdOf(asOf),
+    );
+    // the Owner turns real deletion off; the page already queued arrives
+    await setRetentionMode("dry_run");
+    fakes.leads.length = 0;
+    expect(await processDp(env, page)).toBe("done");
+    expect(await left()).toBe(afterPage1);
+    expect(fakes.leads).toEqual([]);
+    expect(
+      await one(
+        "SELECT due, done FROM retention_run_counts WHERE run_id = ?1 AND family = 'sessions'",
+        runIdOf(asOf),
+      ),
+    ).toEqual({ due: due?.due, done: 1 });
+  });
 });
 
 describe("the R2 outbox drain and the sweeps [T7 F2; D.4, D.5, L7]", () => {

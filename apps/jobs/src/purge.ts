@@ -20,7 +20,7 @@ import {
   uuidv7,
 } from "@techaust/core";
 import { LEAD_NO_OPEN_REQUEST_SQL } from "@techaust/core/lead-lifecycle";
-import { RETENTION_SWITCH_SQL } from "@techaust/core/retention";
+import { RETENTION_SWITCH_SQL, SWITCH_LIVE_SQL } from "@techaust/core/retention";
 import { PURGE_RECEIPTS_SQL } from "@techaust/db/consent";
 import { erasureHashOf } from "./erasure.ts";
 import { logEvent } from "./log.ts";
@@ -30,10 +30,6 @@ export const PURGE_CRON = "0 22 * * *";
 
 /** The conditions of a due lead (`?1` is the lead id, `?2` the time). */
 const DUE = `delete_after IS NOT NULL AND delete_after <= ?2 AND ${LEAD_DELETABLE_SQL} AND ${LEAD_NO_OPEN_REQUEST_SQL("leads.id")}`;
-
-/** M7.4: real deletion is on (the newest switch row; none: off). */
-export const SWITCH_LIVE_SQL =
-  "coalesce((SELECT live FROM retention_switches INDEXED BY retention_switches_at ORDER BY at DESC, id DESC LIMIT 1), 0) = 1";
 
 /** The scan, exported so a test can EXPLAIN it (it must use the partial index `leads_delete_due`). */
 export const SCAN_SQL = `SELECT id, ref, delete_after AS at FROM leads INDEXED BY leads_delete_due WHERE delete_after <= ?1 AND ${LEAD_DELETABLE_SQL} AND ${LEAD_NO_OPEN_REQUEST_SQL("leads.id")} AND (delete_after, id) > (?2, ?3) ORDER BY delete_after, id LIMIT ${LEAD_PURGE_PAGE + 1}`;

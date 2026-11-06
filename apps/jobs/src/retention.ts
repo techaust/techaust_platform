@@ -36,6 +36,7 @@ import {
   RETENTION_FAMILIES,
   RETENTION_SWITCH_SQL,
   type RetentionFigures,
+  SWITCH_LIVE_SQL,
 } from "@techaust/core/retention";
 import { UNHASHED_RECEIPTS_SQL } from "@techaust/db/consent";
 import {
@@ -184,12 +185,21 @@ async function retentionPage(env: Env, m: RetentionPageMessage, now: number): Pr
   const results = await db.batch([
     ...work,
     db
-      .prepare("SELECT done FROM retention_run_counts WHERE run_id = ?1 AND family = ?2")
+      .prepare(
+        `SELECT done, ${SWITCH_LIVE_SQL} AS live FROM retention_run_counts WHERE run_id = ?1 AND family = ?2`,
+      )
       .bind(m.runId, m.family),
     db.prepare(RUN_FINISH_SQL).bind(m.runId, now),
     db.prepare(RUN_BELL_SQL).bind(m.runId, now, kind, title),
   ]);
-  const done = (results[work.length]?.results[0] as { done?: number } | undefined)?.done === 1;
+  const read = results[work.length]?.results[0] as { done?: number; live?: number } | undefined;
+  const done = read?.done === 1;
+  // Early check 2 M2: the Owner turned real deletion off after this run started. The page's statements read the same switch in the same batch: they deleted
+  // nothing and marked the family done, so nothing is sent again.
+  if (m.mode === "live" && read?.live !== 1) {
+    logEvent("retention.stopped", { family: m.family, f: 1 });
+    return "done";
+  }
   if (m.mode === "live" && !done) {
     await env.LEADS_QUEUE.send(m);
     logEvent("retention.page", { family: m.family, mode: m.mode, more: true, f: 1 });
