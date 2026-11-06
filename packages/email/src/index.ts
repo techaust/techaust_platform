@@ -32,6 +32,7 @@ import {
 } from "./offers.ts";
 import { receiptSent } from "./receipts.ts";
 import { edfReminder, realisationAlert } from "./reports.ts";
+import { REQUEST_RECEIVED_KEYS, requestReceived } from "./requests.ts";
 import {
   type LayoutOptions,
   leadAcknowledgement,
@@ -352,6 +353,9 @@ function renderTemplate(
       return { ...noReply, ...staffNotification(pick(get, STAFF_NOTIFICATION_KEYS), opts) };
     case "refund.sent":
       return { ...billing, ...refundSent(pick(get, REFUND_SENT_KEYS), opts) };
+    // M7.4 (D.8, L32): the acknowledgement of a portal request, from hello@ like the lead acknowledgement (07-ZR; the builder's plain template).
+    case "request.received":
+      return { ...hello, ...requestReceived(pick(get, REQUEST_RECEIVED_KEYS), opts) };
     case "staff.signin_unfinished":
       return { ...noReply, ...staffSigninUnfinished(pick(get, SIGNIN_UNFINISHED_KEYS), opts) };
     case "deed.signed":

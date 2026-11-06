@@ -270,5 +270,13 @@ Regards, ${who.name}, TecHaust Technologies`,
       };
     case "staff.signin_unfinished":
       return { first_name, time };
+    case "request.received":
+      return {
+        kind_label: "Get a copy of my personal data",
+        date: "6 Nov 2026",
+        due_date: "6 Dec 2026",
+        rule9:
+          "Rupak Sarkar, Founder, TecHaust Technologies · privacy@techaust.com · [Placeholder] postal address.",
+      };
   }
 }

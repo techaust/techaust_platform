@@ -13,6 +13,7 @@ import {
   isReportKind,
 } from "@techaust/core";
 import { isDigestKind } from "@techaust/core/digest";
+import { isDpKind } from "@techaust/core/dp-jobs";
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
 import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
 import {
@@ -43,6 +44,7 @@ import { processRefundNotify } from "./refund-notify.ts";
 import { processRefundDeadLetter, processRefundFamily } from "./refunds.ts";
 import { processReminderSend } from "./reminders.ts";
 import { processEdfReminder, processRealisationScan } from "./reports.ts";
+import { processDp } from "./retention.ts";
 import { processSigninUnfinished } from "./signin-unfinished.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
 import { processBellsSweep, processStaffNotify } from "./staff-notify.ts";
@@ -141,6 +143,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // M6.5: a refund check that ran out of tries becomes a `refund_stuck` review item with the owners' bell; the sweep and the fetch only log.
         await processRefundDeadLetter(env, message.body);
         message.ack();
+      } else if (isDlq && isDpKind(message.body)) {
+        // M7.4 (D): a clean-up, drain, sweep, hash or clock message that ran out of tries: logged; the next night (or hour) repeats it.
+        logEvent("dp.dead_letter", { queue, kind: message.body.kind, f: 1 });
+        message.ack();
       } else if (isDlq && isPortalAlertKind(message.body)) {
         // M7.1 (L9): a portal bell that ran out of tries: the request or notice itself is stored and shows in the admin's lists, so no alert and no retry.
         logEvent("portal_alert.dead_letter", { queue });
@@ -166,6 +172,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         const verdict = await processRefundFamily(env, message.body, message.attempts);
         if (verdict === "ack") message.ack();
         else message.retry({ delaySeconds: verdict.retry });
+      } else if (queue.endsWith("-leads") && isDpKind(message.body)) {
+        // M7.4 (D): the clean-up, the R2 outbox and sweeps, the consent hash fill, the request clock; before the lead fall-through (a body of this family,
+        // valid or not, can never become a lead).
+        await processDp(env, message.body);
+        message.ack();
       } else if (queue.endsWith("-leads") && isPurgeScanMessage(message.body)) {
         await enqueueDue(env, message.body.asOf, message.body.cursor);
         message.ack();

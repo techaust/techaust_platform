@@ -101,7 +101,7 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
     await run("5 5 5 5 5", istTick("2026-11-10", 9));
     expect(fakes.leads).toEqual([]);
     fakes.leads.length = 0;
-    await run(PURGE_CRON, Date.UTC(2026, 10, 9, 22, 0), makeEnv({ LEAD_PURGE_MODE: "dry_run" }));
+    await run(PURGE_CRON, Date.UTC(2026, 10, 9, 22, 0), makeEnv());
     const daily = fakes.leads.map((s) => (s.body as { kind: string }).kind);
     expect(daily).not.toContain("lut.check");
     expect(daily).not.toContain("reminder.scan");

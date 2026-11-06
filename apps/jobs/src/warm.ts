@@ -42,6 +42,7 @@ import {
 import { buildCertificateView } from "./certificate.ts";
 import { alertData } from "./leads.ts";
 import { warmPortalAlerts } from "./portal-alerts.ts";
+import { warmDp } from "./retention.ts";
 
 /**
  * One made-up statement of `count` lines through the same steps the `pdf.statement` consumer takes before Browser Run: `statementEntries`, the view, the canonical JSON the
@@ -342,6 +343,18 @@ export function warmConsumers(): number {
   warmGatewayMessages();
   // M7.1 (J): the portal bells' titles on made-up rows (the money formatter and the kind words); counted in `warm.test.ts`.
   parsed += warmPortalAlerts();
+  // M7.4 (J): the new consumers' message checks, one run's cut-offs and the bell words; the acknowledgement email's first render. Not counted (warm.test.ts
+  // pins the earlier families' counts); `warmDp` is tested on its own.
+  warmDp();
+  try {
+    renderEmail(
+      "request.received",
+      { kind_label: "Warm", date: "1 Nov 2026", due_date: "1 Dec 2026", rule9: "Warm" },
+      { assetBase: "https://warm-up.invalid/" },
+    );
+  } catch {
+    // never stop a Worker from starting
+  }
   try {
     renderCertificateHtml(
       buildCertificateView({

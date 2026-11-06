@@ -14,6 +14,7 @@ import {
 import { CARE_SCAN_HOUR_IST, CARE_SCAN_REPEAT_HOURS } from "@techaust/core/care-billing";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { type DigestMessage, digestMessageOf, digestWeekOf } from "@techaust/core/digest";
+import type { RequestsClockMessage } from "@techaust/core/dp-jobs";
 import { istHourOf } from "@techaust/core/invoices";
 import type { BellsSweepMessage, SigninUnfinishedMessage } from "@techaust/core/notifications";
 import type { ReceiptSweepMessage } from "@techaust/core/pdf-jobs";
@@ -55,6 +56,7 @@ export function hourlyMessages(
   | DigestMessage
   | SigninUnfinishedMessage
   | BellsSweepMessage
+  | RequestsClockMessage
 )[] {
   const hour = istHourOf(scheduledTime);
   const today = istDate(scheduledTime);
@@ -107,6 +109,10 @@ export function hourlyMessages(
     // M7.2 (Q3 A): the unfinished staff sign-ins, every hour; (L9) the staff notification emails' safety net over the last 75 minutes.
     { v: 1, kind: "signin.unfinished", asOf: scheduledTime } satisfies SigninUnfinishedMessage,
     { v: 1, kind: "bells.sweep", since: scheduledTime - SWEEP_LOOKBACK_MS } satisfies BellsSweepMessage,
+    // M7.4 (D.7): the data request clock's bells, at 09:00 IST.
+    ...(hour === ALERTS_HOUR_IST
+      ? [{ v: 1, kind: "requests.clock", asOf: scheduledTime } satisfies RequestsClockMessage]
+      : []),
   ];
 }
 

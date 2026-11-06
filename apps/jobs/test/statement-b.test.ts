@@ -530,7 +530,7 @@ describe("the statement cache purge [Q57]", () => {
     fakes.leads.length = 0;
     await worker.scheduled?.(
       { cron: PURGE_CRON, scheduledTime: NOW } as ScheduledController,
-      makeEnv({ LEAD_PURGE_MODE: "dry_run" }),
+      makeEnv(),
       {} as ExecutionContext,
     );
     expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toContain("statement.purge");

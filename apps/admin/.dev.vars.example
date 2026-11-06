@@ -13,3 +13,5 @@ STRIPE_SECRET_KEY=
 # M6.4 (L1): the finance Worker's PayPal sandbox client id and secret (local fakes from `pnpm dev:secrets`; the stub never calls PayPal). Staging: tools/set-gateway-keys.ps1 -Gateway paypal.
 PAYPAL_CLIENT_ID=
 PAYPAL_CLIENT_SECRET=
+# M7.4 (L23): the admin API Worker's one secret, the erased-address hash key; the SAME value as apps/jobs (a local fake from `pnpm dev:secrets`). Staging: scripts/set-erasure-hash-key.ps1.
+ERASURE_HASH_KEY=

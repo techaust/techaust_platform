@@ -644,7 +644,6 @@ describe("the daily cron enqueues both sweeps in one batch and reads no database
       PDF_QUEUE: pdf,
       LEADS_QUEUE: recorder(),
       EMAIL_QUEUE: recorder(),
-      LEAD_PURGE_MODE: "dry_run",
     } as unknown as Env;
     await worker.scheduled?.(
       { cron: "5 4 * * *", scheduledTime: T0 } as ScheduledController,
