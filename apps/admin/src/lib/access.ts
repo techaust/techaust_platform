@@ -6,6 +6,7 @@ export type NavKey =
   | "dashboard"
   | "leads"
   | "clients"
+  | "requests"
   | "projects"
   | "care-plans"
   | "time"
@@ -25,6 +26,7 @@ export const NAV_KEYS: readonly NavKey[] = [
   "dashboard",
   "leads",
   "clients",
+  "requests",
   "projects",
   "care-plans",
   "time",
@@ -46,6 +48,8 @@ export const NAV_ACCESS: Record<NavKey, readonly Action[]> = {
   dashboard: [],
   leads: ["leads.read"],
   clients: ["clients.read"],
+  // M7.4 (G.1): the requests inbox for the roles that read requests (the Owner and Staff)
+  requests: ["requests.read"],
   projects: ["projects.read"],
   "care-plans": ["carePlans.read"],
   time: ["time.readOwn", "time.readAll"],

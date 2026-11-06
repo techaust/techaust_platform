@@ -5,7 +5,7 @@
 // "Removed contact" and can't be changed. Emails are unique per client (the API lower-cases them).
 import { formatDate, istDate } from "@techaust/core/dates";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import {
   api,
   type ClientPage,
@@ -26,11 +26,14 @@ import { Notice } from "../../components/ui.tsx";
 import { allowed } from "../../lib/access.ts";
 import { lastLiveOfIndividual } from "../../lib/clients.ts";
 import { ZQ_UI } from "../../lib/copy-zq.ts";
+import { REQUESTS_CHANGED, ZR_HOLD, ZR_LEAD } from "../../lib/copy-zr.ts";
 import { sentence } from "../../lib/format.ts";
 import { m72Api } from "../../lib/m72-api.ts";
 import { useUser } from "../../session.tsx";
 import { AllowEmailsDialog } from "../emails/allow-dialog.tsx";
+import { LogRequestDialog } from "../requests/log.tsx";
 import { EraseDialog, ExportDialog } from "./data-tools.tsx";
+import { ContactHoldDialog } from "./legal-hold.tsx";
 import { ContactFlags, ContactSwitches } from "./parts.tsx";
 
 export function Contacts(props: { data: ClientPage; reload: () => void }) {
@@ -45,6 +48,12 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
   const [allowing, setAllowing] = useState<ContactView | null>(null);
   const canAllow = allowed(user.role, "emails.unsuppress") && !props.data.anonymised;
   const canReadEmails = allowed(user.role, "emails.read");
+  // M7.4 (G.1, G.2): the Owner's legal hold on one contact, and a request that came by email, post or phone logged against them (Owner and Staff)
+  const canHold = allowed(user.role, "legalHold.manage");
+  const canLog = allowed(user.role, "requests.log") && !props.data.anonymised;
+  const [holding, setHolding] = useState<ContactView | null>(null);
+  const [logging, setLogging] = useState<ContactView | null>(null);
+  const navigate = useNavigate();
   const toast = useToast();
   const [more, setMore] = useState<{ list: ContactView[]; next: string | null } | null>(null);
   // A reload (after an edit or an erase) starts the list again from the page's first rows, so no stale row stays shown
@@ -123,6 +132,10 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
               canAllow={canAllow}
               canReadEmails={canReadEmails}
               onAllow={() => setAllowing(c)}
+              canHold={canHold}
+              canLog={canLog}
+              onHold={() => setHolding(c)}
+              onLog={() => setLogging(c)}
             />
           ))}
         </ul>
@@ -166,6 +179,35 @@ export function Contacts(props: { data: ClientPage; reload: () => void }) {
           }}
         />
       )}
+      {holding && (
+        <ContactHoldDialog
+          contactId={holding.id}
+          name={holding.name}
+          held={holding.legalHold}
+          onClose={() => setHolding(null)}
+          onChanged={() => {
+            setMore(null);
+            props.reload();
+          }}
+        />
+      )}
+      {logging && (
+        <LogRequestDialog
+          preset={{
+            type: "contact",
+            id: logging.id,
+            clientId: props.data.client.id,
+            title: logging.name,
+            sub: logging.email,
+          }}
+          onClose={() => setLogging(null)}
+          onLogged={(r) => {
+            setLogging(null);
+            window.dispatchEvent(new Event(REQUESTS_CHANGED));
+            navigate(`/requests?id=${encodeURIComponent(r.id)}`);
+          }}
+        />
+      )}
       {canExport && <ExportDialog contact={exporting} onClose={() => setExporting(null)} />}
       {canErase && (
         <EraseDialog
@@ -197,10 +239,15 @@ function ContactRow(props: {
   canAllow: boolean;
   canReadEmails: boolean;
   onAllow: () => void;
+  /** M7.4: the legal hold (Owner) and "Log a request" (Owner and Staff). */
+  canHold: boolean;
+  canLog: boolean;
+  onHold: () => void;
+  onLog: () => void;
 }) {
   const { c } = props;
   const gone = c.anonymisedAt !== null;
-  const tools = !gone && (props.canExport || props.canErase);
+  const tools = !gone && (props.canExport || props.canErase || props.canHold || props.canLog);
   return (
     <li className={gone ? "contact contact--gone" : "contact"}>
       <div className="contact__who">
@@ -293,6 +340,8 @@ function ContactRow(props: {
               icon={<MoreHorizontal size={16} />}
               items={[
                 ...(props.canExport ? [{ label: "Export their data", onSelect: props.onExport }] : []),
+                ...(props.canLog ? [{ label: ZR_LEAD.log, onSelect: props.onLog }] : []),
+                ...(props.canHold ? [{ label: ZR_HOLD.menuItem, onSelect: props.onHold }] : []),
                 ...(props.canErase
                   ? [{ label: "Erase or anonymise", onSelect: props.onErase, tone: "danger" as const }]
                   : []),

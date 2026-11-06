@@ -42,6 +42,7 @@ import { CARE_COPY } from "../../lib/invoice-send.ts";
 import { useUser } from "../../session.tsx";
 import { NotesPanel } from "../projects/notes.tsx";
 import { ClientFiguresPanel } from "./figures.tsx";
+import { LegalHoldPanel } from "./legal-hold.tsx";
 import { AddressFields, type Tax, TaxFields, taxFieldErrors } from "./parts.tsx";
 
 /** Owner-approved 2026-10-25. */
@@ -136,6 +137,14 @@ export function Overview(props: {
             </ul>
           </section>
         )}
+        {/* M7.4 (G.2): the client's legal hold, its history and the Owner's set or lift (an anonymised client can still be held, RA-25) */}
+        <LegalHoldPanel
+          entityType="client"
+          entityId={client.id}
+          name={client.displayName}
+          held={client.legalHold}
+          onChanged={() => props.reload()}
+        />
       </aside>
     </div>
   );

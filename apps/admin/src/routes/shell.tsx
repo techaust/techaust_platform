@@ -25,7 +25,8 @@ import { ComingSoon, NoAccess, NotFound } from "../components/states.tsx";
 import { ToastProvider } from "../components/toast.tsx";
 import { allowed, canSee, sectionOf } from "../lib/access.ts";
 import { reportBellHref } from "../lib/bell-links.ts";
-import { REQUESTS_CHANGED, ZP_UI } from "../lib/copy-zp.ts";
+import { REQUESTS_CHANGED } from "../lib/copy-zp.ts";
+import { ZR_NAV } from "../lib/copy-zr-nav.ts";
 import { ROLE_LABELS } from "../lib/format.ts";
 import { GW_UI, REVIEW_CHANGED } from "../lib/gateway.ts";
 import { requestsApi } from "../lib/m71-api.ts";
@@ -212,8 +213,9 @@ function useReviewCount(enabled: boolean, pathname: string) {
 }
 
 /**
- * M7.1 (S2): the open client requests, the count on the Clients item, for the roles that read them (the Owner and Staff; never the Accountant, whose read is a
- * 403). Read like the review count: when a section opens, with the bell's poll while visible, and at once when the Requests panel changes one.
+ * M7.1 (S2): the open requests, the count on the navigation's Requests item (M7.4 G.1; on Clients before the inbox existed), for the roles that read them
+ * (the Owner and Staff; never the Accountant, whose read is a 403). Read like the review count: when a section opens, with the bell's poll while visible,
+ * and at once when the inbox, a client's Requests tab or a lead changes one.
  */
 function useRequestCount(enabled: boolean, pathname: string) {
   const [n, setN] = useState(0);
@@ -264,7 +266,7 @@ export function Component() {
       ? { payments: { text: count(reviewCount), label: GW_UI.reviewCount(reviewCount) } }
       : {}),
     ...(requestCount > 0
-      ? { clients: { text: count(requestCount), label: ZP_UI.requestsCount(requestCount) } }
+      ? { requests: { text: count(requestCount), label: ZR_NAV.count(requestCount) } }
       : {}),
   };
 
