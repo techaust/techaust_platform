@@ -247,6 +247,15 @@
   color: var(--color-text);
 }
 
+/* Q5: nothing collected this month, last month's comparison under the empty line. */
+.fin-deltas {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
 /* The Overdue tile: each currency's overdue buckets as a thin bar under its figure, one legend for the tile. */
 .fin-figure .chart-seg {
   margin-top: var(--space-3);

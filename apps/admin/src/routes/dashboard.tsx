@@ -25,7 +25,7 @@ import {
 } from "../lib/dashboard.ts";
 import { STAGE_LABELS, STAGES } from "../lib/leads.ts";
 import { DASH_M73, M73_TITLES } from "../lib/m73-reports.ts";
-import { REPORTS_COPY } from "../lib/reports.ts";
+import { isoDayText, REPORTS_COPY } from "../lib/reports.ts";
 import { useUser } from "../session.tsx";
 import { FlagPill, HoursBar, tierText } from "./care/parts.tsx";
 import { FinanceTiles } from "./dashboard-finance.tsx";
@@ -240,6 +240,7 @@ function LeadsTile({ tile }: { tile: NonNullable<DashboardTiles["leads"]> }) {
                   label={DASH_M73.trendLabel(
                     tile.trend.points[0]?.open ?? 0,
                     tile.trend.points.at(-1)?.open ?? 0,
+                    isoDayText(tile.trend.points.at(-1)?.date ?? ""),
                   )}
                 />
                 <span className="lead-figure__caption" aria-hidden="true">

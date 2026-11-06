@@ -48,6 +48,8 @@ function FinTile(props: {
   icon: ReactNode;
   link?: { to: string; text: string } | undefined;
   className?: string;
+  /** shown under the empty line (the Collected tile's C22 lines when last month had money: lead's triage of D1, Q5) */
+  emptyExtra?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -61,10 +63,13 @@ function FinTile(props: {
         </h2>
       </div>
       {props.empty ? (
-        <p className="panel-empty">
-          {props.icon}
-          <span>{props.emptyText}</span>
-        </p>
+        <>
+          <p className="panel-empty">
+            {props.icon}
+            <span>{props.emptyText}</span>
+          </p>
+          {props.emptyExtra}
+        </>
       ) : (
         props.children
       )}
@@ -243,6 +248,8 @@ function CollectedTile({
   const fy = new Map(collected.fy.map((r) => [r.currency, r]));
   const change = new Map((collected.change ?? []).map((r) => [r.currency, r.collectedMinor]));
   const many = collected.month.length > 1;
+  // Nothing collected this month, but last month had money: C22 says how far below it this month is, per currency (lead's triage of D1, Q5)
+  const behind = period === null ? [] : [...change].filter(([, minor]) => minor !== 0);
   return (
     <FinTile
       id="fin-collected"
@@ -251,6 +258,17 @@ function CollectedTile({
       emptyText={PAY_UI.noneCollected}
       icon={<Wallet size={20} />}
       link={{ to: "/payments?tab=all", text: PAY_COPY.heading }}
+      emptyExtra={
+        behind.length > 0 && (
+          <ul className="fin-deltas">
+            {behind.map(([currency, minor]) => (
+              <li key={currency}>
+                <Delta minor={minor} currency={currency} period={period} />
+              </li>
+            ))}
+          </ul>
+        )
+      }
     >
       <ul className="fin-figures">
         {collected.month.map((r) => {
