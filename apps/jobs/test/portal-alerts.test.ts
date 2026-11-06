@@ -76,9 +76,9 @@ async function request(kind: string) {
   const w = await world();
   const id = uuidv7();
   await run(
-    // M7.4 (0079): the clock is written with the row, as the portal writes it.
-    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, created_at, updated_at, received_at, due_at, ack_due_at)
-     VALUES (?1, ?2, ?3, ?3, ?4, 'Words', ?5, ?5, ?5, ${requestDueAtSql("?5")}, ?5 + 172800000)`,
+    // M7.4 (0079): the clock is written with the row, as the portal writes it (L42: and the sign-in's identity check).
+    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, created_at, updated_at, received_at, due_at, ack_due_at, identity_checked_at)
+     VALUES (?1, ?2, ?3, ?3, ?4, 'Words', ?5, ?5, ?5, ${requestDueAtSql("?5")}, ?5 + 172800000, ?5)`,
     id,
     w.client,
     w.contact,

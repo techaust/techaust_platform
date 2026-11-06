@@ -80,12 +80,13 @@ type Req = {
   status?: string;
   outcome?: string | null;
 };
+// M7.4 L42: as the portal writes them, identity-checked by the sign-in when they arrive.
 function insertRequest(r: Req) {
   const contactId = r.contactId ?? null;
   const leadId = r.leadId ?? null;
   return run(
-    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, requester_email, kind, details, status, outcome, created_at, updated_at, ${REQUEST_CLOCK_COLS})
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1000, 1000, ${requestClockOf("1000")})`,
+    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, requester_email, kind, details, status, outcome, created_at, updated_at, ${REQUEST_CLOCK_COLS}, identity_checked_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1000, 1000, ${requestClockOf("1000")}, 1000)`,
     r.id ?? uuidv7(),
     r.clientId === undefined ? null : r.clientId,
     contactId,

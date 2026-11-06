@@ -106,9 +106,9 @@ export async function mkRequest(
 ): Promise<string> {
   const id = uuidv7();
   await run(
-    // M7.4 (0079): the clock is written with the row, as the portal writes it.
-    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, created_at, updated_at, received_at, due_at, ack_due_at)
-     VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?6, ?6, ${requestDueAtSql("?6")}, ?6 + 172800000)`,
+    // M7.4 (0079): the clock is written with the row, as the portal writes it (L42: and the sign-in's identity check).
+    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, created_at, updated_at, received_at, due_at, ack_due_at, identity_checked_at)
+     VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?6, ?6, ${requestDueAtSql("?6")}, ?6 + 172800000, ?6)`,
     id,
     p.clientId,
     p.contactId,

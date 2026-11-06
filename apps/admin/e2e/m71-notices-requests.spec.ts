@@ -60,8 +60,8 @@ test.beforeAll(() => {
      WHERE d.type = 'tax_invoice' AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.balance_minor > 0 AND d.currency = 'INR'
      ORDER BY d.issue_date, d.id LIMIT 1;`;
   const request = (id: string, kind: string, details: string | null, at: number) => `
-    INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, status, created_at, updated_at, received_at, due_at, ack_due_at)
-    SELECT '${id}', c.client_id, c.id, c.id, '${kind}', ${details ? `'${details}'` : "NULL"}, 'open', ${at}, ${at}, ${at}, ${requestDueAtSql(String(at))}, ${at} + 172800000
+    INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, status, created_at, updated_at, received_at, due_at, ack_due_at, identity_checked_at)
+    SELECT '${id}', c.client_id, c.id, c.id, '${kind}', ${details ? `'${details}'` : "NULL"}, 'open', ${at}, ${at}, ${at}, ${requestDueAtSql(String(at))}, ${at} + 172800000, ${at}
       FROM contacts c JOIN documents d ON d.client_id = c.client_id
      WHERE d.type = 'tax_invoice' AND d.frozen_at IS NOT NULL AND c.anonymised_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM client_requests r WHERE r.contact_id = c.id AND r.kind = '${kind}' AND r.status = 'open')
