@@ -684,6 +684,66 @@ describe("L23: TOTP_ENC_KEY rotation through TOTP_ENC_KEY_PREVIOUS", () => {
     );
   });
 
+  it("L35: a right code whose session batch is refused (a concurrent sign-in moved the step) re-seals nothing", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const was = (await one("SELECT totp_secret_enc FROM staff_users WHERE id = ?1", s.id))?.totp_secret_enc;
+    const challenge = await challengeFor(s.email, s.clientHash);
+    await env.DB.prepare("UPDATE staff_users SET totp_last_step = NULL WHERE id = ?1").bind(s.id).run();
+    const sessions = await countOf("staff_sessions", "user_id = ?1", s.id);
+    // Just before the session batch (the first batch of 5 or more statements), another request takes a later step: the guard changes no row.
+    let fired = false;
+    const racing = {
+      prepare: (q: string) => env.DB.prepare(q),
+      batch: async (stmts: D1PreparedStatement[]) => {
+        if (!fired && stmts.length >= 5) {
+          fired = true;
+          await env.DB.prepare("UPDATE staff_users SET totp_last_step = ?2 WHERE id = ?1")
+            .bind(s.id, currentStep(Date.now()) + 10)
+            .run();
+        }
+        return env.DB.batch(stmts);
+      },
+    } as unknown as D1Database;
+    const res = await call(
+      "/auth/totp",
+      { body: { challenge, code: totpCode(s.secret, currentStep(Date.now())) } },
+      withEnv(env, { TOTP_ENC_KEY: NEW_KEY, TOTP_ENC_KEY_PREVIOUS: env.TOTP_ENC_KEY, DB: racing }),
+    );
+    expect(fired).toBe(true);
+    expect(res.status).toBe(401);
+    expect(await countOf("staff_sessions", "user_id = ?1", s.id)).toBe(sessions);
+    expect((await one("SELECT totp_secret_enc FROM staff_users WHERE id = ?1", s.id))?.totp_secret_enc).toBe(
+      was,
+    );
+  });
+
+  it("L35: /invite/totp re-seals a secret sealed under the old key under the new one", async () => {
+    const email = `invite-rotate-${uuidv7()}@example.com`;
+    const f = await finishOnly(await invite(email, "staff"));
+    const id = await userId(email);
+    const was = (
+      await one<{ totp_secret_enc: string }>("SELECT totp_secret_enc FROM staff_users WHERE id = ?1", id)
+    )?.totp_secret_enc as string;
+    // sealed under the key of the invite's start, which is now the previous one
+    expect(await openTotpSecret(env.TOTP_ENC_KEY, id, was)).toEqual(f.secret);
+    const res = await call(
+      "/auth/invite/totp",
+      { body: { challenge: f.challenge, code: totpCode(f.secret, currentStep(Date.now())) } },
+      withEnv(env, { TOTP_ENC_KEY: NEW_KEY, TOTP_ENC_KEY_PREVIOUS: env.TOTP_ENC_KEY }),
+    );
+    expect(res.status).toBe(200);
+    const now = (await one<{ totp_secret_enc: string; status: string }>(
+      "SELECT totp_secret_enc, status FROM staff_users WHERE id = ?1",
+      id,
+    )) as { totp_secret_enc: string; status: string };
+    expect(now.status).toBe("active");
+    expect(now.totp_secret_enc).not.toBe(was);
+    expect(now.totp_secret_enc.startsWith("v1.")).toBe(true);
+    expect(await openTotpSecret(NEW_KEY, id, now.totp_secret_enc)).toEqual(f.secret);
+    // the old key no longer opens it, so _PREVIOUS can be removed
+    await expect(openTotpSecret(env.TOTP_ENC_KEY, id, now.totp_secret_enc)).rejects.toThrow();
+  });
+
   it("a step-up re-seals too, in its own batch; a wrong code re-seals nothing", async () => {
     const s = await sessionFor("owner");
     const rotating = withEnv(env, { TOTP_ENC_KEY: NEW_KEY, TOTP_ENC_KEY_PREVIOUS: env.TOTP_ENC_KEY });
