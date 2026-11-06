@@ -15,6 +15,7 @@ import type { Role } from "@techaust/core/permissions";
 import type { AgeingBucket, DashboardReportLinks } from "@techaust/core/reports";
 import type { Settings, SignatureRef } from "@techaust/core/settings";
 import type { TermsBlockId } from "@techaust/core/terms";
+import type { UsageMetric } from "@techaust/core/usage";
 import type { HashRequest, HashResponse } from "./hash.worker.ts";
 import type { DeedPage } from "./lib/deeds.ts";
 import type { CarePlanBilling } from "./lib/invoice-send.ts";
@@ -934,6 +935,17 @@ export type Dashboard = {
   /** M7.3 (C5 (e)): the reports this role may read, each with its period (core `DashboardReportLinks`). */
   reports?: DashboardReportLinks;
 };
+
+/** M7.5 G: one UTC day the nightly `usage.daily` read: a value per `cf.*` metric it could read that day (one it couldn't is absent). */
+export type UsageDay = { date: string; values: Partial<Record<string, number>> };
+/** The shape of apps/admin/worker/dashboard-usage.ts `UsageTile` (Owner and Accountant, `usage.read`). */
+export type UsageTile = {
+  limits: Record<UsageMetric, number>;
+  thresholds: readonly number[];
+  days: UsageDay[];
+  /** The newest day read, or null before the first reading. */
+  newest: string | null;
+};
 /** M7.3 (C5 (a)): what is owed in one currency, by ageing bucket as at today. */
 export type AgeingByCurrency = {
   currency: Currency;
@@ -1643,6 +1655,8 @@ export const api = {
       { method: "DELETE" },
     ),
   dashboard: () => request<Dashboard>("/dashboard"),
+  /** M7.5 G: the Free-plan usage tile (Owner and Accountant). */
+  dashboardUsage: () => request<UsageTile>("/dashboard/usage"),
 };
 
 // ---- the signature image (M4.4, ADM-SET-01) ------------------------------------------------------------------------
