@@ -2,7 +2,7 @@
 // the same client hash with a token and runs Argon2id no second time; a changed email or password hashes again.
 import { describe, expect, it, vi } from "vitest";
 import { RequestError } from "../api.ts";
-import { passwordSignIn } from "./password-sign-in.ts";
+import { CHALLENGE_USED_LINE, codeStepRefusal, passwordSignIn } from "./password-sign-in.ts";
 
 const PARAMS = { v: 1, m: 19456, t: 2, p: 1 };
 const required = () => new RequestError(401, "turnstile_required", "Verification required");
@@ -73,5 +73,28 @@ describe("password step with the Turnstile check [ADM-AUTH-06]", () => {
       login: async () => ({ challenge: "x" }),
     });
     expect((await broken.attempt("a@example.test", "pw")).kind).toBe("error");
+  });
+});
+
+describe("the code step's refusals (M7.5 L34)", () => {
+  it("challenge_used goes back to the password step with the approved line; every other refusal stays on the code step", () => {
+    expect(
+      codeStepRefusal(
+        new RequestError(
+          401,
+          "challenge_used",
+          "This sign-in has already been used. Enter your password again.",
+        ),
+      ),
+    ).toEqual({ restart: true, text: CHALLENGE_USED_LINE });
+    expect(CHALLENGE_USED_LINE).toBe("This sign-in has already been used. Enter your password again.");
+    for (const e of [
+      new RequestError(401, "invalid_credentials", "Invalid email, password or code"),
+      new RequestError(429, "locked", "Too many attempts. Try again in 15 minutes."),
+      new RequestError(0, "network", "offline"),
+      new Error("challenge_used"),
+      "challenge_used",
+    ])
+      expect(codeStepRefusal(e)).toEqual({ restart: false });
   });
 });
