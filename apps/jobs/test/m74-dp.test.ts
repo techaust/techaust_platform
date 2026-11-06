@@ -366,28 +366,27 @@ describe("the consent hash fill and the request clock [D.6, D.7]", () => {
     };
     const late = await log("data_access", 40);
     const soon = await log("grievance", 27);
+    // review 1 low 2: the late acknowledgement rings alone only while the reply date is not close
+    const unacked = await log("data_correction", 5);
     const env = makeEnv();
     await processDp(env, { v: 1, kind: "requests.clock", asOf: Date.now() });
     const bells = await all<{ kind: string; entity_id: string; title: string }>(
-      "SELECT kind, entity_id, title FROM notifications WHERE user_id = ?1 AND entity_type = 'client_request' AND entity_id IN (?2, ?3) ORDER BY kind",
+      "SELECT kind, entity_id, title FROM notifications WHERE user_id = ?1 AND entity_type = 'client_request' AND entity_id IN (?2, ?3, ?4) ORDER BY kind",
       owner,
       late,
       soon,
+      unacked,
     );
-    expect(bells.map((b) => `${b.kind}:${b.entity_id === late ? "late" : "soon"}`).sort()).toEqual(
-      [
-        "request.ack_overdue:late",
-        "request.ack_overdue:soon",
-        "request.due_soon:soon",
-        "request.overdue:late",
-      ].sort(),
+    const name = (id: string) => (id === late ? "late" : id === soon ? "soon" : "unacked");
+    expect(bells.map((b) => `${b.kind}:${name(b.entity_id)}`).sort()).toEqual(
+      ["request.ack_overdue:unacked", "request.due_soon:soon", "request.overdue:late"].sort(),
     );
     expect(bells.find((b) => b.kind === "request.overdue")?.title).toBe(
       `A data request from K${client.slice(-4)} is past its reply date.`,
     );
-    const n = await count("notifications", "entity_id IN (?1, ?2)", late, soon);
+    const n = await count("notifications", "entity_id IN (?1, ?2, ?3)", late, soon, unacked);
     await processDp(env, { v: 1, kind: "requests.clock", asOf: Date.now() });
-    expect(await count("notifications", "entity_id IN (?1, ?2)", late, soon)).toBe(n);
+    expect(await count("notifications", "entity_id IN (?1, ?2, ?3)", late, soon, unacked)).toBe(n);
   });
 });
 

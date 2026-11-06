@@ -105,6 +105,9 @@ export const touchLeadSql = (t: string): string =>
 /** The leads the clean-up and the "scheduled for deletion" view consider (matches the partial index `leads_delete_due`). */
 export const LEAD_DELETABLE_SQL = "client_id IS NULL AND legal_hold = 0";
 
+/** `LEAD_DELETABLE_SQL` on the alias `l` (M7.4 review 1 low 6: never a text replace on column names). */
+export const leadDeletableSql = (l: string): string => `${l}.client_id IS NULL AND ${l}.legal_hold = 0`;
+
 /**
  * M7.4 (round 4, L21; M7.1 early check 1 note 2): the routine purge skips a lead that any open request names (an erasure request is then fulfilled by the
  * lead erase and its stop, never by the purge); `lead` is the lead's id column. Through `client_requests_lead` (a request names its lead by `lead_id`

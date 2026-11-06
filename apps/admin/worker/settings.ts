@@ -365,12 +365,6 @@ async function groupMeta(c: Ctx, group: Generic | "gateways", value: unknown) {
       const dueDays = (value as Settings["payment_terms"]).dueDays;
       return { verify, termsDueDays: { stated, matches: stated.every((n) => n === dueDays) } };
     }
-    case "retention":
-      return {
-        verify,
-        notes:
-          "Legal hold and the nightly deletion job arrive in M7.4; these figures are stored and enforced as minimums only.",
-      };
     default:
       return verify ? { verify } : {};
   }

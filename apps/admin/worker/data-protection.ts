@@ -1,5 +1,5 @@
 // M7.4 data-protection routes of the admin API Worker (ADM-SET-09, ADM-CLI-05, NFR-9; run file docs/runs/m7.4-data-protection.md C.5–C.7):
-//   GET  /legal-holds?entityType=&entityId=   a record's hold history, newest first (`clients.read`);
+//   GET  /legal-holds?entityType=&entityId=   a record's hold history, newest first (`clients.read`; a lead's also `leads.read`, review 1 low 4);
 //   POST /legal-holds                         set or clear a hold (`legalHold.manage`: Owner, step-up; audit `legal_hold.set` / `legal_hold.clear`);
 //   POST /suppressions/lift                   allow emails again to an erased address (`suppressions.lift`: Owner, step-up, L20; audit `suppression.lift`);
 //   GET  /retention/report                    the last 5 clean-up runs with their counts, the switch, and the leads due within 14 days (`retention.read`);
@@ -13,11 +13,12 @@ import { retentionLiveBody, suppressionLiftBody } from "@techaust/core/dp-schema
 import { erasedStopKey } from "@techaust/core/hmac";
 import { uuidv7 } from "@techaust/core/ids";
 import {
-  LEAD_DELETABLE_SQL,
   LEAD_NO_OPEN_REQUEST_SQL,
   LEAD_PURGE_NOTICE_DAYS,
+  leadDeletableSql,
 } from "@techaust/core/lead-lifecycle";
 import { holdVerdict, legalHoldQuery, legalHoldRequest } from "@techaust/core/legal-hold";
+import { decide } from "@techaust/core/permissions";
 import {
   RETENTION_FAMILIES,
   RETENTION_SWITCH_SQL,
@@ -26,7 +27,7 @@ import {
 } from "@techaust/core/retention";
 import { Hono } from "hono/tiny";
 import { auditFirstRow } from "./audit-row.ts";
-import { type AppEnv, actor, BAD_REQUEST, err, mutate, NOT_FOUND } from "./context.ts";
+import { type AppEnv, actor, BAD_REQUEST, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
 import { erasureHash } from "./erasure-key.ts";
 import { body } from "./http.ts";
 
@@ -67,6 +68,9 @@ export const legalHolds = new Hono<AppEnv>()
     const q = legalHoldQuery.safeParse(c.req.query());
     if (!q.success) return err(c, BAD_REQUEST, 400);
     const { entityType, entityId } = q.data;
+    // Review 1 low 4: the route row asks `clients.read`; a lead's history also needs `leads.read` (the Accountant reads clients, never leads).
+    if (entityType === "lead" && decide(actor(c).role, "leads.read") === "deny")
+      return err(c, FORBIDDEN, 403);
     const db = c.env.DB;
     const [target, history] = await db.batch([
       db.prepare(HOLD_TARGET_SQL[entityType]).bind(entityId),
@@ -176,11 +180,8 @@ export const retention = new Hono<AppEnv>()
   .get("/report", async (c) => {
     const db = c.env.DB;
     const now = Date.now();
-    const deletable = LEAD_DELETABLE_SQL.replaceAll("client_id", "l.client_id").replaceAll(
-      "legal_hold",
-      "l.legal_hold",
-    );
-    const [runs, counts, sw, leads] = await db.batch([
+    const deletable = leadDeletableSql("l");
+    const [runs, counts, sw, leads, dry] = await db.batch([
       db.prepare(
         "SELECT id, as_of, mode, started_at, finished_at, families FROM retention_runs INDEXED BY retention_runs_started ORDER BY started_at DESC, id DESC LIMIT 5",
       ),
@@ -194,6 +195,8 @@ export const retention = new Hono<AppEnv>()
           `SELECT l.id, l.ref, l.delete_after FROM leads AS l INDEXED BY leads_delete_due WHERE l.delete_after <= ?1 AND ${deletable} AND ${LEAD_NO_OPEN_REQUEST_SQL("l.id")} ORDER BY l.delete_after, l.id LIMIT 50`,
         )
         .bind(now + LEAD_PURGE_NOTICE_DAYS * DAY_MS),
+      // Review 1 low 1: the live verdict reads the newest finished dry run itself (the run list shows only the last 5, which live runs can fill).
+      db.prepare(LAST_DRY_RUN_SQL),
     ]);
     const byRun = new Map<string, Record<string, unknown>[]>();
     for (const r of (counts?.results ?? []) as Record<string, unknown>[]) {
@@ -219,7 +222,7 @@ export const retention = new Hono<AppEnv>()
       finished_at: number | null;
       families: number;
     }[];
-    const lastDry = runRows.find((r) => r.mode === "dry_run" && r.finished_at !== null) ?? null;
+    const lastDry = (dry?.results[0] as { id: string; finished_at: number } | undefined) ?? null;
     return c.json({
       live: s ? s.live === 1 : false,
       switchedAt: s?.at ?? null,

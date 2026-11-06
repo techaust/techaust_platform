@@ -428,8 +428,14 @@ async function requestsClock(env: Env, m: RequestsClockMessage): Promise<DpResul
         t: BELL_COPY.dueSoon(ref, Math.max(0, daysLeft(r.due_at, m.asOf))),
         s,
       });
-    // An acknowledgement more than 48 hours late rings too while the reply date is not close (`requestState` gives the reply date the priority).
-    if (r.acknowledged_at === null && r.ack_due_at !== null && m.asOf > r.ack_due_at)
+    // An acknowledgement more than 48 hours late rings only while the reply date is not close (`requestState` gives the reply date the priority; review 1
+    // low 2: an overdue or due-soon request rings for that alone).
+    if (
+      (state === "open" || state === "ack_overdue") &&
+      r.acknowledged_at === null &&
+      r.ack_due_at !== null &&
+      m.asOf > r.ack_due_at
+    )
       bells.push({ id: r.id, k: "request.ack_overdue", t: BELL_COPY.ackOverdue(ref), s });
   }
   if (bells.length > 0) await db.prepare(CLOCK_BELLS_SQL).bind(JSON.stringify(bells)).run();

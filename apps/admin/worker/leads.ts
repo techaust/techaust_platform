@@ -12,13 +12,13 @@ import { isBudgetBand, isCountryCode, isTimeline } from "@techaust/core/form-lab
 import { uuidv7 } from "@techaust/core/ids";
 import {
   deleteAfterSql,
-  LEAD_DELETABLE_SQL,
   LEAD_DUPLICATE_WINDOW_MS,
   LEAD_NO_OPEN_REQUEST_SQL,
   LEAD_PURGE_NOTICE_DAYS,
   LEAD_STAGES,
   type LeadStage,
   LOST_REASONS,
+  leadDeletableSql,
   normaliseEmail,
   touchLeadSql,
 } from "@techaust/core/lead-lifecycle";
@@ -248,9 +248,7 @@ async function runList(c: Ctx, f: z.infer<typeof listQuery>) {
   const deletion = Boolean(f.deletion);
   if (deletion) {
     // The 14-day view (it is also the dry-run report): leads the clean-up may delete that are due within the notice period.
-    where.push(
-      LEAD_DELETABLE_SQL.replaceAll("client_id", "l.client_id").replaceAll("legal_hold", "l.legal_hold"),
-    );
+    where.push(leadDeletableSql("l"));
     where.push(LEAD_NO_OPEN_REQUEST_SQL("l.id"));
     add((n) => `l.delete_after <= ?${n}`, now + LEAD_PURGE_NOTICE_DAYS * DAY_MS);
   }

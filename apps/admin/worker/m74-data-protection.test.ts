@@ -320,6 +320,18 @@ describe("legal holds [ADM-CLI-05, RA-25; C.5]", () => {
       ).status,
     ).toBe(404);
   });
+
+  it("review 1 low 4: a lead's hold history also needs leads.read: the Accountant is refused for a lead and allowed for a client", async () => {
+    const lead = await mkLead(`hold-${uuidv7()}@example.test`);
+    const client = await mkClient();
+    const acc = await sessionFor("accountant");
+    const read = (cookie: string, entityType: string, entityId: string) =>
+      call(`/legal-holds?entityType=${entityType}&entityId=${entityId}`, { cookie });
+    const refused = await read(acc.cookie, "lead", lead);
+    expect([refused.status, await code(refused)]).toEqual([403, "forbidden"]);
+    expect((await read(acc.cookie, "client", client)).status).toBe(200);
+    expect((await read((await sessionFor("staff")).cookie, "lead", lead)).status).toBe(200);
+  });
 });
 
 describe("the erased-address lift (L20) [C.6]", () => {
@@ -401,6 +413,36 @@ describe("the clean-up report and the real-deletion switch (Q1 A) [ADM-SET-09; C
     expect((await call("/retention/report", { cookie: (await sessionFor("staff")).cookie })).status).toBe(
       403,
     );
+  });
+
+  it("review 1 low 1: the live verdict reads the newest finished dry run even when 5 newer live runs fill the run list", async () => {
+    const o = await owner();
+    const t = Date.now();
+    const dry = uuidv7();
+    await insert("retention_runs", {
+      id: dry,
+      as_of: t + 1_000,
+      mode: "dry_run",
+      started_at: t + 1_000,
+      finished_at: t + 1_000,
+      families: 11,
+    });
+    for (let i = 2; i <= 7; i++)
+      await insert("retention_runs", {
+        id: uuidv7(),
+        as_of: t + i * 1_000,
+        mode: "live",
+        started_at: t + i * 1_000,
+        finished_at: t + i * 1_000,
+        families: 11,
+      });
+    const r = (await bodyOf(await call("/retention/report", { cookie: o.cookie }))) as {
+      liveVerdict: string;
+      runs: { id: string; mode: string }[];
+    };
+    expect(r.runs).toHaveLength(5);
+    expect(r.runs.map((x) => x.mode)).toEqual(["live", "live", "live", "live", "live"]);
+    expect(r.liveVerdict).toBe("ok");
   });
 });
 
