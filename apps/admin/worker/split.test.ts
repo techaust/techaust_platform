@@ -864,7 +864,7 @@ describe("no sign-in secret outside the front's sources", () => {
   // warm-front.ts (CPU warm-up (b)1): the front's start-up dry run names the sign-in keys with MADE-UP test values only; front-only (the next test, and the
   // bundle guard SIGN_IN_TABLES keeps every such name out of the API and finance bundles).
   const allowed = (f: string) =>
-    ["./auth.ts", "./account.ts", "./users.ts", "./warm-front.ts"].includes(f) ||
+    ["./auth.ts", "./account.ts", "./users.ts", "./warm-front.ts", "./rate-limit.ts"].includes(f) ||
     f.startsWith("./test-") ||
     f.endsWith(".test.ts") ||
     f.endsWith(".d.ts");
@@ -887,7 +887,7 @@ describe("no sign-in secret outside the front's sources", () => {
       "./routes-invoices.ts",
       "./rpc.ts",
     ]) {
-      expect(sources[f], f).not.toMatch(/from "\.\/(auth|account|users|warm-front)\.ts"/);
+      expect(sources[f], f).not.toMatch(/from "\.\/(auth|account|users|warm-front|rate-limit)\.ts"/);
     }
   });
 

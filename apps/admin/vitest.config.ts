@@ -25,6 +25,13 @@ export default defineConfig(async () => ({
           ADMIN_FINANCE: () => new Response("no finance worker in the test pool", { status: 502 }),
           ADMIN_INVOICES: () => new Response("no invoices worker in the test pool", { status: 502 }),
         },
+        // M7.5 (C2, L2): the front's Rate Limiting bindings with limits no test reaches (every test request shares one address and a few sessions); the 429
+        // paths are proved with a refusing limiter passed through `env` (worker/rate-limit.test.ts). wrangler.jsonc keeps the real limits.
+        ratelimits: {
+          RL_SESSION: { namespace_id: "5101", simple: { limit: 1_000_000, period: 60 } },
+          RL_SIGNIN: { namespace_id: "5102", simple: { limit: 1_000_000, period: 60 } },
+          RL_INVITE: { namespace_id: "5103", simple: { limit: 1_000_000, period: 60 } },
+        },
         bindings: {
           TEST_MIGRATIONS: await readD1Migrations(join(import.meta.dirname, "../../packages/db/migrations")),
           PASSWORD_PEPPER: TEST_KEY(1),

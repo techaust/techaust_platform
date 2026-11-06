@@ -2,7 +2,7 @@
 // The jobs Worker makes it (envelope in R2, then the render); this Worker only READS the bucket (`DOCS`) and enqueues. Streamed through the
 // session check: an attachment, never rendered by the browser, never cached, never sniffed. Researched 2026-10-28, BSA 2023 s.63(4) (08-C RB-19):
 // the PDF is the evidence an acceptance is tied to (its SHA-256, an immutable copy); its retention is the owner's decision (run file).
-import { contentDisposition } from "@techaust/core/file-types";
+import { downloadHeaders } from "@techaust/core/file-types";
 import { fyLabelOfToken, hasSupplierCopy, supplierPdfKey } from "@techaust/core/pdf-jobs";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -77,16 +77,12 @@ function pdfRoutes(types: string, retryAction: string) {
           return err(c, PDF_PENDING, 409);
         }
         return new Response(obj.body, {
-          headers: {
-            "Content-Type": "application/pdf",
-            "Content-Length": String(obj.size),
-            "Content-Disposition": contentDisposition(pdfFilename(row.number_display as string, row.version)),
-            ETag: `"${row.pdf_sha256}"`,
-            "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": "default-src 'none'; sandbox",
-            "Cache-Control": "no-store",
-            "X-Robots-Tag": "noindex",
-          },
+          headers: downloadHeaders({
+            contentType: "application/pdf",
+            size: obj.size,
+            filename: pdfFilename(row.number_display as string, row.version),
+            etag: row.pdf_sha256,
+          }),
         });
       })
 
@@ -162,15 +158,11 @@ export const invoiceSupplierPdf = new Hono<AppEnv>().get("/:id/pdf/supplier", pa
     return c.json({ state: "making" as const }, 202);
   }
   return new Response(obj.body, {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Length": String(obj.size),
-      "Content-Disposition": contentDisposition(supplierFilename(row.number_display ?? String(row.number))),
-      "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "default-src 'none'; sandbox",
-      "Cache-Control": "no-store",
-      "X-Robots-Tag": "noindex",
-    },
+    headers: downloadHeaders({
+      contentType: "application/pdf",
+      size: obj.size,
+      filename: supplierFilename(row.number_display ?? String(row.number)),
+    }),
   });
 });
 

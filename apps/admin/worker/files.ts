@@ -8,7 +8,7 @@
 // The row, its audit entry and the access row are one D1 batch written after the object; if that fails the object is deleted again.
 // Nothing here logs or audits a filename or file bytes: ids, sizes, MIME types and the R2 key (`files/<clientId>/<fileId>`) only.
 import {
-  contentDisposition,
+  downloadHeaders,
   extOf,
   fileKey,
   isAllowedExtension,
@@ -346,13 +346,6 @@ export const files = new Hono<AppEnv>()
       return err(c, NOT_FOUND, 404);
     }
     return new Response(obj.body, {
-      headers: {
-        "Content-Type": row.mime,
-        "Content-Length": String(obj.size),
-        "Content-Disposition": contentDisposition(row.filename),
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-        "Cache-Control": "no-store",
-      },
+      headers: downloadHeaders({ contentType: row.mime, size: obj.size, filename: row.filename }),
     });
   });

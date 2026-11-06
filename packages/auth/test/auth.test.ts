@@ -25,6 +25,7 @@ import {
   isAttemptKey,
   issuedAtOf,
   newToken,
+  readChallenge,
   signChallenge,
   tokenHash,
   verifyChallenge,
@@ -32,8 +33,10 @@ import {
 import {
   currentStep,
   openTotpSecret,
+  openTotpSecretRotating,
   sealTotpSecret,
   TOTP_SEAL_VERSION,
+  totpKeysOf,
   totpUri,
   verifyTotp,
 } from "../src/totp.ts";
@@ -123,6 +126,43 @@ describe("TOTP [ADM-AUTH-01]", () => {
     );
   });
 
+  it("M7.5 L23: a rotation opens with the current key, then TOTP_ENC_KEY_PREVIOUS, and hands back a re-seal under the current key", async () => {
+    const secret = randomBytes(20);
+    const underOld = await sealTotpSecret(KEY2, "user-1", secret);
+    const legacyUnderOld = underOld.slice(3); // a seal from before M7.5, under the old key
+    const rotating = { current: KEY, previous: KEY2 };
+    // sealed under the current key: opened, nothing to re-seal
+    const fresh = await sealTotpSecret(KEY, "user-1", secret);
+    expect(await openTotpSecretRotating(rotating, "user-1", fresh)).toEqual({ secret, reseal: null });
+    // sealed under the previous key (versioned or not): opened, and re-sealed under the current key for this user
+    for (const old of [underOld, legacyUnderOld]) {
+      const opened = await openTotpSecretRotating(rotating, "user-1", old);
+      expect(opened?.secret).toEqual(secret);
+      const reseal = opened?.reseal as string;
+      expect(reseal.startsWith("v1.")).toBe(true);
+      expect(await openTotpSecret(KEY, "user-1", reseal)).toEqual(secret);
+      await expect(openTotpSecret(KEY2, "user-1", reseal)).rejects.toThrow();
+      await expect(openTotpSecret(KEY, "user-2", reseal)).rejects.toThrow();
+    }
+    // without the previous key an old seal fails closed (null, never a throw); another user's seal or an unknown version too
+    expect(await openTotpSecretRotating({ current: KEY }, "user-1", underOld)).toBeNull();
+    expect(await openTotpSecretRotating(rotating, "user-2", underOld)).toBeNull();
+    expect(await openTotpSecretRotating(rotating, "user-1", `v9.${legacyUnderOld}`)).toBeNull();
+  });
+
+  it("totpKeysOf reads TOTP_ENC_KEY_PREVIOUS only when it is a non-empty string", () => {
+    expect(totpKeysOf({ TOTP_ENC_KEY: KEY })).toEqual({ current: KEY, previous: undefined });
+    expect(
+      totpKeysOf({ TOTP_ENC_KEY: KEY, TOTP_ENC_KEY_PREVIOUS: KEY2 } as { TOTP_ENC_KEY: string }),
+    ).toEqual({
+      current: KEY,
+      previous: KEY2,
+    });
+    expect(
+      totpKeysOf({ TOTP_ENC_KEY: KEY, TOTP_ENC_KEY_PREVIOUS: "" } as { TOTP_ENC_KEY: string }).previous,
+    ).toBe(undefined);
+  });
+
   it("AES-GCM rejects tampering", async () => {
     const sealed = await encrypt(KEY, new Uint8Array([1, 2, 3]), "x");
     const raw = fromB64url(sealed);
@@ -162,6 +202,17 @@ describe("tokens and challenges", () => {
     const [, mac] = token.split(".") as [string, string];
     const forged = b64url(new TextEncoder().encode(JSON.stringify({ ...c, ak: `acct:${"b2".repeat(16)}` })));
     expect(await verifyChallenge(KEY, `${forged}.${mac}`, "login_totp", 1_000)).toBeNull();
+  });
+
+  it("M7.5 L9: readChallenge tells a genuine expired challenge apart from a forged, wrong-purpose or broken one", async () => {
+    const c = { purpose: "enrol_totp" as const, sub: "u1|h", exp: 2_000 };
+    const token = await signChallenge(KEY, c);
+    expect(await readChallenge(KEY, token, "enrol_totp", 1_999)).toEqual(c);
+    expect(await readChallenge(KEY, token, "enrol_totp", 2_000)).toBe("expired");
+    expect(await verifyChallenge(KEY, token, "enrol_totp", 2_000)).toBeNull();
+    expect(await readChallenge(KEY2, token, "enrol_totp", 2_000)).toBeNull();
+    expect(await readChallenge(KEY, token, "login_totp", 2_000)).toBeNull();
+    expect(await readChallenge(KEY, "x", "enrol_totp", 2_000)).toBeNull();
   });
 
   it("M7.5 L4: `iat` is signed with the challenge; one signed before it existed reads as issued at exp - TTL", async () => {

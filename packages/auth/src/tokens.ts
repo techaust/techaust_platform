@@ -52,6 +52,21 @@ export async function verifyChallenge(
   purpose: Challenge["purpose"],
   nowMs: number,
 ): Promise<Challenge | null> {
+  const c = await readChallenge(key, token, purpose, nowMs);
+  return c === "expired" ? null : c;
+}
+
+/**
+ * `verifyChallenge`, telling a genuine challenge of this purpose whose time has run out ("expired") apart from anything else (null). M7.5 (L9, M1.5 L3):
+ * the invite's authenticator step answers `enrolment_expired` for the first, so the screen can go back to step 1; it reveals nothing a forger can use (only a
+ * correctly signed token gets that answer).
+ */
+export async function readChallenge(
+  key: string,
+  token: string,
+  purpose: Challenge["purpose"],
+  nowMs: number,
+): Promise<Challenge | "expired" | null> {
   const [body, mac, extra] = token.split(".");
   if (!body || !mac || extra !== undefined) return null;
   let expected: Uint8Array;
@@ -64,5 +79,6 @@ export async function verifyChallenge(
   }
   if (!timingSafeEqual(expected, given)) return null;
   const c = JSON.parse(new TextDecoder().decode(fromB64url(body))) as Challenge;
-  return c.purpose === purpose && typeof c.exp === "number" && c.exp > nowMs ? c : null;
+  if (c.purpose !== purpose || typeof c.exp !== "number") return null;
+  return c.exp > nowMs ? c : "expired";
 }

@@ -2,6 +2,7 @@ import { env, exports } from "cloudflare:workers";
 import {
   accountKey,
   b64url,
+  CHALLENGE_TTL_MS,
   currentStep,
   enc,
   fromB64url,
@@ -259,10 +260,8 @@ describe("the signed challenge carries the password counter's key [ADM-AUTH-01]"
     const email = "challenge@example.com";
     const e = await enrol(email);
     const sub = await userId(email);
-    const ak = `acct:${[...new Uint8Array(await crypto.subtle.digest("SHA-256", enc.encode(email)))]
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("")
-      .slice(0, 32)}`;
+    // M7.5 (L8): the key is an HMAC under SALT_PEPPER, no longer the bare SHA-256 of the email.
+    const ak = await accountKey(env.SALT_PEPPER, email);
     const exp = Date.now() + 60_000;
 
     const real = await challengeFor(email, e.clientHash);
@@ -294,11 +293,11 @@ describe("the signed challenge carries the password counter's key [ADM-AUTH-01]"
   it("a challenge issued before this release (no change in its format) keeps working", async () => {
     const e = await enrol("oldchallenge@example.com");
     const sub = await userId("oldchallenge@example.com");
-    // Exactly what M1.4's /login signed: purpose, sub, exp, ak.
+    // Exactly what M1.4's /login signed: purpose, sub, exp, ak (no `iat`: it reads as issued at exp - 5 minutes, M7.5 L4), signed just now.
     const challenge = await signChallenge(env.SESSION_HMAC_KEY, {
       purpose: "login_totp",
       sub,
-      exp: Date.now() + 60_000,
+      exp: Date.now() + CHALLENGE_TTL_MS,
       ak: `acct:${"1".repeat(32)}`,
     });
     expect(
@@ -357,7 +356,7 @@ describe("the failure counter and the session batch [ADM-AUTH-05, -06]", () => {
       body: { email: u.email, clientHash: hash() },
       headers: { "CF-Connecting-IP": "203.0.113.9" },
     });
-    const ak = await accountKey(u.email);
+    const ak = await accountKey(env.SALT_PEPPER, u.email);
     const ik = await ipKey(env.SALT_PEPPER, "203.0.113.9");
     expect((await attemptsRow(ak))?.failures).toBe(1);
     expect((await attemptsRow(ik))?.failures).toBe(1); // the failure counted at the address

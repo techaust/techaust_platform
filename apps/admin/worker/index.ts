@@ -9,6 +9,7 @@ import { createApp } from "./app.ts";
 import type { RouteDef } from "./context.ts";
 import { forwardRoutes, warmForwardTable } from "./forward.ts";
 import { ROUTES } from "./guard.ts";
+import { sessionLimit } from "./rate-limit.ts";
 import { mountFront } from "./routes-front.ts";
 import { FRONT_WARM } from "./warm-fixtures/front.ts";
 import { FRONT_WARM_SECRETS } from "./warm-front.ts";
@@ -17,9 +18,13 @@ import { warmAtStartup } from "./warm-routes.ts";
 // CPU warm-up (b)2: the front's own rows and ONE forwarder catch-all that looks forwarded rows up in a TrieRouter table (forward.ts), in place of 155
 // forwarder routes run through the PatternRouter's regular expressions.
 let table: TrieRouter<RouteDef> | undefined;
-const app = createApp(mountFront, (a) => {
-  table = forwardRoutes(a, ROUTES);
-});
+const app = createApp(
+  mountFront,
+  (a) => {
+    table = forwardRoutes(a, ROUTES);
+  },
+  { sessionLimit },
+);
 // M6.2 CPU diagnosis (lead decision 1): the front's own rows matched while the module loads, and every forwarded row looked up in THE forwarder table the
 // catch-all uses (early check finding 8: not a second one). (Not exported: a named export of a Worker entry module is read as an entrypoint.)
 warmRouter(
@@ -29,7 +34,7 @@ warmRouter(
 if (table) warmForwardTable(table, ROUTES);
 // CPU warm-up (b)1: sign-in, the account and the forwarders dry-run on made-up rows while the module loads (warm-routes.ts); never throws, stores and logs nothing.
 void warmAtStartup(
-  () => createApp(mountFront, (a) => forwardRoutes(a, ROUTES, true), { warm: true }),
+  () => createApp(mountFront, (a) => forwardRoutes(a, ROUTES, true), { warm: true, sessionLimit }),
   FRONT_WARM,
   FRONT_WARM_SECRETS,
 );

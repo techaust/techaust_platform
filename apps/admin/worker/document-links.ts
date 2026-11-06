@@ -5,7 +5,7 @@
 // The recipients are the same rule as the first send (`checkRecipients`): 1 to 5 distinct contacts of THIS client with portal access, not
 // anonymised. The email follows the PDF: the rows are written "waiting" (queued_at NULL); when the PDF already exists they are queued at
 // once (`offer.send`, one message per row), else the jobs Worker's render step queues them (and a sweep is the safety net).
-import { contentDisposition } from "@techaust/core/file-types";
+import { downloadHeaders } from "@techaust/core/file-types";
 import { uuidv7 } from "@techaust/core/ids";
 import { todayIst as todayIstText } from "@techaust/core/offers";
 import { Hono } from "hono/tiny";
@@ -249,16 +249,10 @@ export const documentLinks = new Hono<AppEnv>()
     if (!object) return err(c, NOT_FOUND, 404);
     // The same download rules as the proposal's own PDF (document-pdf.ts): an attachment, never rendered, never cached, never sniffed.
     return new Response(object.body, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Length": String(object.size),
-        "Content-Disposition": contentDisposition(
-          certificateFilename(row.number_display ?? "document", row.version),
-        ),
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-        "Cache-Control": "no-store",
-        "X-Robots-Tag": "noindex",
-      },
+      headers: downloadHeaders({
+        contentType: "application/pdf",
+        size: object.size,
+        filename: certificateFilename(row.number_display ?? "document", row.version),
+      }),
     });
   });

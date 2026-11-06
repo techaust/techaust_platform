@@ -29,6 +29,46 @@ export const openTotpSecret = (key: string, userId: string, sealed: string): Pro
   return decrypt(key, sealed.slice(dot + 1), `totp:${userId}`);
 };
 
+/** The TOTP sealing keys: `TOTP_ENC_KEY`, and during a rotation the optional `TOTP_ENC_KEY_PREVIOUS` (never in `secrets.required`). */
+export type TotpKeys = { current: string; previous?: string | undefined };
+
+/**
+ * The keys of an env: the current one, plus `TOTP_ENC_KEY_PREVIOUS` only when it is set to a non-empty string (an optional secret, so absent from the
+ * generated `Env` type and read by name).
+ */
+export const totpKeysOf = (env: { TOTP_ENC_KEY: string }): TotpKeys => {
+  const previous: unknown = Reflect.get(env, "TOTP_ENC_KEY_PREVIOUS");
+  return {
+    current: env.TOTP_ENC_KEY,
+    previous: typeof previous === "string" && previous !== "" ? previous : undefined,
+  };
+};
+
+/**
+ * M7.5 (R finding 1, L23): opens a stored secret with the current key, then (a rotation in progress) with the previous one. `reseal` is the same secret sealed
+ * again with the CURRENT key when only the previous key opened it, for the caller to store in the batch that records a successful code check (guarded on
+ * the row still holding the old seal); null when the current key opened it. Null: no key opens it (a wrong key, an unknown version, a tampered value): the
+ * caller refuses, fail-closed. Rotation: set `TOTP_ENC_KEY_PREVIOUS` to the old value, put the new `TOTP_ENC_KEY`, each member signs in (or steps up) once,
+ * then remove `TOTP_ENC_KEY_PREVIOUS` (docs/runbooks/incident.md).
+ */
+export async function openTotpSecretRotating(
+  keys: TotpKeys,
+  userId: string,
+  sealed: string,
+): Promise<{ secret: Uint8Array; reseal: string | null } | null> {
+  try {
+    return { secret: await openTotpSecret(keys.current, userId, sealed), reseal: null };
+  } catch {
+    if (!keys.previous) return null;
+  }
+  try {
+    const secret = await openTotpSecret(keys.previous, userId, sealed);
+    return { secret, reseal: await sealTotpSecret(keys.current, userId, secret) };
+  } catch {
+    return null;
+  }
+}
+
 export const totpUri = (account: string, secret: Uint8Array) =>
   createTOTPKeyURI(TOTP_ISSUER, account, secret, TOTP_PERIOD_S, TOTP_DIGITS);
 

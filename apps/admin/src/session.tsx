@@ -1,6 +1,15 @@
 // Who is signed in. Read once from GET /auth/me; any signed-in call answered 401 clears it (the session ended),
 // and the app shows the sign-in screen with a short note.
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { api, onUnauthenticated, type User } from "./api.ts";
 
 type SessionState = {
@@ -34,13 +43,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUser(u);
   }, []);
 
+  // M7.5 (L9, M1.5 follow-up): who was signed in is read from a ref, never inside a `setUser` updater: an updater must be pure (StrictMode runs it twice),
+  // so it may not set another state.
+  const userRef = useRef(user);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
   useEffect(
     () =>
       onUnauthenticated(() => {
-        setUser((was) => {
-          if (was) setEndedNote("Your session has ended. Sign in again to carry on.");
-          return null;
-        });
+        if (userRef.current) setEndedNote("Your session has ended. Sign in again to carry on.");
+        setUser(null);
       }),
     [],
   );
