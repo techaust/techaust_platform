@@ -395,6 +395,8 @@ export const ZR_LEAD = {
   withdrawConfirm: "Withdraw consent",
   withdrawn: "Consent withdrawn.",
   nothingToWithdraw: "This lead has no consent to withdraw.",
+  /** The lead's details were erased or anonymised (409 `anonymised`; lead's line, review 1 re-check, 2026-11-06). */
+  withdrawAnonymised: "This lead's details were erased, so there's no consent left to withdraw.",
 } as const;
 
 // ---- G.5 the erase dialog's "in parts" state (F5) ----------------------------------------------------------------------------------------------------------

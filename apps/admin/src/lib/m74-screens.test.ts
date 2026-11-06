@@ -11,7 +11,7 @@ import {
 } from "@techaust/core/dsr";
 import { describe, expect, it } from "vitest";
 import { type AuditEntry, RequestError } from "../api.ts";
-import { eraseRefusal, tooManyRefs } from "../routes/leads/data-tools.tsx";
+import { canWithdrawConsent, eraseRefusal, tooManyRefs } from "../routes/leads/data-tools.tsx";
 import { reportBellHref } from "./bell-links.ts";
 import { ZR_CLOSE, ZR_LEAD, ZR_LOG, ZR_REQ } from "./copy-zr.ts";
 import { ZR_NAV } from "./copy-zr-nav.ts";
@@ -394,5 +394,25 @@ describe("the clean-up's bells land on the report (G.6)", () => {
     for (const k of ["retention.report_ready", "retention.done_with_holds", "r2.stuck", "job.failed"])
       expect(reportBellHref(k, "/settings/retention")).toBe("/settings/retention#dp-report");
     expect(reportBellHref("request.overdue", "/requests?id=x")).toBe("/requests?id=x");
+  });
+});
+
+describe("Withdraw marketing consent is offered only for a live lead with consent held (review 1 re-check) [FRM-05]", () => {
+  const consent = { granted: true, at: 1000, noticeVersion: "1.0", purposes: ["marketing_updates"] };
+  it("offered for a live lead whose consent is held, not once withdrawn", () => {
+    expect(canWithdrawConsent({ email: "pat@example.test", consent } as never)).toBe(true);
+    expect(
+      canWithdrawConsent({ email: "pat@example.test", consent: { ...consent, withdrawnAt: 2000 } } as never),
+    ).toBe(false);
+    expect(canWithdrawConsent({ email: "pat@example.test", consent: null } as never)).toBe(false);
+  });
+  it("never for a lead holding core's anonymise placeholder, in any case", () => {
+    expect(canWithdrawConsent({ email: "anonymised+0190abcd@invalid", consent } as never)).toBe(false);
+    expect(canWithdrawConsent({ email: "Anonymised+0190ABCD@INVALID", consent } as never)).toBe(false);
+  });
+  it("the server's anonymised refusal has its own words", () => {
+    expect(ZR_LEAD.withdrawAnonymised).toBe(
+      "This lead's details were erased, so there's no consent left to withdraw.",
+    );
   });
 });

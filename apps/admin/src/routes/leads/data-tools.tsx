@@ -28,8 +28,11 @@ import { LogRequestDialog } from "../requests/log.tsx";
 
 const CODE_MISSING = "Enter the 6-digit code from your authenticator app.";
 
-/** Whether the lead's consent can be withdrawn (a consent record, not withdrawn already: core `withdrawalOf`; the server says `nothing_to_withdraw` otherwise). */
-export const canWithdrawConsent = (l: Pick<LeadDetail, "consent">): boolean =>
+/** Whether the lead's consent can be withdrawn (a consent record, not withdrawn already: core `withdrawalOf`; the server says `nothing_to_withdraw` otherwise).
+ * Never for a lead whose details were erased or anonymised (its address is core `anonymisedEmail`'s placeholder): the server refuses it as `anonymised`
+ * (review 1 re-check, medium). */
+export const canWithdrawConsent = (l: Pick<LeadDetail, "consent" | "email">): boolean =>
+  !/^anonymised\+[^@]+@invalid$/i.test(l.email) &&
   l.consent !== null &&
   typeof l.consent.at === "number" &&
   typeof l.consent.noticeVersion === "string" &&
@@ -89,6 +92,8 @@ export function LeadDataTools(props: { lead: LeadDetail; converted: boolean; onC
             } catch (e) {
               if (e instanceof RequestError && e.code === "nothing_to_withdraw")
                 throw new RequestError(409, e.code, ZR_LEAD.nothingToWithdraw);
+              if (e instanceof RequestError && e.code === "anonymised")
+                throw new RequestError(409, e.code, ZR_LEAD.withdrawAnonymised);
               throw e;
             }
             toast("success", ZR_LEAD.withdrawn);
