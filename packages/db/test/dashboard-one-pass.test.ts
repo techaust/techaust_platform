@@ -233,6 +233,13 @@ describe("L33: the one-pass figures equal their grouped twins", () => {
         month_taxable: inrMonth,
         month_total: b.computed.totalMinor + dn.computed.totalMinor - cn.computed.totalMinor,
         month_inr_taxable: inrMonth,
+        // M7.3 C5: nothing in September, so this month less the previous one is this month
+        pm_documents: 0,
+        pm_taxable: 0,
+        pm_total: 0,
+        pm_inr_taxable: 0,
+        delta_taxable: inrMonth,
+        delta_total: b.computed.totalMinor + dn.computed.totalMinor - cn.computed.totalMinor,
       },
       {
         currency: "USD",
@@ -244,13 +251,19 @@ describe("L33: the one-pass figures equal their grouped twins", () => {
         month_taxable: e.computed.taxableMinor,
         month_total: e.computed.totalMinor,
         month_inr_taxable: e.computed.inr?.taxableMinor,
+        pm_documents: 0,
+        pm_taxable: 0,
+        pm_total: 0,
+        pm_inr_taxable: 0,
+        delta_taxable: e.computed.taxableMinor,
+        delta_total: e.computed.totalMinor,
       },
     ]);
     // owed on 2026-10-31: a (due 10-30, overdue), b (due 11-01), dn (due 10-30, overdue, less its TDS); the USD exports (the 2026-03-31 one is owed too)
     const owed = await all(OWED_SQL, "2026-10-31");
     const aBal = a.computed.totalMinor - cn.computed.totalMinor;
     const dnBal = dn.computed.totalMinor - 10_00;
-    expect(owed[0]).toEqual({
+    expect(owed[0]).toMatchObject({
       currency: "INR",
       n: 3,
       balance: aBal + b.computed.totalMinor + dnBal,

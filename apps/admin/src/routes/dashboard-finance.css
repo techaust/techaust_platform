@@ -239,3 +239,92 @@
 .dash__finance > .fin-arrives {
   order: 1;
 }
+
+/* ---------- M7.3: dashboard v2 ---------- */
+
+/* C22: the comparison with the previous month, in words, in the text colour (it is a figure's sentence, not a hint). */
+.fin-delta {
+  color: var(--color-text);
+}
+
+/* Q5: nothing collected this month, last month's comparison under the empty line, aligned with its words (after the 20 px icon and its gap). */
+.fin-deltas {
+  display: grid;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: 0 0 0 calc(var(--space-5) + var(--space-3));
+  list-style: none;
+}
+
+/* The Overdue tile: each currency's overdue buckets as a thin bar under its figure, one legend for the tile. */
+.fin-figure .chart-seg {
+  margin-top: var(--space-3);
+}
+
+.fin-ageing-legend {
+  margin-top: var(--space-4);
+}
+
+.fin-ageing-legend .chart-legend {
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  gap: var(--space-1) var(--space-3);
+}
+
+/* The Leads tile: the open count with the last 30 days beside it. */
+.lead-figure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-2);
+}
+
+.lead-figure__trend {
+  display: grid;
+  justify-items: end;
+  flex: 1 1 8rem;
+  max-width: 12rem;
+  min-width: 0;
+}
+
+.lead-figure__trend .chart-spark {
+  width: 100%;
+}
+
+.lead-figure__caption {
+  color: var(--color-text-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+/* The Reports tile: one 44 px link per report; on a phone it follows the day's tiles (care.css orders the one-column dashboard). */
+.tile--reports {
+  order: 5;
+}
+
+.tile-links {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tile-links li + li {
+  border-top: 1px solid var(--color-border);
+}
+
+.tile-links__link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  font-weight: 500;
+}
+
+.tile-links__link svg {
+  flex: none;
+  color: var(--color-text-muted);
+}

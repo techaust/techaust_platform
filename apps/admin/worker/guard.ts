@@ -186,6 +186,18 @@ export const ROUTES: readonly RouteDef[] = [
   // M6.5 (B4; ADM-PAY-08): the refunds register of one FY, the registers' rule (Owner and Accountant with a fresh code on every page, one audit row per page). Its
   // own row, not a kind of `/reports/registers`: that page answers GST register rows and a settings meta over a date range; this one answers refunds over an FY.
   I("GET", "/reports/refunds", "exports.gst", { audit: "report.export" }),
+  // M7.3 (ADM-REP-01, -02, -06; run file C1, C2, C9, L12): revenue and collections (by month, category or kind; per client) and outstanding and ageing, read only,
+  // Owner and Accountant (`reports.finance`). On the invoices Worker with the other reports (the brief's "finance" predates the fourth admin Worker; Step 0).
+  I("GET", "/reports/revenue", "reports.finance"),
+  I("GET", "/reports/revenue/clients", "reports.finance"),
+  I("GET", "/reports/ageing", "reports.finance"),
+  // M7.3 C6 (L6): the per-client CSVs of C2 and C9, the registers' rule (a fresh code on every page, one `report.export` audit row per page; a refused request
+  // writes nothing), through the same handlers as the screens' rows.
+  I("GET", "/reports/revenue/export", "exports.gst", { audit: "report.export" }),
+  I("GET", "/reports/ageing/export", "exports.gst", { audit: "report.export" }),
+  // M7.3 (ADM-REP-03, -05; C3, C4): the pipeline and win rate (Owner, Sales) and care plan hours (Owner, Staff), on the API Worker with the leads and care plans.
+  R("GET", "/reports/pipeline", "reports.pipeline"),
+  R("GET", "/reports/care-hours", "reports.delivery"),
   // Catalogue, templates and publishing (M4.1, ADM-CAT-01..05). Static paths (`snapshots`, `publish`) are declared before `:id`.
   R("GET", "/catalogue", "catalogue.read"),
   R("GET", "/catalogue/snapshots", "catalogue.read"),

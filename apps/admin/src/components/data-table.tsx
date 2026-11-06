@@ -45,6 +45,11 @@ export function DataTable<T>(props: {
   actions?: ((row: T) => ReactNode) | undefined;
   /** A short line under each card title (e.g. the email under a name). */
   cardSub?: ((row: T) => ReactNode) | undefined;
+  /**
+   * M7.3: the rows that close the list (a period's totals), in the table's foot and as the last cards; drawn as a ledger's total (a rule above, a double rule
+   * below). Not shown while loading or when the list is empty.
+   */
+  totals?: T[] | undefined;
 }) {
   const { columns, rows, loading } = props;
   const [scrollRef, region] = useScrollRegion<HTMLDivElement>(props.caption);
@@ -54,6 +59,7 @@ export function DataTable<T>(props: {
   const n = props.skeletonRows ?? 5;
   const title = columns.find((c) => c.card === "title") ?? columns[0];
   const facts = columns.filter((c) => c !== title && c.card !== "hidden");
+  const totals = !loading && rows.length > 0 ? (props.totals ?? []) : [];
 
   return (
     <div className="dtable" aria-busy={loading || undefined} ref={scrollRef} {...region}>
@@ -141,6 +147,26 @@ export function DataTable<T>(props: {
                 </tr>
               ))}
         </tbody>
+        {totals.length > 0 && (
+          <tfoot>
+            {totals.map((r) => (
+              <tr key={props.rowKey(r)} className="dtable__total">
+                {columns.map((c, j) =>
+                  j === 0 ? (
+                    <th key={c.key} scope="row" className={c.align === "end" ? "num" : undefined}>
+                      {c.cell(r)}
+                    </th>
+                  ) : (
+                    <td key={c.key} className={c.align === "end" ? "num" : undefined}>
+                      {c.cell(r)}
+                    </td>
+                  ),
+                )}
+                {props.actions && <td />}
+              </tr>
+            ))}
+          </tfoot>
+        )}
       </table>
 
       {/* Below md: the same rows as cards, every value with its label. */}
@@ -154,14 +180,16 @@ export function DataTable<T>(props: {
                 <span className="skeleton" style={{ width: "40%" }} />
               </li>
             ))
-          : rows.map((r) => (
-              <li key={props.rowKey(r)} className="dcard">
+          : [...rows, ...totals].map((r, i) => (
+              <li key={props.rowKey(r)} className={i >= rows.length ? "dcard dcard--total" : "dcard"}>
                 <div className="dcard__head">
                   <div className="dcard__title">
                     {title?.cell(r)}
                     {props.cardSub && <div className="dcard__sub">{props.cardSub(r)}</div>}
                   </div>
-                  {props.actions && <div className="dcard__actions">{props.actions(r)}</div>}
+                  {props.actions && i < rows.length && (
+                    <div className="dcard__actions">{props.actions(r)}</div>
+                  )}
                 </div>
                 <dl className="dcard__facts">
                   {facts.map((c) => (

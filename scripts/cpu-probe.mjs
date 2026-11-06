@@ -58,6 +58,13 @@ export const BUNDLES = {
   jobs: "apps/jobs/dist",
 };
 const ORIGIN = "http://localhost:5173";
+/** M7.3 report cases: an IST day `days` from today (ISO), and this IST day's FY token (`2627`). */
+const isoDay = (days) => new Date(Date.now() + 19_800_000 + days * 86_400_000).toISOString().slice(0, 10);
+const fyToken = () => {
+  const [y, mo] = isoDay(0).split("-").map(Number);
+  const s = mo >= 4 ? y : y - 1;
+  return `${String(s % 100).padStart(2, "0")}${String((s + 1) % 100).padStart(2, "0")}`;
+};
 const TEST_KEY = (n) => Buffer.alloc(32, n).toString("base64");
 /** Made-up secret values (the admin tests' own), never a real one. */
 const madeUp = (...words) => [...words, "made", "up"].join("-");
@@ -907,6 +914,48 @@ export const CASES = {
   "GET /clients": { worker: "api", call: (m) => ({ path: "/clients", cookie: m.cookie }) },
   "GET /clients/:id": { worker: "api", call: (m) => ({ path: `/clients/${m.client}`, cookie: m.cookie }) },
   "GET /leads": { worker: "api", call: (m) => ({ path: "/leads", cookie: m.cookie }) },
+  // M7.3 (run file J): the report routes, the offer search and "All payments", timed for the first-run gate (local <= 2.5 ms). Those marked `warm: false` are
+  // not in the start-up dry run (rare routes, under the gate with their schema warm-ups: warmRevenueReports, warmDeliveryReports, warmDocuments, and the router
+  // warm-up); "All payments" is, as it was over the gate without.
+  "GET /reports/revenue": {
+    worker: "invoices",
+    warm: false,
+    call: (m) => ({ path: `/reports/revenue?fy=${fyToken()}`, cookie: m.cookie }),
+  },
+  "GET /reports/revenue?by=category": {
+    worker: "invoices",
+    warm: false,
+    call: (m) => ({ path: `/reports/revenue?fy=${fyToken()}&by=category`, cookie: m.cookie }),
+  },
+  "GET /reports/revenue/clients": {
+    worker: "invoices",
+    warm: false,
+    call: (m) => ({ path: `/reports/revenue/clients?fy=${fyToken()}&currency=INR`, cookie: m.cookie }),
+  },
+  "GET /reports/ageing": {
+    worker: "invoices",
+    warm: false,
+    call: (m) => ({ path: "/reports/ageing", cookie: m.cookie }),
+  },
+  "GET /reports/pipeline": {
+    worker: "api",
+    warm: false,
+    call: (m) => ({ path: `/reports/pipeline?from=${isoDay(-30)}&to=${isoDay(0)}`, cookie: m.cookie }),
+  },
+  // Not in the start-up dry run: workerd's start-up clock reads 0, so every month is after the current one there and C4 refuses it before any read; the care
+  // loader's assembly is warmed on a made-up plan instead (warmDeliveryReports).
+  "GET /reports/care-hours": {
+    worker: "api",
+    warm: false,
+    call: (m) => ({ path: `/reports/care-hours?month=${isoDay(0).slice(0, 7)}`, cookie: m.cookie }),
+  },
+  "GET /documents?q=": {
+    worker: "api",
+    warm: false,
+    call: (m) => ({ path: "/documents?q=a", cookie: m.cookie }),
+  },
+  // "All payments" (C8, a new statement): in the start-up dry run (B2: 3.5 ms first-run locally without it).
+  "GET /payments": { worker: "finance", call: (m) => ({ path: "/payments", cookie: m.cookie }) },
   "rpc GatewayEvents.processEvent": { worker: "finance", rpc: true },
   "jobs POST /razorpay": { worker: "jobs", hook: true },
   // M6.4: the PayPal return's capture RPC (the token, the claim, the capture and the confirmed batch) and the PayPal webhook (the certificate's first fetch

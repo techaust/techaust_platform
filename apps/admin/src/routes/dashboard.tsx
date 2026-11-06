@@ -7,8 +7,9 @@ import "./care/parts.tsx";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { api, type Dashboard as DashboardData, type DashboardTiles, isFinanceTile } from "../api.ts";
+import { Sparkline } from "../components/chart/index.ts";
 import { PageHeader, Skeleton, When } from "../components/display.tsx";
-import { FileText, Receipt, Wallet } from "../components/icons.tsx";
+import { BarChart, FileText, Receipt, Wallet } from "../components/icons.tsx";
 import { LoadFailed, useLoad } from "../components/states.tsx";
 import { allowed } from "../lib/access.ts";
 import { CARE_COPY, dayText, hoursText, moneyText } from "../lib/care.ts";
@@ -23,6 +24,8 @@ import {
   TILE_TITLES,
 } from "../lib/dashboard.ts";
 import { STAGE_LABELS, STAGES } from "../lib/leads.ts";
+import { DASH_M73, M73_TITLES } from "../lib/m73-reports.ts";
+import { isoDayText, REPORTS_COPY } from "../lib/reports.ts";
 import { useUser } from "../session.tsx";
 import { FlagPill, HoursBar, tierText } from "./care/parts.tsx";
 import { FinanceTiles } from "./dashboard-finance.tsx";
@@ -46,6 +49,7 @@ export function Dashboard() {
 
 function Tiles({ data }: { data: DashboardData }) {
   const t = data.tiles;
+  const reportLinks = reportLinksOf(data.reports);
   const kpis = [
     t.leads && <LeadsTile key="leads" tile={t.leads} />,
     t.projects && <ProjectsTile key="projects" tile={t.projects} />,
@@ -61,14 +65,18 @@ function Tiles({ data }: { data: DashboardData }) {
   return (
     <div className="dash">
       {kpis.length > 1 && strip}
-      {isFinanceTile(t.finance) && <FinanceTiles tile={t.finance} />}
+      {isFinanceTile(t.finance) && <FinanceTiles tile={t.finance} reports={data.reports} />}
       <div className="dash__main">
         {kpis.length === 1 && strip}
         {t.careBurn && <CareTile tile={t.careBurn} />}
         {t.activity && <ActivityTile tile={t.activity} />}
       </div>
-      {(t.milestones || t.pipelineValue || (t.finance && !isFinanceTile(t.finance))) && (
+      {(t.milestones ||
+        t.pipelineValue ||
+        reportLinks.length > 0 ||
+        (t.finance && !isFinanceTile(t.finance))) && (
         <div className="dash__side">
+          {reportLinks.length > 0 && <ReportsTile links={reportLinks} />}
           {t.milestones && <MilestonesTile tile={t.milestones} today={data.today} />}
           {t.pipelineValue && <PipelineTile tile={t.pipelineValue} />}
           {t.finance && !isFinanceTile(t.finance) && (
@@ -86,6 +94,46 @@ function Tiles({ data }: { data: DashboardData }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ---- reports (M7.3, C5 (e)) -----------------------------------------------------------------------------------------------------------------------
+
+/** Where each report the role may read opens, with the period the API filled in (revenue: this FY; pipeline: this month to today; care: this month). */
+function reportLinksOf(r: DashboardData["reports"]): { to: string; text: string }[] {
+  if (!r) return [];
+  const out: { to: string; text: string }[] = [];
+  if (r.revenue)
+    out.push({ to: `/reports/revenue?fy=${encodeURIComponent(r.revenue.fy)}`, text: M73_TITLES.revenue });
+  if (r.ageing) out.push({ to: "/reports/ageing", text: M73_TITLES.ageing });
+  if (r.pipeline)
+    out.push({
+      to: `/reports/pipeline?from=${encodeURIComponent(r.pipeline.from)}&to=${encodeURIComponent(r.pipeline.to)}`,
+      text: M73_TITLES.pipeline,
+    });
+  if (r.careHours)
+    out.push({
+      to: `/reports/care-hours?month=${encodeURIComponent(r.careHours.month)}`,
+      text: M73_TITLES.careHours,
+    });
+  return out;
+}
+
+/** The reports this role reads, one link each (07-V's "Reports"; the names are C1 to C4). */
+function ReportsTile({ links }: { links: { to: string; text: string }[] }) {
+  return (
+    <Tile id="reports" title={REPORTS_COPY.group} className="tile--reports">
+      <ul className="tile-links">
+        {links.map((l) => (
+          <li key={l.to}>
+            <Link to={l.to} className="tile-links__link">
+              <BarChart size={20} />
+              <span>{l.text}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Tile>
   );
 }
 
@@ -183,7 +231,24 @@ function LeadsTile({ tile }: { tile: NonNullable<DashboardTiles["leads"]> }) {
         <p className="muted">{DASH_COPY.noLeads}</p>
       ) : (
         <>
-          <Figure value={tile.open} label="Open" />
+          <div className="lead-figure">
+            <Figure value={tile.open} label="Open" />
+            {tile.trend && tile.trend.points.length > 1 && (
+              <div className="lead-figure__trend">
+                <Sparkline
+                  points={tile.trend.points.map((p) => ({ date: p.date, value: p.open }))}
+                  label={DASH_M73.trendLabel(
+                    tile.trend.points[0]?.open ?? 0,
+                    tile.trend.points.at(-1)?.open ?? 0,
+                    isoDayText(tile.trend.points.at(-1)?.date ?? ""),
+                  )}
+                />
+                <span className="lead-figure__caption" aria-hidden="true">
+                  {DASH_M73.trendCaption}
+                </span>
+              </div>
+            )}
+          </div>
           <dl className="mini-facts">
             {stages.map((s) => (
               <div key={s}>

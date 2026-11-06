@@ -26,6 +26,7 @@ import { leads } from "./leads.ts";
 import { notes } from "./notes.ts";
 import { notifications } from "./notifications.ts";
 import { milestones, projects } from "./projects.ts";
+import { deliveryReports } from "./report-delivery.ts";
 import { search } from "./search.ts";
 import { settings } from "./settings.ts";
 import { settingsSignature } from "./settings-signature.ts";
@@ -66,6 +67,8 @@ export function mountApi(app: App) {
   app.route("/v1/notifications", notifications);
   // M7.1 (POR-09, POR-11, L8): the requests clients send from the portal.
   app.route("/v1/client-requests", clientRequests);
+  // M7.3 (C3, C4): the pipeline and care plan hours reports.
+  app.route("/v1/reports", deliveryReports);
   app.route("/v1/search", search);
   app.route("/v1/audit", audit);
 }

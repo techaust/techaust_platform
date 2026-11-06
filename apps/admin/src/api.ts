@@ -12,6 +12,7 @@ import type {
   TemplateBody,
 } from "@techaust/core/catalogue";
 import type { Role } from "@techaust/core/permissions";
+import type { AgeingBucket, DashboardReportLinks } from "@techaust/core/reports";
 import type { Settings, SignatureRef } from "@techaust/core/settings";
 import type { TermsBlockId } from "@techaust/core/terms";
 import type { HashRequest, HashResponse } from "./hash.worker.ts";
@@ -862,6 +863,8 @@ export type DashboardTiles = {
     open: number;
     newLast7Days: number;
     overdue: { count: number; oldest: { id: string; ref: string; contactName: string; dueAt: number }[] };
+    /** M7.3 (C5 (c)): the open leads of the last 30 IST days from the nightly counts; a day with no count is absent, never a zero. */
+    trend?: { from: string; to: string; points: { date: string; open: number }[] };
   };
   /** The offers out and still acceptable, before tax, by currency (M4.3, ADM-DASH-01). */
   pipelineValue?: { asOf: string; byCurrency: { currency: Currency; count: number; taxableMinor: number }[] };
@@ -924,7 +927,18 @@ export type DashboardTiles = {
     }[];
   };
 };
-export type Dashboard = { asOf: number; today: string; tiles: DashboardTiles };
+export type Dashboard = {
+  asOf: number;
+  today: string;
+  tiles: DashboardTiles;
+  /** M7.3 (C5 (e)): the reports this role may read, each with its period (core `DashboardReportLinks`). */
+  reports?: DashboardReportLinks;
+};
+/** M7.3 (C5 (a)): what is owed in one currency, by ageing bucket as at today. */
+export type AgeingByCurrency = {
+  currency: Currency;
+  buckets: Record<AgeingBucket, { count: number; balanceMinor: number }>;
+};
 /** One currency's invoiced figures (credit notes negative, voided and proformas left out); `inrTaxableMinor` is null when a USD document lacks its INR view. */
 export type InvoicedByCurrency = {
   currency: Currency;
@@ -939,10 +953,20 @@ export type FinanceTile = {
   today: string;
   month: { from: string; to: string };
   fy: { label: string; from: string; to: string };
-  invoiced: { month: InvoicedByCurrency[]; fy: InvoicedByCurrency[] };
+  /** M7.3 (C5 (b)): the IST month before this one, the period of every `previousMonth` and `change`. */
+  previousMonth?: { from: string; to: string };
+  invoiced: {
+    month: InvoicedByCurrency[];
+    fy: InvoicedByCurrency[];
+    previousMonth?: InvoicedByCurrency[];
+    /** this month less the previous one, per currency (made in SQL) */
+    change?: { currency: Currency; taxableMinor: number; totalMinor: number }[];
+  };
   outstanding: OwedByCurrency[];
   overdue: {
     byCurrency: OwedByCurrency[];
+    /** M7.3 (C5 (a)): every currency owed, by bucket (the four overdue buckets add up to `byCurrency`). */
+    ageing?: AgeingByCurrency[];
     oldest: {
       id: string;
       number: string;
@@ -975,6 +999,9 @@ export type FinanceTile = {
         available: true;
         month: { currency: Currency; collectedMinor: number; count: number }[];
         fy: { currency: Currency; collectedMinor: number; count: number }[];
+        /** M7.3 (C5 (b)) */
+        previousMonth?: { currency: Currency; collectedMinor: number; count: number }[];
+        change?: { currency: Currency; collectedMinor: number }[];
       }
     | { available: false; arrivesWith: string };
   /** M6.1 (07-ZH line 16 "Payments to check"): the Owner's count; another role gets `owner_only`. */

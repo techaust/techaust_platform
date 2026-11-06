@@ -131,10 +131,6 @@ export const NAV: NavItem[] = [
     path: "/reports",
     icon: <BarChart />,
     group: 3,
-    arrives: {
-      milestone: "M7.3",
-      what: "Sales, receivables and GST reports, and the files for your GST returns.",
-    },
   },
   {
     key: "approvals",

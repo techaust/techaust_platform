@@ -33,7 +33,7 @@ const create = (cookie: string, body: Record<string, unknown>) => call("/documen
 
 describe("start-up warm-up", () => {
   it("every request schema of the new routes has a sample that parses (nine schemas; the decision body is warmed in the finance Worker since M6.1)", () => {
-    expect(warmDocuments()).toBe(9); // M6.1 stage A: the decision body moved to warm-finance.ts (changed on purpose)
+    expect(warmDocuments()).toBe(10); // M6.1 stage A: the decision body moved to warm-finance.ts; M7.3 C7: the search (changed on purpose)
   });
 });
 

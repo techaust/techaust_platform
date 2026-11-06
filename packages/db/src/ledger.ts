@@ -641,8 +641,11 @@ export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = /* @__PURE__ */ (() =>
  * M6.5 (L9): the refunds "Collected" subtracts: SUCCEEDED refunds of confirmed money-received rows, by the IST day they succeeded (`settled_on`), read through
  * `payment_refunds_settled`. A pending payment refunded in full (L33) ends `rejected`: it was never collected, so its refund is not subtracted either.
  */
-const SETTLED_REFUNDS_FROM = `FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id
-         WHERE f.status = 'succeeded' AND f.settled_on >= ?1 AND f.settled_on <= ?2 AND fp.status = 'confirmed' AND fp.kind = 'payment'`;
+const settledRefundsFrom = (
+  from: string,
+) => `FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id
+         WHERE f.status = 'succeeded' AND f.settled_on >= ${from} AND f.settled_on <= ?2 AND fp.status = 'confirmed' AND fp.kind = 'payment'`;
+const SETTLED_REFUNDS_FROM = settledRefundsFrom("?1");
 
 /**
  * "Collected": confirmed `payment` rows by currency received from `?1` to `?2` (ISO, inclusive), read through `payments_confirmed` (the reference twin of the tile),
@@ -669,25 +672,61 @@ const collectedPick = (prefix: string, row = "t") =>
  * are columns of one aggregate row, turned into rows afterwards. Equal to `COLLECTED_SQL` over each range (a test holds the twins together). M6.5 (L9): less the
  * refunds that succeeded in the FY and in the month: one more aggregate row `r` over `payment_refunds_settled` (no GROUP BY either); a currency with only a refund
  * in the FY has a row too.
+ *
+ * M7.3 C5 (previous-month deltas): the IST month before `?3` too (`pm_collected`, `pm_n`; from `date(?3, '-1 month')` to the day before `?3`) and this month
+ * less it (`delta_collected`), in the same passes. In April that month is in the previous FY, so both passes start there (`min(?1, …)`), in April only; a
+ * currency is then a row when it has money in the FY or in that month, and `fy_rows` (payments and refunds of the FY) says whether its FY figures are real.
  */
 export const COLLECTED_TILE_SQL = /* @__PURE__ */ (() => {
-  const cols = COLLECTED_CURRENCIES.flatMap((c) => [
-    `coalesce(sum(CASE WHEN p.currency = '${c}' THEN p.amount_minor END), 0) AS fy_${c}`,
-    `count(CASE WHEN p.currency = '${c}' THEN 1 END) AS fyn_${c}`,
-    `coalesce(sum(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN p.amount_minor END), 0) AS m_${c}`,
-    `count(CASE WHEN p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4 THEN 1 END) AS mn_${c}`,
-  ]).join(", ");
-  const refundCols = COLLECTED_CURRENCIES.flatMap((c) => [
-    `coalesce(sum(CASE WHEN f.currency = '${c}' THEN f.amount_minor END), 0) AS fy_${c}`,
-    `count(CASE WHEN f.currency = '${c}' THEN 1 END) AS fyn_${c}`,
-    `coalesce(sum(CASE WHEN f.currency = '${c}' AND f.settled_on >= ?3 AND f.settled_on <= ?4 THEN f.amount_minor END), 0) AS m_${c}`,
-  ]).join(", ");
-  return `SELECT c.currency, ${collectedPick("fy")} - ${collectedPick("fy", "r")} AS fy_collected, ${collectedPick("fyn")} AS fy_n,
-       ${collectedPick("m")} - ${collectedPick("m", "r")} AS month_collected, ${collectedPick("mn")} AS month_n
+  const prev = "date(?3, '-1 month')";
+  const from = `min(?1, ${prev})`;
+  const cols = COLLECTED_CURRENCIES.flatMap((c) => {
+    const fy = `p.currency = '${c}' AND p.received_on >= ?1`;
+    const month = `p.currency = '${c}' AND p.received_on >= ?3 AND p.received_on <= ?4`;
+    const pm = `p.currency = '${c}' AND p.received_on >= ${prev} AND p.received_on < ?3`;
+    return [
+      `coalesce(sum(CASE WHEN ${fy} THEN p.amount_minor END), 0) AS fy_${c}`,
+      `count(CASE WHEN ${fy} THEN 1 END) AS fyn_${c}`,
+      `coalesce(sum(CASE WHEN ${month} THEN p.amount_minor END), 0) AS m_${c}`,
+      `count(CASE WHEN ${month} THEN 1 END) AS mn_${c}`,
+      `coalesce(sum(CASE WHEN ${pm} THEN p.amount_minor END), 0) AS pm_${c}`,
+      `count(CASE WHEN ${pm} THEN 1 END) AS pmn_${c}`,
+    ];
+  }).join(", ");
+  const refundCols = COLLECTED_CURRENCIES.flatMap((c) => {
+    const fy = `f.currency = '${c}' AND f.settled_on >= ?1`;
+    const pm = `f.currency = '${c}' AND f.settled_on >= ${prev} AND f.settled_on < ?3`;
+    return [
+      `coalesce(sum(CASE WHEN ${fy} THEN f.amount_minor END), 0) AS fy_${c}`,
+      `count(CASE WHEN ${fy} THEN 1 END) AS fyn_${c}`,
+      `coalesce(sum(CASE WHEN f.currency = '${c}' AND f.settled_on >= ?3 AND f.settled_on <= ?4 THEN f.amount_minor END), 0) AS m_${c}`,
+      `coalesce(sum(CASE WHEN ${pm} THEN f.amount_minor END), 0) AS pm_${c}`,
+      `count(CASE WHEN ${pm} THEN 1 END) AS pmn_${c}`,
+    ];
+  }).join(", ");
+  const net = (x: string) => `${collectedPick(x)} - ${collectedPick(x, "r")}`;
+  return `SELECT c.currency, ${net("fy")} AS fy_collected, ${collectedPick("fyn")} AS fy_n,
+       ${net("m")} AS month_collected, ${collectedPick("mn")} AS month_n,
+       ${net("pm")} AS pm_collected, ${collectedPick("pmn")} AS pm_n,
+       (${net("m")}) - (${net("pm")}) AS delta_collected,
+       ${collectedPick("fyn")} + ${collectedPick("fyn", "r")} AS fy_rows
    FROM (SELECT ${cols}
-         FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?1 AND p.received_on <= ?2) t
+         FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ${from} AND p.received_on <= ?2) t
    JOIN (SELECT ${refundCols}
-         ${SETTLED_REFUNDS_FROM}) r
+         ${settledRefundsFrom(from)}) r
    JOIN (${COLLECTED_CURRENCIES.map((c) => `SELECT '${c}' AS currency`).join(" UNION ALL ")}) c
-   WHERE ${collectedPick("fyn")} > 0 OR ${collectedPick("fyn", "r")} > 0 ORDER BY c.currency`;
+   WHERE ${collectedPick("fyn")} > 0 OR ${collectedPick("fyn", "r")} > 0 OR ${collectedPick("pmn")} > 0 OR ${collectedPick("pmn", "r")} > 0 ORDER BY c.currency`;
 })();
+
+/** One row of `COLLECTED_TILE_SQL` as D1 returns it. */
+export type CollectedTileSqlRow = {
+  currency: "INR" | "USD";
+  fy_collected: number;
+  fy_n: number;
+  month_collected: number;
+  month_n: number;
+  pm_collected: number;
+  pm_n: number;
+  delta_collected: number;
+  fy_rows: number;
+};

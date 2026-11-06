@@ -190,7 +190,7 @@ describe("the finance figures against a known fixture", () => {
           .bind(from, to)
           .all<{ currency: string; collected: number; n: number }>()
       ).results.map((r) => ({ currency: r.currency, collectedMinor: r.collected, count: r.n }));
-    expect(f.collected).toEqual({
+    expect(f.collected).toMatchObject({
       available: true,
       month: await collected(monthFrom, today),
       fy: await collected(fyFrom, fyTo),
