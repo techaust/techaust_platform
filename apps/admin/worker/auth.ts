@@ -173,11 +173,29 @@ const releaseStmt = (db: D1Database, key: string, reserved: Counted, t: number) 
         .bind(key, reserved.failures, reserved.locked_until, reserved.failures >= LOCK_AFTER ? 1 : 0);
 
 /**
- * M7.5 (L34): the answer to a right code on a spent challenge: 401 `challenge_used`, the code counter's reservation given back and the address not counted,
- * in the one call that writes the access row. No session, no alert.
+ * M7.5 (L45): a right code on a spent challenge proves the member was there, so that challenge's unfinished sign-in marker (`staff_signin_pending`, keyed by
+ * its `jti`, 0075) goes too, or the hourly scan would email "unfinished sign-in" for the second tab. Only the row of THIS challenge for THIS member.
  */
-async function challengeUsed(c: Ctx, key: string, t: number, reserved: Counted) {
-  await logBatch(c, 401, [releaseStmt(c.env.DB, key, reserved, t)]);
+export const SIGNIN_PENDING_SPENT_SQL = "DELETE FROM staff_signin_pending WHERE id = ?1 AND user_id = ?2";
+
+/**
+ * M7.5 (L34): the answer to a right code on a spent challenge: 401 `challenge_used`, the code counter's reservation given back and the address not counted,
+ * in the one call that writes the access row. No session, no alert. L45: the challenge's sign-in marker is deleted in the same call.
+ */
+async function challengeUsed(
+  c: Ctx,
+  key: string,
+  t: number,
+  reserved: Counted,
+  pending: { jti: unknown; userId: string },
+) {
+  const db = c.env.DB;
+  await logBatch(c, 401, [
+    releaseStmt(db, key, reserved, t),
+    ...(isChallengeId(pending.jti)
+      ? [db.prepare(SIGNIN_PENDING_SPENT_SQL).bind(pending.jti, pending.userId)]
+      : []),
+  ]);
   return err(c, CHALLENGE_USED, 401);
 }
 
@@ -547,7 +565,8 @@ export const auth = new Hono<AppEnv>()
     if (!result.ok) return refuse(c, a, alerts);
     const iat = issuedAtOf(claim, CHALLENGE_TTL_MS);
     // M7.5 (L34): a right code on a spent challenge (another tab signed in first) is not a failure: uncounted, 401 `challenge_used`.
-    if (spent(user.last_login_at, iat)) return challengeUsed(c, key, a.t, a.reserved);
+    if (spent(user.last_login_at, iat))
+      return challengeUsed(c, key, a.t, a.reserved, { jti: claim.jti, userId: user.id });
     const session = await startSession(c, {
       user,
       // M7.5 (L4): the challenge is single use: a sign-in finished since it was issued moved `last_login_at` past its `iat`.
@@ -586,7 +605,8 @@ export const auth = new Hono<AppEnv>()
     if (!user || !matches) return refuse(c, a, alerts);
     const iat = issuedAtOf(claim, CHALLENGE_TTL_MS);
     // M7.5 (L34): a right recovery code on a spent challenge: uncounted, 401 `challenge_used`, and the code is not spent.
-    if (spent(user.last_login_at, iat)) return challengeUsed(c, key, a.t, a.reserved);
+    if (spent(user.last_login_at, iat))
+      return challengeUsed(c, key, a.t, a.reserved, { jti: claim.jti, userId: user.id });
     const session = await startSession(c, {
       user,
       // The code's single use IS the guard: of two requests with the same code only one changes a row.
