@@ -8,7 +8,7 @@ import type { Currency } from "@techaust/core/money";
 import {
   type CareBilled,
   type CareHoursRow,
-  carePeriodDay,
+  carePeriodDays,
   monthBounds,
   type PipelineReport,
   pipelineEarliest,
@@ -47,7 +47,7 @@ const RANGE_ERRORS: Record<string, ApiError> = {
     message: "Leads are deleted 12 months after their last activity, so older periods are not shown.",
   },
 };
-const MONTH_INVALID: ApiError = { code: "month_invalid", message: "Choose a month" };
+const MONTH_INVALID: ApiError = { code: "month_invalid", message: "Choose a month up to this one" };
 
 /** The query schemas (module top level; B2's warm-up parses one sample of each). */
 export const pipelineQuery = z.object({ from: isoDate, to: isoDate });
@@ -156,26 +156,37 @@ export async function careHoursPage(
   const today = todayIst();
   // a month after the current IST month has no period that has started (early check 5)
   if (!bounds || q.month > today.slice(0, 7)) return "month";
-  let after: string | null = null;
+  // The cursor is the last row's period day and plan id (`{k: day, id}`): a plan can have two periods starting in its start month (review 1 finding 2), so a
+  // page can end between them. The day must be in the month; the earlier `{k: "p", id}` cursor is refused like any other that isn't ours.
+  let after: { id: string; day: string } | null = null;
   if (q.after !== undefined) {
     const cur = decodeCursor(q.after);
-    if (cur?.k !== "p" || !ID.test(cur.id)) return "cursor";
-    after = cur.id;
+    if (
+      typeof cur?.k !== "string" ||
+      !ID.test(cur.id) ||
+      cur.k.length !== 10 ||
+      cur.k < bounds.from ||
+      cur.k > bounds.to ||
+      parseIsoDate(cur.k) === null
+    )
+      return "cursor";
+    after = { id: cur.id, day: cur.k };
   }
   const db = c.env.DB;
   const { results } = await db
     .prepare(CARE_HOURS_PAGE_SQL(after !== null))
-    .bind(...(after === null ? [q.month, bounds.to] : [q.month, bounds.to, after]))
+    .bind(...(after === null ? [q.month, bounds.to] : [q.month, bounds.to, after.id, after.day]))
     .all<{ id: string; day: string }>();
   const page = results.slice(0, REPORT_PAGE_SIZE);
   const last = page.at(-1);
-  const next = results.length > REPORT_PAGE_SIZE && last ? encodeCursor({ k: "p", id: last.id }) : null;
+  const next = results.length > REPORT_PAGE_SIZE && last ? encodeCursor({ k: last.day, id: last.id }) : null;
   if (page.length === 0) return { month: q.month, today, rows: [], next: null };
   // The minutes up to the month's last day plus 28 days (every plan's period that starts in the month has ended by then), never past today; two periods back
-  // from there reach the period that starts in the month and the one before it (whose unused hours may carry in).
+  // from there reach the periods that start in the month and the one before them (whose unused hours may carry in). A short first period is stored under its
+  // natural start, the billing day of the month before (core `usageKey`), which is two months back at most, so it is read too.
   const end = toIsoDate(addDays(parseIsoDate(bounds.to) as NonNullable<ReturnType<typeof parseIsoDate>>, 28));
   const to = today < end ? today : end;
-  const ids = page.map((p) => p.id);
+  const ids = [...new Set(page.map((p) => p.id))];
   const lateFrom = toIsoDate(
     addDays(parseIsoDate(bounds.to) as NonNullable<ReturnType<typeof parseIsoDate>>, 62),
   );
@@ -194,9 +205,10 @@ export async function careHoursPage(
   for (const p of page) {
     const d = data.get(p.id);
     if (!d) continue;
-    const day = carePeriodDay(q.month, d.plan.billing_day, d.plan.start_date);
-    const u = day === null ? null : currentUsage(d, day);
-    if (!u) continue;
+    // the SQL's day must be one of core's for the plan (its twin), and the period found from it must start on it
+    if (!carePeriodDays(q.month, d.plan.billing_day, d.plan.start_date).includes(p.day)) continue;
+    const u = currentUsage(d, p.day);
+    if (u?.period.start !== p.day) continue;
     const mine = bills.filter((b) => b.care_plan_id === p.id);
     rows.push({
       planId: p.id,
@@ -272,7 +284,8 @@ export function warmDeliveryReports(): number {
       pipelineQuery.safeParse({ from: "2026-09-01", to: "2026-09-30" }).success,
       careHoursQuery.safeParse({ month: "2026-10", after: "x" }).success,
       typeof range !== "string" && rate(1, 3) === 3_333 && rate(1, 0) === null,
-      sourcePath("/contact?x=1") === "/contact" && carePeriodDay("2026-10", 5, "2026-01-01") === "2026-10-05",
+      sourcePath("/contact?x=1") === "/contact" &&
+        carePeriodDays("2026-10", 10, "2026-10-03").join() === "2026-10-03,2026-10-10",
       billedOf({
         care_plan_id: "p",
         period_start: "2026-10-01",

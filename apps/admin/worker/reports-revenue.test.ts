@@ -11,7 +11,7 @@ import { encodeCursor } from "./keyset.ts";
 import type { RevenueClientsPage } from "./report-revenue.ts";
 import { insert } from "./test-clients.ts";
 import { call, pinClock, rows, sessionFor, type TestSession } from "./test-helpers.ts";
-import { addDoc, line, mkReportClient } from "./test-reports.ts";
+import { addDoc, computeFor, line, mkReportClient } from "./test-reports.ts";
 
 const FY = { from: "2026-04-01", to: "2027-03-31" };
 let owner: TestSession;
@@ -249,6 +249,65 @@ describe("GET /reports/revenue (C1) [ADM-REP-01]", () => {
         }
       ).error.code,
     ).toBe("period_invalid");
+  });
+
+  // Review 1 finding 4: `inrMissing` on every invoiced figure (count less those with an INR value), for the SPA's "{count} USD invoices have no INR value" line.
+  // Runs last in this block: it adds a USD client with two documents lacking their INR view, and one with it, in October 2026.
+  it("inrMissing: 0 when every document has its INR value; the count of USD documents without one, by month, kind and client", async () => {
+    const before = await get<RevenueByMonth>("/reports/revenue?fy=2627");
+    for (const m of before.months)
+      for (const i of m.invoiced) {
+        expect(i.inrMissing, `${m.month} ${i.currency}`).toBe(0);
+        expect(i.inrTaxableMinor, `${m.month} ${i.currency}`).not.toBeNull();
+      }
+    const client = await mkReportClient("USD");
+    const bare = (rate: number) => {
+      const c = computeFor({
+        currency: "USD",
+        clientId: client,
+        issueDate: "2026-10-02",
+        lines: [line(rate)],
+      });
+      return { ...c, inr: null, lines: c.lines.map((l) => ({ ...l, inr: null })) };
+    };
+    for (const rate of [40_00, 60_00])
+      await addDoc({
+        clientId: client,
+        currency: "USD",
+        issueDate: "2026-10-02",
+        lines: [line(rate)],
+        over: { total_inr_minor: null, computed: JSON.stringify(bare(rate)) },
+      });
+    await addDoc({ clientId: client, currency: "USD", issueDate: "2026-10-03", lines: [line(10_00)] });
+
+    const r = await get<RevenueByMonth>("/reports/revenue?fy=2627");
+    const oct = r.months.find((m) => m.month === "2026-10")?.invoiced.find((x) => x.currency === "USD");
+    expect(oct).toMatchObject({ count: 3, inrMissing: 2, inrTaxableMinor: null, inrTotalMinor: null });
+    // August's export invoice still has its value: 0 there, and INR months are never missing one
+    expect(
+      r.months.find((m) => m.month === "2026-08")?.invoiced.find((x) => x.currency === "USD"),
+    ).toMatchObject({
+      inrMissing: 0,
+    });
+    expect(
+      r.months
+        .flatMap((m) => m.invoiced.filter((x) => x.currency === "INR"))
+        .every((x) => x.inrMissing === 0),
+    ).toBe(true);
+    const kind = await get<RevenueByKey<string>>("/reports/revenue?fy=2627&by=kind");
+    const usdKinds = kind.rows.flatMap((k) => k.invoiced.filter((x) => x.currency === "USD"));
+    expect(usdKinds.reduce((a, x) => a + x.inrMissing, 0)).toBe(2);
+    for (const x of usdKinds) expect(x.inrTaxableMinor === null).toBe(x.inrMissing > 0);
+    const clients = await get<RevenueClientsPage>("/reports/revenue/clients?fy=2627&currency=USD");
+    expect(clients.rows.find((x) => x.client.id === client)?.invoiced).toMatchObject({
+      count: 3,
+      inrMissing: 2,
+      inrTaxableMinor: null,
+    });
+    expect(clients.rows.find((x) => x.client.id === fx.usd)?.invoiced).toMatchObject({
+      count: 1,
+      inrMissing: 0,
+    });
   });
 });
 

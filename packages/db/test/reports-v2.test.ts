@@ -10,7 +10,7 @@ import {
 import {
   AGEING_BUCKETS,
   ageingBucket,
-  carePeriodDay,
+  carePeriodDays,
   NO_CATEGORY,
   previousMonthOf,
   REVENUE_KINDS,
@@ -54,6 +54,7 @@ import {
   CARE_HOURS_PAGE_SQL,
   COHORT_COUNT_NAMES,
   carePeriodDaySql,
+  carePeriodFirstDaySql,
   LEAD_COHORT_SQL,
   OFFERS_DECIDED_SQL,
   OFFERS_SENT_GROUPED_SQL,
@@ -404,28 +405,34 @@ describe("the SQL twins equal their core rules", () => {
     expect(got).toEqual(firsts.map((f) => previousMonthOf(f)));
   });
 
-  it("carePeriodDaySql = carePeriodDay for every billing day and start dates around the month", async () => {
+  it("carePeriodFirstDaySql + carePeriodDaySql = carePeriodDays for every billing day and start dates around the month (review 1 finding 2)", async () => {
     const starts = [
       "2025-12-31",
+      "2026-09-30",
       "2026-10-01",
       "2026-10-04",
       "2026-10-05",
       "2026-10-17",
+      "2026-10-28",
       "2026-10-31",
       "2026-11-01",
     ];
-    for (const start of starts)
-      for (let b = 1; b <= 28; b++) {
-        const r = await first<{ day: string }>(
-          `SELECT ${carePeriodDaySql("?1", "p")} AS day FROM (SELECT ?2 AS billing_day, ?3 AS start_date) p`,
-          "2026-10",
-          b,
-          start,
-        );
-        const want = carePeriodDay("2026-10", b, start);
-        if (want === null) expect((r?.day ?? "") > "2026-10-31").toBe(true);
-        else expect(r?.day).toBe(want);
-      }
+    for (const [month, last] of [
+      ["2026-10", "2026-10-31"],
+      ["2027-02", "2027-02-28"],
+    ] as const)
+      for (const start of [...starts, "2027-02-01", "2027-02-27"])
+        for (let b = 1; b <= 28; b++) {
+          const r = await first<{ a: string | null; b: string }>(
+            `SELECT ${carePeriodFirstDaySql("?1", "p")} AS a, ${carePeriodDaySql("?1", "p")} AS b FROM (SELECT ?2 AS billing_day, ?3 AS start_date) p`,
+            month,
+            b,
+            start,
+          );
+          // the page statement keeps a day when it is not NULL and not after the month's last day
+          const got = [r?.a ?? null, r?.b ?? null].filter((d): d is string => d !== null && d <= last);
+          expect(got, `${month} ${b} ${start}`).toEqual(carePeriodDays(month, b, start));
+        }
   });
 
   it("revenueKindSql = revenueKind for each document of the fixture (a note follows its parent)", async () => {
@@ -486,6 +493,9 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
         expect(r.inr_taxable, k).toBe(i.inr_taxable);
         expect(r.inr_total, k).toBe(i.inr_total);
       }
+      // review 1 finding 4: the documents without an INR value, = the grouped twin's count; INR figures null exactly when it is above 0
+      expect(r.documents_inr_missing, k).toBe(i?.documents_inr_missing ?? 0);
+      expect(r.inr_taxable === null, k).toBe(r.documents_inr_missing > 0);
       expect(r.payments, k).toBe(col.get(k)?.payments ?? 0);
       expect(r.received, k).toBe(col.get(k)?.received ?? 0);
       expect(r.tds, k).toBe(col.get(k)?.tds ?? 0);
@@ -507,9 +517,17 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
     // a USD month with its INR view, and one where a document and a payment lack it
     const aug = rows.find((r) => r.month === "2026-08" && r.currency === "USD");
     expect(aug?.inr_taxable).not.toBeNull();
-    expect(aug).toMatchObject({ inr_missing: 0, inr_collected: 41_000_00 });
+    expect(aug).toMatchObject({ inr_missing: 0, inr_collected: 41_000_00, documents_inr_missing: 0 });
     const sep = rows.find((r) => r.month === "2026-09" && r.currency === "USD");
-    expect(sep).toMatchObject({ inr_taxable: null, inr_total: null, inr_missing: 1, inr_collected: null });
+    expect(sep).toMatchObject({
+      inr_taxable: null,
+      inr_total: null,
+      inr_missing: 1,
+      inr_collected: null,
+      documents: 1,
+      documents_inr_missing: 1, // exp2
+    });
+    expect(rows.filter((r) => r.currency === "INR").every((r) => r.documents_inr_missing === 0)).toBe(true);
     // nothing of March 2026 (the FY before), and every month is in the FY
     expect(rows.every((r) => r.month >= "2026-04" && r.month <= "2027-03")).toBe(true);
   });
@@ -565,10 +583,11 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
     expect(rows.map(keyOf).sort()).toEqual(twin.map((r) => keyOf(r as never)).sort());
     for (const t of twin) {
       const r = rows.find((x) => keyOf(x) === keyOf(t as never));
-      expect({ d: r?.documents, x: r?.taxable, t: r?.total }).toEqual({
+      expect({ d: r?.documents, x: r?.taxable, t: r?.total, m: r?.documents_inr_missing }).toEqual({
         d: t.documents,
         x: t.taxable,
         t: t.total,
+        m: t.documents_inr_missing,
       });
     }
     const inrKinds = Object.fromEntries(
@@ -600,10 +619,11 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
     expect(rows.map(keyOf).sort()).toEqual(twin.map((r) => keyOf(r as never)).sort());
     for (const t of twin) {
       const r = rows.find((x) => keyOf(x) === keyOf(t as never));
-      expect({ d: r?.documents, x: r?.taxable, t: r?.total }).toEqual({
+      expect({ d: r?.documents, x: r?.taxable, t: r?.total, m: r?.documents_inr_missing }).toEqual({
         d: t.documents,
         x: t.taxable,
         t: t.total,
+        m: t.documents_inr_missing,
       });
     }
     const get = (k: string, c: string) => rows.find((r) => r.key === k && r.currency === c);
@@ -613,6 +633,8 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
     expect(get("none", "INR")?.taxable).toBe(2_000_00);
     expect(get("build", "USD")?.inr_taxable).toBe(f.exp1.computed.lines[0]?.inr?.taxableMinor);
     expect(get("run", "USD")?.inr_taxable).toBeNull(); // exp2 has no INR view
+    expect(get("run", "USD")?.documents_inr_missing).toBe(1); // its one line
+    expect(get("build", "USD")?.documents_inr_missing).toBe(0);
     const round = await all<{ currency: string; round_off: number; inr_round_off: number | null }>(
       REVENUE_ROUND_OFF_GROUPED_SQL,
       FY.from,
@@ -677,6 +699,18 @@ describe("C1 revenue: each aggregate equals its grouped twin and the FY figures 
         expect(a.k > b.k || (a.k === b.k && a.client_id < b.client_id)).toBe(true);
       }
     }
+    // the USD client: exp1 has its INR view, exp2 none (review 1 finding 4)
+    const usdRows = await all<RevenueClientSqlRow>(
+      REVENUE_CLIENTS_SQL(false),
+      ...revenueClientsBinds(FY.from, FY.to, "USD"),
+    );
+    expect(usdRows.find((r) => r.client_id === f.usd)).toMatchObject({
+      documents: 2,
+      documents_inr_missing: 1,
+      inr_taxable: null,
+      inr_total: null,
+    });
+    expect(inr.every((r) => r.documents_inr_missing === 0)).toBe(true);
     const mine = inr.find((r) => r.client_id === f.inr);
     expect(mine).toMatchObject({
       currency: "INR",
@@ -854,7 +888,13 @@ describe("every new statement runs, is served by its index, and reads no table e
       [/documents_offer_decided/, /documents_status_valid_until/, /acceptances_document/],
     ],
     ["median", TIME_TO_WIN_MEDIAN_SQL, [0, T], [/documents_offer_decided/]],
-    ["care page", CARE_HOURS_PAGE_SQL(true), ["2026-10", "2026-10-31", "x"], [/care_plan_status_log_plan/]],
+    ["care page", CARE_HOURS_PAGE_SQL(false), ["2026-10", "2026-10-31"], [/care_plan_status_log_plan/]],
+    [
+      "care next page",
+      CARE_HOURS_PAGE_SQL(true),
+      ["2026-10", "2026-10-31", "x", "2026-10-05"],
+      [/care_plan_status_log_plan/],
+    ],
     ["care billed", CARE_HOURS_BILLED_SQL, ["[]", "2026-09-01", "2026-12-31"], [/care_invoices/]],
   ];
   for (const [name, sql, binds, indexes] of cases)
@@ -866,7 +906,7 @@ describe("every new statement runs, is served by its index, and reads no table e
       const p = await plan(sql, ...binds);
       for (const i of indexes) expect(p, name).toMatch(i);
       // the client walks of C2 and C9 and the care plans' page read their tables by primary key, by design (one seek of the documents per row)
-      const allowed = name === "clients" || name.startsWith("ageing page") || name === "care page";
+      const allowed = name === "clients" || name.startsWith("ageing page") || name.startsWith("care");
       if (!allowed) expect(scansTable(p), p).toBe(false);
     });
 });

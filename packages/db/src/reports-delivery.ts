@@ -17,11 +17,18 @@ export const sourcePathSql = (s: string): string =>
   `substr(${s}, 1, min(${SQL_SOURCE_PATH_MAX}, CASE WHEN instr(${s}, '?') > 0 THEN instr(${s}, '?') ELSE length(${s}) + 1 END - 1, CASE WHEN instr(${s}, '#') > 0 THEN instr(${s}, '#') ELSE length(${s}) + 1 END - 1))`;
 
 /**
- * C4 (L13): the day inside the billing period that starts in month `month` (`YYYY-MM`, an SQL expression) for a plan row `p`: its billing day of the month, or its
- * start date when that is later (the twin of core `carePeriodDay`, without the "after the month" test, which the caller writes against the month's last day).
+ * C4 (L13): the first day of the billing period that starts in month `month` (`YYYY-MM`, an SQL expression) on the plan row `p`'s billing day: that day of the
+ * month, or the plan's start date when that is later (the last of core `carePeriodDays`, without the "after the month" test, which the caller writes against the
+ * month's last day).
  */
 export const carePeriodDaySql = (month: string, p: string): string =>
   `max(${month} || '-' || printf('%02d', ${p}.billing_day), ${p}.start_date)`;
+/**
+ * C4 (review 1 finding 2): the first day of the plan's short first period when the plan starts in `month` before its billing day (its start date), else NULL: the
+ * first of core `carePeriodDays` when it gives two days.
+ */
+export const carePeriodFirstDaySql = (month: string, p: string): string =>
+  `CASE WHEN ${p}.start_date >= ${month} || '-01' AND ${p}.start_date < ${month} || '-' || printf('%02d', ${p}.billing_day) THEN ${p}.start_date END`;
 
 // ---- C3: the pipeline (the API Worker; L10) ---------------------------------------------------------------------------------------------------------------
 
@@ -144,16 +151,22 @@ export const TIME_TO_WIN_MEDIAN_SQL = /* @__PURE__ */ (() =>
 // ---- C4: care plan hours (L13; the API Worker) ------------------------------------------------------------------------------------------------------------
 
 /**
- * One page of the care plans with a billing period starting in month `?1` (`YYYY-MM`; `?2` its last day; a next page `?3` the last plan id): the plans whose period
- * day (`carePeriodDaySql`) is in the month and whose status on that day was `active` (a plan gives hours in a period only then, M3.5 Q5), by plan id, at most 51.
+ * One page of the billing periods that start in month `?1` (`YYYY-MM`; `?2` its last day; a next page `?3`/`?4` the last row's plan id and period day): a row
+ * `(id, day)` per period, `day` its first day: the period on the billing day (`carePeriodDaySql`) and, in the plan's start month when it began before its billing
+ * day, the short first period from its start date (`carePeriodFirstDaySql`; review 1 finding 2), so a plan has one or two rows. Only the periods whose plan was
+ * `active` on that day (a plan gives hours in a period only then, M3.5 Q5). By plan id, then day; at most 51 rows. Each plan is read once, in primary-key
+ * order, its one or two days spread by `json_each` (sorted within the plan only: 1,565 → 1,681 rows read for the brief's 100 plans, `reports-stress.test.ts`).
  * The hours come from the shared care loader (`careStatements`), as the care list's.
  */
-export const CARE_HOURS_PAGE_SQL = (after: boolean): string =>
-  `SELECT p.id, ${carePeriodDaySql("?1", "p")} AS day FROM care_plans p
-   WHERE ${after ? "p.id > ?3 AND " : ""}${carePeriodDaySql("?1", "p")} <= ?2
-     AND (SELECT s.status FROM care_plan_status_log s INDEXED BY care_plan_status_log_plan WHERE s.care_plan_id = p.id AND s.effective_on <= ${carePeriodDaySql("?1", "p")}
+export const CARE_HOURS_PAGE_SQL = (after: boolean): string => {
+  const first = carePeriodFirstDaySql("?1", "p");
+  const days = `CASE WHEN ${first} IS NULL THEN json_array(${carePeriodDaySql("?1", "p")}) ELSE json_array(${first}, ${carePeriodDaySql("?1", "p")}) END`;
+  return `SELECT x.id, x.day FROM (SELECT p.id AS id, k.value AS day FROM care_plans p CROSS JOIN json_each(${days}) k${after ? " WHERE p.id >= ?3" : ""}) x
+   WHERE x.day <= ?2${after ? " AND (x.id > ?3 OR x.day > ?4)" : ""}
+     AND (SELECT s.status FROM care_plan_status_log s INDEXED BY care_plan_status_log_plan WHERE s.care_plan_id = x.id AND s.effective_on <= x.day
           ORDER BY s.effective_on DESC, s.created_at DESC, s.id DESC LIMIT 1) = 'active'
-   ORDER BY p.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
+   ORDER BY x.id, x.day LIMIT ${REPORT_PAGE_SIZE + 1}`;
+};
 
 /**
  * The care invoices of the page's plans (`?1` a JSON array of plan ids) with a period start from `?2` to `?3`: each with its document's number, issue day, status

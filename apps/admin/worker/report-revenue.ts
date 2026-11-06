@@ -56,7 +56,10 @@ const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Invoiced figures of a row: null when the row has no document. */
 const invoicedOf = (
-  r: Pick<RevenueSqlRow, "currency" | "documents" | "taxable" | "total" | "inr_taxable" | "inr_total">,
+  r: Pick<
+    RevenueSqlRow,
+    "currency" | "documents" | "taxable" | "total" | "inr_taxable" | "inr_total" | "documents_inr_missing"
+  >,
 ): InvoicedFigures => ({
   currency: r.currency,
   count: r.documents,
@@ -64,6 +67,7 @@ const invoicedOf = (
   totalMinor: r.total,
   inrTaxableMinor: r.inr_taxable,
   inrTotalMinor: r.inr_total,
+  inrMissing: r.documents_inr_missing,
 });
 const collectedOf = (r: RevenueSqlRow): CollectedFigures => ({
   currency: r.currency,
@@ -246,6 +250,7 @@ export function warmRevenueReports(): number {
       total: 118,
       inr_taxable: 100,
       inr_total: 118,
+      documents_inr_missing: 0,
       payments: 1,
       received: 118,
       refunds: 0,
