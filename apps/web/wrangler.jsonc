@@ -19,7 +19,7 @@
   "assets": {
     "directory": "./dist",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/api/geo", "/api/forms/*"]
+    "run_worker_first": ["/api/health", "/api/geo", "/api/forms/*"]
   },
   // Local values. TURNSTILE_SITE_KEY is Cloudflare's always-pass TEST key (public); the matching test secret is written
   // to .dev.vars by `pnpm dev:secrets`. FORMS_ALLOWED_ORIGINS: the page origins that may POST a form (FRM-03).

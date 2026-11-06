@@ -124,6 +124,15 @@ describe("staging-health judge [A6-8]", () => {
       ["/api/v1/dashboard", 401],
       ["/api/v1/payments", 401],
     ]);
+    // M7.5 C4: the website's health route names the Worker and the environment (not any 200 from /api/geo).
+    expect(CHECKS.web).toEqual([{ path: "/api/health", status: 200, service: "web" }]);
+    expect(
+      judge(CHECKS.web[0] as never, answer(200, { ok: true, service: "web", env: "staging" })),
+    ).toBeNull();
+    expect(judge(CHECKS.web[0] as never, answer(200, { currency: "INR" }))).toMatch(/does not say ok/);
+    expect(judge(CHECKS.web[0] as never, answer(200, { ok: true, service: "web", env: "local" }))).toMatch(
+      /expected staging/,
+    );
     expect(urlOf("jobs")).toBe(
       "https://techaust-platform-jobs-staging.techaust-technologies-153.workers.dev",
     );
@@ -195,7 +204,7 @@ describe("staging-health checkApp [A6-8]", () => {
         throw new TypeError("fetch failed");
       },
     });
-    expect(failures).toEqual(["web /api/geo: request failed: TypeError"]);
+    expect(failures).toEqual(["web /api/health: request failed: TypeError"]);
   });
 
   it("checks the four admin paths (front, API, invoices, finance), and refuses an unknown app", async () => {

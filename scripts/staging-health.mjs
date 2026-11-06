@@ -42,7 +42,9 @@ export const CHECKS = {
     // own JSON 401 `token_missing` (not counted, nothing written); Access's own 401 is not JSON and fails the check. (`/u` answers text, so it is checked by hand.)
     { path: "/ses", status: 401, method: "POST", body: "{}", access: false, code: "token_missing" },
   ],
-  web: [{ path: "/api/geo", status: 200 }],
+  // M7.5 C4 (audit-workflows low 5): the website's own health route (no D1), which names the Worker and its environment, in place of
+  // `/api/geo` (any 200 JSON passed there).
+  web: [{ path: "/api/health", status: 200, service: "web" }],
 };
 
 export const DELAYS_MS = [0, 3_000, 6_000, 10_000, 15_000];
