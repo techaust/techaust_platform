@@ -1172,25 +1172,64 @@ export function answerError(
   return { code: code ?? "internal", message: fallback };
 }
 
+/**
+ * M7.5 (L32, the early check's F1): a GET answered 429 `rate_limited` (the front's per-session limit, 240 a minute) is sent again after the
+ * answer's `Retry-After` (seconds, at most `RATE_LIMIT_MAX_WAIT_MS`; `RATE_LIMIT_DEFAULT_WAIT_MS` when the header is absent or unreadable), at
+ * most `RATE_LIMIT_RETRIES` more times, so a long export loop (`readAll`, `readPages`, the data tools, the time export) waits and finishes
+ * instead of losing every page it read. Only a GET: it changes nothing, so sending it again is safe. A third 429 is the usual error.
+ */
+export const RATE_LIMIT_RETRIES = 2;
+export const RATE_LIMIT_MAX_WAIT_MS = 60_000;
+export const RATE_LIMIT_DEFAULT_WAIT_MS = 30_000;
+
+/** How long to wait before sending a rate-limited GET again: `Retry-After` as delta-seconds or an HTTP date, clamped to 0..60 s. */
+export function retryAfterMs(header: string | null, now: number = Date.now()): number {
+  const v = header?.trim() ?? "";
+  let ms: number | null = null;
+  if (/^\d+$/.test(v)) ms = Number(v) * 1000;
+  // an HTTP date names its day and month ("Sat, 07 Nov 2026 10:00:12 GMT"); a bare "-5" would parse as a year
+  else if (/^[A-Za-z]{3}, /.test(v)) {
+    const at = Date.parse(v);
+    if (Number.isFinite(at)) ms = at - now;
+  }
+  if (ms === null || !Number.isFinite(ms)) return RATE_LIMIT_DEFAULT_WAIT_MS;
+  return Math.min(Math.max(ms, 0), RATE_LIMIT_MAX_WAIT_MS);
+}
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 async function send<T>(path: string, { method, body, raw, signedIn = true }: Options): Promise<T> {
   const m: Method = method ?? (body === undefined && raw === undefined ? "GET" : "POST");
   let res: Response;
-  try {
-    res = await fetch(`/api/v1${path}`, {
-      method: m,
-      headers:
-        raw !== undefined
-          ? { "Content-Type": "application/octet-stream" }
-          : body === undefined
-            ? {}
-            : { "Content-Type": "application/json" },
-      body: raw !== undefined ? raw : body === undefined ? null : JSON.stringify(body),
-      credentials: "same-origin",
-    });
-  } catch {
-    throw new RequestError(0, "network", NETWORK);
+  let data: T & ApiErrorBody;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(`/api/v1${path}`, {
+        method: m,
+        headers:
+          raw !== undefined
+            ? { "Content-Type": "application/octet-stream" }
+            : body === undefined
+              ? {}
+              : { "Content-Type": "application/json" },
+        body: raw !== undefined ? raw : body === undefined ? null : JSON.stringify(body),
+        credentials: "same-origin",
+      });
+    } catch {
+      throw new RequestError(0, "network", NETWORK);
+    }
+    data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
+    if (
+      m === "GET" &&
+      res.status === 429 &&
+      data.error?.code === "rate_limited" &&
+      attempt < RATE_LIMIT_RETRIES
+    ) {
+      await wait(retryAfterMs(res.headers.get("Retry-After")));
+      continue;
+    }
+    break;
   }
-  const data = (await res.json().catch(() => ({}))) as T & ApiErrorBody;
   if (res.ok) return data;
   // The server answered, so this is never "offline" (final sweep A15): `answerError`.
   const e = answerError(data);
