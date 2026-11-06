@@ -166,8 +166,8 @@ test.describe("admin sweep", () => {
     }
   }
 
-  // The other widths of the audit's set (a phone, a laptop, a wide screen): no sideways page scroll, in the light theme. One test per width: the three
-  // together visit every route three times (about 180 page loads), more than one test's 15 minutes once M7.3 added its routes (M7.3 D2).
+  // The other widths of the audit's set (a phone, a laptop, a wide screen): no sideways page scroll, in the light theme. One test per width (M7.3 D2):
+  // together they visit every route three times, and on a loaded machine that once outran one test's 15 minutes (M7.3 D1's run; about 4 minutes in all here).
   for (const width of [375, 1280, 1600] as const) {
     test(`every route at ${width} px: no sideways page scroll`, async ({ page }) => {
       const problems: string[] = [];
