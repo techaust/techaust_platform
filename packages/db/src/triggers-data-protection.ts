@@ -96,7 +96,7 @@ export const PDF_STEM_SQL = (a: string) =>
   `CASE WHEN ${a}.type GLOB '[a-z_]*' AND ${a}.type NOT GLOB '*[^a-z_]*' AND length(${a}.type) BETWEEN 1 AND 24
      AND ${a}.fy GLOB '[0-9][0-9][0-9][0-9]' AND (CAST(substr(${a}.fy, 1, 2) AS INTEGER) + 1) % 100 = CAST(substr(${a}.fy, 3, 2) AS INTEGER)
      AND ${a}.number BETWEEN 1 AND 999999999 AND ${a}.version BETWEEN 1 AND 999
-   THEN 'docs/' || ${a}.type || '/' || (2000 + CAST(substr(${a}.fy, 1, 2) AS INTEGER)) || '-' || substr(${a}.fy, 3, 2) || '/' || printf('%04d', ${a}.number) || '-v' || ${a}.version END`;
+   THEN 'docs/' || ${a}.type || '/' || (2000 + CAST(substr(${a}.fy, 1, 2) AS INTEGER)) || '-' || substr(${a}.fy, 3, 2) || '/' || printf('%04d', ${a}.number) || '-v' || CAST(${a}.version AS INTEGER) END`;
 
 /** A contact row `a` is held: itself, its client, or a lead of the person (the `HELD_LEAD_SQL` rule of `contact-access.ts`, over `a`). */
 const contactHeld = (a: string) =>

@@ -83,10 +83,10 @@ CREATE TRIGGER `documents_redact_outbox` AFTER UPDATE OF redacted_at ON `documen
            UNION ALL SELECT (CASE WHEN OLD.type GLOB '[a-z_]*' AND OLD.type NOT GLOB '*[^a-z_]*' AND length(OLD.type) BETWEEN 1 AND 24
      AND OLD.fy GLOB '[0-9][0-9][0-9][0-9]' AND (CAST(substr(OLD.fy, 1, 2) AS INTEGER) + 1) % 100 = CAST(substr(OLD.fy, 3, 2) AS INTEGER)
      AND OLD.number BETWEEN 1 AND 999999999 AND OLD.version BETWEEN 1 AND 999
-   THEN 'docs/' || OLD.type || '/' || (2000 + CAST(substr(OLD.fy, 1, 2) AS INTEGER)) || '-' || substr(OLD.fy, 3, 2) || '/' || printf('%04d', OLD.number) || '-v' || OLD.version END) || '.json' UNION ALL SELECT (CASE WHEN OLD.type GLOB '[a-z_]*' AND OLD.type NOT GLOB '*[^a-z_]*' AND length(OLD.type) BETWEEN 1 AND 24
+   THEN 'docs/' || OLD.type || '/' || (2000 + CAST(substr(OLD.fy, 1, 2) AS INTEGER)) || '-' || substr(OLD.fy, 3, 2) || '/' || printf('%04d', OLD.number) || '-v' || CAST(OLD.version AS INTEGER) END) || '.json' UNION ALL SELECT (CASE WHEN OLD.type GLOB '[a-z_]*' AND OLD.type NOT GLOB '*[^a-z_]*' AND length(OLD.type) BETWEEN 1 AND 24
      AND OLD.fy GLOB '[0-9][0-9][0-9][0-9]' AND (CAST(substr(OLD.fy, 1, 2) AS INTEGER) + 1) % 100 = CAST(substr(OLD.fy, 3, 2) AS INTEGER)
      AND OLD.number BETWEEN 1 AND 999999999 AND OLD.version BETWEEN 1 AND 999
-   THEN 'docs/' || OLD.type || '/' || (2000 + CAST(substr(OLD.fy, 1, 2) AS INTEGER)) || '-' || substr(OLD.fy, 3, 2) || '/' || printf('%04d', OLD.number) || '-v' || OLD.version END) || '.pdf'
+   THEN 'docs/' || OLD.type || '/' || (2000 + CAST(substr(OLD.fy, 1, 2) AS INTEGER)) || '-' || substr(OLD.fy, 3, 2) || '/' || printf('%04d', OLD.number) || '-v' || CAST(OLD.version AS INTEGER) END) || '.pdf'
          ) WHERE k IS NOT NULL;
      END;
 --> statement-breakpoint

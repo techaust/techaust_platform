@@ -14,12 +14,19 @@ import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./triggers-data-prote
 /** How a table's rows end. */
 export type RetentionRule =
   | { readonly kind: "family"; readonly family: RetentionFamily; readonly rule: string }
-  | { readonly kind: "job"; readonly job: "lead.purge" | "statement.purge" | "r2.drain" | "signin_pending.sweep"; readonly rule: string }
+  | {
+      readonly kind: "job";
+      readonly job: "lead.purge" | "statement.purge" | "r2.drain" | "signin_pending.sweep";
+      readonly rule: string;
+    }
   | { readonly kind: "never"; readonly rule: string }
   | { readonly kind: "no_age_rule"; readonly rule: string }
   | { readonly kind: "staff_account"; readonly rule: string };
 
-const financial = { kind: "never", rule: "financial record: never deleted (ADM-SET-09; RA-25; RB-37(b))" } as const;
+const financial = {
+  kind: "never",
+  rule: "financial record: never deleted (ADM-SET-09; RA-25; RB-37(b))",
+} as const;
 const record = (rule: string) => ({ kind: "never", rule }) as const;
 const fam = (family: RetentionFamily, rule: string) => ({ kind: "family", family, rule }) as const;
 const noAge = {
@@ -31,32 +38,68 @@ const staff = (rule: string) => ({ kind: "staff_account", rule }) as const;
 /** A.6: every table, and how its rows end. The matrix test fails on any table of the schema missing here, or any name here not in the schema. */
 export const RETENTION_MATRIX: Record<string, RetentionRule> = {
   // ---- deleted by a retention family or an existing job
-  leads: { kind: "job", job: "lead.purge", rule: "unconverted, no hold, delete_after passed, no open data_erasure request naming it (leadsMonths ≥ 12)" },
+  leads: {
+    kind: "job",
+    job: "lead.purge",
+    rule: "unconverted, no hold, delete_after passed, no open data_erasure request naming it (leadsMonths ≥ 12)",
+  },
   lead_activities: { kind: "job", job: "lead.purge", rule: "with its lead (ON DELETE CASCADE)" },
-  email_log: fam("email_log", "created_at and updated_at before emailLogMonths (≥ 12; floor 366 days); never to a held contact's or lead's address"),
+  email_log: fam(
+    "email_log",
+    "created_at and updated_at before emailLogMonths (≥ 12; floor 366 days); never to a held contact's or lead's address",
+  ),
   email_events: fam("email_events", "received_at before emailLogMonths (floor 366 days)"),
-  access_log: fam("access_log", "UUIDv7 id before securityLogMonths (≥ 13; floor 366 days); never a held contact's rows"),
-  audit_log: fam("audit_ip", "never deleted; ip, user_agent and the alert rows' ua/city/country removed after securityLogMonths (floor 366 days), never a held subject's (Q3 A, L33)"),
+  access_log: fam(
+    "access_log",
+    "UUIDv7 id before securityLogMonths (≥ 13; floor 366 days); never a held contact's rows",
+  ),
+  audit_log: fam(
+    "audit_ip",
+    "never deleted; ip, user_agent and the alert rows' ua/city/country removed after securityLogMonths (floor 366 days), never a held subject's (Q3 A, L33)",
+  ),
   staff_sessions: fam("sessions", "30 days after abs_expires_at (L12)"),
   client_sessions: fam("sessions", "30 days after abs_expires_at (L12)"),
   magic_link_tokens: fam("sessions", "30 days after expires_at (L12)"),
   auth_attempts: fam("counters", "window older than 2 days and no lock in force"),
   pdf_asks: fam("counters", "asked more than 2 days ago"),
-  hook_failures: fam("counters", "window older than 2 days (a counter, not a payment record: Step 0.1 placed it here, out of the M6.2 never-deleted list)"),
+  hook_failures: fam(
+    "counters",
+    "window older than 2 days (a counter, not a payment record: Step 0.1 placed it here, out of the M6.2 never-deleted list)",
+  ),
   notifications: fam("bells", "read and older than 90 days, or any older than 12 months (L13)"),
-  stats_daily: fam("stats", "per-plan rows (care metrics) older than 24 months; the aggregate rows are kept (L15)"),
-  client_requests: fam("requests", "closed before requestsMonths (≥ 12, 36; floor 366 days); never a held subject's"),
-  consent_receipts: fam("consent", "the subject ended (an ended receipt) and its newest receipt is older than consentProofMonths (≥ 12, 36; floor 366 days) (L30)"),
-  email_suppressions: fam("consent", "only `erased` rows, ending with their subject's receipts (L29); hard-bounce, complaint and manual rows are kept (the stop list)"),
+  stats_daily: fam(
+    "stats",
+    "per-plan rows (care metrics) older than 24 months; the aggregate rows are kept (L15)",
+  ),
+  client_requests: fam(
+    "requests",
+    "closed before requestsMonths (≥ 12, 36; floor 366 days); never a held subject's",
+  ),
+  consent_receipts: fam(
+    "consent",
+    "the subject ended (an ended receipt) and its newest receipt is older than consentProofMonths (≥ 12, 36; floor 366 days) (L30)",
+  ),
+  email_suppressions: fam(
+    "consent",
+    "only `erased` rows, ending with their subject's receipts (L29); hard-bounce, complaint and manual rows are kept (the stop list)",
+  ),
   statement_pdfs: { kind: "job", job: "statement.purge", rule: "30 days (M5.5b)" },
   r2_deletions: { kind: "job", job: "r2.drain", rule: "deleted once its object is deleted" },
   retention_runs: fam("runs", "started more than 13 months ago"),
   retention_run_counts: fam("runs", "with its run (ON DELETE CASCADE)"),
-  staff_signin_pending: { kind: "job", job: "signin_pending.sweep", rule: "deleted at the session start or once notified (M7.2, packages/db/src/signin-pending.ts)" },
+  staff_signin_pending: {
+    kind: "job",
+    job: "signin_pending.sweep",
+    rule: "deleted at the session start or once notified (M7.2, packages/db/src/signin-pending.ts)",
+  },
   // ---- staff accounts (staff personal data, kept while the account exists; L36 for the devices)
-  staff_users: staff("kept while the account exists (deactivated, never deleted: the audit log names its actor)"),
+  staff_users: staff(
+    "kept while the account exists (deactivated, never deleted: the audit log names its actor)",
+  ),
   staff_invites: staff("kept with the account it made; an expired invite is never usable"),
-  staff_known_devices: staff("L36: a device's browser (user_agent) is kept while the account exists, for the new-device alert; for the lead: an age rule"),
+  staff_known_devices: staff(
+    "L36: a device's browser (user_agent) is kept while the account exists, for the new-device alert; for the lead: an age rule",
+  ),
   staff_recovery_codes: staff("kept while the account exists (replaced as a set)"),
   staff_notification_prefs: staff("kept while the account exists"),
   // ---- no age rule
@@ -93,7 +136,9 @@ export const RETENTION_MATRIX: Record<string, RetentionRule> = {
   settlement_items: financial,
   bank_matches: financial,
   payment_notices: financial,
-  pdf_failures: record("kept with its document (ON DELETE CASCADE; documents are never deleted): the PDF bookkeeping of a financial record"),
+  pdf_failures: record(
+    "kept with its document (ON DELETE CASCADE; documents are never deleted): the PDF bookkeeping of a financial record",
+  ),
   care_plans: financial,
   care_plan_terms: financial,
   care_plan_status_log: financial,
@@ -110,7 +155,9 @@ export const RETENTION_MATRIX: Record<string, RetentionRule> = {
   settings: record("settings: kept"),
   bank_accounts: financial,
   legal_holds: record("the legal hold history: append-only, never deleted"),
-  deeds: record("T11: a final or signed deed is the legal record of a transfer of rights (RB-38(a)); a draft goes only with an anonymised client"),
+  deeds: record(
+    "T11: a final or signed deed is the legal record of a transfer of rights (RB-38(a)); a draft goes only with an anonymised client",
+  ),
 };
 
 /** One table of a family: what makes a row old enough (`age`), what holds it (`held`, or none), the column the oldest date is read from, the page order. */
@@ -131,8 +178,10 @@ export const HELD_CONTACT_SQL = (contactId: string) =>
 export const HELD_EMAIL_SQL = (email: string) =>
   `(EXISTS (SELECT 1 FROM contacts hc JOIN clients hk ON hk.id = hc.client_id WHERE hc.email = lower(${email}) AND (hc.legal_hold = 1 OR hk.legal_hold = 1))
     OR EXISTS (SELECT 1 FROM leads hl WHERE lower(hl.contact_email) = lower(${email}) AND hl.legal_hold = 1))`;
-const HELD_CLIENT = (clientId: string) => `EXISTS (SELECT 1 FROM clients hk WHERE hk.id = ${clientId} AND hk.legal_hold = 1)`;
-const HELD_LEAD = (leadId: string) => `EXISTS (SELECT 1 FROM leads hl WHERE hl.id = ${leadId} AND hl.legal_hold = 1)`;
+const HELD_CLIENT = (clientId: string) =>
+  `EXISTS (SELECT 1 FROM clients hk WHERE hk.id = ${clientId} AND hk.legal_hold = 1)`;
+const HELD_LEAD = (leadId: string) =>
+  `EXISTS (SELECT 1 FROM leads hl WHERE hl.id = ${leadId} AND hl.legal_hold = 1)`;
 
 const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
 /** The per-plan statistics (a care plan id in `dimension`). */
@@ -150,7 +199,13 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
     },
   ],
   email_events: [
-    { table: "email_events", age: "email_events.received_at < ?1", held: null, oldest: "received_at", order: "received_at, id" },
+    {
+      table: "email_events",
+      age: "email_events.received_at < ?1",
+      held: null,
+      oldest: "received_at",
+      order: "received_at, id",
+    },
   ],
   access_log: [
     {
@@ -176,9 +231,27 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
     },
   ],
   sessions: [
-    { table: "staff_sessions", age: "staff_sessions.abs_expires_at < ?1", held: null, oldest: "abs_expires_at", order: "abs_expires_at" },
-    { table: "client_sessions", age: "client_sessions.abs_expires_at < ?1", held: null, oldest: "abs_expires_at", order: "abs_expires_at" },
-    { table: "magic_link_tokens", age: "magic_link_tokens.expires_at < ?1", held: null, oldest: "expires_at", order: "expires_at" },
+    {
+      table: "staff_sessions",
+      age: "staff_sessions.abs_expires_at < ?1",
+      held: null,
+      oldest: "abs_expires_at",
+      order: "abs_expires_at",
+    },
+    {
+      table: "client_sessions",
+      age: "client_sessions.abs_expires_at < ?1",
+      held: null,
+      oldest: "abs_expires_at",
+      order: "abs_expires_at",
+    },
+    {
+      table: "magic_link_tokens",
+      age: "magic_link_tokens.expires_at < ?1",
+      held: null,
+      oldest: "expires_at",
+      order: "expires_at",
+    },
   ],
   counters: [
     {
@@ -189,7 +262,13 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
       order: "window_start",
     },
     { table: "pdf_asks", age: "pdf_asks.asked_at < ?1", held: null, oldest: "asked_at", order: "asked_at" },
-    { table: "hook_failures", age: "hook_failures.window_start < ?1", held: null, oldest: "window_start", order: "window_start" },
+    {
+      table: "hook_failures",
+      age: "hook_failures.window_start < ?1",
+      held: null,
+      oldest: "window_start",
+      order: "window_start",
+    },
   ],
   bells: [
     {
@@ -245,7 +324,13 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
     },
   ],
   runs: [
-    { table: "retention_runs", age: "retention_runs.started_at < ?1", held: null, oldest: "started_at", order: "started_at, id" },
+    {
+      table: "retention_runs",
+      age: "retention_runs.started_at < ?1",
+      held: null,
+      oldest: "started_at",
+      order: "started_at, id",
+    },
   ],
 };
 
@@ -287,7 +372,9 @@ const oldestOf = (t: FamilyTable) =>
     : `(SELECT min(${t.oldest}) FROM ${t.table} WHERE ${dueWhere(t)})`;
 const sum = (xs: string[]) => (xs.length === 1 ? (xs[0] as string) : `(${xs.join(" + ")})`);
 const minOf = (xs: string[]) =>
-  xs.length === 1 ? (xs[0] as string) : `(SELECT min(x) FROM (${xs.map((x) => `SELECT ${x} AS x`).join(" UNION ALL ")}))`;
+  xs.length === 1
+    ? (xs[0] as string)
+    : `(SELECT min(x) FROM (${xs.map((x) => `SELECT ${x} AS x`).join(" UNION ALL ")}))`;
 
 /**
  * The dry run of a family (one batch, one statement): rows due (each table counted up to `DRY_RUN_COUNT_CAP`), rows held back by a legal hold, the oldest
@@ -296,7 +383,9 @@ const minOf = (xs: string[]) =>
 export function dryRunSql(family: RetentionFamily): string {
   const tables = FAMILY_TABLES[family];
   const due = sum(tables.map((t) => countOf(t, dueWhere(t), DRY_RUN_COUNT_CAP)));
-  const helds = tables.map((t) => heldWhere(t)).flatMap((w, i) => (w ? [countOf(tables[i] as FamilyTable, w, DRY_RUN_COUNT_CAP)] : []));
+  const helds = tables
+    .map((t) => heldWhere(t))
+    .flatMap((w, i) => (w ? [countOf(tables[i] as FamilyTable, w, DRY_RUN_COUNT_CAP)] : []));
   const held = helds.length ? sum(helds) : "0";
   return `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done)
     VALUES (?3, ?4, ${due}, ${held}, ${minOf(tables.map(oldestOf))}, 1)
@@ -312,7 +401,9 @@ export function dryRunSql(family: RetentionFamily): string {
 export function livePageSql(family: RetentionFamily): string[] {
   const tables = FAMILY_TABLES[family];
   const page = (t: FamilyTable) => countOf(t, dueWhere(t), LIVE_PAGE_ROWS);
-  const helds = tables.map((t) => heldWhere(t)).flatMap((w, i) => (w ? [countOf(tables[i] as FamilyTable, w, DRY_RUN_COUNT_CAP)] : []));
+  const helds = tables
+    .map((t) => heldWhere(t))
+    .flatMap((w, i) => (w ? [countOf(tables[i] as FamilyTable, w, DRY_RUN_COUNT_CAP)] : []));
   const done = tables.map((t) => `${page(t)} < ${LIVE_PAGE_ROWS}`).join(" AND ");
   const upsert = `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done)
     VALUES (?3, ?4, ${sum(tables.map(page))}, ${helds.length ? sum(helds) : "0"}, ${minOf(tables.map(oldestOf))}, ${done})

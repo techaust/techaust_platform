@@ -119,7 +119,8 @@ export const AUDIT_EXPORT_COLUMNS = [
  * holds if one ever becomes one). Every other monthly table is taken whole.
  */
 export function monthlyExportSql(table: string): string {
-  if (BACKUP_SCOPE[table] !== "finance_monthly") throw new RangeError(`${table} is not in the monthly finance copy`);
+  if (BACKUP_SCOPE[table] !== "finance_monthly")
+    throw new RangeError(`${table} is not in the monthly finance copy`);
   switch (table) {
     case "documents":
       return `SELECT * FROM documents WHERE type IN (${INVOICE_FAMILY_SQL})`;
