@@ -576,6 +576,179 @@
   margin: 0 0 var(--space-2);
 }
 
+/* ---------- Settings › Data retention: the clean-up, its reports, the lift ---------- */
+
+.dp-clean,
+.dp-lift {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 60rem;
+  margin-top: var(--space-10);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+}
+
+.dp-clean__h {
+  margin: 0;
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: var(--text-h4--font-weight);
+}
+
+.dp-clean__lede {
+  max-width: var(--container-lede);
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.dp-clean__sub {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 600;
+}
+
+.dp-clean__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* The switch: a panel whose rule says the mode (info for a trial, danger once real deletion is on), with the words, never the colour, carrying it. */
+.dp-live {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-info);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.dp-live--on {
+  border-inline-start-color: var(--color-danger);
+}
+
+.dp-live__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-6);
+}
+
+.dp-live__words {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.dp-live__label {
+  margin: 0;
+  font-weight: 600;
+}
+
+.dp-live__desc {
+  margin: var(--space-1) 0 0;
+}
+
+.dp-live__why {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-report {
+  display: grid;
+  gap: var(--space-3);
+  scroll-margin-top: calc(var(--topbar-h) + var(--space-4));
+}
+
+.dp-report:focus {
+  outline: none;
+}
+
+.dp-runs {
+  flex: none;
+}
+
+.dp-run-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.dp-leads-due {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dp-leads-due__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dp-leads-due__list a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+.dp-lift__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-3);
+  max-width: 40rem;
+}
+
+.dp-lift__form .field {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+
+/* the button lines up with the field's control, below its label */
+.dp-lift__form > .btn {
+  margin-top: calc(var(--text-body--line-height) * 1em + var(--space-1));
+}
+
+@media (max-width: 47.99rem) {
+  .dp-lift__form > .btn {
+    margin-top: 0;
+  }
+}
+
+/* ---------- the erase dialog's "in parts" state (F5) ---------- */
+
+.dp-parts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-info);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.dp-parts p {
+  margin: 0;
+}
+
+.dp-parts__bar {
+  width: 100%;
+  height: 0.375rem;
+  accent-color: var(--color-btn-primary-bg);
+}
+
 /* the client tab's request name, a button that opens the request (44 px tall, read as the row's title) */
 .dp-open {
   min-height: var(--target-min);

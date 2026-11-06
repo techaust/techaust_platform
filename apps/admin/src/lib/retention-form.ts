@@ -1,20 +1,21 @@
 // Settings › Data retention, the rows and their words (ADM-SET-09; Researched 2026-10-28, DPDP Rule 8 and Rule 56 CGST, 08-C RB-09, RB-10, RA-25; 07-W 5.10 for the email logs).
 // The minimums are core's `RETENTION_FLOORS`, the one place they live (the schema takes them too), so a floor can't differ between this screen and the API. Pure: tested without a browser.
+// M7.4 (G.3, A.8): the six figures: M7.4's closed data requests (L14, floor 12) and consent records (owner 2026-10-07, floor 12) have their own rows now, in
+// the designer's staff words (lib/copy-zr.ts, 07-ZR).
 import { RETENTION_FLOORS } from "@techaust/core/settings";
+import { ZR_RETENTION } from "./copy-zr.ts";
 import { type FieldErrors, intIn } from "./settings-form.ts";
 
-/**
- * The four rows' typed figures, plus M7.4's two figures (A.8: closed data requests, consent proof) carried through unchanged as loaded, until the designer
- * gives them their own rows (G.3); the API checks them against their floors on save.
- */
+/** The six rows' typed figures. */
 export type RetentionForm = {
   leads: string;
   email: string;
   security: string;
   financial: string;
-  kept: { requestsMonths: number; consentProofMonths: number };
+  requests: string;
+  consent: string;
 };
-export type RetentionKey = Exclude<keyof RetentionForm, "kept">;
+export type RetentionKey = keyof RetentionForm;
 
 export const RETENTION_ROWS = [
   {
@@ -46,6 +47,24 @@ export const RETENTION_ROWS = [
     error: "Keep security and access logs at least 13 months.",
   },
   {
+    key: "requests",
+    id: "f-requestsMonths",
+    label: ZR_RETENTION.rows.requests.label,
+    unit: "months",
+    min: RETENTION_FLOORS.requestsMonths,
+    desc: ZR_RETENTION.rows.requests.desc,
+    error: ZR_RETENTION.rows.requests.error,
+  },
+  {
+    key: "consent",
+    id: "f-consentProofMonths",
+    label: ZR_RETENTION.rows.consent.label,
+    unit: "months",
+    min: RETENTION_FLOORS.consentProofMonths,
+    desc: ZR_RETENTION.rows.consent.desc,
+    error: ZR_RETENTION.rows.consent.error,
+  },
+  {
     key: "financial",
     id: "f-financialYears",
     label: "Audit log and financial records",
@@ -54,7 +73,15 @@ export const RETENTION_ROWS = [
     desc: "Never below 8 years from the end of the financial year. Financial records are never deleted, only archived.",
     error: "Keep the audit log and financial records at least 8 years.",
   },
-] as const;
+] as const satisfies readonly {
+  key: RetentionKey;
+  id: string;
+  label: string;
+  unit: string;
+  min: number;
+  desc: string;
+  error: string;
+}[];
 
 export const retentionToForm = (v: {
   leadsMonths: number;
@@ -68,7 +95,8 @@ export const retentionToForm = (v: {
   email: String(v.emailLogMonths),
   security: String(v.securityLogMonths),
   financial: String(v.financialYears),
-  kept: { requestsMonths: v.requestsMonths, consentProofMonths: v.consentProofMonths },
+  requests: String(v.requestsMonths),
+  consent: String(v.consentProofMonths),
 });
 
 /** The figures to save, or each row's own line for a figure that is not a whole number at its minimum or more. */
@@ -98,7 +126,8 @@ export function buildRetention(f: RetentionForm):
       emailLogMonths: n.email as number,
       securityLogMonths: n.security as number,
       financialYears: n.financial as number,
-      ...f.kept,
+      requestsMonths: n.requests as number,
+      consentProofMonths: n.consent as number,
     },
   };
 }

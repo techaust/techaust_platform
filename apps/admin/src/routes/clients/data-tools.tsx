@@ -5,8 +5,9 @@
 //   part of the manifest, page by page (≤ 50 rows each, one audit row per call), assembled into one JSON file in the
 //   browser and downloaded. Progress is shown and announced; Cancel stops before the next call and downloads nothing.
 // - Erase or anonymise: the mode, the 07-J confirmation for it, a reason (07-J), and the code. A 409 lands in place:
-//   `on_issued_document` offers Anonymise instead; `legal_hold` says the hold stops both; `too_many_offers` (T7, 07-ZG line 3) says nothing
-//   was changed and the person must be anonymised in parts (the button stays off until the mode changes).
+//   `on_issued_document` offers Anonymise instead; `legal_hold` says the hold stops both; `too_many_offers` (T7) offers "Anonymise in parts" (M7.4 G.5,
+//   F5): 10 offers at a time, with progress and Stop, then the contact itself. Its line replaces 07-ZG line 3 ("ask your developer"), which predates the
+//   parts route.
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -32,9 +33,10 @@ import {
   exportFile,
   exportFileName,
 } from "../../lib/clients.ts";
-import { TOO_MANY_OFFERS_LINE } from "../../lib/copy-zg.ts";
 import { ZN_UI } from "../../lib/copy-zn.ts";
+import { ZR_PARTS } from "../../lib/copy-zr.ts";
 import { sentence } from "../../lib/format.ts";
+import { m74Api } from "../../lib/m74-api.ts";
 import { lastContactLine } from "../../lib/projects.ts";
 import { isWrongCode, withCode } from "../../lib/step-up.ts";
 
@@ -255,11 +257,74 @@ export function EraseDialog(props: {
   }
   const needsCode = !stepUpActive();
   const held = blocked?.code === "legal_hold";
+  // M7.4 (G.5, F5): more than 10 offers name the person: anonymised in parts, 10 offers at a time, then the contact. `n` offers done so far.
+  const [parts, setParts] = useState<
+    | { step: "offer" }
+    | { step: "running"; n: number; finishing: boolean }
+    | { step: "stopped" | "failed"; n: number }
+    | null
+  >(null);
+  const stop = useRef(false);
+  if ((c?.id ?? null) !== shown && parts !== null) setParts(null);
 
   function pick(m: EraseMode) {
     setMode(m);
     if (blocked?.code === "on_issued_document" || blocked?.code === "too_many_offers") setBlocked(null);
+    setParts(null);
     setFailure(null);
+  }
+
+  async function runParts(from: number) {
+    if (!c || !reason) return;
+    if (needsCode && code.length !== 6) {
+      setCodeError(CODE_MISSING);
+      document.getElementById("erase-code")?.focus();
+      return;
+    }
+    setCodeError(null);
+    setFailure(null);
+    setBusy(true);
+    stop.current = false;
+    let n = from;
+    setParts({ step: "running", n, finishing: false });
+    try {
+      let more = true;
+      // the code (when one is needed) opens the step-up once; every later part runs inside it
+      await withCode(needsCode ? code : undefined, async () => {
+        while (more) {
+          if (stop.current) return;
+          try {
+            const r = await m74Api.redactOffersPart(c.id, reason);
+            n += r.redacted;
+            more = r.more;
+          } catch (e) {
+            // nothing left to redact (another part, or a person's offers accepted meanwhile): straight to the contact
+            if (e instanceof RequestError && e.code === "nothing_to_redact") more = false;
+            else throw e;
+          }
+          setParts({ step: "running", n, finishing: !more });
+        }
+      });
+      if (stop.current) {
+        setParts({ step: "stopped", n });
+        return;
+      }
+      await api.eraseContact(c.id, "anonymise", reason);
+      toast("success", "Contact anonymised.");
+      props.onDone();
+    } catch (e) {
+      if (isWrongCode(e)) {
+        setCode("");
+        setCodeError(e.message);
+        setParts({ step: "offer" });
+        document.getElementById("erase-code")?.focus();
+      } else {
+        setParts({ step: "failed", n });
+        setFailure(errorText(e));
+      }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function confirm() {
@@ -286,9 +351,11 @@ export function EraseDialog(props: {
         e instanceof RequestError &&
         (e.code === "on_issued_document" || e.code === "legal_hold" || e.code === "too_many_offers")
       ) {
+        // M7.4 (F5): too many offers is no longer a dead end: the dialog offers "Anonymise in parts" (ZR_PARTS), nothing changed yet
+        if (e.code === "too_many_offers") setParts({ step: "offer" });
         setBlocked({
           code: e.code,
-          text: e.code === "too_many_offers" ? TOO_MANY_OFFERS_LINE : sentence(e.message),
+          text: e.code === "too_many_offers" ? ZR_PARTS.explain : sentence(e.message),
         });
       } else if (isWrongCode(e)) {
         setCode("");
@@ -337,7 +404,23 @@ export function EraseDialog(props: {
           <p className="data-tool__also">{lastContactLine(props.lastContactOf)}</p>
         )}
         <VerifyNote>{DATA_TOOLS_VERIFY}</VerifyNote>
-        {blocked && (
+        {parts && (
+          <div className="dp-parts" role="status">
+            <p>
+              {parts.step === "offer"
+                ? ZR_PARTS.explain
+                : parts.step === "running"
+                  ? parts.finishing
+                    ? ZR_PARTS.finishing
+                    : ZR_PARTS.progress(parts.n)
+                  : parts.step === "stopped"
+                    ? ZR_PARTS.stopped(parts.n)
+                    : ZR_PARTS.failed(parts.n)}
+            </p>
+            {parts.step === "running" && <progress className="dp-parts__bar" aria-hidden="true" />}
+          </div>
+        )}
+        {blocked && !parts && (
           <Notice tone="error">
             <p>{blocked.text}</p>
             {blocked.code === "on_issued_document" && (
@@ -392,20 +475,44 @@ export function EraseDialog(props: {
         {failure && <Notice tone="error">{failure}</Notice>}
       </div>
       <div className="dialog__actions">
-        <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn--danger"
-          onClick={confirm}
-          disabled={
-            busy || held || blocked?.code === "on_issued_document" || blocked?.code === "too_many_offers"
-          }
-          aria-busy={busy || undefined}
-        >
-          {busy ? "Working…" : mode === "erase" ? "Erase contact" : "Anonymise contact"}
-        </button>
+        {parts?.step === "running" ? (
+          // one part is one request: Stop takes effect before the next part, and the contact is left as it is
+          <button
+            type="button"
+            className="btn btn--secondary"
+            onClick={() => {
+              stop.current = true;
+            }}
+            disabled={parts.finishing}
+          >
+            {ZR_PARTS.stop}
+          </button>
+        ) : (
+          <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy}>
+            Cancel
+          </button>
+        )}
+        {parts ? (
+          <button
+            type="button"
+            className="btn btn--danger"
+            onClick={() => void runParts(parts.step === "offer" ? 0 : "n" in parts ? parts.n : 0)}
+            disabled={busy}
+            aria-busy={busy || undefined}
+          >
+            {busy ? "Working…" : parts.step === "offer" ? ZR_PARTS.start : ZR_PARTS.continue}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn--danger"
+            onClick={confirm}
+            disabled={busy || held || blocked?.code === "on_issued_document"}
+            aria-busy={busy || undefined}
+          >
+            {busy ? "Working…" : mode === "erase" ? "Erase contact" : "Anonymise contact"}
+          </button>
+        )}
       </div>
     </Modal>
   );

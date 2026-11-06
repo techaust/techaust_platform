@@ -20,8 +20,35 @@ describe("Settings › Data retention (08-C RB-09; 07-W 5.10)", () => {
       email: RETENTION_FLOORS.emailLogMonths,
       security: RETENTION_FLOORS.securityLogMonths,
       financial: RETENTION_FLOORS.financialYears,
+      requests: RETENTION_FLOORS.requestsMonths,
+      consent: RETENTION_FLOORS.consentProofMonths,
     });
     expect(RETENTION_FLOORS.emailLogMonths).toBe(12);
+  });
+
+  it("M7.4 (G.3): the six figures, the two new ones with their floor of 12 months as the hint and the refusal", () => {
+    expect(RETENTION_ROWS.map((r) => r.key)).toEqual([
+      "leads",
+      "email",
+      "security",
+      "requests",
+      "consent",
+      "financial",
+    ]);
+    expect(RETENTION_FLOORS.requestsMonths).toBe(12);
+    expect(RETENTION_FLOORS.consentProofMonths).toBe(12);
+    const f = { ...retentionToForm(good), requests: "11", consent: "6" };
+    expect(buildRetention(f)).toEqual({
+      errors: {
+        "f-requestsMonths": "Keep closed data requests at least 12 months.",
+        "f-consentProofMonths": "Keep consent records at least 12 months.",
+      },
+    });
+    expect(buildRetention({ ...f, requests: "12", consent: "36" })).toEqual({
+      value: { ...good, requestsMonths: 12, consentProofMonths: 36 },
+    });
+    for (const k of ["requests", "consent"] as const)
+      expect(RETENTION_ROWS.find((r) => r.key === k)?.desc).toContain("Never below 12 months.");
   });
 
   it("the email logs row has 07-W 5.10's hint and error, word for word", () => {

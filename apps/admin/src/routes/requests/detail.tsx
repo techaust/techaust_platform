@@ -60,7 +60,7 @@ export function RequestDialog(props: {
       className="dialog--dp-request"
     >
       {mode === "view" ? (
-        <RequestView
+        <RequestBody
           r={r}
           now={props.now}
           onStep={(next) => {
@@ -85,7 +85,7 @@ export function RequestDialog(props: {
   );
 }
 
-function RequestView(props: {
+function RequestBody(props: {
   r: RequestView;
   now: number;
   onStep: (next: RequestView) => void;
@@ -379,6 +379,7 @@ function CloseForm(props: {
   const refusal = useRefusalFocus();
 
   // A done erasure links the erase or anonymise of its own person, made since the request arrived (read from the audit log, the Owner's to read).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read again only when the outcome turns to done or the person asks again (`tries`)
   useEffect(() => {
     if (!opts.needsAction || outcome !== "done") return;
     let live = true;
@@ -399,7 +400,6 @@ function CloseForm(props: {
     return () => {
       live = false;
     };
-    // biome-ignore lint/correctness/useExhaustiveDependencies: read again only when the outcome turns to done or the person asks again
   }, [outcome, tries]);
 
   function busyAll(b: boolean) {

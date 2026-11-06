@@ -74,8 +74,10 @@ import {
 import { REASON_LABEL, reasonText } from "../../lib/offer-words.ts";
 import { personLabel, personLabels } from "../../lib/people.ts";
 import { useUser } from "../../session.tsx";
+import { LegalHoldBanner, LegalHoldPanel } from "../clients/legal-hold.tsx";
 import { ANSWERS_COPY, type Answers, AnswersFields, answersPatch } from "./answers.tsx";
 import { ConvertDialog } from "./convert.tsx";
+import { LeadDataTools } from "./data-tools.tsx";
 import {
   type Contact,
   contactPatch,
@@ -380,6 +382,10 @@ function LeadView({
   }
 
   const converted = data.client !== null;
+  const canDataTools =
+    allowed(user.role, "leads.dataExport") ||
+    allowed(user.role, "requests.log") ||
+    allowed(user.role, "leads.dataErase");
   return (
     <>
       {/* Drafts survive a draft conflict, so they stay guarded; only a refused save (409) lifts it, the note still guarded. */}
@@ -400,22 +406,28 @@ function LeadView({
         crumbs={CRUMBS}
         status={<StagePill stage={lead.stage} reason={lead.lostReason} />}
         action={
-          canWrite ? (
+          canWrite || canDataTools ? (
             <>
-              {canConvert && !converted && (
+              {/* M7.4 (G.4): export, withdraw consent, log a request, erase */}
+              <LeadDataTools lead={lead} converted={converted} onChanged={() => reload()} />
+              {canWrite && canConvert && !converted && (
                 <button type="button" className="btn btn--secondary" onClick={() => setConverting(true)}>
                   <Building />
                   Convert to client
                 </button>
               )}
-              <button type="button" className="btn btn--primary" onClick={() => setReplying(true)}>
-                <Mail />
-                Reply
-              </button>
+              {canWrite && (
+                <button type="button" className="btn btn--primary" onClick={() => setReplying(true)}>
+                  <Mail />
+                  Reply
+                </button>
+              )}
             </>
           ) : undefined
         }
       />
+      {/* M7.4 (G.2): S1 on a held lead */}
+      {lead.legalHold && <LegalHoldBanner />}
       {stale &&
         (saveStale ? (
           <StaleNotice title="Someone else changed this lead." onReload={reloadStale} />
@@ -668,6 +680,14 @@ function LeadView({
           </section>
 
           <Linked data={data} />
+          {/* M7.4 (G.2): the lead's legal hold, its history and the Owner's set or lift */}
+          <LegalHoldPanel
+            entityType="lead"
+            entityId={lead.id}
+            name={`${lead.ref} ${lead.name}`}
+            held={lead.legalHold}
+            onChanged={() => reload()}
+          />
         </aside>
 
         <div className="lead-page__main">
