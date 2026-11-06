@@ -1,6 +1,6 @@
 // A lead's data rights (M7.4 C.8; ADM-CLI-05, FRM-05, ADM-SET-09; run file docs/runs/m7.4-data-protection.md C.8, L20–L22, L24, L37, L44), in the admin API:
 //   POST /leads/:id/export             the person's own data, in parts (`leads.dataExport`: Owner, step-up): the summary (the lead and its parts), then
-//                                      pages of 50 of `lead_activities`, `email_log` (by the lead's address) and `consent_receipts`; one audit row per call
+//                                      pages of 50 of `lead_activities`, `email_log` (the lead's own emails, L54) and `consent_receipts`; one audit row per call
 //                                      (ids and counts only). L31: the summary says a keyed form of the address is kept after an erasure, until when.
 //   POST /leads/:id/erase {reason}     erases EVERY unconverted lead with this lead's address (lower-cased) in one batch (`leads.dataErase`: Owner, step-up):
 //                                      one `lead.erase` audit row per lead, their bells and their requests' bells, the keyed hash set on each (the triggers write
@@ -104,17 +104,26 @@ export const LEAD_ERASE_SQL = {
     `DELETE FROM leads WHERE id IN (SELECT value FROM json_each(?1)) AND client_id IS NULL AND ${g}`,
 } as const;
 
-/** The parts of a lead's export: `?1` the lead, `?2` its lower-cased address; a cursor adds `?3`, `?4`. Each pages 50. */
-const EXPORT_PARTS = {
+/**
+ * The parts of a lead's export: `?1` the lead, `?2` its lower-cased address, `?3` its ref; a cursor adds `?4`, `?5`. Each pages 50. Review 1 low 12 (L54):
+ * the emails are only the lead's own (the jobs Worker files a lead's emails under `entity_type 'lead'` and its ref), sent to its address (never the staff
+ * alert's), through `email_log_entity`; never emails sent to the same address on a client's behalf (data minimisation, as M3.3 does for contacts).
+ */
+export const LEAD_EXPORT_PARTS = {
   lead_activities: (cur: boolean) =>
-    `SELECT id, kind, body, actor_id, created_at AS at FROM lead_activities WHERE lead_id = ?1${cur ? " AND (created_at, id) > (?3, ?4)" : ""} ORDER BY created_at, id LIMIT 51`,
+    `SELECT id, kind, body, actor_id, created_at AS at FROM lead_activities WHERE lead_id = ?1${cur ? " AND (created_at, id) > (?4, ?5)" : ""} ORDER BY created_at, id LIMIT 51`,
   email_log: (cur: boolean) =>
-    `SELECT id, to_email, template, entity_type, entity_id, status, created_at AS at FROM email_log WHERE to_email = ?2${cur ? " AND (created_at, id) > (?3, ?4)" : ""} ORDER BY created_at, id LIMIT 51`,
+    `SELECT id, to_email, template, entity_type, entity_id, status, created_at AS at FROM email_log
+       WHERE entity_type = 'lead' AND entity_id IN (?1, ?3) AND lower(to_email) = ?2${cur ? " AND (created_at, id) > (?4, ?5)" : ""} ORDER BY created_at, id LIMIT 51`,
   consent_receipts: (cur: boolean) =>
-    `SELECT id, event, source, notice_version, purposes, marketing, at FROM consent_receipts WHERE lead_id = ?1${cur ? " AND (at, id) > (?3, ?4)" : ""} ORDER BY at, id LIMIT 51`,
+    `SELECT id, event, source, notice_version, purposes, marketing, at FROM consent_receipts WHERE lead_id = ?1${cur ? " AND (at, id) > (?4, ?5)" : ""} ORDER BY at, id LIMIT 51`,
 } as const;
 
-type LeadExportRow = Record<string, unknown> & { contact_email: string; client_id: string | null };
+type LeadExportRow = Record<string, unknown> & {
+  ref: string;
+  contact_email: string;
+  client_id: string | null;
+};
 
 export const leadData = new Hono<AppEnv>()
   .post("/:id/export", param(idParam), body(exportRequest), async (c) => {
@@ -132,19 +141,19 @@ export const leadData = new Hono<AppEnv>()
       const { erased_hash: _hash, ...plain } = lead;
       out = {
         lead: plain,
-        manifest: Object.keys(EXPORT_PARTS),
+        manifest: Object.keys(LEAD_EXPORT_PARTS),
         keyedFormMonths: keyedFormMonthsOf(keep ?? undefined),
       };
       rows = 1;
     } else {
       const cur = f.after === undefined ? null : decodeCursor(f.after);
       if (f.after !== undefined && !cur) return err(c, BAD_REQUEST, 400);
-      const sql = EXPORT_PARTS[f.part](cur !== null);
+      const sql = LEAD_EXPORT_PARTS[f.part](cur !== null);
       // Bind exactly as many values as the statement has parameters (D1 refuses extra ones).
       const params = Math.max(...[...sql.matchAll(/\?(\d+)/g)].map((m) => Number(m[1])));
       const { results } = await db
         .prepare(sql)
-        .bind(...[id, email, ...(cur ? [cur.k, cur.id] : [])].slice(0, params))
+        .bind(...[id, email, lead.ref, ...(cur ? [cur.k, cur.id] : [])].slice(0, params))
         .all<Record<string, unknown>>();
       const more = results.length > 50;
       const items = more ? results.slice(0, 50) : results;

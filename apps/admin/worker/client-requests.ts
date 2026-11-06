@@ -26,15 +26,16 @@ import {
   closeVerdict,
   daysLeft,
   dueSoonBound,
+  IDENTITY_CHECKED_KINDS,
+  isDsrKind,
   loggedReceivedAt,
-  REQUEST_STATES,
   requestDueAt,
   requestDueAtSql,
   requestState,
 } from "@techaust/core/dsr";
 import { uuidv7 } from "@techaust/core/ids";
 import { decide } from "@techaust/core/permissions";
-import { isRequestKind, REQUEST_STATUSES, STAFF_CLOSE_KINDS } from "@techaust/core/portal";
+import { REQUEST_STATUSES, STAFF_CLOSE_KINDS } from "@techaust/core/portal";
 import { Hono } from "hono/tiny";
 import { type AppEnv, actor, BAD_REQUEST, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
 import { body, idParam, param } from "./http.ts";
@@ -42,8 +43,10 @@ import { body, idParam, param } from "./http.ts";
 const PAGE = 50;
 const AFTER = /^-?\d{1,15}:[A-Za-z0-9_-]{1,64}$/;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
-const STAFF_KINDS_SQL = `(${STAFF_CLOSE_KINDS.map((k) => `'${k}'`).join(", ")})`;
-const isDsrKindFilter = (k: string) => isRequestKind(k) || k === "consent_withdrawal" || k === "nomination";
+/** A list of kinds as SQL text (`('a', 'b')`); the lists come from core only (review 1 low 5: never a hand copy). */
+const sqlList = (kinds: readonly string[]) => `(${kinds.map((k) => `'${k}'`).join(", ")})`;
+const STAFF_KINDS_SQL = sqlList(STAFF_CLOSE_KINDS);
+const IDENTITY_KINDS_SQL = sqlList(IDENTITY_CHECKED_KINDS);
 
 const COLS = `r.id, r.client_id, k.code AS client_code, k.display_name AS client_name, (k.anonymised_at IS NOT NULL) AS client_gone, r.contact_id,
   c.name AS contact_name, c.email AS contact_email, r.lead_id, (SELECT ref FROM leads WHERE id = r.lead_id) AS lead_code, r.lead_ref, r.contact_ref,
@@ -83,19 +86,19 @@ export const OPEN_REQUESTS_COUNT_SQL =
 export const REQUEST_CLOSE_SQL = `UPDATE client_requests SET status = 'closed', outcome = ?2, closed_by = ?3, closed_at = ?4, close_note = ?5, updated_at = max(updated_at, ?4),
      decline_reason = ?7, action_audit_id = ?8, export_sent_at = ?9
    WHERE id = ?1 AND status = 'open' AND (?6 = 'owner' OR kind IN ${STAFF_KINDS_SQL})
-     AND (?2 <> 'done' OR kind NOT IN ('data_access', 'data_correction', 'data_erasure', 'nomination') OR identity_checked_at IS NOT NULL)
+     AND (?2 <> 'done' OR kind NOT IN ${IDENTITY_KINDS_SQL} OR identity_checked_at IS NOT NULL)
      AND (?9 IS NULL OR ?9 <= ?4)
      AND (?2 <> 'done' OR kind <> 'data_erasure' OR EXISTS (SELECT 1 FROM audit_log a WHERE a.id = ?8 AND a.at >= client_requests.received_at
        AND ((client_requests.contact_ref IS NOT NULL AND a.action IN ('contact.erase', 'contact.anonymise') AND json_extract(a.summary, '$.contactId') = client_requests.contact_ref)
          OR (client_requests.lead_ref IS NOT NULL AND a.action = 'lead.erase' AND a.entity_type = 'lead' AND a.entity_id = client_requests.lead_ref))))`;
 
 /**
- * C.3: ?1 request, ?2 now, ?3 who. Each step once, on an open request; the trigger `client_requests_steps` holds the same (set once, by an active member,
- * never before the request arrived).
+ * C.3: ?1 request, ?2 now, ?3 who (the identity check only: D1 refuses a value no placeholder takes). Each step once, on an open request; the trigger
+ * `client_requests_steps` holds the same (set once, by an active member, never before the request arrived).
  */
 export const REQUEST_STEP_SQL = {
   acknowledged:
-    "UPDATE client_requests SET acknowledged_at = max(?2, received_at), updated_at = max(updated_at, ?2) WHERE id = ?1 AND status = 'open' AND acknowledged_at IS NULL AND ?3 IS NOT NULL",
+    "UPDATE client_requests SET acknowledged_at = max(?2, received_at), updated_at = max(updated_at, ?2) WHERE id = ?1 AND status = 'open' AND acknowledged_at IS NULL",
   identity_checked:
     "UPDATE client_requests SET identity_checked_at = ?2, identity_checked_by = ?3, updated_at = max(updated_at, ?2) WHERE id = ?1 AND status = 'open' AND identity_checked_at IS NULL",
 } as const;
@@ -271,10 +274,9 @@ export const clientRequests = new Hono<AppEnv>()
       state === "overdue" || state === "due_soon" || state === "ack_overdue" ? state : undefined;
     if (
       (status !== undefined && !(REQUEST_STATUSES as readonly string[]).includes(status)) ||
-      (state !== undefined &&
-        (stateFilter === undefined || !(REQUEST_STATES as readonly string[]).includes(state))) ||
+      (state !== undefined && stateFilter === undefined) ||
       (state !== undefined && (client !== undefined || status !== undefined)) ||
-      (kind !== null && !isDsrKindFilter(kind)) ||
+      (kind !== null && !isDsrKind(kind)) ||
       (client !== undefined && !ID.test(client)) ||
       (after !== undefined && !AFTER.test(after))
     )
@@ -321,7 +323,7 @@ export const clientRequests = new Hono<AppEnv>()
     const id = uuidv7();
     const details = loggedDetailsOf(f);
     const subject = [
-      f.contactId === undefined ? (f.clientId ?? null) : (f.clientId ?? null),
+      f.clientId ?? null,
       f.contactId ?? null,
       f.leadId ?? null,
       f.requesterEmail ?? null,
@@ -379,7 +381,10 @@ export const clientRequests = new Hono<AppEnv>()
     const db = c.env.DB;
     const now = Date.now();
     const done = await mutate(c, {
-      main: db.prepare(REQUEST_STEP_SQL[step]).bind(id, now, u.id),
+      main:
+        step === "acknowledged"
+          ? db.prepare(REQUEST_STEP_SQL.acknowledged).bind(id, now)
+          : db.prepare(REQUEST_STEP_SQL.identity_checked).bind(id, now, u.id),
       action: "client_request.step",
       entityType: "client_request",
       entityId: id,

@@ -4,13 +4,15 @@
 // client (Q4 A), devices ending with the account (L47), and the statement budget. Invented data only.
 import { env } from "cloudflare:workers";
 import { istDate, toIsoDate } from "@techaust/core/dates";
-import { requestDueAt } from "@techaust/core/dsr";
+import { IDENTITY_CHECKED_KINDS, REQUEST_KINDS, requestDueAt } from "@techaust/core/dsr";
 import { addressHash } from "@techaust/core/hmac";
 import { uuidv7 } from "@techaust/core/ids";
 import { type Action, decide, ROLES } from "@techaust/core/permissions";
 import { PROCESSORS } from "@techaust/core/processors";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { REQUEST_CLOSE_SQL, REQUEST_STEP_SQL } from "./client-requests.ts";
 import { MATCHED_LEADS } from "./clients.ts";
+import { encodeCursor } from "./keyset.ts";
 import { issueReceipt } from "./receipt-issue.ts";
 import { insert, mkClient, mkContact, mkDoc, mkLead } from "./test-clients.ts";
 import { finalisedDeed, putSigned } from "./test-deeds.ts";
@@ -266,6 +268,23 @@ describe("the request log, steps and close [ADM-SET-09, POR-11; C.2–C.4]", () 
   });
 });
 
+describe("the request lists come from core (review 1 lows 5 and 7)", () => {
+  it("the kind filter takes every DSR kind and nothing else; a state filter takes only overdue, due soon and not acknowledged; the close SQL's identity list is core's", async () => {
+    const o = await owner();
+    for (const kind of REQUEST_KINDS)
+      expect((await call(`/client-requests?kind=${kind}`, { cookie: o.cookie })).status, kind).toBe(200);
+    for (const q of ["kind=bogus", "state=open", "state=closed", "state=late"])
+      expect((await call(`/client-requests?${q}`, { cookie: o.cookie })).status, q).toBe(400);
+    for (const q of ["state=overdue", "state=due_soon", "state=ack_overdue"])
+      expect((await call(`/client-requests?${q}`, { cookie: o.cookie })).status, q).toBe(200);
+    expect(REQUEST_CLOSE_SQL).toContain(
+      `kind NOT IN (${IDENTITY_CHECKED_KINDS.map((k) => `'${k}'`).join(", ")})`,
+    );
+    // the acknowledged step binds exactly its two placeholders (D1 refuses an extra value)
+    expect(REQUEST_STEP_SQL.acknowledged).not.toContain("?3");
+  });
+});
+
 describe("legal holds [ADM-CLI-05, RA-25; C.5]", () => {
   it("the Owner with a fresh code sets and clears a hold; the history is kept; unchanged 409; Staff 403; without step-up 403; an anonymised contact 409", async () => {
     const o = await owner();
@@ -494,6 +513,22 @@ describe("a lead's erase, export and consent withdrawal [ADM-CLI-05, FRM-05; C.8
     ).toBe(403);
   });
 
+  it("review 1 low 11: more than 50 leads of one address is 409 too_many_leads with details.refs, an array of 50 ref strings; nothing is erased", async () => {
+    const o = await owner();
+    const email = `many-${uuidv7()}@example.test`;
+    const ids: string[] = [];
+    for (let i = 0; i < 51; i++) ids.push(await mkLead(email));
+    const res = await call(`/leads/${ids[0]}/erase`, { cookie: o.cookie, body: { reason: "requested" } });
+    expect(res.status).toBe(409);
+    const e = (await bodyOf(res)).error as { code: string; details?: { refs?: unknown } };
+    expect(e.code).toBe("too_many_leads");
+    expect(Array.isArray(e.details?.refs)).toBe(true);
+    const refs = e.details?.refs as unknown[];
+    expect(refs).toHaveLength(50);
+    for (const r of refs) expect(typeof r).toBe("string");
+    expect(await countOf("leads", "lower(contact_email) = ?", email)).toBe(51);
+  });
+
   it("round 4: a lead erase with a live contact at the same address writes no h: stop and keeps the contact's bounce row", async () => {
     const o = await owner();
     const p = await mkPortalClient();
@@ -531,6 +566,54 @@ describe("a lead's erase, export and consent withdrawal [ADM-CLI-05, FRM-05; C.8
     expect(
       (await call(`/leads/${lead}/export`, { cookie: (await sessionFor("owner")).cookie, body: {} })).status,
     ).toBe(403);
+  });
+
+  it("review 1 low 12 (L54): the export's emails are only the lead's own, never a client's email to the same address or the staff alert", async () => {
+    const o = await owner();
+    const email = `own-${uuidv7()}@example.test`;
+    const lead = await mkLead(email);
+    const { ref } = (await one<{ ref: string }>("SELECT ref FROM leads WHERE id = ?", lead)) as {
+      ref: string;
+    };
+    const mine = uuidv7();
+    await insert("email_log", {
+      id: mine,
+      to_email: email.toUpperCase(),
+      template: "lead.acknowledgement",
+      entity_type: "lead",
+      entity_id: ref,
+      status: "sent",
+    });
+    // the staff alert about the lead, and an email to the same address on a client's behalf
+    await insert("email_log", {
+      id: uuidv7(),
+      to_email: "alerts@example.test",
+      template: "lead.alert",
+      entity_type: "lead",
+      entity_id: ref,
+      status: "sent",
+    });
+    await insert("email_log", {
+      id: uuidv7(),
+      to_email: email,
+      template: "portal.link",
+      entity_type: "contact",
+      entity_id: uuidv7(),
+      status: "sent",
+    });
+    const part = (await bodyOf(
+      await call(`/leads/${lead}/export`, { cookie: o.cookie, body: { part: "email_log" } }),
+    )) as { items: { id: string }[]; next: string | null };
+    expect(part.items.map((i) => i.id)).toEqual([mine]);
+    expect(part.next).toBeNull();
+    // every part's next page binds its cursor (?4, ?5)
+    for (const name of ["lead_activities", "email_log", "consent_receipts"]) {
+      const res = await call(`/leads/${lead}/export`, {
+        cookie: o.cookie,
+        body: { part: name, after: encodeCursor({ k: 0, id: "" }) },
+      });
+      expect(res.status, `${name} ${await res.clone().text()}`).toBe(200);
+    }
   });
 
   it("consent withdrawal: the consent gains withdrawnAt and one withdraw receipt with the keyed hash; a second is 409", async () => {
@@ -681,6 +764,49 @@ describe("the erasure hashes of the contact erase and anonymise (L24, L27, L37) 
     );
     expect(events.map((e) => e.event)).toEqual(["withdraw", "grant"]);
     for (const e of events) expect(e.subject_hash).toBe(await hashOf(c.email));
+  });
+
+  it("review 1 low 3: without the key a contact's consent change saves with a NULL receipt hash and logs erasure.key_missing; the erase stays fail-closed", async () => {
+    const o = await owner();
+    const noKey = new Proxy(env, {
+      get: (t, k) => (k === "ERASURE_HASH_KEY" ? undefined : Reflect.get(t, k)),
+    }) as Env;
+    const client = await mkClient();
+    const c = await mkContact(client, {
+      marketing_consent: JSON.stringify({ granted: true, at: 1000, source: "admin" }),
+    });
+    const at = (await one<{ updated_at: number }>("SELECT updated_at FROM contacts WHERE id = ?", c.id))
+      ?.updated_at;
+    const logs = vi.spyOn(console, "log");
+    try {
+      const res = await call(
+        `/contacts/${c.id}`,
+        { method: "PATCH", cookie: o.cookie, body: { marketingConsent: false, expectedUpdatedAt: at } },
+        noKey,
+      );
+      expect(res.status, await res.clone().text()).toBe(200);
+      const logged = logs.mock.calls.map((a) => String(a[0]));
+      expect(
+        logged.some((l) => l.includes('"ev":"erasure.key_missing"') && l.includes("contact_consent")),
+      ).toBe(true);
+      for (const l of logged) expect(l).not.toContain(c.email);
+    } finally {
+      logs.mockRestore();
+    }
+    expect(await one("SELECT event, subject_hash FROM consent_receipts WHERE contact_id = ?", c.id)).toEqual({
+      event: "withdraw",
+      subject_hash: null,
+    });
+    // the erase still refuses to run without its stop (500, nothing written)
+    const erase = await call(
+      `/contacts/${c.id}/erase`,
+      { cookie: o.cookie, body: { mode: "erase", reason: "requested" } },
+      noKey,
+    );
+    expect(erase.status).toBe(500);
+    expect(await one("SELECT anonymised_at FROM contacts WHERE id = ?", c.id)).toEqual({
+      anonymised_at: null,
+    });
   });
 });
 

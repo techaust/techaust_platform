@@ -14,6 +14,20 @@ const keyOf = (env: object): string => {
 /** The keyed hash of `email` (64 lower-case hex characters). */
 export const erasureHash = (env: object, email: string): Promise<string> => addressHash(keyOf(env), email);
 
+/**
+ * A consent receipt's hash, or null without the key (M7.4 review 1 low 3, as jobs' `leadHashOrNull`): a contact's consent change is never held back for the
+ * key; its receipt waits with a NULL hash for the nightly `consent.hash`, and the Worker logs `erasure.key_missing` (never the address). Erasures keep
+ * `erasureHash`, which throws (fail-closed).
+ */
+export async function receiptHashOrNull(env: object, email: string, where: string): Promise<string | null> {
+  const v: unknown = Reflect.get(env, "ERASURE_HASH_KEY");
+  if (typeof v !== "string" || v.length < 32) {
+    console.log(JSON.stringify({ ev: "erasure.key_missing", where }));
+    return null;
+  }
+  return erasureHash(env, email);
+}
+
 /** The keyed hash of each distinct lower-cased address, as a JSON object `{address: hash}` for one bound parameter (`json_extract(?, '$."' || … || '"')`). */
 export async function erasureHashMap(env: object, emails: readonly string[]): Promise<string> {
   const key = keyOf(env);

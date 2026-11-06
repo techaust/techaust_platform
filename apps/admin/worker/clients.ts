@@ -53,7 +53,7 @@ import {
   requestInfo,
   STEP_UP_REQUIRED,
 } from "./context.ts";
-import { erasureHash, erasureHashMap, hashFromMap } from "./erasure-key.ts";
+import { erasureHash, erasureHashMap, hashFromMap, receiptHashOrNull } from "./erasure-key.ts";
 import { clientFinance } from "./figures.ts";
 import { dropObjects } from "./files.ts";
 import {
@@ -1181,7 +1181,10 @@ export const contacts = new Hono<AppEnv>()
           ? receiptOf({ kind: "contact", id, consent: JSON.parse(consentJson), noticeVersion: null })
           : (withdrawalOf({ kind: "contact", id, consent: consent as never, noticeVersion: null }, t, "staff")
               ?.receipt ?? null);
-    const receiptHash = receipt ? await erasureHash(c.env, email ?? row.email) : null;
+    // Review 1 low 3: without the key the change still saves; the receipt waits with a NULL hash for the nightly `consent.hash` (erasures stay fail-closed).
+    const receiptHash = receipt
+      ? await receiptHashOrNull(c.env, email ?? row.email, "contact_consent")
+      : null;
     const names = changes.map(([n]) => n);
     // Portal access ends (off, or a new address): sessions and unused sign-in links go in the same batch.
     const endsAccess =
