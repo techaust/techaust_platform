@@ -428,13 +428,18 @@ export const guardWith = (sessionLimit?: SessionLimit) =>
     // A refusal writes nothing, not even the access row.
     const refused = sessionLimit ? await sessionLimit(c, sessionId) : null;
     if (refused) return refused;
-    return guarded(c, next, row, sessionId);
+    return guarded(c, next, row.access, sessionId);
   });
 
 /** The guard without a session limit (the Workers behind the front, and tests of the table). */
 export const guard = guardWith();
 
-async function guarded(c: Ctx, next: () => Promise<void>, row: RouteDef, sessionId: string) {
+async function guarded(
+  c: Ctx,
+  next: () => Promise<void>,
+  access: Exclude<RouteDef["access"], "public">,
+  sessionId: string,
+) {
   const s = await c.env.DB.prepare(SESSION_READ).bind(sessionId).first<SessionRow>();
   const t = Date.now();
   const state = s
@@ -461,7 +466,7 @@ async function guarded(c: Ctx, next: () => Promise<void>, row: RouteDef, session
   c.set("user", user);
   if (state.touch) c.set("touch", c.env.DB.prepare(TOUCH_SQL).bind(sessionId, t, t + IDLE_REFRESH_MS));
 
-  const decision = isRole(s.role) ? decide(s.role, row.access) : "deny";
+  const decision = isRole(s.role) ? decide(s.role, access) : "deny";
   if (decision === "deny") return err(c, FORBIDDEN, 403);
   if (decision === "step-up" && !stepUpActive(s.step_up_until, t)) return err(c, STEP_UP_REQUIRED, 403);
   // "approval" (M7.5 L9: this used to say no route needed it): a Staff member's issue request and payment record (`invoices.issue`, `payments.record`), a
