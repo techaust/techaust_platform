@@ -180,7 +180,8 @@ export function CareHoursReport() {
               caption={caption}
               columns={columns}
               rows={rows}
-              rowKey={(r) => r.planId}
+              // a plan can have two periods starting in its start month (its short first one and the next: review 1, finding 2), so the row is the plan and its period
+              rowKey={(r) => `${r.planId}-${r.period.start}`}
               empty={
                 <EmptyState icon={<LifeBuoy />} title={C.empty.replace(/\.$/, "")}>
                   {null}

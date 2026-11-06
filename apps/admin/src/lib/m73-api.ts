@@ -5,22 +5,16 @@ import type {
   AgeingRow,
   CareHoursRow,
   RevenueByKey as CoreByKey,
-  RevenueByMonth as CoreByMonth,
-  RevenueClientRow as CoreClientRow,
   PipelineReport,
+  RevenueByMonth,
+  RevenueClientRow,
 } from "@techaust/core/reports";
 import { type Currency, qs, request } from "../api.ts";
-import type { Invoiced } from "./m73-reports.ts";
 
+export type { RevenueByMonth, RevenueClientRow };
 export type RevenueView = "month" | "category" | "kind";
-/** The revenue answers with `inrMissing` on every invoiced figure (`Invoiced`: review 1, finding 4). */
-export type RevenueByMonth = Omit<CoreByMonth, "months"> & {
-  months: (Omit<CoreByMonth["months"][number], "invoiced"> & { invoiced: Invoiced[] })[];
-};
-export type RevenueByKey = Omit<CoreByKey<string>, "rows"> & {
-  rows: { key: string; invoiced: Invoiced[] }[];
-};
-export type RevenueClientRow = Omit<CoreClientRow, "invoiced"> & { invoiced: Invoiced };
+/** Every invoiced figure carries `inrMissing` (core, B3: USD documents with no INR value; review 1, finding 4). */
+export type RevenueByKey = CoreByKey<string>;
 export type RevenueAnswer = RevenueByMonth | RevenueByKey;
 
 export type RevenueClientsPage = {

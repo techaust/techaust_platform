@@ -314,11 +314,8 @@ export const sumMinor = (values: readonly number[], currency: Currency): number 
     currency,
   ).amount;
 
-/**
- * The revenue API's invoiced figures with `inrMissing`: how many USD documents have no INR value, so the INR total is null (review 1, finding 4; B3 adds the
- * field to core's `InvoicedFigures`, the contract this screen reads; the intersection is then the same type).
- */
-export type Invoiced = InvoicedFigures & { inrMissing: number };
+/** The revenue API's invoiced figures, `inrMissing` included (how many USD documents have no INR value, so the INR total is null: review 1, finding 4). */
+export type Invoiced = InvoicedFigures;
 
 /** One currency's figures of a month, or zeros when the month has none. */
 export const invoicedOf = (rows: readonly Invoiced[], currency: Currency): Invoiced =>
