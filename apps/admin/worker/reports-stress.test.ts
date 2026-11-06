@@ -39,6 +39,17 @@ const BUDGET = {
   "ageing export, first page": 6_500,
 } as const;
 
+/**
+ * C2 at 2,000 clients, every one with an invoice and a payment in the FY (review 1 finding 15a). Measured 15,200 (first page), 15,203 (an export's first page,
+ * the same read plus its audit row) and 15,153 (the export's next page) on 2026-11-06: about 7.6 rows per client, read whatever the page (the walk of every
+ * client with its three index probes, the FY's documents and payments, and the sort of the clients with a figure). Capped with about 2 % headroom.
+ */
+const C2_AT_2000: Record<string, number> = {
+  "first page": 15_500,
+  "export, first page": 15_500,
+  "export, next page": 15_500,
+};
+
 let owner: TestSession;
 
 async function build(by: string) {
@@ -190,7 +201,8 @@ async function measure(name: keyof typeof BUDGET, path: string): Promise<Record<
       .map((r) => r.detail)
       .join(" | ");
     // the per-client walks of C2 and C9 and the care plans' page read those small tables by primary key by design (B1, EXPLAIN test)
-    const walks = /FROM clients c LIMIT -1|FROM clients c\s+WHERE|FROM care_plans p\s+WHERE/.test(s.sql);
+    const walks =
+      /FROM clients c LIMIT -1|FROM clients c\s+WHERE|FROM care_plans p (CROSS JOIN|\s*WHERE)/.test(s.sql);
     if (!walks)
       expect(plan, `${name}: ${s.sql.replace(/\s+/g, " ").slice(0, 120)}`).not.toMatch(
         /SCAN (documents|payments|payment_refunds|leads|document_lines|time_logs|d|p|f|l)\b(?! USING)/,
@@ -263,5 +275,70 @@ describe("the M7.3 reports at the brief's scale (run file J)", () => {
       expect(rec.total(), report.join("; ")).toBeLessThanOrEqual(5_000);
     }
     if (SHOW_REPORT) throw new Error(["M7.3 search rows read at scale:", ...report].join("\n  "));
+  });
+
+  // Review 1 finding 15a: C2 walks every client (one probe of each index per client) and sorts the clients with a figure, so its cost grows with the client count,
+  // not the page. Here 1,800 more clients (2,000 in all), each with one issued invoice and one confirmed payment in the FY, so every client is a row of the sort:
+  // the worst case for that count. Runs last: it adds to the shared database.
+  it("revenue per client at 2,000 clients: the first page, an export page and the export's next page stay within their caps", {
+    timeout: HEAVY_MS,
+  }, async () => {
+    await run(`${seq(1800)} INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency)
+      SELECT 'xcl' || printf('%04d', i), 'XC' || printf('%04d', i), 'Extra Co ' || i, 'Extra Co ' || i, 'business', 'IN', 'unregistered', '19', 'INR' FROM n`);
+    const computed = computeFor({ clientId: "x", issueDate: "2026-06-01", lines: [line(800_00)] });
+    await run(
+      `${seq(1800)} INSERT INTO documents (id, type, status, client_id, currency, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor,
+         total_minor, balance_minor, supply_type, place_of_supply_code, computed, recipient, content_sha256, updated_at)
+       SELECT 'xdoc' || printf('%05d', i), 'tax_invoice', 'draft', 'xcl' || printf('%04d', i), 'INR', ?1, 0, ?1, ?2, ?3, 0, ?4, ?5 + i, ?5 + i, ?6, '19', ?7,
+         '{"legalName":"Extra Co","country":"IN","gstStatus":"registered"}', ?8, 7000 FROM n`,
+      computed.subtotalMinor,
+      computed.cgstMinor,
+      computed.sgstMinor,
+      computed.roundOffMinor,
+      computed.totalMinor,
+      computed.supply.type,
+      JSON.stringify(computed),
+      "p".repeat(64),
+    );
+    await run(
+      `UPDATE documents SET status = 'issued', series = 'invoice', fy = '2627', number = 70000 + CAST(substr(id, 5) AS INTEGER), number_display = 'X/' || substr(id, 5),
+         frozen_at = 1000, issue_date = date('2026-04-01', '+' || (CAST(substr(id, 5) AS INTEGER) % 300) || ' days'),
+         due_date = date('2026-04-01', '+' || (CAST(substr(id, 5) AS INTEGER) % 300 + 15) || ' days'), snapshot_sha256 = ?1
+       WHERE id LIKE 'xdoc%'`,
+      "q".repeat(64),
+    );
+    await run(
+      `${seq(1800)} INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, mode, recorded_by, recorded_at, verified_by, verified_at)
+       SELECT 'xpay' || i, 'xcl' || printf('%04d', i), 'payment', 'manual', 'confirmed', 'INR', 40000 + i, date('2026-04-01', '+' || (i % 300) || ' days'), 'neft', ?1, 1000, ?1, 1000 FROM n`,
+      owner.id,
+    );
+    expect(
+      await env.DB.prepare("SELECT count(*) AS n FROM clients").first<{ n: number }>("n"),
+    ).toBeGreaterThanOrEqual(2_000);
+
+    const stepUp = await longSession("owner");
+    await env.DB.prepare("UPDATE staff_sessions SET step_up_until = ?2 WHERE id = ?1")
+      .bind(stepUp.sessionId, 4_000_000_000_000)
+      .run();
+    owner = stepUp;
+    const at: Record<string, number> = {};
+    const read = async (name: string, path: string) => {
+      const rec = recording();
+      const res = await call(path, { cookie: owner.cookie }, withDb(rec.db));
+      expect(res.status, `${name}: ${await res.clone().text()}`).toBe(200);
+      at[name] = rec.total();
+      return (await res.json()) as { rows: unknown[]; next: string | null };
+    };
+    const first = await read("first page", "/reports/revenue/clients?fy=2627&currency=INR");
+    expect(first.rows).toHaveLength(50);
+    expect(first.next).not.toBeNull();
+    const exported = await read("export, first page", "/reports/revenue/export?fy=2627&currency=INR");
+    expect(exported.next).toBe(first.next);
+    await read("export, next page", `/reports/revenue/export?fy=2627&currency=INR&after=${exported.next}`);
+    const report = Object.entries(at).map(([k, v]) => `${k}: ${v} / ${C2_AT_2000[k]}`);
+    if (SHOW_REPORT) throw new Error(["C2 at 2,000 clients:", ...report].join("\n  "));
+    expect(Object.keys(at).sort()).toEqual(Object.keys(C2_AT_2000).sort());
+    for (const [k, v] of Object.entries(at))
+      expect(v, report.join("; ")).toBeLessThanOrEqual(C2_AT_2000[k] as number);
   });
 });
