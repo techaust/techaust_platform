@@ -160,6 +160,7 @@ export function warmPortalRows(): number {
       outcome: null,
       created_at: at,
       closed_at: null,
+      due_at: at,
     });
     n++;
   } catch {

@@ -158,7 +158,7 @@ describe("the jobs' messages (D)", () => {
       "x",
       { kind: "retention.start", asOf: 1 },
       { v: 1, kind: "retention.start", asOf: -1 },
-      { v: 1, kind: "retention.page", ...page, family: "x" },
+      { ...page, family: "x" },
       { ...page, mode: "x" },
       { ...page, runId: "a b" },
       { ...page, readBefore: "1" },
