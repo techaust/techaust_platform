@@ -92,6 +92,39 @@ describe("the matrix and the backup scope cover every table (A.6, B.6)", () => {
     expect(await ids()).toContain(pinned);
     expect(await ids()).not.toContain(unused);
   });
+  it("L48: an accepted proposal or estimate joins the monthly copy with its child rows, acceptance and certificate; a never-accepted one does not", async () => {
+    for (const t of ["acceptances", "acceptance_certificates"])
+      expect(BACKUP_SCOPE[t], t).toBe("finance_monthly");
+    const accepted = await mkQuote({ type: "estimate" });
+    const never = await mkQuote({ type: "proposal" });
+    for (const q of [accepted, never]) {
+      await run(
+        "INSERT INTO document_lines (id, document_id, position, description, qty_milli, unit, rate_minor, taxable_minor, gst_rate_bp, line_total_minor) VALUES (?1, ?2, 1, 'Website', 1000, 'job', 100, 100, 1800, 118)",
+        uuidv7(),
+        q.id,
+      );
+      await send(q);
+    }
+    const contact = await mkContact(accepted.clientId);
+    const acceptance = uuidv7();
+    await run(
+      "INSERT INTO acceptances (id, document_id, contact_id, typed_name, email, accepted_at, pdf_sha256) VALUES (?1, ?2, ?3, 'Asha', 'asha@example.test', 2000, 'x')",
+      acceptance,
+      accepted.id,
+      contact,
+    );
+    const docIds = (await all<{ id: string }>(monthlyExportSql("documents"))).map((r) => r.id);
+    expect(docIds).toContain(accepted.id);
+    expect(docIds).not.toContain(never.id);
+    const lineDocs = (await all<{ document_id: string }>(monthlyExportSql("document_lines"))).map(
+      (r) => r.document_id,
+    );
+    expect(lineDocs).toContain(accepted.id);
+    expect(lineDocs).not.toContain(never.id);
+    expect((await all<{ id: string }>(monthlyExportSql("acceptances"))).map((r) => r.id)).toContain(
+      acceptance,
+    );
+  });
   it("every family's tables are in the matrix under that family", () => {
     for (const family of RETENTION_FAMILIES)
       for (const t of FAMILY_TABLES[family]) {

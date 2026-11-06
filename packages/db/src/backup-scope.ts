@@ -5,7 +5,8 @@
 // L35: the `audit_log` export leaves out the IP address, the browser and the three alert summaries' `ua`, `city` and `country` (Settled by the lead on the
 // safest reading, 2026-11-06 (08-C RB-48)). L40: the contract records read with the invoices join it: the deeds (numbered ones), the proposal and estimate
 // terms versions and the terms blocks that sent documents pin, and the care plans' terms and status history. Every table is classified; a test fails on any
-// table missing.
+// table missing. L48 (lead, 2026-11-06): accepted proposals and estimates, their acceptances and certificates join the monthly copy (Settled by the lead on
+// the safest reading, 2026-10-30 (08-C RB-37)).
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import { INVOICE_FAMILY_SQL } from "@techaust/core/clients";
 import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./triggers-data-protection.ts";
@@ -43,9 +44,10 @@ export const BACKUP_SCOPE: Record<string, BackupScope> = {
   terms_blocks: F,
   care_plan_terms: F,
   care_plan_status_log: F,
+  // L48: an accepted proposal or estimate (the version accepted, with its lines, sections and schedule), its acceptance and certificate
+  acceptances: F,
+  acceptance_certificates: F,
   // everything else: rolling copies only
-  acceptances: R,
-  acceptance_certificates: R,
   access_log: R,
   approvals: R,
   auth_attempts: R,
@@ -100,7 +102,9 @@ export const BACKUP_SCOPE: Record<string, BackupScope> = {
 };
 
 const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
-const INVOICE_DOCS = `SELECT id FROM documents WHERE type IN (${INVOICE_FAMILY_SQL})`;
+/** L48: the accepted versions of proposals and estimates (an acceptance names the version accepted). */
+const ACCEPTED_OFFERS = "SELECT document_id FROM acceptances";
+const MONTHLY_DOCS = `SELECT id FROM documents WHERE type IN (${INVOICE_FAMILY_SQL}) OR id IN (${ACCEPTED_OFFERS})`;
 
 /** The columns of `audit_log` the monthly copy keeps: never `ip` or `user_agent` (L35). */
 export const AUDIT_EXPORT_COLUMNS = [
@@ -120,18 +124,20 @@ export const AUDIT_EXPORT_COLUMNS = [
  * The row filter (and, for `audit_log`, the column list) of each monthly table: the invoice family's documents and their child rows; the audit rows of the
  * finance actions (`FINANCE_AUDIT_ACTIONS`), without IP and browser and with the alert keys removed (an alert is not a finance action today; the removal
  * holds if one ever becomes one); L40: the terms versions and blocks a sent (frozen) document or an acceptance pins, never an unused draft text; the deeds
- * that were numbered (finalised, signed, or cancelled after finalising), never a draft. Every other monthly table is taken whole.
+ * that were numbered (finalised, signed, or cancelled after finalising), never a draft. L48: the accepted version of a proposal or estimate joins the
+ * invoice family with its child rows (RB-37 (b): accepted offers are kept as long as the tax records); a never-accepted offer stays rolling-only. Every
+ * other monthly table (the acceptances and their certificates included) is taken whole.
  */
 export function monthlyExportSql(table: string): string {
   if (BACKUP_SCOPE[table] !== "finance_monthly")
     throw new RangeError(`${table} is not in the monthly finance copy`);
   switch (table) {
     case "documents":
-      return `SELECT * FROM documents WHERE type IN (${INVOICE_FAMILY_SQL})`;
+      return `SELECT * FROM documents WHERE type IN (${INVOICE_FAMILY_SQL}) OR id IN (${ACCEPTED_OFFERS})`;
     case "document_lines":
     case "document_sections":
     case "payment_schedules":
-      return `SELECT * FROM ${table} WHERE document_id IN (${INVOICE_DOCS})`;
+      return `SELECT * FROM ${table} WHERE document_id IN (${MONTHLY_DOCS})`;
     case "terms_versions":
       return `SELECT * FROM terms_versions WHERE id IN (SELECT terms_version_id FROM documents WHERE frozen_at IS NOT NULL AND terms_version_id IS NOT NULL)
         OR id IN (SELECT terms_version_id FROM acceptances WHERE terms_version_id IS NOT NULL)`;

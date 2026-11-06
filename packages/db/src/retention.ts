@@ -326,6 +326,10 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
       // never takes the proof of a live record with the same address. Every receipt of one hash shares the verdict, so a hash goes whole. A receipt with
       // neither a hash nor a link (a lead purged before hashes existed) goes on its own age. L4: a page takes the `ended` rows last (`order`), so an `ended`
       // row is never deleted while another receipt of its hash remains.
+      // RULE (early check 1 re-check): every receipt of one hash must share ONE verdict (due or not due, together). L4's page order depends on it: the
+      // `ended` row goes in the page that takes the last of its hash only because no receipt of that hash can be left behind as "not due". So no per-row
+      // condition may ever be added to the hashed branch (its `at < ?1` is implied for every receipt of the hash by HASH_SETTLED_SQL); a new condition
+      // must be a condition on the hash as a whole, or the predicate and the order must be redesigned together.
       age: `consent_receipts.at < ?1 AND (
           (consent_receipts.subject_hash IS NOT NULL
             AND EXISTS (SELECT 1 FROM consent_receipts e WHERE e.subject_hash = consent_receipts.subject_hash AND e.event = 'ended')

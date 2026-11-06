@@ -300,6 +300,8 @@ export function dataProtectionTriggerStatements(): string[] {
     OR ${set("acknowledged_at")} OR ${set("identity_checked_at")} OR ${set("identity_checked_by")}
     OR (NEW.identity_checked_by IS NOT NULL AND NEW.identity_checked_at IS NULL)
     OR (NEW.identity_checked_at IS NOT NULL AND NEW.identity_checked_by IS NULL AND (NEW.channel <> 'portal' OR NEW.identity_checked_at IS NOT NEW.received_at))
+    OR (OLD.identity_checked_at IS NULL AND NEW.identity_checked_at IS NOT NULL AND NEW.identity_checked_by IS NULL)
+    OR (OLD.identity_checked_at IS NULL AND NEW.identity_checked_at IS NOT NULL AND NEW.identity_checked_at < NEW.received_at)
     OR (OLD.identity_checked_at IS NOT NULL AND NEW.identity_checked_by IS NOT OLD.identity_checked_by)
     OR (NEW.identity_checked_by IS NOT NULL AND NEW.identity_checked_by IS NOT OLD.identity_checked_by AND NOT EXISTS (SELECT 1 FROM staff_users s WHERE s.id = NEW.identity_checked_by AND s.status = 'active'))
     OR (NEW.acknowledged_at IS NOT NULL AND NEW.acknowledged_at < NEW.received_at)

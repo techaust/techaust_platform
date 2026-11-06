@@ -873,6 +873,31 @@ describe("client_requests: kinds, clock, steps and close (A.1, A.6, L28; RB-47)"
       );
     await rejects(logged(received), /client_requests_clock_insert/);
     await logged(null);
+    // Early check 1 re-check N1: a portal row that arrived unchecked is never later "checked by its sign-in" (no staff member); only the insert may say so.
+    await portal(null);
+    const unchecked = await first<{ id: string }>(
+      "SELECT id FROM client_requests WHERE client_id = ?1 AND channel = 'portal' AND identity_checked_at IS NULL",
+      client,
+    );
+    if (!unchecked) throw new Error("no unchecked portal request");
+    await rejects(
+      run("UPDATE client_requests SET identity_checked_at = received_at WHERE id = ?1", unchecked.id),
+      /client_requests_steps/,
+    );
+    // N2: a staff member's check is never dated before the request arrived; at or after it is allowed.
+    await rejects(
+      run(
+        "UPDATE client_requests SET identity_checked_at = received_at - 1, identity_checked_by = ?2 WHERE id = ?1",
+        unchecked.id,
+        staff,
+      ),
+      /client_requests_steps/,
+    );
+    await run(
+      "UPDATE client_requests SET identity_checked_at = received_at, identity_checked_by = ?2 WHERE id = ?1",
+      unchecked.id,
+      staff,
+    );
     await rejects(
       run(
         "UPDATE client_requests SET identity_checked_at = received_at WHERE client_id = ?1 AND channel = 'email'",

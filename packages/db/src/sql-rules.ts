@@ -349,7 +349,9 @@ export const istDayStartSql = (now: string): string =>
  * `REQUESTS_PER_DAY`, 429 `too_many_requests`). One range seek of `client_requests_contact`.
  */
 export const REQUESTS_TODAY_SQL = (contact: string, now: string): string =>
-  `(SELECT count(*) FROM client_requests rq INDEXED BY client_requests_contact WHERE rq.contact_id = ${contact} AND rq.created_at >= ${istDayStartSql(now)})`;
+  `(SELECT count(*) FROM client_requests rq INDEXED BY client_requests_contact WHERE rq.contact_id = ${contact} AND rq.created_at >= ${istDayStartSql(now)} AND rq.channel = 'portal')`;
+// M7.4 (M7.1 early check 1 note 1): only the contact's own portal requests count against the daily cap; a request staff logged for them (email, post,
+// phone, in person) never stops them sending one from the portal.
 
 /** Core `NOTICE_TYPES`, `NOTICE_OPEN_STATUSES` and `NOTICE_PROFORMA_STATUSES` (a test pins them). */
 export const NOTICE_TYPES_SQL = "('tax_invoice', 'export_invoice', 'debit_note', 'proforma')";
