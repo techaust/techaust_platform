@@ -51,14 +51,26 @@ export const RESET_ROW_MARGIN_MS = 5 * 60_000;
  * next run takes this path. So when the member carries the reset's own mark (invited, no password, no authenticator) and no `user.reset_2fa` row is dated
  * since its `updated_at` (less `RESET_ROW_MARGIN_MS`), both rows are written now (`resetAuditId`, then `alertId` guarded on it), as `resetStatements` would
  * have. A member who already has the row, or who has set a password since (an enrolment begun), gets neither.
+ *
+ * M7.5 (L44): the same cut-short run also left the member's recovery codes, known devices and live sessions, and enrolment adds new codes without deleting
+ * old ones. So the reset's three clean-up statements run here too, on any invited member (L46, wider than `resetMark`): idempotent, they change nothing after
+ * a reset that ran in full, and nothing for any other status. A member who began enrolment through an older live invite is cleaned up too.
  * @param {{ email: string, tokenHash: string, now: number, expiresAt: number, auditId: string, resetAuditId: string, alertId: string }} p
  * @returns {string[]}
  */
 export function reinviteStatements({ email, tokenHash, now, expiresAt, auditId, resetAuditId, alertId }) {
   const e = q(email);
   const invited = `SELECT 1 FROM staff_users WHERE email = ${e} AND status = 'invited'`;
-  const unrecorded = `email = ${e} AND status = 'invited' AND pw_hmac IS NULL AND totp_secret_enc IS NULL AND totp_enabled_at IS NULL AND NOT EXISTS (SELECT 1 FROM audit_log a WHERE a.action = 'user.reset_2fa' AND a.entity_type = 'staff_user' AND a.entity_id = staff_users.id AND a.at >= staff_users.updated_at - ${RESET_ROW_MARGIN_MS})`;
+  const resetMark = `email = ${e} AND status = 'invited' AND pw_hmac IS NULL AND totp_secret_enc IS NULL AND totp_enabled_at IS NULL`;
+  // M7.5 (L46): the clean-up runs on any invited member (one who began enrolment through an older live invite after a cut-short run no longer carries the mark,
+  // and enrolment adds codes without deleting old ones). Safe: an invited member can hold no valid code, device or session (codes are inserted in the batch that
+  // activates). The audit rows keep the full `resetMark`.
+  const marked = `SELECT id FROM staff_users WHERE email = ${e} AND status = 'invited'`;
+  const unrecorded = `${resetMark} AND NOT EXISTS (SELECT 1 FROM audit_log a WHERE a.action = 'user.reset_2fa' AND a.entity_type = 'staff_user' AND a.entity_id = staff_users.id AND a.at >= staff_users.updated_at - ${RESET_ROW_MARGIN_MS})`;
   return [
+    `DELETE FROM staff_recovery_codes WHERE user_id IN (${marked});`,
+    `DELETE FROM staff_known_devices WHERE user_id IN (${marked});`,
+    `UPDATE staff_sessions SET revoked_at = ${now} WHERE revoked_at IS NULL AND user_id IN (${marked});`,
     `UPDATE staff_invites SET expires_at = ${now} WHERE email = ${e} AND used_at IS NULL AND expires_at > ${now} AND EXISTS (${invited});`,
     `INSERT INTO staff_invites (token_hash, email, role, invited_by, expires_at) SELECT ${q(tokenHash)}, email, role, NULL, ${expiresAt} FROM staff_users WHERE email = ${e} AND status = 'invited';`,
     `INSERT INTO audit_log (id, actor_type, actor_id, action, entity_type, entity_id, summary) SELECT ${q(auditId)}, 'system', NULL, 'user.invite', 'staff_invite', ${q(tokenHash)}, '{"via":"cli"}' FROM staff_users WHERE email = ${e} AND status = 'invited';`,

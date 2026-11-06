@@ -27,6 +27,7 @@ import {
   CODE_RELEASE_SQL,
   enrolCodesGuard,
   insertRecoveryCodes,
+  SIGNIN_PENDING_SPENT_SQL,
 } from "./auth.ts";
 import front from "./index.ts";
 import { ADDRESS_LIMITED } from "./rate-limit.ts";
@@ -549,6 +550,50 @@ describe("L34: a right code on a spent challenge is 401 challenge_used, uncounte
       code: "challenge_used",
       message: "This sign-in has already been used. Enter your password again.",
     });
+  });
+});
+
+describe("L45: challenge_used also deletes that challenge's unfinished sign-in marker, in the same call", () => {
+  const pendingOf = (id: string) => countOf("staff_signin_pending", "user_id = ?1", id);
+
+  it("/totp: a wrong code leaves the marker; the right one deletes it, in the request's second (and last) D1 call", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const stale = await challengeFor(s.email, s.clientHash);
+    expect(await pendingOf(s.id)).toBe(1);
+    expect((await signIn(s)).res.status).toBe(200); // the other tab: its own marker is deleted by its session batch
+    expect(await pendingOf(s.id)).toBe(1); // the stale challenge's marker is left
+    await env.DB.prepare("UPDATE staff_users SET totp_last_step = NULL WHERE id = ?1").bind(s.id).run();
+    const wrong = await call("/auth/totp", { body: { challenge: stale, code: wrongCode(s.secret) } });
+    expect((await bodyOf(wrong)).error).toMatchObject({ code: "invalid_credentials" });
+    expect(await pendingOf(s.id)).toBe(1);
+    const c = counted();
+    const res = await call("/auth/totp", { body: { challenge: stale, code: nowCode(s.secret) } }, c.env);
+    expect((await bodyOf(res)).error).toMatchObject({ code: "challenge_used" });
+    expect(c.calls()).toBe(2); // the counter's batch, then one call: the release, the marker and the access row
+    expect(await pendingOf(s.id)).toBe(0);
+  });
+
+  it("/recovery: the right recovery code on a spent challenge deletes the marker too", async () => {
+    const s = await sessionFor("staff", { password: true });
+    const stale = await challengeFor(s.email, s.clientHash);
+    const code = await storedRecoveryCode(s.id);
+    expect((await signIn(s)).res.status).toBe(200);
+    expect(await pendingOf(s.id)).toBe(1);
+    const res = await call("/auth/recovery", { body: { challenge: stale, code } });
+    expect((await bodyOf(res)).error).toMatchObject({ code: "challenge_used" });
+    expect(await pendingOf(s.id)).toBe(0);
+  });
+
+  it("the delete names one challenge of one member: another member's row with the same id is left", async () => {
+    const a = await sessionFor("staff");
+    const b = await sessionFor("staff");
+    const jti = "l45sharedchallengeid00";
+    await env.DB.prepare("INSERT INTO staff_signin_pending (id, user_id, at) VALUES (?1, ?2, ?3)")
+      .bind(jti, b.id, Date.now())
+      .run();
+    expect((await env.DB.prepare(SIGNIN_PENDING_SPENT_SQL).bind(jti, a.id).run()).meta.changes).toBe(0);
+    expect(await pendingOf(b.id)).toBe(1);
+    expect((await env.DB.prepare(SIGNIN_PENDING_SPENT_SQL).bind(jti, b.id).run()).meta.changes).toBe(1);
   });
 });
 
