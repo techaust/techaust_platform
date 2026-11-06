@@ -109,6 +109,11 @@ for (const theme of ["light", "dark"] as const)
     test(`the usage tile at ${width} px, in-app ${theme} against the OS's other theme: rows, strips, axe, no sideways scroll`, async ({
       page,
     }) => {
+      const consoleErrors: string[] = [];
+      page.on("console", (m) => {
+        if (m.type() === "error") consoleErrors.push(m.text());
+      });
+      page.on("pageerror", (e) => consoleErrors.push(e.message));
       await open(page, width, theme);
       const tile = tileOf(page);
       await expect(tile.getByText("Worker requests", { exact: true })).toBeVisible();
@@ -148,6 +153,7 @@ for (const theme of ["light", "dark"] as const)
       if (SHOTS) await tile.screenshot({ path: `${SHOTS}/tile-table-${width}-${theme}.png` });
       await noSideways(page, `table at ${width} (${theme})`);
       expect.soft(await axe(page), `table at ${width} (${theme})`).toEqual([]);
+      expect(consoleErrors, "no console errors").toEqual([]);
     });
 
 test("each strip is one keyboard stop: the arrow keys walk the days read, the readout follows, Escape hides it", async ({
