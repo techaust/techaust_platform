@@ -97,6 +97,24 @@ test.beforeAll(() => {
   );
 });
 
+// The requests this run wrote, closed again at the end (declined as a duplicate; one already closed answers 409 and is left as it is), so the next run on
+// the same database finds a free contact of the same client for its own (one open request per contact and kind; M7.4 review 1 low 8).
+test.afterAll(async ({ browser }) => {
+  const ctx = await browser.newContext({ baseURL: ORIGIN, storageState: here("../.e2e/owner-state.json") });
+  try {
+    for (const n of [1, 2, 3]) {
+      const res = await ctx.request.post(`/api/v1/client-requests/req-${run}-${n}/close`, {
+        headers: { Origin: ORIGIN },
+        data: { outcome: "declined", declineReason: "duplicate" },
+      });
+      // closed now, closed by the test already, or never written (no free contact)
+      expect([200, 404, 409], await res.text()).toContain(res.status());
+    }
+  } finally {
+    await ctx.close();
+  }
+});
+
 async function axe(page: Page) {
   const r = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])

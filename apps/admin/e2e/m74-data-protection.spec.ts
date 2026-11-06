@@ -96,6 +96,24 @@ test.beforeAll(() => {
   );
 });
 
+// The portal requests this run wrote, closed again at the end (declined as a duplicate; one already closed answers 409 and is left as it is), so the next
+// run on the same database finds free contacts for its own (one open request per contact and kind) and never a stale twin (review 1 low 8).
+test.afterAll(async ({ browser }) => {
+  const ctx = await browser.newContext({ baseURL: ORIGIN, storageState: here("../.e2e/owner-state.json") });
+  try {
+    for (const kind of ["data_access", "grievance", "data_correction", "contact_change"]) {
+      const res = await ctx.request.post(`/api/v1/client-requests/req-m74-${run}-${kind}/close`, {
+        headers: { Origin: ORIGIN },
+        data: { outcome: "declined", declineReason: "duplicate" },
+      });
+      // closed now, closed by the test already, or never written (no free contact)
+      expect([200, 404, 409], await res.text()).toContain(res.status());
+    }
+  } finally {
+    await ctx.close();
+  }
+});
+
 async function axe(page: Page) {
   const r = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
@@ -468,6 +486,11 @@ test("a lead erase refused as too_many_leads lists the enquiries' references und
   page,
 }) => {
   await stepUp(page);
+  // no console error but the refused request's own line (the browser logs every 4xx answer)
+  const consoleErrors: string[] = [];
+  page.on("console", (m) => {
+    if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) consoleErrors.push(m.text());
+  });
   const refs = Array.from(
     { length: 50 },
     (_, i) => `L-${(0x2a000 + i * 37).toString(36).toUpperCase().padStart(5, "0")}`,
@@ -525,6 +548,7 @@ test("a lead erase refused as too_many_leads lists the enquiries' references und
       await erase.getByRole("button", { name: "Cancel" }).click();
       await expect(erase).toHaveCount(0);
     }
+  expect(consoleErrors).toEqual([]);
 });
 
 for (const theme of ["light", "dark"] as const)
