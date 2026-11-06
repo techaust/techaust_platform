@@ -1,9 +1,10 @@
 // A small CSV writer with typed cells (M5.5a; ADM-REP-04). RFC 4180: comma separator, every record (the header too) ends in
 // CRLF, a field holding a quote, comma, CR or LF is quoted with the quotes doubled, UTF-8. A byte-order mark only on request
 // (v1 writes none: UNVERIFIED whether the Offline Tool wants one).
-// Spreadsheet-formula defence: a TEXT cell that starts with `= + - @`, a tab or a CR gets a `'` in front (the set of
-// `apps/admin/src/lib/audit.ts` `csvCell`). A NUMERIC cell is never defused, so `-500.00` stays a number; numeric cells
+// Spreadsheet-formula defence: a TEXT cell that starts with `= + - @`, a tab or a CR gets a `'` in front (the one shared
+// defuser, `@techaust/core/csv-cell`, M7.5 B1). A NUMERIC cell is never defused, so `-500.00` stays a number; numeric cells
 // come only from `cell.amount`, `cell.rate`, `cell.count`, `cell.date`: there is no string-to-number path.
+import { defuse, quoteField } from "../csv-cell.ts";
 import type { CalendarDate } from "../dates.ts";
 import { formatAmount, formatCount, formatDate, formatMicros, formatRate } from "./format.ts";
 
@@ -20,10 +21,8 @@ type CellShape =
 export type Cell = CellShape & { readonly [cellBrand]: true };
 const make = (c: CellShape): Cell => c as Cell;
 
-const FORMULA_START = /^[=+\-@\t\r]/;
-
-/** A leading `= + - @`, tab or CR gets a `'` prefix, so a spreadsheet reads the text as text. */
-export const defuse = (text: string): string => (FORMULA_START.test(text) ? `'${text}` : text);
+/** The shared defuser (M7.5 B1), re-exported under its old name for the layouts and their tests. */
+export { defuse };
 
 export const cell = {
   /** Free text (names, addresses, numbers of documents): defused when written. */
@@ -41,14 +40,10 @@ export const cell = {
   blank: (): Cell => make({ kind: "blank" }),
 };
 
-const NEEDS_QUOTES = /[",\r\n]/;
-const quote = (field: string): string =>
-  NEEDS_QUOTES.test(field) ? `"${field.replaceAll('"', '""')}"` : field;
-
 /** One cell as its CSV field. */
 export function field(c: Cell): string {
   if (c.kind === "blank") return "";
-  return quote(c.kind === "text" ? defuse(c.value) : c.value);
+  return quoteField(c.kind === "text" ? defuse(c.value) : c.value);
 }
 
 export type CsvOptions = { readonly bom?: boolean };
