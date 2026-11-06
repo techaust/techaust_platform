@@ -56,7 +56,8 @@ export function LegalHoldPanel(props: {
       <h2 id={titleId} className="lead-panel__title">
         {ZR_HOLD.title}
       </h2>
-      <HoldBody {...props} />
+      {/* the page shows S1 in its banner, so the panel shows the pill alone while held */}
+      <HoldBody {...props} bannerShown />
       {canManage && (
         <button type="button" className="btn btn--secondary" onClick={() => setChanging(true)}>
           <Lock size={16} />
@@ -139,7 +140,7 @@ export function ContactHoldDialog(props: {
   );
 }
 
-function HoldBody(props: { entityType: HoldEntity; entityId: string; held: boolean }) {
+function HoldBody(props: { entityType: HoldEntity; entityId: string; held: boolean; bannerShown?: boolean }) {
   // The history (and the hold as the server has it now); a role that can't read it (403) still sees the page's own flag.
   const history = useLoad(
     () => m74Api.holds(props.entityType, props.entityId),
@@ -156,7 +157,7 @@ function HoldBody(props: { entityType: HoldEntity; entityId: string; held: boole
             {ZR_HOLD.onPill}
           </StatusPill>
         ) : null}
-        <span>{held ? ZR_HOLD.on : ZR_HOLD.off}</span>
+        {!(held && props.bannerShown) && <span>{held ? ZR_HOLD.on : ZR_HOLD.off}</span>}
       </p>
       {!forbidden && (
         <div className="dp-hold__history">

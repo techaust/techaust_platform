@@ -9,8 +9,8 @@ export function reportBellHref(kind: string, link: string): string {
     const id = link.slice("/invoices/".length).split(/[?#]/)[0] ?? "";
     return `/reports/realisation?doc=${id}`;
   }
-  // M7.4 (G.6): the clean-up's bells (report ready, done with holds, stuck file deletions) land on Settings › Data retention's report itself.
-  if ((kind.startsWith("retention.") || kind === "r2.stuck") && link === "/settings/retention")
-    return `${link}#dp-report`;
+  // M7.4 (G.6): the clean-up's bells (report ready, done with holds, stuck file deletions, and M7.2's `job.failed` for a dead-lettered live page, entity
+  // `retention_run`) land on Settings › Data retention's report itself.
+  if (link === "/settings/retention") return `${link}#dp-report`;
   return link;
 }

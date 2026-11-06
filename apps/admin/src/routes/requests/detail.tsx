@@ -223,7 +223,8 @@ function RequestBody(props: {
             <dt>{ZR_DETAIL.channel}</dt>
             <dd>{channelText(r.channel)}</dd>
           </div>
-          {r.dueAt !== null && (
+          {/* the open request's reply date is its clock above; a closed one keeps the date as a fact */}
+          {r.dueAt !== null && r.status !== "open" && (
             <div>
               <dt>{ZR_DETAIL.replyBy}</dt>
               <dd>{dayText(r.dueAt)}</dd>
@@ -288,7 +289,7 @@ function RequestBody(props: {
       )}
       <div className="dialog__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onClose} disabled={busy !== null}>
-          Close
+          {ZR_DETAIL.dismiss}
         </button>
         {r.canClose && (
           <button

@@ -5,6 +5,7 @@
 // delete or deleted, kept for a legal hold, the oldest), the leads due within 14 days, and "Allow emails again to an erased address". The clean-up's bells
 // land on the report (`#dp-report`, lib/bell-links.ts).
 import "../../dp.css";
+import { formatIstMoment } from "@techaust/core/dates";
 import { useEffect, useId, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { RequestError, stepUpActive } from "../../api.ts";
@@ -210,7 +211,7 @@ function Reports({ report }: { report: RetentionReport }) {
       align: "end",
       cell: (c) =>
         c.done || c.due > 0 ? (
-          <span className="num">{c.due.toLocaleString("en-IN")}</span>
+          <Count n={c.due} />
         ) : (
           <span className="muted">{ZR_RETENTION.partsPending}</span>
         ),
@@ -219,12 +220,7 @@ function Reports({ report }: { report: RetentionReport }) {
       key: "held",
       header: ZR_RETENTION.colHeld,
       align: "end",
-      cell: (c) =>
-        c.heldSkipped > 0 ? (
-          <span className="num">{c.heldSkipped.toLocaleString("en-IN")}</span>
-        ) : (
-          <span className="muted">{ZR_RETENTION.none}</span>
-        ),
+      cell: (c) => <Count n={c.heldSkipped} />,
     },
     {
       key: "oldest",
@@ -266,7 +262,7 @@ function Reports({ report }: { report: RetentionReport }) {
                     checked={run.id === x.id}
                     onChange={() => setPicked(x.id)}
                   />
-                  {ZR_RETENTION.runLabel(dayText(x.asOf), x.mode)}
+                  {ZR_RETENTION.runLabel(formatIstMoment(x.asOf), x.mode)}
                 </label>
               ))}
             </div>
@@ -282,7 +278,7 @@ function Reports({ report }: { report: RetentionReport }) {
             )}
           </p>
           <DataTable
-            caption={`${ZR_RETENTION.reportTitle}: ${ZR_RETENTION.runLabel(dayText(run.asOf), run.mode)}`}
+            caption={`${ZR_RETENTION.reportTitle}: ${ZR_RETENTION.runLabel(formatIstMoment(run.asOf), run.mode)}`}
             columns={columns}
             rows={run.counts.map((c) => ({ ...c, key: c.family }))}
             rowKey={(c) => c.key}
@@ -291,6 +287,11 @@ function Reports({ report }: { report: RetentionReport }) {
       )}
     </section>
   );
+}
+
+/** A count in the report: the figure, a zero muted so the rows with something to do stand out. */
+function Count({ n }: { n: number }) {
+  return <span className={n === 0 ? "num muted" : "num"}>{n.toLocaleString("en-IN")}</span>;
 }
 
 function LeadsDue({ report }: { report: RetentionReport }) {

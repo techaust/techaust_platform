@@ -143,7 +143,7 @@ test("the inbox: the clock and the filters, a request's steps, and its close wit
   await expect(overdue.first().getByText("Overdue", { exact: true })).toBeVisible();
   await shot(page, "inbox-open-1280");
   // Show › Due within 5 days: only the grievance received 27 days ago
-  await page.getByRole("radio", { name: "Due within 5 days" }).check();
+  await page.getByRole("radio", { name: "Due within 5 days" }).click();
   await expect(page).toHaveURL(/show=due_soon/);
   await expect(
     page
@@ -152,7 +152,7 @@ test("the inbox: the clock and the filters, a request's steps, and its close wit
       .first(),
   ).toBeVisible();
   await expect(page.locator("tbody tr", { hasText: "Copy of their personal data" })).toHaveCount(0);
-  await page.getByRole("radio", { name: "Not acknowledged" }).check();
+  await page.getByRole("radio", { name: "Not acknowledged" }).click();
   await expect(
     page.locator("tbody tr", { hasText: "Correction of their personal data" }).first(),
   ).toBeVisible();
@@ -320,7 +320,7 @@ test("Settings › Data retention: six figures, the trial report, real deletion 
     "Consent records",
     "Audit log and financial records",
   ])
-    await expect(page.getByText(label, { exact: true })).toBeVisible();
+    await expect(page.locator(".settings-rows").getByText(label, { exact: true })).toBeVisible();
   const report = page.getByRole("region", { name: "Clean-up reports" });
   await expect(report.getByRole("cell", { name: "Expired sign-in sessions and links" })).toBeVisible();
   await expect(report.getByRole("columnheader", { name: "Would delete" })).toBeVisible();
@@ -372,7 +372,11 @@ test("the erase dialog's in-parts state (F5; the API's answers mocked)", async (
     return route.fulfill({ json: { ok: true, mode: "anonymise" } });
   });
   await page.goto("/clients");
-  await page.locator('a[href^="/clients/"]').filter({ visible: true }).first().click();
+  await page
+    .locator(".dtable a[href^='/clients/']:not([href$='/new'])")
+    .filter({ visible: true })
+    .first()
+    .click();
   await page.getByRole("tab", { name: "Contacts" }).click();
   await page
     .getByRole("button", { name: /^Data tools/ })
@@ -431,7 +435,11 @@ for (const theme of ["light", "dark"] as const)
       await shot(page, `retention-${tag}`);
       // a client's overview with its legal-hold panel
       await page.goto("/clients");
-      await page.locator('a[href^="/clients/"]').filter({ visible: true }).first().click();
+      await page
+        .locator(".dtable a[href^='/clients/']:not([href$='/new'])")
+        .filter({ visible: true })
+        .first()
+        .click();
       await expect(page.getByRole("region", { name: "Legal hold" })).toBeVisible();
       await page.waitForLoadState("networkidle");
       expect(await axe(page), "client").toEqual([]);

@@ -176,6 +176,8 @@ export const ZR_DETAIL = {
   openLead: "Open the lead",
   ownerOnly: "Only the Owner can close a request about personal data.",
   closeButton: "Close request",
+  /** The dialog's way out (never "Close", which would read like closing the request). */
+  dismiss: "Back to requests",
   back: "Back to the request",
   notInList: "This request isn't in the list shown. It may be closed: choose Closed under Show.",
   dialogTitle: (kind: string) => kind,
@@ -313,13 +315,13 @@ export const ZR_RETENTION = {
   reportEmpty: "No clean-up has run yet. The first report arrives after tonight's run.",
   reportFailed: "The clean-up reports didn't load.",
   runPicker: "Run",
-  runLabel: (date: string, mode: string) => `${date}, ${mode === "live" ? "real deletion" : "trial"}`,
+  /** `when` is the run's IST date and time ("05 Nov 2026, 22:00 IST"), so two runs of one day are told apart. */
+  runLabel: (when: string, mode: string) => `${when}, ${mode === "live" ? "real deletion" : "trial"}`,
   running: "Still running",
   colWhat: "Records",
   colDue: (live: boolean) => (live ? "Deleted" : "Would delete"),
   colHeld: "Kept for a legal hold",
   colOldest: "Oldest",
-  none: "None",
   partsPending: "Not counted yet",
   family: {
     email_log: "Email log",

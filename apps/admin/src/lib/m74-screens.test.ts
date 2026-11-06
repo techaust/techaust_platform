@@ -351,7 +351,7 @@ describe("Log a request: the checks before the API (C.2, L22, L28)", () => {
 
 describe("the clean-up's bells land on the report (G.6)", () => {
   it("report ready, done with holds, stuck deletions; anything else as written", () => {
-    for (const k of ["retention.report_ready", "retention.done_with_holds", "r2.stuck"])
+    for (const k of ["retention.report_ready", "retention.done_with_holds", "r2.stuck", "job.failed"])
       expect(reportBellHref(k, "/settings/retention")).toBe("/settings/retention#dp-report");
     expect(reportBellHref("request.overdue", "/requests?id=x")).toBe("/requests?id=x");
   });
