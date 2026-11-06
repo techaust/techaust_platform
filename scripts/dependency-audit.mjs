@@ -5,7 +5,10 @@
 //
 // The allow-list is the only way through: never turn the step off. An entry names one advisory for one package, says why it is
 // accepted (a false positive, an advisory without a fix, or a fix that is waiting for an update of its parent package), when it was
-// added and by whom, and an expiry date at most 90 days after it was added. The step also fails when:
+// added and by whom, and an expiry date at most 90 days after it was added. Since M7.5 (section F, audit-workflows low 3) an entry is
+// also BOUND to what was reviewed: `versions` (the installed versions it covers) and/or `via` (dependency paths, `>`-separated as
+// pnpm prints them; `*` is one package, `**` any number). A finding of that advisory at another version or through another path (a
+// Worker runtime package, say) is blocked as if the entry did not exist. The step also fails when:
 //   - an entry has expired (review it again: renew it with a new reason, or update the package);
 //   - an entry is stale (that advisory is no longer reported at high or critical for that package: delete the entry);
 //   - an entry is malformed;
@@ -41,6 +44,7 @@ export function advisoriesOf(text) {
     title: String(a.title ?? ""),
     patched: a.patched_versions ?? null,
     paths: (a.findings ?? []).flatMap((f) => f.paths ?? []),
+    findings: (a.findings ?? []).map((f) => ({ version: String(f.version ?? ""), paths: f.paths ?? [] })),
   }));
 }
 
@@ -71,12 +75,58 @@ export function allowListProblems(entries) {
       if (span > MAX_ALLOW_DAYS)
         problems.push(`${at}: "expires" is more than ${MAX_ALLOW_DAYS} days after "added"`);
     }
+    const bound = ["versions", "via"].filter((k) => e[k] !== undefined);
+    if (bound.length === 0) problems.push(`${at}: bind it with "versions" or "via" (what was reviewed)`);
+    for (const k of bound)
+      if (
+        !Array.isArray(e[k]) ||
+        e[k].length === 0 ||
+        !e[k].every((x) => typeof x === "string" && x.trim().length > 0)
+      )
+        problems.push(`${at}: "${k}" must be a non-empty list of strings`);
+    if (Array.isArray(e.via))
+      for (const v of e.via)
+        if (typeof v === "string" && /^\*\*?(>\*\*?)*$/.test(v))
+          problems.push(`${at}: "via" ${v} matches every path`);
     const key = `${e.advisory}|${e.package}`;
     if (seen.has(key)) problems.push(`${at}: listed twice`);
     seen.add(key);
   }
   return problems;
 }
+
+/** Does a `via` pattern match one dependency path? Segments split on `>`; `*` is one segment, `**` zero or more. */
+export function viaMatches(pattern, path) {
+  const want = pattern.split(">");
+  const got = path.split(">");
+  const at = (i, j) => {
+    if (i === want.length) return j === got.length;
+    if (want[i] === "**") {
+      for (let k = j; k <= got.length; k++) if (at(i + 1, k)) return true;
+      return false;
+    }
+    return j < got.length && (want[i] === "*" || want[i] === got[j]) && at(i + 1, j + 1);
+  };
+  return at(0, 0);
+}
+
+/** Every finding of an advisory inside what the entry was reviewed for: its `versions` and its `via` paths (each when given). */
+export function coveredBy(entry, advisory) {
+  const findings = advisory.findings ?? [{ version: "", paths: advisory.paths ?? [] }];
+  return findings.every(
+    (f) =>
+      (entry.versions === undefined || entry.versions.includes(f.version)) &&
+      (entry.via === undefined || f.paths.every((p) => entry.via.some((v) => viaMatches(v, p)))),
+  );
+}
+
+/** The findings of an advisory an entry does not cover (for the BLOCKED line). */
+const uncovered = (entry, a) =>
+  (a.findings ?? []).flatMap((f) => {
+    if (entry.versions !== undefined && !entry.versions.includes(f.version)) return [`version ${f.version}`];
+    if (entry.via === undefined) return [];
+    return f.paths.filter((p) => !entry.via.some((v) => viaMatches(v, p))).map((p) => `via ${p}`);
+  });
 
 /**
  * The verdict for one audit against the allow-list on a given day (`today`, YYYY-MM-DD, UTC). `blocked`: gated advisories with no
@@ -92,8 +142,17 @@ export function verdict(advisories, entries, today) {
     else live.set(`${e.advisory}|${e.package}`, e);
   }
   const reported = new Set(gated.map((a) => `${a.id}|${a.pkg}`));
-  const blocked = gated.filter((a) => !live.has(`${a.id}|${a.pkg}`));
-  const allowed = gated.filter((a) => live.has(`${a.id}|${a.pkg}`));
+  const covered = (a) => {
+    const e = live.get(`${a.id}|${a.pkg}`);
+    return e !== undefined && coveredBy(e, a);
+  };
+  const blocked = gated
+    .filter((a) => !covered(a))
+    .map((a) => {
+      const e = live.get(`${a.id}|${a.pkg}`);
+      return e === undefined ? a : { ...a, outside: uncovered(e, a) };
+    });
+  const allowed = gated.filter(covered);
   const stale = entries.filter((e) => !reported.has(`${e.advisory}|${e.package}`));
   return { blocked, expired, stale, allowed, problems: allowListProblems(entries) };
 }
@@ -120,7 +179,9 @@ export function report(v, advisories) {
   for (const p of v.problems) lines.push(`allow-list problem: ${p}`);
   for (const a of unique(v.blocked, (x) => `${x.id}|${x.pkg}`))
     lines.push(
-      `BLOCKED ${a.severity} ${a.id} ${a.pkg} (${a.title}); fixed in ${a.patched ?? "no release yet"}; via ${a.paths[0] ?? "?"}`,
+      a.outside
+        ? `BLOCKED ${a.severity} ${a.id} ${a.pkg} (${a.title}): outside its allow-list entry's binding (${a.outside.slice(0, 3).join("; ")}); review the new version or path`
+        : `BLOCKED ${a.severity} ${a.id} ${a.pkg} (${a.title}); fixed in ${a.patched ?? "no release yet"}; via ${a.paths[0] ?? "?"}`,
     );
   for (const e of v.expired)
     lines.push(
