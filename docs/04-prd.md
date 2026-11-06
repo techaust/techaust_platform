@@ -503,6 +503,7 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Send a receipt again to 1 to 5 contacts who can see finance (`invoices.send`; M7.2, ADM-PAY-09) | 📤 | 📤 | — | — |
 | Refunds | ✅ (step-up) | — | — | 👁 |
 | Reports | ✅ | Projects, time, care plans | Pipeline only | ✅ finance + exports |
+| Free-plan usage tile and its alerts: yesterday's account usage against each Cloudflare Free limit (`usage.read`; M7.5 Q4 A, L40) | ✅ | — | — | 👁 |
 | GST/CA exports | ✅ (step-up) | — | — | ✅ (step-up) |
 | Audit log | ✅ | — | — | 👁 finance events |
 | Approvals queue | ✅ | own requests | own requests | — |
