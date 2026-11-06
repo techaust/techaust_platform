@@ -11,7 +11,7 @@ import type { Currency } from "../../api.ts";
 import { ChartFrame, Legend, SegmentedBar, type Tone } from "../../components/chart/index.ts";
 import { type Column, DataTable } from "../../components/data-table.tsx";
 import { EmptyState } from "../../components/display.tsx";
-import { CheckCircle } from "../../components/icons.tsx";
+import { CheckCircle, FileText } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { moneyText } from "../../lib/documents.ts";
 import { type AgeingTotals, m73Api, readPages } from "../../lib/m73-api.ts";
@@ -202,13 +202,21 @@ function CurrencyBlock(props: { currency: Currency; rows: AgeingRow[]; total: Ag
       header: A.statement,
       cell: (r) =>
         r.isTotal ? (
-          <span className="m73-zero" aria-hidden="true">
+          <span className="m73-zero m73-statement-none" aria-hidden="true">
             –
           </span>
         ) : (
-          <Link to={`/clients/${encodeURIComponent(r.client.id)}?tab=statement`} className="m73-statement">
-            {A.openStatement}
-            <span className="visually-hidden">: {r.client.name}</span>
+          // the statement as a document icon under the "Statement" column (its words for a screen reader and on hover), so nine columns fit a laptop's
+          // width (review 1, finding 3)
+          <Link
+            to={`/clients/${encodeURIComponent(r.client.id)}?tab=statement`}
+            className="m73-statement"
+            title={A.openStatement}
+          >
+            <FileText />
+            <span className="visually-hidden">
+              {A.openStatement}: {r.client.name}
+            </span>
           </Link>
         ),
     },
@@ -239,7 +247,7 @@ function CurrencyBlock(props: { currency: Currency; rows: AgeingRow[]; total: Ag
         </p>
         <SegmentedBar size="thin" label={title} parts={parts} />
       </ChartFrame>
-      <div className="m73-table m73-table--wide">
+      <div className="m73-table m73-table--wide m73-table--ageing">
         <DataTable
           caption={title}
           columns={columns}

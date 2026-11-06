@@ -937,6 +937,30 @@
   white-space: normal;
 }
 
+/* The ageing's nine columns fit a laptop (1280 px, review 1 finding 3): closer cells, the client's name wraps sooner, the statement is an icon; the box still
+   scrolls in its own frame when the amounts are very long. */
+.m73-table.m73-table--ageing .dtable__table :is(th, td) {
+  padding-inline: var(--space-2);
+}
+
+.m73-table.m73-table--ageing .dtable__table :is(th, td):first-child {
+  padding-inline-start: var(--space-4);
+}
+
+.m73-table.m73-table--ageing .dtable__table :is(th, td):last-child {
+  padding-inline-end: var(--space-4);
+}
+
+.m73-table--ageing .dtable__table :is(thead th, tbody th, tfoot th):first-child {
+  min-width: 9rem;
+}
+
+/* The bucket headings wrap onto two lines ("Over 90 / days") so the amounts, not the words, set each column's width. */
+.m73-table.m73-table--ageing .dtable__table thead th {
+  white-space: normal;
+  line-height: var(--text-sm--line-height);
+}
+
 .m73-grid {
   display: grid;
   gap: var(--space-6);
@@ -994,8 +1018,23 @@
 .m73-statement {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: var(--target-min);
   min-height: var(--target-min);
-  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+}
+
+.m73-statement:hover {
+  color: var(--color-text-accent);
+  background: var(--color-surface-alt);
+}
+
+/* The totals row has no statement: its dash sits where the icons do. */
+.m73-statement-none {
+  display: inline-flex;
+  justify-content: center;
+  min-width: var(--target-min);
 }
 
 .m73-note {
