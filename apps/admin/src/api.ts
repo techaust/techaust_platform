@@ -1257,6 +1257,11 @@ const PAYMENT_DETAIL_KEYS = [
   "clientCode",
   "clientName",
   "paymentId",
+  // M7.4 (the designer's finding after review 1): the M6.2 and M6.5 screens read these, and they were dropped here, so the refund buttons never
+  // waited for `retryAfterS`, the refund dialog never saw `noteReason` and the gateway notice never saw `reason`.
+  "reason",
+  "noteReason",
+  "retryAfterS",
 ] as const;
 /** M7.4 review low 11: the `error.details` keys that hold a list of strings (`too_many_leads` names its `refs`). Only a list whose every item is a
  * string is copied, at most `MAX_DETAIL_LIST` items; any other value under these keys (and any list under the keys above) is dropped as before. */

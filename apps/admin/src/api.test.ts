@@ -145,6 +145,25 @@ describe("API client: step-up and expired sessions [ADM-AUTH-08, ADM-AUTH-05]", 
     }
   });
 
+  it("keeps the refund and gateway details the payment screens read: retryAfterS, noteReason, reason (M7.4, after review 1) [ADM-PAY-08]", async () => {
+    const refusal = (code: string, details: unknown) => json(409, { error: { code, message: "x", details } });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(refusal("too_soon", { retryAfterS: 42 }))
+        .mockResolvedValueOnce(refusal("note_required", { noteReason: "service_not_delivered" }))
+        .mockResolvedValueOnce(refusal("gateway_refused", { reason: "link_expired", other: "dropped" })),
+    );
+    const soon = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    expect(soon.extra).toEqual({ details: { retryAfterS: 42 } });
+    const note = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    expect(note.extra).toEqual({ details: { noteReason: "service_not_delivered" } });
+    const gw = (await api.deactivate("u1").catch((x: unknown) => x)) as RequestError;
+    // `reason` also stays at the top of `extra` (M5.3's `debit_tax_only_invalid` reads it there); the gateway notice reads it under `details`
+    expect(gw.extra).toEqual({ reason: "link_expired", details: { reason: "link_expired" } });
+  });
+
   it("a cancelled step-up sends nothing more and reports that nothing changed", async () => {
     const fetchFn = vi.fn().mockResolvedValueOnce(json(403, STEP_UP));
     vi.stubGlobal("fetch", fetchFn);
