@@ -1,7 +1,7 @@
 // Consent receipts in SQL (M7.4 A.3, A.6, L30; FRM-05; run file docs/runs/m7.4-data-protection.md). The statements the routes and jobs add to their batches;
 // the erasure paths need none (the `erased_hash` triggers stamp the receipts and write the `ended` receipt). Researched 2026-10-28, DPDP Act s.6, s.6(10)
 // (08-C RB-28); the keyed hash after an erasure and the end: Settled by the lead on the safest reading, 2026-11-06 (08-C RB-46).
-import { LEAD_WITH_ADDRESS_SQL } from "./triggers-data-protection.ts";
+import { LEAD_WITH_ADDRESS_SQL } from "./dp-shared.ts";
 
 /**
  * One receipt (`?1` id, `?2` subject hash or NULL, `?3` lead id, `?4` contact id, `?5` event, `?6` source, `?7` notice version, `?8` purposes JSON, `?9`

@@ -8,6 +8,9 @@
 // §§7–8 (08-C RB-47). The audit scrub: Settled by the lead on the safest reading, 2026-11-06 (08-C RB-48). Legal hold answers RA-25's open point by building
 // it (Researched 2026-10-28, s.36 CGST Act (08-C RA-25)).
 import { requestDueAtSql } from "@techaust/core/dsr";
+import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079, LEAD_WITH_ADDRESS_SQL } from "./dp-shared.ts";
+
+export { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079, LEAD_WITH_ADDRESS_SQL };
 
 const abort = (message: string) => `SELECT RAISE(ABORT, '${message}');`;
 const named = (name: string, message: string) => {
@@ -78,9 +81,6 @@ export const RETENTION_FAMILIES_0079 = [
   "consent",
   "runs",
 ] as const;
-/** The audit actions whose `summary` keeps the browser and place of a sign-in (`apps/admin/worker/alerts.ts`); L33 scrubs `ua`, `city`, `country`. */
-export const ALERT_ACTIONS_0079 = ["alert.new_device", "alert.2fa_change", "alert.lockout"] as const;
-export const ALERT_SCRUB_KEYS_0079 = ["$.ua", "$.city", "$.country"] as const;
 /** The tables an anonymised client takes no new row in (Step 0.7), with the SQL giving the row's client. */
 export const ANONYMISED_LOCK_0079 = {
   projects: "NEW.client_id",
@@ -142,13 +142,6 @@ const receiptStatements = (col: "contact_id" | "lead_id") =>
    INSERT INTO consent_receipts (id, subject_hash, ${col}, event, source, notice_version, purposes, marketing, ip_hash, at)
      SELECT lower(hex(randomblob(16))), NEW.erased_hash, NEW.id, 'ended', 'erasure', NULL, '[]', 0, NULL, ${NOW}
      WHERE EXISTS (SELECT 1 FROM consent_receipts r WHERE r.${col} = NEW.id);`;
-
-/**
- * A lead whose consent the back-fill and the `consent.hash` page may read: a lead with its own address (early check 1 M4: never one an anonymise turned into
- * the placeholder `anonymised+<id>@invalid`, core `anonymisedEmail`, nor one already marked erased). `l` is the alias.
- */
-export const LEAD_WITH_ADDRESS_SQL = (l: string) =>
-  `(${l}.erased_hash IS NULL AND lower(${l}.contact_email) NOT GLOB 'anonymised+*@invalid')`;
 
 /** The lead's stored purposes the trigger knows, as a JSON array. */
 const leadPurposes = `(SELECT coalesce(json_group_array(p.value), '[]') FROM json_each(json_extract(l.consent, '$.purposes')) p WHERE p.value IN (${q(PURPOSES_0079)}))`;

@@ -10,7 +10,7 @@
 // but bound), `?3` the run id, `?4` the family name. `bindsOf` gives them.
 import { istDate, toIsoDate } from "@techaust/core";
 import type { RetentionCutoff, RetentionFamily } from "@techaust/core/retention";
-import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./triggers-data-protection.ts";
+import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./dp-shared.ts";
 
 /** How a table's rows end. */
 export type RetentionRule =

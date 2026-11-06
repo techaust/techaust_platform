@@ -32,6 +32,7 @@ import {
   REALISATION_MIN_DAYS,
   REALISATION_MIN_MONTHS,
 } from "../realisation-bounds.ts";
+import { RETENTION_FLOORS } from "../retention-floors.ts";
 import { isUdyamNumber, UDYAM_CATEGORIES, UDYAM_NUMBER_ERROR } from "../udyam.ts";
 
 /**
@@ -455,20 +456,8 @@ export const paymentTermsSettings = storedPaymentTermsSettings.check(
   }),
 );
 
-/**
- * The least each retention figure may be (months, but years for `financialYears`): the one place the floors live. The schema takes them as its minimums, and `resolveSetting` raises a stored
- * row that is below one to it, so a row saved before a floor existed (the email log was 1 month) reads at the floor instead of failing.
- */
-export const RETENTION_FLOORS = {
-  leadsMonths: 12,
-  emailLogMonths: 12,
-  securityLogMonths: 13,
-  financialYears: 8,
-  /** M7.4 (L14): closed data requests. */
-  requestsMonths: 12,
-  /** M7.4 (owner 2026-10-07; L29): consent receipts and the `erased` stop rows. */
-  consentProofMonths: 12,
-} as const;
+// M7.4 B2 (run file J): the floors live in their own module so the jobs Worker reads them without these schemas.
+export { RETENTION_FLOORS };
 
 export const retentionSettings = z.strictObject({
   /** M7.4 (A.8, L14): closed data requests are deleted this long after they closed; 36 by default, never below 12 (Researched 2026-10-28, SPDI r.5(9) (08-C RB-13)). */

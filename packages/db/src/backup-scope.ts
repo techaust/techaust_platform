@@ -9,7 +9,7 @@
 // the safest reading, 2026-10-30 (08-C RB-37)).
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
 import { INVOICE_FAMILY_SQL } from "@techaust/core/clients";
-import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./triggers-data-protection.ts";
+import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079 } from "./dp-shared.ts";
 
 export type BackupScope = "finance_monthly" | "rolling_only";
 

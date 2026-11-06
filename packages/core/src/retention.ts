@@ -9,7 +9,7 @@
 // L15 (sessions and sign-in links 30 days after expiry, bells 90 days once read and 12 months in all, per-plan statistics 24 months); counters go after 2
 // days; the run records after 13 months.
 import { addMonths, fromIst, istDate } from "./dates.ts";
-import { RETENTION_FLOORS } from "./schemas/settings.ts";
+import { RETENTION_FLOORS } from "./retention-floors.ts";
 
 const DAY_MS = 86_400_000;
 
