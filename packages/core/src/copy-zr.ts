@@ -96,6 +96,9 @@ export const BELL_COPY = {
     `Emails to ${ref} are stopped because the address was erased. If they've asked to hear from us again, allow emails again in Settings › Data retention.`,
 } as const;
 
+/** The template name in Settings › Email (the builder's draft for the lead, as 07-ZQ's). */
+export const M74_TEMPLATE_NAMES = { "request.received": "Request received (client)" } as const;
+
 /** S3's kind words for the two new kinds (builder's drafts for the lead, beside M7.1's in apps/jobs/src/portal-alerts.ts). */
 export const NEW_KIND_BELL_WORDS = {
   consent_withdrawal: "withdrawal of their consent",

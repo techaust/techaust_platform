@@ -5,6 +5,7 @@
 // and the SES client).
 
 import { M72_TEMPLATE_NAMES, PREF_GROUP_LABELS } from "@techaust/core/copy-zq";
+import { M74_TEMPLATE_NAMES } from "@techaust/core/copy-zr";
 import type { EmailTemplate } from "@techaust/core/email-templates";
 import { firstNameOf } from "@techaust/core/offers";
 
@@ -43,6 +44,8 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   "receipt.sent": "Payment receipt (client)",
   // M7.2: the builder's drafts (07-ZQ, marked until the lead approves them)
   ...M72_TEMPLATE_NAMES,
+  // M7.4: the builder's draft (07-ZR)
+  ...M74_TEMPLATE_NAMES,
 };
 
 const SAMPLE = "https://example.test/sample";
