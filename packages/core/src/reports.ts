@@ -158,17 +158,25 @@ export function monthBounds(month: string): { from: string; to: string } | null 
 }
 
 /**
- * C4 (L13): the day inside the billing period that STARTS in `month` for a plan with this billing day and start date: the billing day of the month, or the plan's
- * start date when the plan began later in the month (its first period starts then); null when the plan starts after the month. The SQL twin is `carePeriodDaySql`.
+ * C4 (L13): the first days of the plan's billing periods that START in `month`, in order (each is also a day inside its period, for `currentUsage`):
+ * - the billing day of the month, or the plan's start date when the plan began later in the month (its first period starts then);
+ * - before it, the plan's start date when the plan began in the month BEFORE its billing day (review 1 finding 2): its first period is the short one from the
+ *   start date to the day before the billing day (`planPeriodOf` clamps it), so that month has two periods (e.g. start 3 October, billing day 10: 3 to 9 October,
+ *   then 10 October to 9 November).
+ * Empty when the plan starts after the month. The SQL twins are `carePeriodFirstDaySql` and `carePeriodDaySql` (db `reports-delivery.ts`, read by
+ * `CARE_HOURS_PAGE_SQL`); a db test compares them.
  */
-export function carePeriodDay(month: string, billingDay: number, startDate: string): string | null {
+export function carePeriodDays(month: string, billingDay: number, startDate: string): string[] {
   const b = monthBounds(month);
   if (!b) throw new RangeError(`Not a month: ${month}`);
   if (!Number.isInteger(billingDay) || billingDay < 1 || billingDay > 28)
     throw new RangeError(`Billing day must be 1 to 28: ${billingDay}`);
   const day = `${month}-${String(billingDay).padStart(2, "0")}`;
+  const out: string[] = [];
+  if (startDate >= b.from && startDate < day) out.push(startDate);
   const at = startDate > day ? startDate : day;
-  return at > b.to ? null : at;
+  if (at <= b.to) out.push(at);
+  return out;
 }
 
 // ---- the dashboard v2 (C5) ------------------------------------------------------------------------------------------------------------------------------

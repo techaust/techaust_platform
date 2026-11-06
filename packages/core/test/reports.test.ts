@@ -1,11 +1,12 @@
 // M7.3 (ADM-REP-01, -02, -03, -05): the pure report rules. The SQL twins are held equal to these in packages/db/test/reports-v2.test.ts.
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { planPeriodOf } from "../src/care.ts";
 import { addDays, parseIsoDate, toIsoDate } from "../src/dates.ts";
 import {
   AGEING_BUCKETS,
   ageingBucket,
-  carePeriodDay,
+  carePeriodDays,
   fyBounds,
   fyMonths,
   LEADS_TREND_DAYS,
@@ -196,18 +197,60 @@ describe("pipelineRange [C3, Q3 A, RB-10]", () => {
   });
 });
 
-describe("carePeriodDay [C4, L13]", () => {
+describe("carePeriodDays [C4, L13]", () => {
   it("the billing day of the month, or a later start date in the month", () => {
-    expect(carePeriodDay("2026-10", 5, "2026-01-01")).toBe("2026-10-05");
-    expect(carePeriodDay("2026-10", 5, "2026-10-02")).toBe("2026-10-05");
-    expect(carePeriodDay("2026-10", 5, "2026-10-20")).toBe("2026-10-20");
-    expect(carePeriodDay("2026-10", 28, "2026-10-31")).toBe("2026-10-31");
-    expect(carePeriodDay("2026-10", 5, "2026-11-01")).toBeNull();
+    expect(carePeriodDays("2026-10", 5, "2026-01-01")).toEqual(["2026-10-05"]);
+    expect(carePeriodDays("2026-10", 5, "2026-10-20")).toEqual(["2026-10-20"]);
+    expect(carePeriodDays("2026-10", 28, "2026-10-31")).toEqual(["2026-10-31"]);
+    expect(carePeriodDays("2026-10", 5, "2026-10-05")).toEqual(["2026-10-05"]);
+    expect(carePeriodDays("2026-10", 1, "2026-10-01")).toEqual(["2026-10-01"]);
+    expect(carePeriodDays("2026-10", 5, "2026-11-01")).toEqual([]);
+    expect(carePeriodDays("2026-10", 5, "2026-10-31")).toEqual(["2026-10-31"]);
+  });
+
+  it("in the start month, a start before the billing day adds the short first period, in order (review 1 finding 2)", () => {
+    expect(carePeriodDays("2026-10", 10, "2026-10-03")).toEqual(["2026-10-03", "2026-10-10"]);
+    expect(carePeriodDays("2026-10", 5, "2026-10-02")).toEqual(["2026-10-02", "2026-10-05"]);
+    expect(carePeriodDays("2026-10", 28, "2026-10-01")).toEqual(["2026-10-01", "2026-10-28"]);
+    // February: the 28th is still in the month
+    expect(carePeriodDays("2027-02", 28, "2027-02-27")).toEqual(["2027-02-27", "2027-02-28"]);
+    // the month after the start month has only its billing-day period
+    expect(carePeriodDays("2026-11", 10, "2026-10-03")).toEqual(["2026-11-10"]);
+    // a start in the month before is not in this month, whatever its day
+    expect(carePeriodDays("2026-10", 10, "2026-09-30")).toEqual(["2026-10-10"]);
+  });
+
+  it("each day is the first day of the plan's period that contains it (core planPeriodOf), and those periods are every one starting in the month", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 28 }),
+        fc.integer({ min: 0, max: 120 }),
+        fc.integer({ min: 0, max: 5 }),
+        (billingDay, startOffset, monthOffset) => {
+          const startDate = toIsoDate(addDays({ year: 2026, month: 8, day: 1 }, startOffset));
+          const m = 8 + monthOffset;
+          const month = `${m > 12 ? 2027 : 2026}-${String(m > 12 ? m - 12 : m).padStart(2, "0")}`;
+          const days = carePeriodDays(month, billingDay, startDate);
+          const b = monthBounds(month) as { from: string; to: string };
+          // every period of the plan that starts in the month, walked day by day
+          const want: string[] = [];
+          for (
+            let d = parseIsoDate(b.from) as NonNullable<ReturnType<typeof parseIsoDate>>;
+            toIsoDate(d) <= b.to;
+            d = addDays(d, 1)
+          ) {
+            const p = planPeriodOf(toIsoDate(d), { billingDay, startDate });
+            if (p && p.start === toIsoDate(d)) want.push(p.start);
+          }
+          expect(days).toEqual(want);
+        },
+      ),
+    );
   });
 
   it("refuses a bad month or billing day", () => {
-    expect(() => carePeriodDay("2026-13", 5, "2026-01-01")).toThrow(RangeError);
-    expect(() => carePeriodDay("2026-10", 29, "2026-01-01")).toThrow(RangeError);
+    expect(() => carePeriodDays("2026-13", 5, "2026-01-01")).toThrow(RangeError);
+    expect(() => carePeriodDays("2026-10", 29, "2026-01-01")).toThrow(RangeError);
   });
 });
 

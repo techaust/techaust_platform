@@ -10,7 +10,7 @@ import {
 import {
   AGEING_BUCKETS,
   ageingBucket,
-  carePeriodDay,
+  carePeriodDays,
   NO_CATEGORY,
   previousMonthOf,
   REVENUE_KINDS,
@@ -54,6 +54,7 @@ import {
   CARE_HOURS_PAGE_SQL,
   COHORT_COUNT_NAMES,
   carePeriodDaySql,
+  carePeriodFirstDaySql,
   LEAD_COHORT_SQL,
   OFFERS_DECIDED_SQL,
   OFFERS_SENT_GROUPED_SQL,
@@ -404,28 +405,34 @@ describe("the SQL twins equal their core rules", () => {
     expect(got).toEqual(firsts.map((f) => previousMonthOf(f)));
   });
 
-  it("carePeriodDaySql = carePeriodDay for every billing day and start dates around the month", async () => {
+  it("carePeriodFirstDaySql + carePeriodDaySql = carePeriodDays for every billing day and start dates around the month (review 1 finding 2)", async () => {
     const starts = [
       "2025-12-31",
+      "2026-09-30",
       "2026-10-01",
       "2026-10-04",
       "2026-10-05",
       "2026-10-17",
+      "2026-10-28",
       "2026-10-31",
       "2026-11-01",
     ];
-    for (const start of starts)
-      for (let b = 1; b <= 28; b++) {
-        const r = await first<{ day: string }>(
-          `SELECT ${carePeriodDaySql("?1", "p")} AS day FROM (SELECT ?2 AS billing_day, ?3 AS start_date) p`,
-          "2026-10",
-          b,
-          start,
-        );
-        const want = carePeriodDay("2026-10", b, start);
-        if (want === null) expect((r?.day ?? "") > "2026-10-31").toBe(true);
-        else expect(r?.day).toBe(want);
-      }
+    for (const [month, last] of [
+      ["2026-10", "2026-10-31"],
+      ["2027-02", "2027-02-28"],
+    ] as const)
+      for (const start of [...starts, "2027-02-01", "2027-02-27"])
+        for (let b = 1; b <= 28; b++) {
+          const r = await first<{ a: string | null; b: string }>(
+            `SELECT ${carePeriodFirstDaySql("?1", "p")} AS a, ${carePeriodDaySql("?1", "p")} AS b FROM (SELECT ?2 AS billing_day, ?3 AS start_date) p`,
+            month,
+            b,
+            start,
+          );
+          // the page statement keeps a day when it is not NULL and not after the month's last day
+          const got = [r?.a ?? null, r?.b ?? null].filter((d): d is string => d !== null && d <= last);
+          expect(got, `${month} ${b} ${start}`).toEqual(carePeriodDays(month, b, start));
+        }
   });
 
   it("revenueKindSql = revenueKind for each document of the fixture (a note follows its parent)", async () => {
@@ -881,7 +888,13 @@ describe("every new statement runs, is served by its index, and reads no table e
       [/documents_offer_decided/, /documents_status_valid_until/, /acceptances_document/],
     ],
     ["median", TIME_TO_WIN_MEDIAN_SQL, [0, T], [/documents_offer_decided/]],
-    ["care page", CARE_HOURS_PAGE_SQL(true), ["2026-10", "2026-10-31", "x"], [/care_plan_status_log_plan/]],
+    ["care page", CARE_HOURS_PAGE_SQL(false), ["2026-10", "2026-10-31"], [/care_plan_status_log_plan/]],
+    [
+      "care next page",
+      CARE_HOURS_PAGE_SQL(true),
+      ["2026-10", "2026-10-31", "x", "2026-10-05"],
+      [/care_plan_status_log_plan/],
+    ],
     ["care billed", CARE_HOURS_BILLED_SQL, ["[]", "2026-09-01", "2026-12-31"], [/care_invoices/]],
   ];
   for (const [name, sql, binds, indexes] of cases)
@@ -893,7 +906,7 @@ describe("every new statement runs, is served by its index, and reads no table e
       const p = await plan(sql, ...binds);
       for (const i of indexes) expect(p, name).toMatch(i);
       // the client walks of C2 and C9 and the care plans' page read their tables by primary key, by design (one seek of the documents per row)
-      const allowed = name === "clients" || name.startsWith("ageing page") || name === "care page";
+      const allowed = name === "clients" || name.startsWith("ageing page") || name.startsWith("care");
       if (!allowed) expect(scansTable(p), p).toBe(false);
     });
 });

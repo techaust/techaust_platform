@@ -1,5 +1,6 @@
 // M7.3 C4 (ADM-REP-05; run file I, L13): care plan hours for the billing period that starts in a month. The figures are the care list's (the same loader and core
-// `carePeriodUsage`); a plan that starts later in the month has its first period from its start; a plan paused on the period's first day or not started is not a row;
+// `carePeriodUsage`); a plan that starts later in the month has its first period from its start, and one that starts before its billing day has its short first
+// period too (two rows that month, review 1 finding 2); a plan paused on the period's first day or not started is not a row;
 // the billed state comes from `care_invoices` (the period's own invoice and the one that bills its overage); hours only, never an amount. Invented test data only.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
@@ -13,7 +14,7 @@ import { call, pinClock, type TestSession } from "./test-helpers.ts";
 let owner: TestSession;
 let staff: TestSession;
 type Plan = { id: string; client: string };
-const plans = {} as Record<"monthly" | "late" | "started" | "paused" | "future", Plan>;
+const plans = {} as Record<"monthly" | "late" | "started" | "paused" | "future" | "short", Plan>;
 
 const get = async (q: string, s: TestSession = owner) => {
   const res = await call(`/reports/care-hours?${q}`, { cookie: s.cookie });
@@ -55,6 +56,10 @@ beforeAll(async () => {
     .bind(plans.paused.id)
     .run();
   plans.future = await mkPlan(owner.id, { start: "2026-11-02", billingDay: 2 });
+  // review 1 finding 2: started on 3 October with billing day 10, so October has two of its periods: 3 to 9 October (the short first one) and 10 October to 9 November
+  plans.short = await mkPlan(owner.id, { start: "2026-10-03", billingDay: 10, included: 120 });
+  await mkLog(staff.id, "2026-10-05", 45, { plan: plans.short.id });
+  await mkLog(staff.id, "2026-10-12", 150, { plan: plans.short.id });
   // the late plan's October period had a care draft that was discarded: its row stays with the document cleared (early check 6)
   const lateTerms = await env.DB.prepare("SELECT id FROM care_plan_terms WHERE care_plan_id = ?1")
     .bind(plans.late.id)
@@ -124,6 +129,47 @@ describe("GET /reports/care-hours (C4) [ADM-REP-05]", () => {
     expect(keysDeep(rows).some((k) => /amount|price|rate|Minor$/i.test(k))).toBe(false);
   });
 
+  it("in a plan's start month, a start before the billing day is two rows: the short first period, then the billing-day one (review 1 finding 2)", async () => {
+    const rows = (await allRows("2026-10")).filter((r) => r.planId === plans.short.id);
+    expect(rows.map((r) => r.period)).toEqual([
+      { start: "2026-10-03", end: "2026-10-09" },
+      { start: "2026-10-10", end: "2026-11-09" },
+    ]);
+    // each period's own minutes: 45 in the short one, 150 in the next (120 included, rollover none: 30 over)
+    expect(rows[0]).toMatchObject({
+      includedMinutes: 120,
+      rolloverInMinutes: 0,
+      usedMinutes: 45,
+      overageMinutes: 0,
+      burnBp: 3_750,
+      flag: "none",
+      billed: null,
+      overageBilled: null,
+    });
+    expect(rows[1]).toMatchObject({
+      includedMinutes: 120,
+      usedMinutes: 150,
+      overageMinutes: 30,
+      flag: "reached",
+    });
+    // the second is the care list's current period (today is 15 October)
+    const list = (await (await call("/care-plans?limit=50", { cookie: owner.cookie })).json()) as {
+      carePlans: { id: string; usage: { period: { start: string }; used: number; overageMinutes: number } }[];
+    };
+    expect(list.carePlans.find((p) => p.id === plans.short.id)?.usage).toMatchObject({
+      period: { start: "2026-10-10" },
+      used: 150,
+      overageMinutes: 30,
+    });
+    // September has none (the plan had not started)
+    expect((await allRows("2026-09")).some((r) => r.planId === plans.short.id)).toBe(false);
+    // a page can end between a plan's two periods: the cursor (its last row's day and plan id) continues with the second
+    const after = await get(`month=2026-10&after=${encodeCursor({ k: "2026-10-03", id: plans.short.id })}`);
+    expect(after.rows[0]).toMatchObject({ planId: plans.short.id, period: { start: "2026-10-10" } });
+    const past = await get(`month=2026-10&after=${encodeCursor({ k: "2026-10-10", id: plans.short.id })}`);
+    expect(past.rows.some((r) => r.planId === plans.short.id)).toBe(false);
+  });
+
   it("the figures are the care list's for the current period", async () => {
     const list = (await (await call("/care-plans?limit=50", { cookie: owner.cookie })).json()) as {
       carePlans: {
@@ -181,21 +227,30 @@ describe("GET /reports/care-hours (C4) [ADM-REP-05]", () => {
     expect(oct[plans.started.id]?.billed).toBeNull();
   });
 
-  it("pages of 50 plans by id; a bad month or a tampered cursor is 400", async () => {
+  it("pages of 50 periods by plan id, then period start; a bad month or a tampered cursor is 400", async () => {
     for (let i = 0; i < 50; i++) await mkPlan(owner.id, { start: "2026-01-01", billingDay: 1 });
     const first = await get("month=2026-10");
     expect(first.rows).toHaveLength(50);
     expect(first.next).not.toBeNull();
     const second = await get(`month=2026-10&after=${first.next}`);
     expect(second.next).toBeNull();
-    const ids = [...first.rows, ...second.rows].map((r) => r.planId);
-    expect(new Set(ids).size).toBe(ids.length);
-    expect([...ids].sort()).toEqual(ids);
+    // one row per plan and period (the short plan has two), each once, in (plan id, period start) order
+    const keys = [...first.rows, ...second.rows].map((r) => `${r.planId}|${r.period.start}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect([...keys].sort()).toEqual(keys);
+    expect(keys.filter((k) => k.startsWith(`${plans.short.id}|`))).toHaveLength(2);
+    expect(keys).toHaveLength(55); // monthly, late, started, short twice, and the 50 new plans
     for (const q of [
       "month=2026-13",
       "month=2026-1",
       "month=2026-10&after=x",
       `month=2026-10&after=${encodeCursor({ k: "c", id: "a" })}`,
+      // the cursor before review 1 finding 2 (`k: "p"`), a day outside the month and a malformed day
+      `month=2026-10&after=${encodeCursor({ k: "p", id: plans.short.id })}`,
+      `month=2026-10&after=${encodeCursor({ k: "2026-11-01", id: plans.short.id })}`,
+      `month=2026-10&after=${encodeCursor({ k: "2026-10-32", id: plans.short.id })}`,
+      `month=2026-10&after=${encodeCursor({ k: 5, id: plans.short.id })}`,
+      `month=2026-10&after=${encodeCursor({ k: "2026-10-03", id: "bad id!" })}`,
     ]) {
       expect((await call(`/reports/care-hours?${q}`, { cookie: owner.cookie })).status, q).toBe(400);
     }
