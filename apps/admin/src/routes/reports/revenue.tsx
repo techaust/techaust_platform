@@ -358,6 +358,8 @@ function totalOf(rows: readonly KeyRow[], currency: Currency, label: string, ext
         currency,
       ),
       totalMinor: sumMinor([...rows.map((r) => r.inv.totalMinor), extra], currency),
+      // The total row never prints an INR figure (an INR total comes only through the "Total in INR" line), so its INR stays null whatever the
+      // rows hold; `inrMissing` carries the rows' count for that line (re-check low 2: a deliberate exception to core's rule).
       inrTaxableMinor: null,
       inrTotalMinor: null,
       inrMissing: rows.reduce((n, r) => n + r.inv.inrMissing, 0),
@@ -423,7 +425,8 @@ function CategoryView({ data, currency, fy }: { data: RevenueByKey; currency: Cu
             totalMinor: round.roundOffMinor,
             inrTaxableMinor: null,
             inrTotalMinor: round.inrRoundOffMinor,
-            inrMissing: 0,
+            // core's rule: above 0 exactly when an INR figure is null (re-check low 2)
+            inrMissing: round.inrRoundOffMinor === null ? 1 : 0,
           },
         }
       : null;

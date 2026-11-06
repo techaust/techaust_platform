@@ -110,7 +110,7 @@ export function CareHoursReport() {
                 flag: r.flag,
                 overageMinutes: r.overageMinutes,
               }}
-              label={r.client.name}
+              label={`${r.client.name}, ${periodText(r.period)}`}
             />
             <FlagPill flag={r.flag} />
           </div>

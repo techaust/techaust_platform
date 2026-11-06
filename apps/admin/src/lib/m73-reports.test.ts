@@ -309,6 +309,7 @@ describe("CSVs from the screen's data", () => {
         },
       ],
       "2026-11",
+      "2026-11-06",
     );
     expect(text.trim().split("\r\n")[1]).toBe(
       "2026-11,X1,A,2026-11-01,2026-11-30,600,600,90,0,Not billed yet",
@@ -329,9 +330,7 @@ describe("CSVs from the screen's data", () => {
       "2026-11",
       "2026-11-06",
     );
-    expect(later.trim().split("\r\n")[1]).toBe(
-      "2026-11,X1,A,2026-11-20,2026-12-19,600,600,0,0,Starts 2026-11-20",
-    );
+    expect(later.trim().split("\r\n")[1]).toBe("2026-11,X1,A,2026-11-20,2026-12-19,600,,,,Starts 2026-11-20");
     expect(pipelineCsv([["Won", "", "3"]])).toBe("Section,Item,Value\r\nWon,,3\r\n");
   });
 });

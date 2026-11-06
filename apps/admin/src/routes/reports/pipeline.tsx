@@ -156,6 +156,7 @@ function Body({ r }: { r: Report }) {
           <Counted
             id="pipe-stage"
             title={P.byStage}
+            // never shown: the eight stages are always listed and the block renders only when there are leads (re-check low 8)
             empty={P.empty}
             keepOrder
             rows={STAGE_ORDER.map((s) => ({ key: s, label: STAGE_LABELS[s], n: L.byStage[s] ?? 0 }))}

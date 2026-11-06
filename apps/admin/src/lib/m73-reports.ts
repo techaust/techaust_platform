@@ -3,7 +3,7 @@
 // file's section H (docs/runs/m7.3-reports.md), word for word, approved by the lead under the owner's delegation (staff screens); C18b and the `month_invalid`
 // line are the lead's triage. The lines H lacked were drafted by D1 and approved by the lead under the delegation (lead's triage of D1); the review-1 lines
 // (C7 for payments and refunds, the invoices' INR line, "Starts {date}", "{to} on {date}", the offer search's no-match line) are the lead's own words; the
-// pipeline's per-block empty lines were drafted by D2 for the lead's approval at the re-check (review 1, finding 1). Nothing here is invented elsewhere.
+// pipeline's per-block empty lines were drafted by D2 and approved by the lead (lead's triage of D2, review 1 finding 1). Nothing here is invented elsewhere.
 //
 // Money: every figure is the API's integer minor units; the only arithmetic here goes through core (`sum`, `negate`, `formatMoney`), never rupees and dollars
 // together except the labelled "Total in INR", which adds INR amounts only (INR documents and the frozen INR values of USD ones, L4) and is shown only when every
@@ -190,7 +190,7 @@ export const PIPELINE_COPY = {
   ofDecided: (accepted: number, decided: number) => `${accepted} accepted of ${decided} decided`,
   wins: (n: number) => (n === 1 ? "1 win" : `${n} wins`),
   noTrend: "No daily counts in this period yet.",
-  /** Review 1, finding 1: each block says what it lacks (drafted by D2, "No {thing} in this period.", for the lead's approval at the re-check). */
+  /** Review 1, finding 1: each block says what it lacks (drafted by D2, approved by the lead). */
   emptyLost: "No leads were lost in this period.",
   emptySources: "No lead sources recorded in this period.",
   emptyWins: "No wins in this period.",
@@ -524,7 +524,8 @@ export function careHoursCsv(
     billed: CareBilled | null;
   }[],
   month: string,
-  today = "",
+  /** The API's IST day: a period starting after it says "Starts {date}" and its minutes are left blank, as on screen (re-check low 4). */
+  today: string,
 ): string {
   const mins = (n: number) => String(n);
   return csv([
@@ -547,12 +548,14 @@ export function careHoursCsv(
       r.period.start,
       r.period.end,
       mins(r.includedMinutes),
-      mins(r.availableMinutes),
-      mins(r.usedMinutes),
-      mins(r.overageMinutes),
-      today && notStarted(r.period, today)
-        ? CARE_HOURS_COPY.starts(r.period.start)
-        : billedText(r.billed, (d) => d),
+      ...(notStarted(r.period, today)
+        ? ["", "", "", CARE_HOURS_COPY.starts(r.period.start)]
+        : [
+            mins(r.availableMinutes),
+            mins(r.usedMinutes),
+            mins(r.overageMinutes),
+            billedText(r.billed, (d) => d),
+          ]),
     ]),
   ]);
 }
