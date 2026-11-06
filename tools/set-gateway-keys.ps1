@@ -176,6 +176,14 @@ switch ($Gateway) {
   }
 }
 
+# M7.4 (early check 2, low 10): Windows PowerShell writes a child's standard input in the console's input encoding; when that is UTF-8 with a byte-order
+# mark the BOM bytes reach wrangler before the value. Use BOM-free UTF-8 for the runs below, and store nothing if the window refuses it.
+try { [Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+if ([Console]::InputEncoding.GetPreamble().Length -ne 0) {
+  Write-Host "RESULT: FAILED ($Gateway): this PowerShell window would add a byte-order mark to the value. Nothing was stored. Tell the lead."
+  exit 1
+}
+
 $stored = @()
 try {
   foreach ($c in $Configs) {
