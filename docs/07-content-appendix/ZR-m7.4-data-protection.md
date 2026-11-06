@@ -34,3 +34,6 @@ Status: **Client lines C1–C7 and the Rule 9 block: waiting for the owner's app
 - Bell `retention.done_with_holds` (a live run that skipped held rows; S3's pair): "The clean-up ran. Some records were kept because a legal hold stands on them."
 - S3's bell kind words for the two new kinds (beside M7.1's): "withdrawal of their consent" · "nomination of someone to act for them".
 - A request that names only an address has no client code or lead ref for S4–S6: the bell says "someone not yet matched to a record" (e.g. "A data request from someone not yet matched to a record is past its reply date.").
+
+## Staff line added in the early check 2 fix leg (builder's draft for the lead, not yet approved)
+- Bell `job.failed` of a live clean-up page that ran out of tries (one per run and kind of record, to active Owners; opens Settings › Data retention): "The clean-up stopped part-way through one kind of record. Tomorrow night's run carries on from there."

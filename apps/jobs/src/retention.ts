@@ -86,6 +86,14 @@ const figuresOf = (row: Record<string, unknown> | undefined): RetentionFigures =
 /** The run's id from its time: a redelivered start finds its run already open and queues nothing new. */
 export const runIdOf = (asOf: number): string => `rr_${asOf}`;
 
+/**
+ * The run as stored (`?1` run): its mode, and whether any family has a count row yet (`paged`: a page ran). A run with none was opened by a start whose queueing
+ * failed, so a redelivered start sends its pages again (early check 2, low 5); the primary key and `retention_run_counts`'s (run_id, family) key keep it a read
+ * of at most 12 rows.
+ */
+export const RUN_STATE_SQL =
+  "SELECT mode, EXISTS (SELECT 1 FROM retention_run_counts WHERE run_id = ?1) AS paged FROM retention_runs WHERE id = ?1";
+
 /** The finish of a run (`?1` run, `?2` now): once every family is done; idempotent. */
 export const RUN_FINISH_SQL =
   "UPDATE retention_runs SET finished_at = ?2 WHERE id = ?1 AND finished_at IS NULL AND (SELECT count(*) FROM retention_run_counts WHERE run_id = ?1 AND done = 1) >= families";
@@ -147,22 +155,32 @@ async function retentionStart(env: Env, m: RetentionStartMessage): Promise<DpRes
     return "invalid";
   }
   const runId = runIdOf(m.asOf);
-  const opened = await db
-    .prepare(
-      "INSERT OR IGNORE INTO retention_runs (id, as_of, mode, started_at, families) VALUES (?1, ?2, ?3, ?4, ?5)",
-    )
-    .bind(runId, m.asOf, mode, Date.now(), RETENTION_FAMILIES.length)
-    .run();
-  if ((opened.meta.changes ?? 0) === 0) {
-    logEvent("retention.start_repeat", { f: 1 });
-    return "done";
+  const [opened, state] = await db.batch([
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO retention_runs (id, as_of, mode, started_at, families) VALUES (?1, ?2, ?3, ?4, ?5)",
+      )
+      .bind(runId, m.asOf, mode, Date.now(), RETENTION_FAMILIES.length),
+    db.prepare(RUN_STATE_SQL).bind(runId),
+  ]);
+  const run = state?.results[0] as { mode?: string; paged?: number } | undefined;
+  // The run's own mode (a redelivery keeps the mode it was opened in, whatever the switch says now).
+  const runMode = run?.mode === "live" ? "live" : "dry_run";
+  if ((opened?.meta.changes ?? 0) === 0) {
+    // Early check 2, low 5: a redelivered start whose first try opened the run and then failed to queue the pages (no family has a count row yet) sends
+    // them again; a run already paging queues nothing.
+    if (run?.paged === 1) {
+      logEvent("retention.start_repeat", { f: 1 });
+      return "done";
+    }
+    logEvent("retention.start_resent", { mode: runMode, f: 1 });
   }
   const pages: RetentionPageMessage[] = RETENTION_FAMILIES.map((family) => ({
     v: 1,
     kind: "retention.page",
     runId,
     family,
-    mode,
+    mode: runMode,
     asOf: m.asOf,
     before: cutoffs[family].before,
     ...(cutoffs[family].readBefore !== undefined ? { readBefore: cutoffs[family].readBefore } : {}),
@@ -172,7 +190,7 @@ async function retentionStart(env: Env, m: RetentionStartMessage): Promise<DpRes
     { v: 1, kind: "consent.hash" },
   ];
   await env.LEADS_QUEUE.sendBatch([...pages, ...extra].map((body) => ({ body })));
-  logEvent("retention.started", { mode, families: pages.length, f: 1 });
+  logEvent("retention.started", { mode: runMode, families: pages.length, f: 1 });
   return "done";
 }
 
@@ -207,6 +225,28 @@ async function retentionPage(env: Env, m: RetentionPageMessage, now: number): Pr
   }
   logEvent("retention.page", { family: m.family, mode: m.mode, more: false, f: 1 });
   return "done";
+}
+
+/**
+ * M7.2's `job.failed` bell for a live clean-up page that ran out of tries (`?1` `<run id>:<family>`, `?2` the title): one per active Owner, run and family (the
+ * unique `(user_id, kind, entity_id)`), opening Settings › Data retention.
+ */
+export const PAGE_FAILED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+  SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'job.failed', 'retention_run', ?1, ?2, '/settings/retention' FROM staff_users u
+  WHERE u.role = 'owner' AND u.status = 'active'`;
+
+/**
+ * A data-protection message that ran out of tries (the leads dead-letter queue): logged and acknowledged (the next night or hour repeats it). Early check 2,
+ * low 6: a LIVE clean-up page also rings the Owners (real deletion stopped part-way, and the run never finishes); a dry-run page, the drain, the sweeps, the
+ * hash fill and the clock only log. Throws if the bell can't be written, so the dead-letter queue tries again.
+ */
+export async function processDpDeadLetter(env: Env, queue: string, body: unknown): Promise<void> {
+  const m = dpMessageOf(body);
+  logEvent("dp.dead_letter", { queue, kind: m?.kind ?? "invalid", f: 1 });
+  if (m?.kind !== "retention.page" || m.mode !== "live") return;
+  await env.DB.prepare(PAGE_FAILED_BELL_SQL)
+    .bind(`${m.runId}:${m.family}`, BELL_COPY.retentionPageFailed)
+    .run();
 }
 
 /** The IST day of `ms`, the key of a once-a-day bell. */

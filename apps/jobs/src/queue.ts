@@ -45,7 +45,7 @@ import { processRefundNotify } from "./refund-notify.ts";
 import { processRefundDeadLetter, processRefundFamily } from "./refunds.ts";
 import { processReminderSend } from "./reminders.ts";
 import { processEdfReminder, processRealisationScan } from "./reports.ts";
-import { processDp } from "./retention.ts";
+import { processDp, processDpDeadLetter } from "./retention.ts";
 import { processSigninUnfinished } from "./signin-unfinished.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
 import { processBellsSweep, processStaffNotify } from "./staff-notify.ts";
@@ -153,8 +153,9 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         await processRefundDeadLetter(env, message.body);
         message.ack();
       } else if (isDlq && isDpKind(message.body)) {
-        // M7.4 (D): a clean-up, drain, sweep, hash or clock message that ran out of tries: logged; the next night (or hour) repeats it.
-        logEvent("dp.dead_letter", { queue, kind: message.body.kind, f: 1 });
+        // M7.4 (D): a clean-up, drain, sweep, hash or clock message that ran out of tries: logged; the next night (or hour) repeats it. A live clean-up page
+        // also rings the Owners' `job.failed` bell, once per run and family (early check 2, low 6).
+        await processDpDeadLetter(env, queue, message.body);
         message.ack();
       } else if (isDlq && isPortalAlertKind(message.body)) {
         // M7.1 (L9): a portal bell that ran out of tries: the request or notice itself is stored and shows in the admin's lists, so no alert and no retry.

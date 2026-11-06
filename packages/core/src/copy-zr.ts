@@ -91,6 +91,9 @@ export const BELL_COPY = {
   ackOverdue: (ref: string) => `A request from ${ref} hasn't been acknowledged within 48 hours.`,
   /** S7 */
   r2Stuck: "Some stored files couldn't be deleted. A developer needs to look.",
+  /** `job.failed` of a live clean-up page that ran out of tries (early check 2, low 6; builder's draft for the lead). */
+  retentionPageFailed:
+    "The clean-up stopped part-way through one kind of record. Tomorrow night's run carries on from there.",
   /** S10 (L25) */
   erasedSkip: (ref: string) =>
     `Emails to ${ref} are stopped because the address was erased. If they've asked to hear from us again, allow emails again in Settings › Data retention.`,

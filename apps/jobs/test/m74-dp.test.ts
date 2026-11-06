@@ -78,9 +78,36 @@ describe("the nightly start and the pages [JOB-CRON-01; D.1–D.3]", () => {
     const pages = leadsSent().filter((b) => b.kind === "retention.page");
     expect(pages.map((p) => p.family)).toEqual([...RETENTION_FAMILIES]);
     expect(leadsSent().map((b) => b.kind)).toEqual(expect.arrayContaining(["r2.drain", "consent.hash"]));
+    // a page has run: a redelivered start queues nothing
+    await processDp(env, pages[0]);
     fakes.leads.length = 0;
     await processDp(env, { v: 1, kind: "retention.start", asOf });
     expect(fakes.leads).toEqual([]);
+  });
+
+  it("early check 2, low 5: a start whose queueing failed after it opened the run sends the pages again on redelivery, in the run's own mode", async () => {
+    await setRetentionMode("dry_run");
+    const asOf = Date.UTC(2026, 10, 4, 22);
+    const failing = makeEnv({
+      LEADS_QUEUE: {
+        send: async () => Promise.reject(new Error("queue down")),
+        sendBatch: async () => Promise.reject(new Error("queue down")),
+      },
+    });
+    await expect(processDp(failing, { v: 1, kind: "retention.start", asOf })).rejects.toThrow("queue down");
+    expect(await one("SELECT mode FROM retention_runs WHERE id = ?1", runIdOf(asOf))).toEqual({
+      mode: "dry_run",
+    });
+    // the switch moved meanwhile; the redelivery keeps the run's mode
+    await setRetentionMode("live");
+    const env = makeEnv();
+    await processDp(env, { v: 1, kind: "retention.start", asOf });
+    const pages = leadsSent().filter((b) => b.kind === "retention.page");
+    expect(pages.map((p) => p.family)).toEqual([...RETENTION_FAMILIES]);
+    expect(new Set(pages.map((p) => p.mode))).toEqual(new Set(["dry_run"]));
+    expect(leadsSent().map((b) => b.kind)).toEqual(expect.arrayContaining(["r2.drain", "consent.hash"]));
+    expect(await count("retention_runs", "id = ?1", runIdOf(asOf))).toBe(1);
+    await setRetentionMode("dry_run");
   });
 
   it("a dry run deletes nothing anywhere; the run finishes with one report_ready bell per active Owner, keyed by the run", async () => {
@@ -528,5 +555,56 @@ describe("the portal acknowledgement (D.8, L32) and dead letters", () => {
     } as unknown as MessageBatch<unknown>;
     await handleQueue(batch, makeEnv());
     expect(acked).toBe(1);
+  });
+
+  it("early check 2, low 6: a dead-lettered LIVE page rings job.failed for each active Owner, once per run and family; a dry-run page only logs", async () => {
+    const owner = await mkDpOwner();
+    const runId = `rr_${Date.now()}`;
+    const page = (family: string, mode: "live" | "dry_run") => ({
+      v: 1,
+      kind: "retention.page",
+      runId,
+      family,
+      mode,
+      asOf: Date.now(),
+      before: Date.now() - 400 * DAY,
+    });
+    const deliver = async (body: unknown) => {
+      let acked = 0;
+      const batch = {
+        queue: "techaust-local-leads-dlq",
+        messages: [{ body, attempts: 6, ack: () => void acked++, retry: () => undefined }],
+      } as unknown as MessageBatch<unknown>;
+      await handleQueue(batch, makeEnv());
+      expect(acked).toBe(1);
+    };
+    const bells = (family: string) =>
+      count(
+        "notifications",
+        "kind = 'job.failed' AND entity_type = 'retention_run' AND entity_id = ?1",
+        `${runId}:${family}`,
+      );
+    await deliver(page("sessions", "live"));
+    await deliver(page("sessions", "live"));
+    const owners = await count("staff_users", "role = 'owner' AND status = 'active'");
+    expect(await bells("sessions")).toBe(owners);
+    expect(
+      await one(
+        "SELECT title, link FROM notifications WHERE user_id = ?1 AND kind = 'job.failed' AND entity_id = ?2",
+        owner,
+        `${runId}:sessions`,
+      ),
+    ).toEqual({
+      title:
+        "The clean-up stopped part-way through one kind of record. Tomorrow night's run carries on from there.",
+      link: "/settings/retention",
+    });
+    // another family of the same run: its own bell
+    await deliver(page("email_log", "live"));
+    expect(await bells("email_log")).toBe(owners);
+    // a dry-run page, the drain: logged only
+    await deliver(page("bells", "dry_run"));
+    await deliver({ v: 1, kind: "r2.drain" });
+    expect(await bells("bells")).toBe(0);
   });
 });
