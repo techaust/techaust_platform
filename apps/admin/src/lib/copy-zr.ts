@@ -1,6 +1,6 @@
 // M7.4 (data-protection tooling; ADM-SET-09, ADM-CLI-05, FRM-05, POR-11; run file docs/runs/m7.4-data-protection.md G, H): the staff words of the admin's
 // screens. The brief's S1, S2 and S9 come word for word from `@techaust/core/copy-zr` (`STAFF_COPY`, approved by the lead under the owner's delegation); every
-// other line here is the DESIGNER's staff line for the lead (07-ZR "Designer's staff lines for the lead"), in the plain style of the M6 and M7 screens,
+// other line here is the DESIGNER's staff line, approved by the lead on 2026-11-06 (07-ZR "Designer's staff lines"), in the plain style of the M6 and M7 screens,
 // unmarked (the `ZP_UI` pattern) and listed in the run file's designer report. No client line and no legal wording is written here: the client lines C1 to C7
 // stay in core behind `APPROVED_07ZR`. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). Pure, so the words are tested without a
 // browser.
