@@ -193,8 +193,7 @@ export async function processPortalAlert(env: Env, body: unknown): Promise<Porta
   // M7.4 (D.8, L32): a portal request is acknowledged by email to the contact who sent it (C2 to C4 and the Rule 9 block), queued first (its `email_log`
   // claim is keyed on the request and the address, so a redelivery sends nothing twice), then `acknowledged_at` is set in the bells' batch.
   const ack =
-    request &&
-    request.contact_email &&
+    request?.contact_email &&
     request.client_gone !== 1 &&
     request.acknowledged_at == null &&
     typeof request.received_at === "number" &&

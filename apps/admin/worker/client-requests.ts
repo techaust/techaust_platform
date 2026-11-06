@@ -466,7 +466,7 @@ export const clientRequests = new Hono<AppEnv>()
     }
     if (!done) {
       const again = await read();
-      if (!again || again.status !== "open") return err(c, REQUEST_CLOSED, 409);
+      if (again?.status !== "open") return err(c, REQUEST_CLOSED, 409);
       if (f.outcome === "done" && again.identity_checked_at === null && before.identity_checked_at !== null)
         return err(c, { code: "identity_not_checked", message: CLOSE_CODES.identity_not_checked ?? "" }, 409);
       if (f.outcome === "done" && again.kind === "data_erasure") return err(c, ACTION_MISSING, 409);

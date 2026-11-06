@@ -48,7 +48,7 @@ import {
   SIGNATURES_IN_USE_SQL,
   SWEEP_PAGE_KEYS,
 } from "@techaust/db/r2-sweep";
-import { LIVE_PAGE_ROWS, retentionStatements } from "@techaust/db/retention";
+import { retentionStatements } from "@techaust/db/retention";
 import { erasureHashOf } from "./erasure.ts";
 import { logEvent } from "./log.ts";
 
