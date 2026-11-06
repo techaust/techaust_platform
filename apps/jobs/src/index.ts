@@ -1,13 +1,14 @@
 import { expireMessage } from "@techaust/core/expiry";
+import { usageMessageOf } from "@techaust/core/usage";
 import { warmSesSigning } from "@techaust/email";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
-import { enqueueHourly, HOURLY_CRON } from "./billing.ts";
+import { cronBranchOf, enqueueHourly, HOURLY_CRON } from "./billing.ts";
 import { payPalHook } from "./hooks/paypal.ts";
 import { razorpayHook } from "./hooks/razorpay.ts";
 import { sesHook, warmSesHook } from "./hooks/ses.ts";
 import { stripeHook } from "./hooks/stripe.ts";
-import { noteInvocation } from "./log.ts";
+import { firstRun, logEvent, noteInvocation } from "./log.ts";
 import { enqueueSweep } from "./pdf.ts";
 import { enqueueStatementPurge, PURGE_CRON, purgeScanMessage } from "./purge.ts";
 import { handleQueue } from "./queue.ts";
@@ -16,6 +17,10 @@ import { enqueueStats } from "./stats.ts";
 import { unsubscribeGet, unsubscribePost } from "./unsubscribe.ts";
 import { warmConsumers, warmRazorpayHook } from "./warm.ts";
 import { warmPayPalHookAtStartup } from "./warm-paypal.ts";
+
+/** M7.5 L11: the answer of every jobs route is JSON or one line of text, never a page: nothing may load and nothing may frame it. (Not exported: a named
+ * export of an entry is an entrypoint.) */
+const API_CSP = "default-src 'none'; frame-ancestors 'none'";
 
 warmConsumers();
 // Web Crypto is allowed at start-up and finishes before the first event; errors are swallowed inside (CPU tuning)
@@ -29,7 +34,28 @@ void warmPayPalHookAtStartup();
 void warmSesHook();
 
 const app = new Hono<{ Bindings: Env }>();
-app.use(secureHeaders());
+// M7.5 L11 (jobs part, A2: Hono's defaults gave HSTS for 180 days, no CSP and no Permissions-Policy): the website Worker's options (apps/web/src/worker.ts).
+app.use(
+  secureHeaders({
+    strictTransportSecurity: "max-age=31536000; includeSubDomains",
+    xContentTypeOptions: "nosniff",
+    referrerPolicy: "strict-origin-when-cross-origin",
+    crossOriginOpenerPolicy: "same-origin",
+    permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [], usb: [] },
+  }),
+);
+// The API CSP, set only when the handler set none (A2's trap: secureHeaders' own CSP option would overwrite a handler's). Nothing here is a page.
+app.use(async (c, next) => {
+  await next();
+  if (c.res.headers.has("Content-Security-Policy")) return;
+  try {
+    c.res.headers.set("Content-Security-Policy", API_CSP);
+  } catch {
+    // Immutable headers (a response passed through as is): copy it once, then set.
+    c.res = new Response(c.res.body, c.res);
+    c.res.headers.set("Content-Security-Policy", API_CSP);
+  }
+});
 
 // Health check: deliberately touches no database (saves D1 reads; docs/05 §13).
 app.get("/healthz", (c) => c.json({ ok: true, service: "jobs", env: c.env.ENVIRONMENT }));
@@ -66,6 +92,9 @@ export default {
   // One failing does not stop the others; the run still fails so the failure is seen.
   async scheduled(controller, env, _ctx) {
     noteInvocation();
+    // M7.5 L20: one line per tick with its branch and `f: 1` on the branch's first run in this isolate (the route inventory's four cron rows).
+    const b = cronBranchOf(controller.cron, controller.scheduledTime, PURGE_CRON);
+    logEvent("cron", { b, f: firstRun(`cron ${b}`) });
     if (controller.cron === HOURLY_CRON) {
       await enqueueHourly(env, controller.scheduledTime);
       return;
@@ -80,6 +109,8 @@ export default {
         purgeScanMessage(controller.scheduledTime),
         // M7.4 (D.1): the clean-up's start, and on IST Sundays the vault sweep, on the IST 1st the signature sweep (nothing read here).
         ...nightlyDpMessages(controller.scheduledTime),
+        // M7.5 D1 (Q4 A): yesterday's (UTC) Free-plan usage, one message; its consumer makes the one GraphQL fetch (usage.ts).
+        usageMessageOf(controller.scheduledTime),
       ]),
       // M5.5b: ONE message to clean the statement PDF cache (30 days, and anonymised clients); nothing read here.
       enqueueStatementPurge(env, controller.scheduledTime),

@@ -25,7 +25,7 @@ import { issueGatewayAdvance } from "./gateway/advance.ts";
 import { ROUTES } from "./guard.ts";
 import { issueReceipt } from "./receipt-issue.ts";
 import { mountInvoices } from "./routes-invoices.ts";
-import { id, rpcId, rpcLog } from "./rpc.ts";
+import { id, rpcId, rpcLogged } from "./rpc.ts";
 import { warmAdvanceAtStartup } from "./warm-advance.ts";
 import { INVOICES_WARM } from "./warm-fixtures/invoices.ts";
 import { INVOICES_RPC_WARM } from "./warm-fixtures/invoices-rpc.ts";
@@ -47,28 +47,34 @@ export default app satisfies ExportedHandler<Env>;
 
 /** The recurring care invoices (M5.4). Public methods are the RPC surface: keep them to exactly these two. */
 export class BillingJobs extends WorkerEntrypoint<Env> implements BillingJobsApi {
+  // One id-only line per call (stage B watch (a)): which method, the result code, no name, no amount; also when the call throws (M7.5 L20, `rpcLogged`).
   async draftCarePlan(args: { planId: string }): Promise<DraftCareResult> {
-    const planId = id(args?.planId);
-    const answer = await draftCarePlan(this.env, { planId });
-    // One id-only line per call (stage B watch (a)): which method, the result code, no name, no amount. `n` and `iso` tell a cold isolate from a warm one in the staging cpuTimeMs reading.
-    rpcLog("draftCarePlan", answer.result);
-    return answer;
+    return rpcLogged(
+      "draftCarePlan",
+      () => draftCarePlan(this.env, { planId: id(args?.planId) }),
+      (a) => a.result,
+    );
   }
 
   async issueCareDraft(args: { documentId: string }): Promise<IssueCareResult> {
-    const documentId = id(args?.documentId);
-    const answer = await issueCareDraft(this.env, { documentId });
-    rpcLog("issueCareDraft", answer.result);
-    return answer;
+    return rpcLogged(
+      "issueCareDraft",
+      () => issueCareDraft(this.env, { documentId: id(args?.documentId) }),
+      (a) => a.result,
+    );
   }
 
   /** M6.5 (L3, L34): one payment's receipt, its own batch (jobs' `receipt.issue`). The id is 1 to 60 characters (`rct_` + it stays within 64). */
   async issueReceipt(args: { paymentId: string }): Promise<IssueReceiptResult> {
-    const paymentId = id(args?.paymentId);
-    if (paymentId.length > 60) throw new TypeError("BillingJobs: a payment id is 1 to 60 characters");
-    const answer = await issueReceipt(this.env, paymentId);
-    rpcLog("issueReceipt", answer.result);
-    return answer;
+    return rpcLogged(
+      "issueReceipt",
+      async () => {
+        const paymentId = id(args?.paymentId);
+        if (paymentId.length > 60) throw new TypeError("BillingJobs: a payment id is 1 to 60 characters");
+        return issueReceipt(this.env, paymentId);
+      },
+      (a) => a.result,
+    );
   }
 }
 
@@ -79,9 +85,13 @@ export class BillingJobs extends WorkerEntrypoint<Env> implements BillingJobsApi
  */
 export class GatewayAdvance extends WorkerEntrypoint<Env> implements GatewayAdvanceApi {
   async issueGatewayAdvance(args: { paymentId: string; lastTry?: boolean }): Promise<IssueAdvanceResult> {
-    const paymentId = rpcId(args?.paymentId, "GatewayAdvance");
-    const answer = await issueGatewayAdvance(this.env, paymentId, { lastTry: args?.lastTry === true });
-    rpcLog("issueGatewayAdvance", answer.result);
-    return answer;
+    return rpcLogged(
+      "issueGatewayAdvance",
+      () =>
+        issueGatewayAdvance(this.env, rpcId(args?.paymentId, "GatewayAdvance"), {
+          lastTry: args?.lastTry === true,
+        }),
+      (a) => a.result,
+    );
   }
 }

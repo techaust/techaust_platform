@@ -18,6 +18,7 @@ import {
 import type { Role } from "@techaust/core";
 import { uuidv7 } from "@techaust/core";
 import { afterEach, beforeEach, expect, vi } from "vitest";
+import { invocation } from "../../../packages/testing/src/budget.ts";
 import type { RouteDef } from "./context.ts";
 import { issueGatewayAdvance } from "./gateway/advance.ts";
 import app from "./test-app.ts";
@@ -136,10 +137,13 @@ export async function sendTo(
   init: RequestInit,
   e: Env = env,
 ): Promise<Response> {
-  const ctx = createExecutionContext();
-  const res = await target.request(input, init, e, ctx);
-  await waitOnExecutionContext(ctx);
-  return res;
+  // M7.5 L18: one invocation of the counting env (the waitUntil work included), labelled by method and path.
+  return invocation(`${init.method ?? "GET"} ${new URL(input, "http://x").pathname}`, async () => {
+    const ctx = createExecutionContext();
+    const res = await target.request(input, init, e, ctx);
+    await waitOnExecutionContext(ctx);
+    return res;
+  });
 }
 
 /**
