@@ -1,5 +1,6 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { enc, hex, sha256 } from "../src/crypto.ts";
 import {
   type Attempts,
   accountKey,
@@ -24,6 +25,7 @@ import {
   MAGIC_MAIL_LOCK_MS,
   MAGIC_MAIL_WINDOW_MS,
 } from "../src/portal.ts";
+import { isAttemptKey } from "../src/tokens.ts";
 
 const KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
 const KEY2 = btoa(String.fromCharCode(...new Uint8Array(32).fill(9)));
@@ -166,10 +168,15 @@ describe("recordFailure with another policy (the per-address counter)", () => {
 });
 
 describe("counter keys", () => {
-  it("acct: is 32 hex of SHA-256(email); code: is the user id", async () => {
-    expect(await accountKey("a@example.com")).toMatch(/^acct:[0-9a-f]{32}$/);
-    expect(await accountKey("a@example.com")).toBe(await accountKey("a@example.com"));
-    expect(await accountKey("a@example.com")).not.toBe(await accountKey("b@example.com"));
+  it("acct: is 32 hex of an HMAC of the email under SALT_PEPPER (M7.5 L8); code: is the user id", async () => {
+    const k = await accountKey(KEY, "a@example.com");
+    expect(k).toMatch(/^acct:[0-9a-f]{32}$/);
+    expect(isAttemptKey(k)).toBe(true);
+    expect(k).toBe(await accountKey(KEY, "a@example.com"));
+    expect(k).not.toBe(await accountKey(KEY, "b@example.com"));
+    // keyed: another secret gives another key, and the bare SHA-256 of the email (the old key) is no longer it
+    expect(k).not.toBe(await accountKey(KEY2, "a@example.com"));
+    expect(k).not.toBe(`acct:${hex(await sha256(enc.encode("a@example.com"))).slice(0, 32)}`);
     expect(codeKey("019abc")).toBe("code:019abc");
   });
 

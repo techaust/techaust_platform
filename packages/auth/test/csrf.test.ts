@@ -39,6 +39,17 @@ describe("csrfCheck [ADM-G-02, POR-02, 05 §7.1]", () => {
     expect(csrfCheck({ ...base, contentType: "application/octet-stream" })).toBe("not_json");
   });
 
+  it("M7.5 L3: the GET refusal is for /api/ only; the SPA's pages themselves can be opened from anywhere", () => {
+    const get = { ...base, method: "GET", origin: null, contentType: null, hasBody: false };
+    for (const site of ["cross-site", "same-site", "none"]) {
+      expect(csrfCheck({ ...get, secFetchSite: site })).toBe("cross_site");
+      expect(csrfCheck({ ...get, secFetchSite: site, url: "https://app.example/invoices/1" })).toBe("ok");
+      expect(csrfCheck({ ...get, secFetchSite: site, url: "https://app.example/apix" })).toBe("ok");
+    }
+    expect(csrfCheck({ ...get, secFetchSite: "same-origin" })).toBe("ok");
+    expect(csrfCheck({ ...get, secFetchSite: undefined })).toBe("ok");
+  });
+
   it("the app origin is the origin of the request URL (port and scheme included)", () => {
     const u = "https://app.example:8443/x";
     expect(csrfCheck({ ...base, url: u, origin: "https://app.example:8443" })).toBe("ok");

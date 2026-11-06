@@ -13,9 +13,19 @@ export type Challenge = {
   purpose: "login_totp" | "enrol_totp";
   sub: string;
   exp: number;
+  /**
+   * M7.5 (A1 F4, L4): when the challenge was issued (ms), signed with the rest. A login challenge is single use: the code step's session batch is guarded on
+   * `last_login_at IS NULL OR last_login_at < iat`, and a finished sign-in moves `last_login_at` past it. A challenge signed before `iat` existed is read as
+   * issued at `exp - TTL` (`issuedAtOf`), which is exactly when it was made.
+   */
+  iat?: number;
   ak?: string;
   jti?: string;
 };
+
+/** When a challenge was issued: its signed `iat`, else `exp - ttlMs` (a challenge signed before M7.5). */
+export const issuedAtOf = (c: Challenge, ttlMs: number): number =>
+  typeof c.iat === "number" && Number.isFinite(c.iat) ? c.iat : c.exp - ttlMs;
 
 /** A new challenge id (M7.2): 16 random bytes, base64url (22 characters). */
 export const newChallengeId = () => b64url(randomBytes(16));

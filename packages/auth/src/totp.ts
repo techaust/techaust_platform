@@ -12,10 +12,22 @@ export const TOTP_ISSUER = "TecHaust";
 export const newTotpSecret = () => randomBytes(20);
 export const currentStep = (nowMs: number) => Math.floor(nowMs / 1000 / TOTP_PERIOD_S);
 
-export const sealTotpSecret = (key: string, userId: string, secret: Uint8Array) =>
-  encrypt(key, secret, `totp:${userId}`);
-export const openTotpSecret = (key: string, userId: string, sealed: string) =>
-  decrypt(key, sealed, `totp:${userId}`);
+/**
+ * M7.5 (A1 F8, L7): a sealed secret names its key version, `v1.` then base64url(iv ‖ ciphertext ‖ tag), so a later `TOTP_ENC_KEY` rotation can tell which
+ * key sealed a row (docs/runbooks/incident.md). `v1` is the current `TOTP_ENC_KEY`. A seal written before M7.5 has no prefix (base64url never holds a `.`) and
+ * is opened with the same key. The prefix sits outside the ciphertext, but changing it gains nothing: only `v1` exists, and AES-GCM refuses a wrong key or AAD.
+ */
+export const TOTP_SEAL_VERSION = "v1";
+export const sealTotpSecret = async (key: string, userId: string, secret: Uint8Array) =>
+  `${TOTP_SEAL_VERSION}.${await encrypt(key, secret, `totp:${userId}`)}`;
+export const openTotpSecret = (key: string, userId: string, sealed: string): Promise<Uint8Array> => {
+  const dot = sealed.indexOf(".");
+  // unversioned: sealed before M7.5, with the same key
+  if (dot < 0) return decrypt(key, sealed, `totp:${userId}`);
+  if (sealed.slice(0, dot) !== TOTP_SEAL_VERSION)
+    return Promise.reject(new Error("Unknown TOTP seal version"));
+  return decrypt(key, sealed.slice(dot + 1), `totp:${userId}`);
+};
 
 export const totpUri = (account: string, secret: Uint8Array) =>
   createTOTPKeyURI(TOTP_ISSUER, account, secret, TOTP_PERIOD_S, TOTP_DIGITS);

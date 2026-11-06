@@ -13,6 +13,7 @@ import {
   verifyPassword,
 } from "../src/password.ts";
 import {
+  CHALLENGE_TTL_MS,
   checkSession,
   IDLE_MS,
   newSession,
@@ -20,8 +21,22 @@ import {
   sessionCookie,
   TOUCH_EVERY_MS,
 } from "../src/session.ts";
-import { isAttemptKey, newToken, signChallenge, tokenHash, verifyChallenge } from "../src/tokens.ts";
-import { currentStep, openTotpSecret, sealTotpSecret, totpUri, verifyTotp } from "../src/totp.ts";
+import {
+  isAttemptKey,
+  issuedAtOf,
+  newToken,
+  signChallenge,
+  tokenHash,
+  verifyChallenge,
+} from "../src/tokens.ts";
+import {
+  currentStep,
+  openTotpSecret,
+  sealTotpSecret,
+  TOTP_SEAL_VERSION,
+  totpUri,
+  verifyTotp,
+} from "../src/totp.ts";
 
 const KEY = btoa(String.fromCharCode(...new Uint8Array(32).fill(7)));
 const KEY2 = btoa(String.fromCharCode(...new Uint8Array(32).fill(9)));
@@ -95,6 +110,14 @@ describe("TOTP [ADM-AUTH-01]", () => {
     await expect(openTotpSecret(KEY, "user-2", sealed)).rejects.toThrow();
     await expect(openTotpSecret(KEY2, "user-1", sealed)).rejects.toThrow();
     expect(sealed).not.toBe(await sealTotpSecret(KEY, "user-1", secret)); // fresh IV each time
+    // M7.5 (L7): new seals name their key version; a seal from before M7.5 (no prefix) still opens; an unknown version is refused
+    expect(sealed.startsWith(`${TOTP_SEAL_VERSION}.`)).toBe(true);
+    expect(TOTP_SEAL_VERSION).toBe("v1");
+    const legacy = sealed.slice(3);
+    expect(legacy).not.toContain(".");
+    expect(await openTotpSecret(KEY, "user-1", legacy)).toEqual(secret);
+    await expect(openTotpSecret(KEY, "user-1", `v2.${legacy}`)).rejects.toThrow("Unknown TOTP seal version");
+    await expect(openTotpSecret(KEY, "user-2", legacy)).rejects.toThrow();
     expect(totpUri("owner@techaust.com", secret)).toMatch(
       /^otpauth:\/\/totp\/TecHaust:owner%40techaust\.com\?/,
     );
@@ -139,6 +162,20 @@ describe("tokens and challenges", () => {
     const [, mac] = token.split(".") as [string, string];
     const forged = b64url(new TextEncoder().encode(JSON.stringify({ ...c, ak: `acct:${"b2".repeat(16)}` })));
     expect(await verifyChallenge(KEY, `${forged}.${mac}`, "login_totp", 1_000)).toBeNull();
+  });
+
+  it("M7.5 L4: `iat` is signed with the challenge; one signed before it existed reads as issued at exp - TTL", async () => {
+    const c = { purpose: "login_totp" as const, sub: "u1", exp: 2_000 + CHALLENGE_TTL_MS, iat: 2_000 };
+    const token = await signChallenge(KEY, c);
+    const read = await verifyChallenge(KEY, token, "login_totp", 2_500);
+    expect(read).toEqual(c);
+    expect(issuedAtOf(read as NonNullable<typeof read>, CHALLENGE_TTL_MS)).toBe(2_000);
+    const [, mac] = token.split(".") as [string, string];
+    const forged = b64url(new TextEncoder().encode(JSON.stringify({ ...c, iat: 9_000 })));
+    expect(await verifyChallenge(KEY, `${forged}.${mac}`, "login_totp", 2_500)).toBeNull();
+    // a challenge from before M7.5 (no iat) or with a non-number iat
+    expect(issuedAtOf({ purpose: "login_totp", sub: "u1", exp: 7_000 }, 5_000)).toBe(2_000);
+    expect(issuedAtOf({ purpose: "login_totp", sub: "u1", exp: 7_000, iat: Number.NaN }, 5_000)).toBe(2_000);
   });
 
   it("isAttemptKey accepts only `acct:` plus 32 lowercase hex characters", () => {
