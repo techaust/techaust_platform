@@ -178,9 +178,9 @@ describe("the portal's start-up dry run [M7.5 L39]", () => {
     expect(count).toBe(1);
   });
 
-  it("the made-up env holds no Rate Limiting binding and a pepper of words; the cookie is a made-up one", () => {
+  it("the made-up env holds only the D1, the environment and a pepper of words (no queue, bucket, service or limiter); the cookie is a made-up one", () => {
     const e = warmEnv({}) as unknown as Record<string, unknown>;
-    expect(["RL_SESSION", "RL_SIGNIN", "RL_LINKS"].filter((k) => k in e)).toEqual([]);
+    expect(Object.keys(e).sort()).toEqual(["DB", "ENVIRONMENT", "PORTAL_KEY_PEPPER"]);
     expect(atob(e.PORTAL_KEY_PEPPER as string)).toBe("warm-up-portal-pepper00000000000");
     expect(e.ENVIRONMENT).toBe("warm");
     expect(WARM_COOKIE).toBe("__Host-ta_portal=warm-up-session-not-a-real-one");
