@@ -204,7 +204,10 @@ describe("GET /reports/care-hours (C4) [ADM-REP-05]", () => {
     for (const q of ["month=2026-11", "month=2030-01"]) {
       const res = await call(`/reports/care-hours?${q}`, { cookie: owner.cookie });
       expect(res.status, q).toBe(400);
-      expect(((await res.json()) as { error: { code: string } }).error.code, q).toBe("month_invalid");
+      // the lead's approved staff line (review 1 finding 14, Q4), the same words as the SPA's `monthInvalid`
+      expect((await res.json()) as { error: { code: string; message: string } }, q).toMatchObject({
+        error: { code: "month_invalid", message: "Choose a month up to this one" },
+      });
     }
   });
 });

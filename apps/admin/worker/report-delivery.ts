@@ -47,7 +47,7 @@ const RANGE_ERRORS: Record<string, ApiError> = {
     message: "Leads are deleted 12 months after their last activity, so older periods are not shown.",
   },
 };
-const MONTH_INVALID: ApiError = { code: "month_invalid", message: "Choose a month" };
+const MONTH_INVALID: ApiError = { code: "month_invalid", message: "Choose a month up to this one" };
 
 /** The query schemas (module top level; B2's warm-up parses one sample of each). */
 export const pipelineQuery = z.object({ from: isoDate, to: isoDate });
