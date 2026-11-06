@@ -20,7 +20,6 @@ import {
 import { API_CSP } from "@techaust/core/file-types";
 import { uuidv7 } from "@techaust/core/ids";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CHALLENGE_USED_LINE } from "../src/lib/password-sign-in.ts";
 import api from "./api.ts";
 import {
   CHALLENGE_USED,
@@ -545,8 +544,11 @@ describe("L34: a right code on a spent challenge is 401 challenge_used, uncounte
     expect((await attemptsRow(key))?.failures).toBe(3);
   });
 
-  it("the server's line is the SPA's line", () => {
-    expect(CHALLENGE_USED.message).toBe(CHALLENGE_USED_LINE);
+  it("the server's line is the approved staff line (src/lib/password-sign-in.test.ts pins the SPA's CHALLENGE_USED_LINE to the same words)", () => {
+    expect(CHALLENGE_USED).toEqual({
+      code: "challenge_used",
+      message: "This sign-in has already been used. Enter your password again.",
+    });
   });
 });
 
