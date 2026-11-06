@@ -3,8 +3,18 @@
 import { RETENTION_FLOORS } from "@techaust/core/settings";
 import { type FieldErrors, intIn } from "./settings-form.ts";
 
-export type RetentionForm = { leads: string; email: string; security: string; financial: string };
-export type RetentionKey = keyof RetentionForm;
+/**
+ * The four rows' typed figures, plus M7.4's two figures (A.8: closed data requests, consent proof) carried through unchanged as loaded, until the designer
+ * gives them their own rows (G.3); the API checks them against their floors on save.
+ */
+export type RetentionForm = {
+  leads: string;
+  email: string;
+  security: string;
+  financial: string;
+  kept: { requestsMonths: number; consentProofMonths: number };
+};
+export type RetentionKey = Exclude<keyof RetentionForm, "kept">;
 
 export const RETENTION_ROWS = [
   {
@@ -51,11 +61,14 @@ export const retentionToForm = (v: {
   emailLogMonths: number;
   securityLogMonths: number;
   financialYears: number;
+  requestsMonths: number;
+  consentProofMonths: number;
 }): RetentionForm => ({
   leads: String(v.leadsMonths),
   email: String(v.emailLogMonths),
   security: String(v.securityLogMonths),
   financial: String(v.financialYears),
+  kept: { requestsMonths: v.requestsMonths, consentProofMonths: v.consentProofMonths },
 });
 
 /** The figures to save, or each row's own line for a figure that is not a whole number at its minimum or more. */
@@ -67,6 +80,8 @@ export function buildRetention(f: RetentionForm):
         emailLogMonths: number;
         securityLogMonths: number;
         financialYears: number;
+        requestsMonths: number;
+        consentProofMonths: number;
       };
     } {
   const errors: FieldErrors = {};
@@ -83,6 +98,7 @@ export function buildRetention(f: RetentionForm):
       emailLogMonths: n.email as number,
       securityLogMonths: n.security as number,
       financialYears: n.financial as number,
+      ...f.kept,
     },
   };
 }

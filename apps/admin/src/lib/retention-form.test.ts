@@ -2,7 +2,15 @@ import { RETENTION_FLOORS, retentionSettings } from "@techaust/core/settings";
 import { describe, expect, it } from "vitest";
 import { buildRetention, RETENTION_ROWS, retentionRowError, retentionToForm } from "./retention-form.ts";
 
-const good = { leadsMonths: 12, emailLogMonths: 12, securityLogMonths: 13, financialYears: 8 };
+const good = {
+  leadsMonths: 12,
+  emailLogMonths: 12,
+  securityLogMonths: 13,
+  financialYears: 8,
+  // M7.4 (A.8): carried through as loaded
+  requestsMonths: 36,
+  consentProofMonths: 12,
+};
 
 describe("Settings › Data retention (08-C RB-09; 07-W 5.10)", () => {
   it("every row's minimum is core's floor, the one the schema takes", () => {

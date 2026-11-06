@@ -547,6 +547,13 @@
       "when": 1793910096211,
       "tag": "0077_reports_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1793956142700,
+      "tag": "0078_data_protection",
+      "breakpoints": true
     }
   ]
 }

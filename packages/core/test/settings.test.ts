@@ -48,7 +48,16 @@ describe("settings defaults (docs/08 §7.1, researched in 08-C)", () => {
       emailLogMonths: 13,
       securityLogMonths: 13,
       financialYears: 10,
+      // M7.4 (A.8; L14; owner 2026-10-07)
+      requestsMonths: 36,
+      consentProofMonths: 36,
     });
+    expect(RETENTION_FLOORS.requestsMonths).toBe(12);
+    expect(RETENTION_FLOORS.consentProofMonths).toBe(12);
+    expect(SETTINGS_SCHEMAS.retention.safeParse({ ...retention, requestsMonths: 11 }).success).toBe(false);
+    expect(SETTINGS_SCHEMAS.retention.safeParse({ ...retention, consentProofMonths: 11 }).success).toBe(
+      false,
+    );
     expect(flags.dpdpReadinessPage).toBe(false);
     // Nothing identifying is committed to the public repository.
     expect([company.legalName, company.gstin, company.address, company.documentsPhone]).toEqual([

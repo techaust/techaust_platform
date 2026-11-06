@@ -58,8 +58,36 @@ export const clientRequests = sqliteTable(
     closeNote: text("close_note"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    // ---- M7.4 (A.1; ADM-SET-09, POR-11): the request clock and its steps, ADD COLUMN only (the table is referenced). Researched 2026-11-06, DPDP Rules
+    // 2025 r.14(3); SPDI r.5(9); privacy notice 07-A §§7–8 (08-C RB-47). The trigger set `data_protection_triggers` holds the values and the moves.
+    /** When the request arrived: the portal's `created_at`; a staff-logged one the start of the IST day typed, never a future day (core `dsr`). */
+    receivedAt: integer("received_at"),
+    /** The end of the IST reply day (core `requestDueAt`; the trigger checks it against its SQL twin). */
+    dueAt: integer("due_at"),
+    /** `received_at` + 48 hours. */
+    ackDueAt: integer("ack_due_at"),
+    /** Set once: the acknowledgement was sent (L32: the portal's `request.received` email sets it in the batch that queues it). */
+    acknowledgedAt: integer("acknowledged_at"),
+    /** How it reached us (core `CHANNELS`); a staff-logged one names who logged it. */
+    channel: text("channel").notNull().default("portal"),
+    loggedBy: text("logged_by").references(() => staffUsers.id),
+    /** Set once, with who checked. */
+    identityCheckedAt: integer("identity_checked_at"),
+    identityCheckedBy: text("identity_checked_by").references(() => staffUsers.id),
+    /** A declined request's reason (core `DECLINE_REASONS`). */
+    declineReason: text("decline_reason"),
+    /** The audit row of the erase, anonymise or export that fulfilled the request (a `done` erasure needs one, matched to its subject). */
+    actionAuditId: text("action_audit_id"),
+    /** Q2 A: when staff emailed a done access request's export. */
+    exportSentAt: integer("export_sent_at"),
   },
   (t) => [
+    // M7.4 (A.1): the open requests by reply date (the inbox's overdue and due-soon filters, the hourly clock).
+    index("client_requests_due").on(t.dueAt, t.id).where(sql`${t.status} = 'open'`),
+    // M7.4 (A.7): the lead purge's skip test, per scanned lead (a lead an open erasure request names is never purged; round 4).
+    index("client_requests_open_erasure")
+      .on(t.leadRef)
+      .where(sql`${t.kind} = 'data_erasure' and ${t.status} = 'open'`),
     // A client's requests, newest first (the client page's Requests panel, the portal's own list through `client_id = ?1`).
     index("client_requests_client").on(t.clientId, t.createdAt, t.id),
     // The admin list by status, oldest first, and the open count.

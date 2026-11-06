@@ -47,14 +47,14 @@ export type RetentionFigures = {
 };
 
 /**
- * The least each figure may be, in months: the settings floors (`RETENTION_FLOORS`) and, for the two figures A.8 adds, 12 (L14; owner 2026-10-07 for
- * consent proof). A.8 moves those two into `RETENTION_FLOORS`; this map then reads them from there.
+ * The least each figure may be, in months: the settings floors (`RETENTION_FLOORS`, the one place they live; A.8 added `requestsMonths` and
+ * `consentProofMonths`).
  */
 export const FIGURE_FLOORS = {
   emailLogMonths: RETENTION_FLOORS.emailLogMonths,
   securityLogMonths: RETENTION_FLOORS.securityLogMonths,
-  requestsMonths: 12,
-  consentProofMonths: 12,
+  requestsMonths: RETENTION_FLOORS.requestsMonths,
+  consentProofMonths: RETENTION_FLOORS.consentProofMonths,
 } as const satisfies Record<keyof RetentionFigures, number>;
 
 /** The database floor every DELETE trigger and the audit scrub hold (A, "Floors no setting can cross"): 366 days, so nothing goes before a full year across 29 February (L34). */
@@ -63,7 +63,8 @@ export const TRIGGER_FLOOR_DAYS = 366;
 /**
  * The families a database floor guards, and the triggers that hold it (each refuses a row younger than `TRIGGER_FLOOR_DAYS`; pinned to the installed
  * triggers by a db test). The audit scrub is an UPDATE of `ip` and `user_agent` to NULL and of the three `alert.*` summaries' `ua`, `city` and `country`
- * (Q3 A; L33), held by the re-created `audit_log_no_update`. The consent family deletes receipts and the `erased` stop rows (L29).
+ * (Q3 A; L33), held by the re-created `audit_log_no_update`. The consent family also deletes the `erased` stop rows (L29); those have no floor trigger,
+ * because the Owner's "Allow emails again" (M7.2) and the lift (L20) delete stop rows of any age: their floor is the job's predicate only.
  */
 export const FLOORED_FAMILIES = {
   email_log: ["email_log_delete_floor"],
@@ -71,7 +72,7 @@ export const FLOORED_FAMILIES = {
   access_log: ["access_log_delete_floor"],
   audit_ip: ["audit_log_no_update"],
   requests: ["client_requests_delete_guard"],
-  consent: ["consent_receipts_no_delete", "email_suppressions_delete_guard"],
+  consent: ["consent_receipts_no_delete"],
 } as const satisfies Partial<Record<RetentionFamily, readonly string[]>>;
 
 /** Which setting drives each setting-driven family. */

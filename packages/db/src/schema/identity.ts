@@ -87,7 +87,8 @@ export const staffSessions = sqliteTable(
     userAgent: text("user_agent"),
     revokedAt: integer("revoked_at"),
   },
-  (t) => [index("staff_sessions_user").on(t.userId)],
+  // M7.4 (A.7): the retention job finds sessions 30 days past their absolute end by this index.
+  (t) => [index("staff_sessions_user").on(t.userId), index("staff_sessions_abs").on(t.absExpiresAt)],
 );
 
 export const staffInvites = sqliteTable(
@@ -106,12 +107,17 @@ export const staffInvites = sqliteTable(
 );
 
 /** Exact lockout counters (the Rate Limiting binding is approximate). Key: `acct:<id>` or `ip:<ip>`. */
-export const authAttempts = sqliteTable("auth_attempts", {
-  key: text("key").primaryKey(),
-  windowStart: integer("window_start").notNull(),
-  failures: integer("failures").notNull().default(0),
-  lockedUntil: integer("locked_until"),
-});
+export const authAttempts = sqliteTable(
+  "auth_attempts",
+  {
+    key: text("key").primaryKey(),
+    windowStart: integer("window_start").notNull(),
+    failures: integer("failures").notNull().default(0),
+    lockedUntil: integer("locked_until"),
+  },
+  // M7.4 (A.7): the retention job's counters family (windows older than 2 days with no lock in force).
+  (t) => [index("auth_attempts_window").on(t.windowStart)],
+);
 
 // Portal (client) auth. contact_id/client_id reference CRM tables (crm.ts).
 export const clientSessions = sqliteTable(
@@ -128,7 +134,7 @@ export const clientSessions = sqliteTable(
     userAgent: text("user_agent"),
     revokedAt: integer("revoked_at"),
   },
-  (t) => [index("client_sessions_contact").on(t.contactId)],
+  (t) => [index("client_sessions_contact").on(t.contactId), index("client_sessions_abs").on(t.absExpiresAt)],
 );
 
 export const magicLinkTokens = sqliteTable(
@@ -141,7 +147,10 @@ export const magicLinkTokens = sqliteTable(
     requestIp: text("request_ip"),
     createdAt: createdAt(),
   },
-  (t) => [index("magic_link_tokens_contact").on(t.contactId)],
+  (t) => [
+    index("magic_link_tokens_contact").on(t.contactId),
+    index("magic_link_tokens_expires").on(t.expiresAt),
+  ],
 );
 
 export const DOC_TOKEN_PURPOSES = ["view_pay"] as const;
@@ -198,6 +207,8 @@ export const notifications = sqliteTable(
     // M3.2: deleting a purged lead's bell rows by what they point at.
     index("notifications_entity").on(t.entityType, t.entityId),
     index("notifications_user_created").on(t.userId, t.createdAt, t.id),
+    // M7.4 (A.7): the retention job's bells family (read after 90 days, any after 12 months).
+    index("notifications_created").on(t.createdAt, t.id),
     index("notifications_user_unread").on(t.userId, t.readAt, t.createdAt, t.id),
   ],
 );
