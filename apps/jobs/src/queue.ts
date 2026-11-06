@@ -29,6 +29,7 @@ import { processBilling, processBillingDeadLetter } from "./billing.ts";
 import { processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
 import { processDigest } from "./digest.ts";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
+import { isErasureKeyMissing } from "./erasure.ts";
 import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
 import { processGateway, processGatewayDeadLetter } from "./gateway.ts";
 import { processInvoiceSend } from "./invoice-send.ts";
@@ -54,6 +55,14 @@ import { logStatsDeadLetter, processStats, skipStats } from "./stats.ts";
 /** A staff alert (`{ kind: "staff.alert", auditId }`) shares the email queue with ordinary emails (M2.4b). */
 const isStaffAlert = (body: unknown) =>
   typeof body === "object" && body !== null && (body as { kind?: unknown }).kind === "staff.alert";
+
+/** A body's `kind` (or an email's `template`) for a log line, only when it is a plain code: never a value from the message itself. */
+const kindOf = (body: unknown): string | undefined => {
+  if (typeof body !== "object" || body === null) return undefined;
+  const k =
+    (body as { kind?: unknown; template?: unknown }).kind ?? (body as { template?: unknown }).template;
+  return typeof k === "string" && /^[a-z0-9._-]{1,40}$/.test(k) ? k : undefined;
+};
 
 /**
  * A dead-lettered message whose alert could not be sent is retried with long, growing delays (5 minutes, doubling, at
@@ -279,11 +288,21 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       }
     } catch (e) {
       // A database or network error: let the queue redeliver. The error text may carry values, so only its type is logged.
-      logEvent("queue.error", {
-        queue,
-        attempts: message.attempts,
-        error: e instanceof Error ? e.name : "unknown",
-      });
+      // Early check 2, low 4: a Worker without ERASURE_HASH_KEY has its own event (it never clears by itself: the owner's H1 step sets the key), still retried,
+      // so an email to an erased address is never sent for want of the key.
+      if (isErasureKeyMissing(e))
+        logEvent("erasure.key_missing", {
+          queue,
+          attempts: message.attempts,
+          kind: kindOf(message.body),
+          f: 1,
+        });
+      else
+        logEvent("queue.error", {
+          queue,
+          attempts: message.attempts,
+          error: e instanceof Error ? e.name : "unknown",
+        });
       // The email queue uses the email backoff here too (FX-1, A6 4); the other queues keep their short one.
       message.retry({
         delaySeconds: isDlq
