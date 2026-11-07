@@ -1,8 +1,8 @@
 # Run: AU45, the client statement's "refund returned" line
 
-Status: analyst early check running
+Status: designer running (PDF note, statement-5, admin tab); lead fixing early-check lows
 Tier: A (the statement's money lines and balances; client-facing figures)
-Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 claude-opus-5-5/high (`cloudflare:workers-best-practices`, `cloudflare:wrangler` tried, unavailable in the cloud): 5-h 1 % (20:05 IST) at start, 14 % (20:29 IST) the last relayed reading ; analyst early check started 21:00 IST (14 % at 20:29 IST)
+Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 claude-opus-5-5/high (`cloudflare:workers-best-practices`, `cloudflare:wrangler` tried, unavailable in the cloud): 5-h 1 % (20:05 IST) at start, 14 % (20:29 IST) the last relayed reading ; analyst early check claude-opus-5-5/high (`cloudflare:*` tried, unavailable): 14 % (20:29 IST) at start ; designer d1 started 21:25 IST (14 % at 20:29 IST)
 
 Cloud task session `au45-statement`, branch `feat/au45-statement` (owner's blanket approval, 2026-11-07, 13: "AU45 … built before launch; its wording drafted by the lead under this approval"). Basis: [full-audit-m6-m7](full-audit-m6-m7.md) AU37, AU45, AU46, AU1.
 
@@ -58,6 +58,12 @@ The shared FINISH, plus: in the admin route, the PDF view and the core twin, a r
 `apps/admin/worker/gateway/*`; core `razorpay`/`paypal`/`stripe`; `apps/jobs/src/hooks/*`, `apps/jobs/src/pdf.ts`; `apps/admin/worker/document-pdf.ts` and the invoice PDF routes; AU46 and the other AU37 period readers; the 07-ZT email; any migration.
 
 ## Early check
+**Analyst, 2026-11-07, on c52187c: GO.** No critical, high or medium finding. Re-ran on the merged head (with #193): db `refund-statements` + `reports` 79 passed, admin `worker/reports.test.ts` 24 passed, jobs `statement-b` 27 passed; the lead's repo-wide `pnpm typecheck` exit 0. Checked: the IST-day expression equals AU37's `istDayEndMsSql` boundary (tests 7, 9); the debit/credit pair (same client, currency, confirmed payment, number, amount; chargeback and manual excluded in SQL and trigger; L33 rejected payment gives neither line); AU37 preserved (Nov's whole statement equal before and after a Dec return, db and HTTP); closing(N) = opening(N+1) in db, admin and core; ledger agreement incl. the release-allocation case; `(sk, id)` unique (`|5` vs `|6`); binds (3 / 6 values; D1 refuses 4 for the 3-parameter form, pinned); cursor `[1-6]`; all 7 statement reads SEARCH `payment_refunds_client` for `f` and `g`, no scan; scope clean; copy-zu word for word.
+Low findings (the lead's, in integration):
+1. `refundReturnedSql` doesn't require `settled_on IS NOT NULL` (a malformed row could print a credit with no debit; today's code never writes one): add `settled_on IS NOT NULL` and `provider_refund_id IS NOT NULL` (mirrors 0082), with a test row.
+2. `reports.ts` ledger comment formula: add "− refund-came-back lines".
+3. `apps/admin/worker/statements.ts` header's credits list is from M5.5: name receipts, TDS and the two refund kinds.
+Noted, not blocking: no test pins the statement route's rows read (`reports-stress.test.ts` doesn't cover it; older than AU45) → follow-up.
 
 ## Builder report
 ### Builder b1 (2026-11-07, claude-opus-5-5/high): §2 done. Stopped for the early check
