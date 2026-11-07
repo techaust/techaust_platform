@@ -232,3 +232,68 @@ No other **column** holds a contact's name, email, phone, IP or browser. `paymen
 Unchanged from report 1: no hosted run. `json_remove` was checked on D1 (the workerd db test) and on node:sqlite (the builder).
 
 - **Report 2 follow-up (lead, 2026-11-07, same safest reading):** `documents.decision_note` is exported as NULL in the monthly copy (`BLANKED_DOCUMENT_COLUMNS` in `backup-scope.ts`; scope JSON regenerated); the acceptance text, deed text and staff notes stay. Tests: web `backup-monthly` + `backup-workflow` 68 passed, 1 skipped; db `retention` 14 passed; `pnpm check` exit 0 (all through `tools/heavy.sh`).
+
+## Builder report 4
+Builder (Opus 5.5, high), branch `fix/p7-ops-b2` from `origin/feat/p7-ops` (d02a4a0a). Commit ef1b658e (the fixes) plus this report; pushed. No deploy, no hosted change, no secret, action SHA pins unchanged; no plaintext or signed link reaches any log.
+
+**Skills loaded:**
+- `aws-core:aws-storage`: shaped H1. Checked the versioned-bucket lifecycle against the S3 User Guide (Context7, `/websites/aws_amazon_s3`, "Lifecycle configuration examples"): expiring a current version adds a delete marker, the copy becomes noncurrent, and the noncurrent days count from then (their own example: 60 + 30 = "permanently removed 90 days after object creation").
+- `aws-core:aws-iam`: confirmed the catch-up listing (prefix `monthly/techaust-prod-finance-<YYYY-MM>`) is matched by the existing `s3:ListBucket` condition `StringLike s3:prefix monthly/*`; no policy change.
+- `cloudflare:wrangler`: kept wrangler free of AWS credentials. The AWS step moved after the export, and a test pins that order.
+
+### The fixes
+1. **H1, lifecycle days add up** (`docs/runbooks/restore.md` §3.1, §1 "How long", §3.6.4 b; `environments.md`):
+   - a new §3.1 paragraph and table explain that every copy becomes noncurrent when it expires;
+   - `expire-daily-90d` on `daily/`: current **60** + noncurrent **30**;
+   - `monthly-10-years` on `monthly/`: current **3623** + noncurrent **30** (3,653 days in all);
+   - "Number of newer versions to retain" stays empty in both rules.
+   - **"Delete expired object delete markers" can't be ticked in these rules (see Open questions).** The S3 docs say "You can't specify both a `Days` and an `ExpiredObjectDeleteMarker` tag on the same rule"; the console docs (the S3 on Outposts page) say the box can't be chosen together with "Expire current versions". When current versions expire by age, S3 "detects and removes the expired object delete markers for you". The runbook says this instead of telling the owner to tick it.
+2. **Unique monthly names** (`backup.yml`): `monthly/techaust-prod-finance-<YYYY-MM>-<YYYYMMDDTHHMMSSZ>.tar`.
+   - The month, the day and the time come from one `date -u +%Y%m%dT%H%M%SZ` reading, so they can't straddle midnight.
+   - The plaintext `techaust-prod-finance-<month>-<stamp>.sql` still matches the delete step's `techaust-prod-*.sql` pattern.
+   - The runbook (§3.6.2 Where, §3.6.3 steps 1–3) and the header comment are updated.
+3. **M1 catch-up** (`backup.yml`):
+   - The new order: export, encrypt, AWS credentials, then the decision step "Is this run also the monthly copy", the monthly build and the plaintext deletion.
+   - The AWS step moved from after the deletion to just after the daily encryption. The decision needs the listing, and wrangler never runs with AWS credentials.
+   - The plaintext now waits only for the STS call and one listing before the monthly build, and the deletion stays `always()`.
+   - The decision makes the copy on:
+     - UTC day 01;
+     - the `monthly` tick;
+     - or when `aws s3api list-objects-v2 --prefix "monthly/techaust-prod-finance-$month" --query "Contents[0].Key" --output text` answers `None` (or nothing).
+   - A failed listing makes the copy anyway, with a `::warning::`. If ListBucket were refused, the upload check would fail the run anyway.
+   - The step runs under GitHub's default `bash -e`: the listing sits in an `elif` condition, so it can't abort the step.
+   - The failure message now says the next night tries again by itself.
+4. **L1:** restore.md §3.6.1 now reads "No contact's personal data outside the signed contract texts". A new bullet names those texts (an accepted offer's sections, a deed's sealed text) and the NULL decision note.
+5. **L2** (`packages/db/src/backup-scope.ts`): **no CHECK guarantees valid JSON.** `documents.recipient` is a plain nullable `text` in `0000_init.sql:437`, with no CHECK and no trigger checking it (only the freeze triggers compare it).
+   - New `RECIPIENT_EXPORT_SQL`: `CASE WHEN json_valid(recipient) THEN CASE WHEN json_type(recipient) = 'object' THEN json_remove(…) END END`.
+   - Invalid JSON is NULL. So is valid JSON that isn't an object (a string, an array, a number), because `json_remove` would hand those back raw.
+   - The cases are nested because `json_type` raises an error on invalid JSON.
+   - `scripts/backup-monthly-scope.json` is regenerated; the drift test passes.
+
+### Tests
+- `apps/web/test/backup-workflow.test.ts` (46 passed, 1 skipped, the existing placeholder):
+  - the order test (credentials after encryption and before the decision);
+  - a new test: the AWS credentials come after the export, and no wrangler, pnpm or npx after them;
+  - the adjacency of encrypt, AWS, decision, build and delete;
+  - the decision strings (one `date` call, the listing command, `BACKUP_BUCKET` as env, no s3 cp, get or put);
+  - the decision run through `bash -e` with stand-ins for `date` and `aws`, 8 cases:
+    - day 01, or the tick: no listing is made;
+    - day 15 with a copy listed: daily only;
+    - days 02 and 28 with `None` listed: the copy is made (catch-up);
+    - a refused listing: the copy is made, with the warning;
+  - two runs in one month give two different object names.
+- `packages/db/test/retention.test.ts` (15 passed): a new test checks the documents DDL in D1 (no `json_valid` or `json_type`) and `RECIPIENT_EXPORT_SQL` in the export. Then, on D1, a recipient that is not JSON, a JSON string, a JSON array or NULL is exported as NULL, and an object loses `email`; the made-up email never appears.
+- `apps/web/test/backup-monthly.test.ts` (27 passed, with `UPDATE_BACKUP_SCOPE=1` to regenerate, then as the drift check inside the web run).
+
+### Commands and results
+- `bash tools/heavy.sh --log p7ops-b2-db-retention pnpm --filter @techaust/db exec vitest run test/retention.test.ts`: **exit 0, 15 passed**.
+- `bash tools/heavy.sh --log p7ops-b2-web-test pnpm --filter @techaust/web test`: **exit 0, 48 files, 1186 passed, 21 skipped**.
+- `bash tools/heavy.sh --log p7ops-b2-check pnpm check` (the one whole-repository lint): **exit 0**: lint, typecheck, every guard, migrations (87).
+- `pnpm exec biome check` on the changed files: clean.
+
+### Not verified
+- **No hosted run:** the listing under the real role, the AWS step's new position and the catch-up on GitHub are unproven until the first run by hand.
+- **The console's greyed-out "Delete expired object delete markers" box:** read from AWS's docs today (the general S3 guide for the API rule, and the S3 on Outposts console page), not from the console.
+
+### Open questions
+1. **H1's "Delete expired object delete markers" ticked** can't be done in `expire-daily-90d` or `monthly-10-years`, because AWS refuses it beside "Expire current versions" (quoted above), and it isn't needed: S3 removes those markers itself. If the owner already tried to tick it and the console refused, that's why. Only a separate rule with just that box would allow it. I did not add one to the runbook as a step; it is the lead's call.
