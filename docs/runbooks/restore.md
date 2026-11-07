@@ -158,14 +158,15 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
    2. **always split the file first** (first production drill, 2026-11-07: D1's export puts `CREATE VIEW issue_guard` last, after the trigger created on it, so a straight load fails): `node scripts/drill-split.mjs <the .sql> "…\.logs\drill\parts"` writes `part-1-schema.sql`, `part-2-data.sql`, `part-3-triggers.sql` in drill-verify's `loadOrder`;
    3. load the three parts in that order, one command each (wrangler finds the database by name; add `-y` or answer `y`), e.g. for the first part:
 ```
-pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 execute techaust-restore-<date> --remote --file "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\techaust-prod-<date and time>.sql"
+pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 execute techaust-restore-<date> --remote -y --file "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\parts\part-1-schema.sql"
 ```
+   then the same with `part-2-data.sql`, then `part-3-triggers.sql`;
    4. compare a few counts with step 3's printed counts (`audit_log`, `documents`, `d1_migrations`), one command each, for example:
 ```
 pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 execute techaust-restore-<date> --remote --command "SELECT count(*) AS n FROM audit_log"
 ```
    `drill:verify` can't check this remote copy (it reads local databases only); the counts are the check.
-5. **Clean up:** the lead deletes the scratch D1 `techaust-restore-<date>` (connector); delete `.wrangler\drill-<date>`, the `.sql` and the `.tar` from `.logs\drill\`.
+5. **Clean up:** the lead deletes the scratch D1 `techaust-restore-<date>` (connector); delete `.wrangler\drill-<date>`, the `.sql`, the `.tar` and the `parts` folder from `.logs\drill\`.
 6. **Record it:** finish the drill-log entry (times, results, RTO), and, after the first drill on the production backup (L7), set `scripts/backup-verified.json` to `{"verifiedOn": "YYYY-MM-DD", "restoreDrill": true}` (the drill's date) in a commit. Until then `scripts/check-prod-readiness.mjs` blocks the production deploy (stage full).
 
 ### 3.5 A real restore from the S3 copy
