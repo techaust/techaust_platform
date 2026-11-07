@@ -254,3 +254,15 @@ Builder `fix/p7-payments-b1` (Opus 5.5, high), 2026-11-07. This round applies th
 ### Open questions for the lead
 - **The scope of "only new checkouts fall back" (item 5):** I read it as including the settlement of those checkouts.
 - **Wording:** the A2.5 text.
+
+## Early check (analyst, Opus 5.5 high, 2026-11-07): CHANGE, fixed in Builder report 2
+- **1 MEDIUM:** a failed Settings read in the hooks counted as "test". Fixed: `hookModeOf` returns null, and the hooks answer 503 `mode_unavailable` with nothing written.
+- **2 LOW:** the PayPal hook read D1 before checking its headers. Fixed: lazy `modeOf`.
+- **3 LOW:** the stubs and simulator sent a bare `custom_id`. Fixed: they send `-local` marks.
+- **4 LOW:** the adapters defaulted `env` to "local". Fixed: `env` is required.
+- **5 (D3):** refunds and the reconciliation fetch keep `503 live_not_allowed` while Settings is live and the flag is off (lead's decision); checkouts fall back for their whole life (lead accepts the builder's reading, 2026-11-07).
+- **6:** the live-credentials fallback goes into the A2.5 safe order.
+- **D4:** bell wording approved by the lead.
+- **D5:** stays a follow-up.
+- **Wanted before production go-live (L9), not before launch:** one sandbox PayPal order and one Razorpay link on staging after merge, to confirm the `custom_id` suffix is echoed and `notes.techaust_env` is present.
+- Usage: builder agent-a5c1936fb71e4ef83, analyst agent-ab7030af55bfdcc39, both claude-opus-5-5/high.
