@@ -1,6 +1,6 @@
-Status: analyst early check running
+Status: builder (b2) and designer (d1) running
 Tier: A
-Usage: analyst claude-opus-5-5/high (brief draft; skills: none, the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder (b1) claude-opus-5-5/high (skills: none, as above; model-audit flags both runs for that, explained): 5-h 14 → 53 %
+Usage: analyst claude-opus-5-5/high (brief draft; skills: none, the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder (b1) claude-opus-5-5/high (skills: none, as above; model-audit flags both runs for that, explained): 5-h 14 → 53 %; analyst early check claude-opus-5-5/high (skills: `security-review` tried, it failed to load: no `origin/HEAD`; checklist applied by hand): 5-h 53 → 53+
 
 # Rebuild PDF (cloud session `rebuild-pdf`, branch `feat/rebuild-pdf`)
 
@@ -249,11 +249,31 @@ CPU: the admin check hashes at most one PDF (native digest, ~300 KB typical) onl
 ## Handover
 - 2026-11-07 20:15 IST: branch made from `origin/main` (0ec9e8b); analyst drafting the Tier A brief.
 - 2026-11-07 20:30 IST: USAGE 14 at 20:29; origin/main (#193) taken in.
+- 2026-11-07 21:45 IST: early check GO; builder b2 (changes 1–9, portal, attachments) and designer d1 started in parallel.
 - 2026-11-07 21:30 IST: builder b1 merged (head dfb06c9); worktree removed; analyst early check started (USAGE 53 at 21:30).
 - 2026-11-07: owner's answers recorded (Q1 B, Q2 A, 07-ZV approved); builder told.
 - 2026-11-07 21:00 IST: final brief written; Q1, Q2 and 07-ZV asked; builder starting on the parts the questions don't block.
 
 ## Early check
+
+### Analyst early check (2026-11-07, claude-opus-5-5/high): **GO**
+Checked `git diff f34ffec..64bca95` against the Brief, the owner's answers, L1–L12 and the builder's 13 deviations (all accepted). Ran: db `pdf-repairs.test.ts` 18 passed; jobs `pdf-rebuild.test.ts` 14; admin `pdf-rebuild.test.ts` 15; portal `offer-open-twin.test.ts` 2. No critical or high finding. Verified: 0087 create-only, 0088 from `TRIGGER_SETS` with the exact-text drift test; trigger logic per kind (supplier key twin-tested with `supplierPdfKey`, `repairKey` twin, `n`, served `old_key`); append-only; the redaction outbox and `changes()` (the only `redacted_at` batch guards on the audit row, nothing to change); the Q1 = B twin is word for word the portal accept's document conditions, in route, request guard and trigger; ROUTES ownership and permissions (GETs use the matching existing read action, return no personal data); one `mutate` batch with the guarded audit row; races serialised; every admin reader serves the rebuilt file and nothing derives keys from it; the plan refactor keeps first renders' order and outcomes; a tampered envelope is refused with no R2 write; write-once put under `new_key`; redelivery adopted once; anonymised and redacted handled before and after the put; pacing kept; the done-test proves JOB-PDF-02; no new secrets or bindings; logs and audit summary carry ids, kind, number, n, found only; finance gains only ROUTES and permission rows (its 436,784 is main's drift, not verified by a baseline build).
+
+Required changes (for the builder's after-GO round, b2):
+1. **Medium:** a lost rebuilt object answers the supplier copy's 202 forever: `servedPdf` falls back to `DOCS.get(originalKey)` (log `rebuilt pdf object missing`, rid only; ETag = the row's hash) when the rebuilt object is null; the same rule in portal `streamPdf` and jobs `attachmentFor`; test.
+2. **Medium:** after a 503 `queue_unavailable`, "Try again in a minute" (line 10) is refused as `too_soon` (line 7): leave `queue_unavailable` results out of the 5-minute clause in `BLOCKED` and the route; test: retry after 503 is 202 with n = 2.
+3. **Low:** an object at `new_key` with no `rebuilt` result is never deleted (a redacted offer's stray `-rN` would survive erasure): delete `new_key` before closing `intact` or `failed`/`dead_letter` (or adopt it in the dead letter when live); test the dead letter.
+4. **Low:** the twin test skips unrecognised top-level accept conditions: allow exactly the person and link parts and fail on any other unknown part.
+5. **Low:** the 5 MB hash cap vs 10 ms CPU: lower it to 2 MB.
+6. **Low:** the `envelope_missing` bell says "Open it to try again": its own line (07-ZV 22).
+7. **Low:** the access log records 202 when the answer is 503, and a throwing `failed` insert leaves the request open 26 h: try/catch around the result insert (log rid, still 503); keep the 202 access row with a comment.
+8. **Low:** missing tests: a void receipt's rebuild; a jobs quota delay (`hop` + 1, the `pdf.quota` bell).
+9. **Low (copy):** no line for a `skipped` outcome: 07-ZV 23.
+
+After GO: a tiny import-free module for `SERVED_PDF_SQL` (`@techaust/db/pdf-served`) for the portal and jobs `email.ts`; portal `streamPdf` resolves the served key from the client-bound row's key (signed deed `{ rebuildable: false }`), counted in the portal's D1 budget; jobs `attachmentFor` resolves inside the function after the allow-list check. Not verified: real R2 checksums on `head`, byte deltas against a baseline, the staging cold CPU, two parallel HTTP requests racing.
+
+### Lead's triage of the early check
+All nine changes go to the builder (b2) with the after-GO items. Change 5: 2 MB. Change 7: the 202 access row stays (it records the accepted request), with a comment. Changes 6 and 9: 07-ZV lines 22 and 23 (staff, the lead's).
 
 ### Builder report (b1)
 Builder claude-opus-5-5/high, cloud session, branch `fix/rebuild-pdf-b1` (from `origin/feat/rebuild-pdf` c6a9cb9), 2026-11-07. Scope: the brief's early-check items (1) to (5), with the owner's answers as the lead passed them on mid-run: Q1 = B (a rebuild of an offer the client can still accept is refused, 409 `offer_open`, 07-ZV line 19), Q2 = A (no mark), and 07-ZV lines 1 to 19 approved. Not started (they come after GO): portal `streamPdf`, jobs `attachmentFor` and every screen. The brief's Q1 = A change to the accept is dropped (owner Q1 = B).

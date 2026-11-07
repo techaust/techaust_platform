@@ -36,3 +36,7 @@ Recommendation for every line: approve as written.
 ## Audit log (staff; the lead's, 2026-11-07, needed by `audit-labels.test.ts`)
 20. Audit label for `pdf.rebuild`: "asked for a stored PDF to be rebuilt"
 21. Audit filter group: "Stored PDFs"
+
+## From the early check (staff; the lead's, 2026-11-07)
+22. Bell `pdf.failed` when the saved record is missing (`envelope_missing`): "The PDF of {label} couldn't be rebuilt because its saved record is missing. A developer needs to look at it."
+23. The state line for a stopped rebuild (outcome `skipped`: the client's details were erased, the offer was redacted, or the document can no longer be rebuilt): "The rebuild was stopped because this document can no longer be rebuilt."
