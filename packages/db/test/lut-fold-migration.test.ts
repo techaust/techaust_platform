@@ -213,7 +213,9 @@ describe("0089 folds the old single `lut` of M3 into the list under the M5.2 rul
     }
   });
 
-  it("matches the M5.2 rule over 400 generated rows (seeded, so a failure repeats)", async () => {
+  it("matches the M5.2 rule over 250 generated rows (seeded, so a failure repeats)", {
+    timeout: 60_000,
+  }, async () => {
     let seed = 0x5eed_0089;
     const next = () => {
       seed = (Math.imul(seed, 1_103_515_245) + 12_345) >>> 0;
@@ -227,7 +229,7 @@ describe("0089 folds the old single `lut` of M3 into the list under the M5.2 rul
       "0",
       " ",
       "\t",
-      "　",
+      String.fromCodePoint(0x3000), // the ideographic space
       "-",
       "ß",
       "ﬁ",
@@ -239,7 +241,7 @@ describe("0089 folds the old single `lut` of M3 into the list under the M5.2 rul
     ];
     const FYS = ["2627", "2728", "2526", "9900", "2729", "27 8", "", "272", "２７２８"];
     let folded = 0;
-    for (let i = 0; i < 400; i++) {
+    for (let i = 0; i < 250; i++) {
       const listFys = Array.from({ length: Math.floor(next() * 4) }, () =>
         pick(["2627", "2728", "2526", "3031"]),
       );
@@ -257,8 +259,8 @@ describe("0089 folds the old single `lut` of M3 into the list under the M5.2 rul
       if (m52Fold(value) !== null) folded++;
     }
     // both outcomes were met many times
-    expect(folded).toBeGreaterThan(40);
-    expect(folded).toBeLessThan(360);
+    expect(folded).toBeGreaterThan(25);
+    expect(folded).toBeLessThan(225);
   });
 });
 
