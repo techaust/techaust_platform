@@ -20,7 +20,7 @@ export const PLACEHOLDER_MARKER = "placeholder__tag";
 const REQUIRED_TEXT = [
   [
     "postalAddress",
-    "the postal address for the legal pages (site.postalAddress in apps/web/src/config/site.ts)",
+    "the postal address for the legal pages (POSTAL_ADDRESS in packages/core/src/company.ts, re-exported as site.postalAddress)",
   ],
   ["linkedinFounder", "the founder's LinkedIn URL (site.linkedinFounder)"],
   ["founderPhoto", "the founder's headshot (site.founderPhoto)"],
@@ -28,10 +28,24 @@ const REQUIRED_TEXT = [
 ];
 
 /** Config problems from the text of site.ts. */
-export function checkSiteConfig(siteTs) {
+/**
+ * P7-C: site.ts may re-export the postal address from `@techaust/core/company` (`postalAddress: POSTAL_ADDRESS`), the one
+ * source the jobs Worker's Rule 9 block reads too; then the value is read from that module's text (`companyTs`).
+ */
+export function siteValue(siteTs, key, companyTs = "") {
+  if (key === "postalAddress" && /\bpostalAddress:\s*POSTAL_ADDRESS\b/.test(siteTs)) {
+    const m = companyTs.match(/\bPOSTAL_ADDRESS(?::\s*string)?\s*=\s*"([^"]*)"/);
+    return m ? m[1] : "";
+  }
+  return readSiteString(siteTs, key);
+}
+
+/** Config problems from the text of site.ts (and of packages/core/src/company.ts, where the postal address lives since P7-C). */
+export function checkSiteConfig(siteTs, companyTs = "") {
   const problems = [];
   for (const [key, what] of REQUIRED_TEXT)
-    if (!readSiteString(siteTs, key).trim()) problems.push(`The owner must supply ${what}: it is empty.`);
+    if (!siteValue(siteTs, key, companyTs).trim())
+      problems.push(`The owner must supply ${what}: it is empty.`);
   if (!readSiteBool(siteTs, "aliasesConfirmed"))
     problems.push(
       "The owner must confirm that the security@ and privacy@ aliases deliver (U-5), then set site.aliasesConfirmed to true.",
@@ -465,7 +479,10 @@ export function checkProdReadiness(webDir, backupFile = BACKUP_RECORD_FILE, apps
   if (!existsSync(dist)) problems.push(`${dist} does not exist: build the site first.`);
   else {
     const siteTs = readFileSync(join(webDir, "src", "config", "site.ts"), "utf8");
-    problems.push(...checkSiteConfig(siteTs));
+    const companyFile = join(webDir, "..", "..", "packages", "core", "src", "company.ts");
+    problems.push(
+      ...checkSiteConfig(siteTs, existsSync(companyFile) ? readFileSync(companyFile, "utf8") : ""),
+    );
     problems.push(
       ...checkLaunchDate(siteTs, readFileSync(join(webDir, "src", "content", "legal.ts"), "utf8")),
     );
