@@ -48,9 +48,13 @@ export function builtConfigProblems(built, productionName) {
   return problems;
 }
 
-/** A staging host or a staging resource name in a production build: either means staging values were built in. */
+/**
+ * A staging host or a staging resource name in a production build: either means staging values were built in. The quantifiers are bounded
+ * (a Worker name is at most 63 characters): an unbounded `[a-z0-9-]+` before the literal backtracks over every long run of letters in a
+ * minified bundle, which took minutes on the admin's browser files.
+ */
 export const STAGING_TRACE =
-  /[a-z0-9-]+-staging\.techaust-technologies-153\.workers\.dev|techaust-staging[a-z0-9-]*/gi;
+  /[a-z0-9-]{1,63}-staging\.techaust-technologies-153\.workers\.dev|techaust-staging[a-z0-9-]{0,63}/gi;
 
 /** Problems in one built file: each staging trace and each staging Turnstile key found (a key is a public value; shown in full). */
 export function stagingTraceProblems(label, text, stagingKeys = []) {

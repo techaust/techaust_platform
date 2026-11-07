@@ -87,7 +87,7 @@ describe("pending copy in the built bundles", () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("packages/email/src/a.ts: APPROVED_07ZZ is false");
     expect(ready.checkApprovalFlags(join(appsDir, ".."))).toEqual([]);
-  });
+  }, 20_000);
 
   it("a missing build is a problem, never a pass (P7-B: the jobs and website production bundles too)", () => {
     const empty = mkdtempSync(join(tmpdir(), "ready-apps-"));

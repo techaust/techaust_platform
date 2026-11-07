@@ -159,6 +159,12 @@ describe("check-prod-build: a production build, and nothing of staging in it", (
     ).toEqual([]);
   });
 
+  it("scans a long run of letters (as minified bundles have) in linear time", () => {
+    const started = performance.now();
+    expect(build.stagingTraceProblems("x", "a".repeat(300_000), [])).toEqual([]);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+
   it("wants env.production's site key and not the top level's test key; an empty production key is refused", () => {
     expect(build.siteKeyProblems("pages", ['<div data-sitekey="0xprod">'], "0xprod", "1x00")).toEqual([]);
     expect(build.siteKeyProblems("pages", ['<div data-sitekey="1x00">'], "0xprod", "1x00")).toHaveLength(2);
