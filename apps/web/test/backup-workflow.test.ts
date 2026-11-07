@@ -193,7 +193,11 @@ describe("backup.yml: the order and the plaintext", () => {
     // the encrypted archives and the key file go too, on every path
     const rm = steps[at("name: Remove the archives and the public key file")] ?? "";
     expect(rm).toContain("if: always()");
-    expect(rm).toContain('rm -f -- "${ARCHIVE:-}" "${FINANCE_ARCHIVE:-}" "$RUNNER_TEMP/backup-public.pem"');
+    expect(rm).toContain(
+      ["rm -f -- ", '"$', '{ARCHIVE:-}" "$', '{FINANCE_ARCHIVE:-}" "$RUNNER_TEMP/backup-public.pem"'].join(
+        "",
+      ),
+    );
     expect(at("name: Remove the archives and the public key file")).toBe(steps.length - 1);
   });
 
