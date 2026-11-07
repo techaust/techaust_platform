@@ -426,7 +426,12 @@ export async function processDeadLetter(
           .catch(() => logEvent("refund_notify.dead_letter_bell_failed", {}));
     }
   }
-  logEvent("queue.dead_letter", { queue, ref, readable: rendered !== undefined, kind: named ?? null });
+  logEvent("queue.dead_letter", {
+    queue,
+    ref,
+    readable: rendered !== undefined,
+    ...(named ? { kind: named } : {}),
+  });
   rendered ??= dlqAlert({ queue, admin_url: env.ADMIN_URL }, opts);
   // M7.2 (run file D, L13): the owners' bell `job.failed`, once per queue per IST day (best effort; the alert email below is the record).
   await env.DB.prepare(JOB_FAILED_BELL_SQL)

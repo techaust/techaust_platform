@@ -100,6 +100,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0078_data_protection.sql",
       "0079_data_protection_triggers.sql",
       "0080_fk_child_indexes.sql",
+      "0081_audit_af2.sql",
+      "0082_audit_af2_triggers.sql",
     ]);
   });
 

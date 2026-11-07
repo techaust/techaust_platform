@@ -279,7 +279,8 @@ exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > later ver
        WHERE id = ?1 AND status = 'draft' AND frozen_at IS NULL AND updated_at = ?14 AND content_sha256 = ?15
          AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
          AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
-         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL) AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.document_id = documents.id AND ap.kind = 'discount' AND ap.status = 'approved' AND ap.content_sha256 = documents.content_sha256) AND (SELECT count(*) FROM contacts rc WHERE rc.client_id = documents.client_id AND rc.portal_access = 1 AND rc.anonymised_at IS NULL AND rc.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?17))) = ?18
+         AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL) AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.document_id = documents.id AND ap.kind = 'discount' AND ap.status = 'approved' AND ap.content_sha256 = documents.content_sha256) AND (SELECT count(*) FROM contacts rc WHERE rc.client_id = documents.client_id AND rc.portal_access = 1 AND rc.anonymised_at IS NULL AND NOT EXISTS (SELECT 1 FROM email_suppressions es WHERE es.email = lower(rc.email)
+     OR es.email = 'h:' || (SELECT hj.value FROM json_each(coalesce(?19, '{}')) hj WHERE hj.key = lower(rc.email))) AND rc.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?17))) = ?18
        RETURNING number_display, valid_until",
     "values": [
       "doc1",
@@ -300,6 +301,7 @@ exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > later ver
       3,
       "[{"id":"s-1","contactId":"c-1"}]",
       1,
+      null,
     ],
   },
   {
@@ -332,6 +334,8 @@ exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > later ver
                    coalesce(?3, (SELECT cl.attach_pdf FROM clients cl WHERE cl.id = d.client_id)), 'send', NULL, ?4, ?5
                  FROM documents d JOIN json_each(?2) j
                    JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+                     AND NOT EXISTS (SELECT 1 FROM email_suppressions es WHERE es.email = lower(c.email)
+     OR es.email = 'h:' || (SELECT hj.value FROM json_each(coalesce(?6, '{}')) hj WHERE hj.key = lower(c.email)))
                  WHERE d.id = ?1 AND d.status = 'sent' AND d.frozen_at = ?5",
     "values": [
       "doc1",
@@ -339,6 +343,7 @@ exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > later ver
       null,
       "user1",
       1700000000000,
+      null,
     ],
   },
 ]
@@ -425,7 +430,8 @@ exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > with reci
          AND (SELECT version FROM settings WHERE key = 'numbering') IS ?16
          AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.version_group_id = ?4 AND x.status IN ('accepted', 'converted'))
          AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
-         AND (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3) <= 9999 AND (SELECT count(*) FROM contacts rc WHERE rc.client_id = documents.client_id AND rc.portal_access = 1 AND rc.anonymised_at IS NULL AND rc.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?17))) = ?18
+         AND (SELECT next_no - 1 FROM doc_counters WHERE series = ?2 AND fy = ?3) <= 9999 AND (SELECT count(*) FROM contacts rc WHERE rc.client_id = documents.client_id AND rc.portal_access = 1 AND rc.anonymised_at IS NULL AND NOT EXISTS (SELECT 1 FROM email_suppressions es WHERE es.email = lower(rc.email)
+     OR es.email = 'h:' || (SELECT hj.value FROM json_each(coalesce(?19, '{}')) hj WHERE hj.key = lower(rc.email))) AND rc.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?17))) = ?18
        RETURNING number_display, valid_until",
     "values": [
       "doc1",
@@ -446,6 +452,7 @@ exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > with reci
       3,
       "[{"id":"s-1","contactId":"c-1"},{"id":"s-2","contactId":"c-2"}]",
       2,
+      null,
     ],
   },
   {
@@ -491,6 +498,8 @@ exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > with reci
                    coalesce(?3, (SELECT cl.attach_pdf FROM clients cl WHERE cl.id = d.client_id)), 'send', NULL, ?4, ?5
                  FROM documents d JOIN json_each(?2) j
                    JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+                     AND NOT EXISTS (SELECT 1 FROM email_suppressions es WHERE es.email = lower(c.email)
+     OR es.email = 'h:' || (SELECT hj.value FROM json_each(coalesce(?6, '{}')) hj WHERE hj.key = lower(c.email)))
                  WHERE d.id = ?1 AND d.status = 'sent' AND d.frozen_at = ?5",
     "values": [
       "doc1",
@@ -498,6 +507,7 @@ exports[`sendStatements SQL is unchanged by the shared helpers [LD3] > with reci
       1,
       "user1",
       1700000000000,
+      null,
     ],
   },
 ]
