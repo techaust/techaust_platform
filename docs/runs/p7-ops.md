@@ -231,3 +231,4 @@ No other **column** holds a contact's name, email, phone, IP or browser. `paymen
 ### Not verified
 Unchanged from report 1: no hosted run. `json_remove` was checked on D1 (the workerd db test) and on node:sqlite (the builder).
 
+- **Report 2 follow-up (lead, 2026-11-07, same safest reading):** `documents.decision_note` is exported as NULL in the monthly copy (`BLANKED_DOCUMENT_COLUMNS` in `backup-scope.ts`; scope JSON regenerated); the acceptance text, deed text and staff notes stay. Tests: web `backup-monthly` + `backup-workflow` 68 passed, 1 skipped; db `retention` 14 passed; `pnpm check` exit 0 (all through `tools/heavy.sh`).

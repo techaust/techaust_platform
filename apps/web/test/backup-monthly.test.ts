@@ -234,6 +234,7 @@ const ACCEPT_IP = "198.51.100.23";
 const ACCEPT_UA = "Mozilla/5.0 (made-up browser for the acceptance)";
 const ACCEPT_COUNTRY = "ZZ";
 const RECIPIENT_CONTACT = "Ravi Contact-Person";
+const DECISION_NOTE = "Made-up note: call Ravi on his mobile";
 const RECIPIENT_EMAIL = "billing-person@example.test";
 const RECIPIENT = {
   legalName: "Shop 'A'\nRoad 1",
@@ -282,6 +283,7 @@ function sampleExport() {
     status: "accepted",
     client_id: "c1",
     currency: "USD",
+    decision_note: DECISION_NOTE,
     ...frozen(2, "TH/P/2"),
   });
   insert(db, "documents", {
@@ -454,6 +456,12 @@ describe("buildFinanceCopy on an export of the real schema [JOB-BKP-01, T7 F1]",
     };
     const recipient = JSON.parse(row.recipient) as Record<string, unknown>;
     for (const k of RECIPIENT_SCRUB_KEYS) expect(recipient).not.toHaveProperty(k);
+    // the client's free-text decision note is not a tax record: NULL in the copy, the row kept (lead, 2026-11-07)
+    expect(r.prepare("SELECT id, decision_note FROM documents WHERE id = 'd-prop-acc'").get()).toEqual({
+      id: "d-prop-acc",
+      decision_note: null,
+    });
+    expect(file).not.toContain(DECISION_NOTE);
     const { email: _e, contactName: _n, ...kept } = RECIPIENT;
     expect(recipient).toEqual(kept);
     expect(file).not.toContain(RECIPIENT_CONTACT);

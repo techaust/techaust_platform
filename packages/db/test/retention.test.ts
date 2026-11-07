@@ -167,8 +167,8 @@ describe("the matrix and the backup scope cover every table (A.6, B.6)", () => {
       contactName: "Made-up Contact",
     };
     await run(
-      `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at, recipient)
-       VALUES (?1, 'tax_invoice', 'issued', ?2, 'INR', 'inv-p7', '9999', 1, 'P7/1', 1000, '2026-10-28', '2026-11-04', 100000, 100000, 118000, 118000, ?3, 7000, ?4)`,
+      `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at, recipient, decision_note)
+       VALUES (?1, 'tax_invoice', 'issued', ?2, 'INR', 'inv-p7', '9999', 1, 'P7/1', 1000, '2026-10-28', '2026-11-04', 100000, 100000, 118000, 118000, ?3, 7000, ?4, 'Made-up client note')`,
       id,
       client,
       "h".repeat(64),
@@ -184,6 +184,9 @@ describe("the matrix and the backup scope cover every table (A.6, B.6)", () => {
     expect(JSON.parse(String(row?.recipient))).toEqual(kept);
     for (const k of RECIPIENT_SCRUB_KEYS) expect(String(row?.recipient)).not.toContain(`"${k}"`);
     expect(row).toMatchObject({ total_minor: 118000, number_display: "P7/1", status: "issued" });
+    // the client's free-text decision note is not a tax record: NULL in the copy (lead, 2026-11-07)
+    expect(row?.decision_note).toBeNull();
+    expect(monthlyExportSql("documents")).toContain("NULL AS decision_note");
   });
   it("every family's tables are in the matrix under that family", () => {
     for (const family of RETENTION_FAMILIES)

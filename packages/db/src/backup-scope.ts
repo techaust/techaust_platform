@@ -151,14 +151,22 @@ export const ACCEPTANCE_PERSONAL_COLUMNS = ["typed_name", "email", "ip", "user_a
 /** The keys removed from a document's frozen `recipient` block in the monthly copy (P7 ops): the contact's name and the email. */
 export const RECIPIENT_SCRUB_KEYS = ["email", "contactName"] as const;
 
-/** Every column of `documents` (from the schema, so a new column joins the copy), with `recipient` scrubbed of `RECIPIENT_SCRUB_KEYS`. */
+/**
+ * The columns of `documents` written as NULL in the monthly copy (lead, 2026-11-07, the same safest reading): `decision_note` is the client's own free
+ * text when deciding on an offer, not a tax record.
+ */
+export const BLANKED_DOCUMENT_COLUMNS = ["decision_note"] as const;
+
+/** Every column of `documents` (from the schema, so a new column joins the copy), `recipient` scrubbed of `RECIPIENT_SCRUB_KEYS`, `BLANKED_DOCUMENT_COLUMNS` NULL. */
 const documentColumns = () =>
   Object.values(getTableColumns(documents))
     .map((c) => c.name)
     .map((c) =>
       c === "recipient"
         ? `CASE WHEN json_valid(recipient) THEN json_remove(recipient, ${q(RECIPIENT_SCRUB_KEYS.map((k) => `$.${k}`))}) ELSE recipient END AS recipient`
-        : c,
+        : BLANKED_DOCUMENT_COLUMNS.includes(c as (typeof BLANKED_DOCUMENT_COLUMNS)[number])
+          ? `NULL AS ${c}`
+          : c,
     )
     .join(", ");
 
