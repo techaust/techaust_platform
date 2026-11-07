@@ -165,7 +165,7 @@ export const normaliseLutArn = (arn: string): string => arn.replace(/\s+/g, "").
 
 /**
  * The saved letters, read from the stored `tax` settings value WITHOUT zod (the jobs Worker must not bring zod in): the `luts` list only. P7 LUT fold (migration
- * 0089, `@techaust/db` `lut-fold.ts`): the one letter of M3 (`tax.lut`) was folded into the list and its key removed, so a stored `lut` is ignored here, as by the
+ * 0089, `@techaust/db` `triggers-lut-fold.ts`): the one letter of M3 (`tax.lut`) was folded into the list and its key removed, so a stored `lut` is ignored here, as by the
  * schema, `lutsOf` and db `LUT_FOR_FY_SQL` (one rule for one fact). Anything malformed is skipped, never thrown. Researched 2026-10-28, Rule 96A CGST Rules
  * (08-C RA-19: one LUT per FY).
  */

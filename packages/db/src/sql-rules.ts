@@ -46,7 +46,7 @@ export const DISCOUNT_AFTER_SALE_FROM_SQL = "2026-11-01";
 
 /**
  * Q37 (Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19: one LUT per FY)): a letter of undertaking with an ARN is saved in the `tax` setting for the FY token
- * `?FY`: a `luts` list entry of that FY with an ARN not blank once its spaces are trimmed. P7 LUT fold: the list only. Migration 0089 (`lut-fold.ts`) folded the one
+ * `?FY`: a `luts` list entry of that FY with an ARN not blank once its spaces are trimmed. P7 LUT fold: the list only. Migration 0089 (`triggers-lut-fold.ts`) folded the one
  * letter of M3 (`tax.lut`) into the list and removed the key, so this and its pure twins, core `lutFor(fy, lutsOf(tax))` (export invoice, advance and debit note)
  * and `lutsFromStoredTax` (jobs), read one list by one rule; `note-rules-rt1.test.ts` pins that they agree exactly over every stored row the admin can read. Used
  * inside a freeze WHERE, so a LUT removed between the read and the freeze refuses the batch; and, with `?FY` replaced by `fyTokenOfDateSql` of the receipt day, by
