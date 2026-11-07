@@ -31,15 +31,15 @@ CREATE TRIGGER `documents_held_no_redact` BEFORE UPDATE OF redacted_at ON `docum
 DROP TRIGGER `client_requests_close_rules`;
 --> statement-breakpoint
 CREATE TRIGGER `client_requests_close_rules` BEFORE UPDATE OF status ON `client_requests` WHEN OLD.status = 'open' AND NEW.status = 'closed' AND (
-     (NEW.outcome = 'declined' AND (NEW.decline_reason IS NULL OR NEW.decline_reason NOT IN ('legal_hold', 'law_requires_keeping', 'identity_not_confirmed', 'duplicate', 'not_on_record', 'other') OR NEW.action_audit_id IS NOT NULL OR NEW.export_sent_at IS NOT NULL))
-  OR (NEW.outcome = 'done' AND NEW.decline_reason IS NOT NULL)
-  OR (NEW.outcome = 'done' AND NEW.kind IN ('data_access', 'data_correction', 'data_erasure', 'nomination') AND NEW.identity_checked_at IS NULL)
-  OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL
-      AND (NEW.outcome IS NOT 'declined' OR NEW.decline_reason NOT IN ('not_on_record', 'identity_not_confirmed', 'duplicate', 'other')))
-  OR (NEW.kind = 'data_erasure' AND NEW.outcome = 'done' AND NOT EXISTS (SELECT 1 FROM audit_log a WHERE a.id = NEW.action_audit_id AND a.at >= NEW.received_at
-    AND ((NEW.contact_ref IS NOT NULL AND a.action IN ('contact.erase', 'contact.anonymise') AND json_extract(a.summary, '$.contactId') = NEW.contact_ref)
-      OR (NEW.lead_ref IS NOT NULL AND a.action = 'lead.erase' AND a.entity_type = 'lead' AND a.entity_id = NEW.lead_ref))))
-  OR (NEW.export_sent_at IS NOT NULL AND NOT (NEW.kind = 'data_access' AND NEW.outcome = 'done' AND NEW.export_sent_at >= 0)))
+       (NEW.outcome = 'declined' AND (NEW.decline_reason IS NULL OR NEW.decline_reason NOT IN ('legal_hold', 'law_requires_keeping', 'identity_not_confirmed', 'duplicate', 'not_on_record', 'other') OR NEW.action_audit_id IS NOT NULL OR NEW.export_sent_at IS NOT NULL))
+    OR (NEW.outcome = 'done' AND NEW.decline_reason IS NOT NULL)
+    OR (NEW.outcome = 'done' AND NEW.kind IN ('data_access', 'data_correction', 'data_erasure', 'nomination') AND NEW.identity_checked_at IS NULL)
+    OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL
+        AND (NEW.outcome IS NOT 'declined' OR NEW.decline_reason NOT IN ('not_on_record', 'identity_not_confirmed', 'duplicate', 'other')))
+    OR (NEW.kind = 'data_erasure' AND NEW.outcome = 'done' AND NOT EXISTS (SELECT 1 FROM audit_log a WHERE a.id = NEW.action_audit_id AND a.at >= NEW.received_at
+      AND ((NEW.contact_ref IS NOT NULL AND a.action IN ('contact.erase', 'contact.anonymise') AND json_extract(a.summary, '$.contactId') = NEW.contact_ref)
+        OR (NEW.lead_ref IS NOT NULL AND a.action = 'lead.erase' AND a.entity_type = 'lead' AND a.entity_id = NEW.lead_ref))))
+    OR (NEW.export_sent_at IS NOT NULL AND NOT (NEW.kind = 'data_access' AND NEW.outcome = 'done' AND NEW.export_sent_at >= 0)))
     OR (OLD.status = 'open' AND NEW.status = 'closed' AND NEW.export_sent_at IS NOT NULL AND NEW.export_sent_at < coalesce(NEW.received_at, NEW.created_at))
     OR (OLD.status = 'open' AND NEW.status = 'closed' AND NEW.kind = 'consent_withdrawal' AND NEW.outcome = 'done' AND NOT EXISTS (SELECT 1 FROM audit_log a WHERE a.id = NEW.action_audit_id AND a.at >= NEW.received_at
       AND ((NEW.lead_ref IS NOT NULL AND a.action = 'lead.consent_withdraw' AND a.entity_type = 'lead' AND a.entity_id = NEW.lead_ref)

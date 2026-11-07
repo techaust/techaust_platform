@@ -16,7 +16,7 @@ import {
 import { jobFailedTitle } from "@techaust/core/copy-zq";
 import { BELL_COPY } from "@techaust/core/copy-zr";
 import { istDate, toIsoDate } from "@techaust/core/dates";
-import { parseRefundNotify } from "@techaust/core/notifications";
+import { parseRefundNotify, parseRefundReversed } from "@techaust/core/notifications";
 import { ATTACHMENT_MAX_BYTES } from "@techaust/core/offers";
 import {
   type Attachment,
@@ -334,6 +334,8 @@ export const JOB_FAILED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, use
  */
 export const DEAD_LETTER_KIND_NAMES: Readonly<Record<string, string>> = {
   "refund.notify": "refund email to a client",
+  // AU61 (review L2): the email about a refund that came back (AU1); builder's words for the lead.
+  "refund.reversed": "returned-refund email to a client",
   "staff.notify": "staff notification email",
   "digest.weekly": "owners' weekly digest",
   "signin.unfinished": "unfinished sign-in alert",
@@ -417,8 +419,9 @@ export async function processDeadLetter(
   const named = typeof kind === "string" ? DEAD_LETTER_KIND_NAMES[kind] : undefined;
   if (!rendered && named) {
     rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: named }, opts);
-    if (kind === "refund.notify") {
-      const m = parseRefundNotify(body);
+    if (kind === "refund.notify" || kind === "refund.reversed") {
+      // AU61 (review L2): a returned-refund email that ran out of tries rings the same refund bell (one per owner and refund).
+      const m = kind === "refund.notify" ? parseRefundNotify(body) : parseRefundReversed(body);
       if (m)
         await env.DB.prepare(REFUND_EMAIL_FAILED_BELL_SQL)
           .bind(m.refundId, REFUND_EMAIL_FAILED_BELL)

@@ -103,17 +103,19 @@ describe("0078 and 0079 [run file A, I]", () => {
       expect(q).toMatch(/^(CREATE TABLE `|CREATE (UNIQUE )?INDEX `|ALTER TABLE `[a-z_]+` ADD `)/);
   });
   it("0079 regenerates byte for byte from the generator", () => {
-    const m = migration("0079_data_protection_triggers.sql");
-    expect(m).toBeDefined();
-    const generated = triggerMigrationSql("data_protection_triggers")
-      .split("\n--> statement-breakpoint\n")
-      .map((q) => q.replace(/^--[^\n]*\n?/gm, "").trim());
-    // readD1Migrations may drop a statement's final semicolon; the text is otherwise the generator's.
-    const norm = (xs: string[]) => xs.map((q) => q.replace(/\s+/g, " ").trim().replace(/;$/, ""));
-    const applied = norm(statementsOf("0079_data_protection_triggers.sql"));
-    const want = norm(generated.filter((q) => q !== ""));
-    expect(applied.length).toBe(want.length);
-    for (let i = 0; i < want.length; i++) expect(applied[i], `statement ${i}`).toBe(want[i]);
+    expect(migration("0079_data_protection_triggers.sql")).toBeDefined();
+    // M6–M7 audit AU61 (review L3): the file's exact text, never whitespace-folded (0084 reuses 0079's close rules: `CLOSE_BAD_0079`, `ERASURE_ACTION_0079`).
+    const file = import.meta.glob("../migrations/0079_data_protection_triggers.sql", {
+      query: "?raw",
+      import: "default",
+      eager: true,
+    });
+    const text = Object.values(file)[0];
+    expect(text).toBeDefined();
+    const generated = triggerMigrationSql("data_protection_triggers");
+    let at = 0;
+    while (at < generated.length && text?.[at] === generated[at]) at++;
+    expect(text === generated, `first difference at ${at}: [${text?.slice(at, at + 80)}]`).toBe(true);
   });
   it("the frozen lists equal core's", () => {
     expect(REQUEST_KINDS_0079).toEqual(REQUEST_KINDS);

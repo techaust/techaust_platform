@@ -774,6 +774,39 @@ describe("the dead letter (early check finding 4; L13)", () => {
     expect(await all("SELECT 1 FROM notifications WHERE entity_id = 'rf-none'")).toEqual([]);
   });
 
+  it("AU61 (review L2): a returned-refund email (refund.reversed) that ran out of tries is named in the alert and rings the same refund bell, once", async () => {
+    const owner = await staff("owner");
+    const { sent, transport } = recorder();
+    const e = makeEnv();
+    const r = await refundOf("outside");
+    const code = (await one<{ code: string }>("SELECT code FROM clients WHERE id = ?1", r.clientId))?.code;
+    const body = { kind: "refund.reversed", refundId: r.refundId };
+    expect(await processDeadLetter(e, "techaust-local-email-dlq", body, transport)).toBe(true);
+    expect(sent[0]?.text).toContain("Email: returned-refund email to a client");
+    expect(sent[0]?.text).not.toContain(r.refundId);
+    await processDeadLetter(e, "techaust-local-email-dlq", body, transport);
+    expect(
+      await all(
+        "SELECT title, link FROM notifications WHERE user_id = ?1 AND kind = 'refund.email_failed' AND entity_id = ?2",
+        owner.id,
+        r.refundId,
+      ),
+    ).toEqual([
+      {
+        title: `The email about a refund to ${code} couldn't be sent. Tell the client about the refund yourself.`,
+        link: "/payments?tab=refunds",
+      },
+    ]);
+    // a malformed body (an extra key) is named but rings nothing
+    await processDeadLetter(
+      e,
+      "techaust-local-email-dlq",
+      { kind: "refund.reversed", refundId: "rf-bad", extra: 1 },
+      transport,
+    );
+    expect(await all("SELECT 1 FROM notifications WHERE entity_id = 'rf-bad'")).toEqual([]);
+  });
+
   it("full audit AU11 L5: the 09:00 IST tick fetches yesterday's and the day before's settlements", () => {
     const at9 = hourlyMessages(istTick("2026-11-10", 9)).filter((m) => m.kind === "recon.fetch");
     expect(at9).toEqual([

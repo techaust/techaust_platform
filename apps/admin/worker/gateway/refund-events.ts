@@ -8,7 +8,7 @@
 //   - not ours (another business on the shared Stripe account, M6.3 L5; a payment we never recorded): `ignored`, nothing else written.
 import type { ProcessEventResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
-import { awaitsAction } from "@techaust/core/refund-gateways";
+import { awaitsAction, mayReverseRefund } from "@techaust/core/refund-gateways";
 import { reviewBellStatement, reviewItemStatement, webhookEventMoveStatement } from "@techaust/db/gateway";
 import { REFUND_BY_PROVIDER_REF_SQL, refundItemOnceGuard } from "@techaust/db/refunds";
 import {
@@ -97,13 +97,15 @@ export async function processRefundEvent(
     }
   }
   // M6–M7 audit AU1 (B0 1): a refund that succeeded is re-fetched like any other before anything is said, since it can still fail afterwards (Stripe: the bank
-  // returns it up to 30 days later). A manual refund, a lost dispute or one already reversed has nothing to re-fetch.
+  // returns it up to 30 days later). A manual refund, a lost dispute or one already reversed has nothing to re-fetch. AU61 (review L1): only an event that can
+  // mean a reversal re-fetches (core `mayReverseRefund`); a routine one closes quietly with no gateway call.
   if (
     ours?.status === "succeeded" &&
     (ours.provider === "manual" ||
       ours.origin === "chargeback" ||
       ours.reversed_at !== null ||
-      ours.provider_refund_id === null)
+      ours.provider_refund_id === null ||
+      !mayReverseRefund(provider, row.event_type))
   )
     return quiet("processed", "refund_settled");
   if (ours) {

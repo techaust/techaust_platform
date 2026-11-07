@@ -185,17 +185,20 @@ export function dataProtectionBackfill(): string[] {
 
 /** A done erasure names its own erase or anonymise, made after the request arrived (0079; the audit fix set reuses it, so 0079's text never changes). */
 export const ERASURE_ACTION_0079 = `EXISTS (SELECT 1 FROM audit_log a WHERE a.id = NEW.action_audit_id AND a.at >= NEW.received_at
-    AND ((NEW.contact_ref IS NOT NULL AND a.action IN ('contact.erase', 'contact.anonymise') AND json_extract(a.summary, '$.contactId') = NEW.contact_ref)
-      OR (NEW.lead_ref IS NOT NULL AND a.action = 'lead.erase' AND a.entity_type = 'lead' AND a.entity_id = NEW.lead_ref)))`;
-/** The close rules of 0079 (`client_requests_close_rules`), exported unchanged for the audit fix set, which adds its own rules after them. */
+      AND ((NEW.contact_ref IS NOT NULL AND a.action IN ('contact.erase', 'contact.anonymise') AND json_extract(a.summary, '$.contactId') = NEW.contact_ref)
+        OR (NEW.lead_ref IS NOT NULL AND a.action = 'lead.erase' AND a.entity_type = 'lead' AND a.entity_id = NEW.lead_ref)))`;
+/**
+ * The close rules of 0079 (`client_requests_close_rules`), exported unchanged for the audit fix set, which adds its own rules after them. AU61 (review L3): the
+ * indentation is 0079's own, byte for byte (`test/trigger-text.test.ts` compares the generated text exactly).
+ */
 export const CLOSE_BAD_0079 = `OLD.status = 'open' AND NEW.status = 'closed' AND (
-     (NEW.outcome = 'declined' AND (NEW.decline_reason IS NULL OR NEW.decline_reason NOT IN (${q(DECLINE_REASONS_0079)}) OR NEW.action_audit_id IS NOT NULL OR NEW.export_sent_at IS NOT NULL))
-  OR (NEW.outcome = 'done' AND NEW.decline_reason IS NOT NULL)
-  OR (NEW.outcome = 'done' AND NEW.kind IN (${q(IDENTITY_CHECKED_KINDS_0079)}) AND NEW.identity_checked_at IS NULL)
-  OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL
-      AND (NEW.outcome IS NOT 'declined' OR NEW.decline_reason NOT IN (${q(EMAIL_ONLY_DECLINE_REASONS_0079)})))
-  OR (NEW.kind = 'data_erasure' AND NEW.outcome = 'done' AND NOT ${ERASURE_ACTION_0079})
-  OR (NEW.export_sent_at IS NOT NULL AND NOT (NEW.kind = 'data_access' AND NEW.outcome = 'done' AND NEW.export_sent_at >= 0)))`;
+       (NEW.outcome = 'declined' AND (NEW.decline_reason IS NULL OR NEW.decline_reason NOT IN (${q(DECLINE_REASONS_0079)}) OR NEW.action_audit_id IS NOT NULL OR NEW.export_sent_at IS NOT NULL))
+    OR (NEW.outcome = 'done' AND NEW.decline_reason IS NOT NULL)
+    OR (NEW.outcome = 'done' AND NEW.kind IN (${q(IDENTITY_CHECKED_KINDS_0079)}) AND NEW.identity_checked_at IS NULL)
+    OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL
+        AND (NEW.outcome IS NOT 'declined' OR NEW.decline_reason NOT IN (${q(EMAIL_ONLY_DECLINE_REASONS_0079)})))
+    OR (NEW.kind = 'data_erasure' AND NEW.outcome = 'done' AND NOT ${ERASURE_ACTION_0079})
+    OR (NEW.export_sent_at IS NOT NULL AND NOT (NEW.kind = 'data_access' AND NEW.outcome = 'done' AND NEW.export_sent_at >= 0)))`;
 export function dataProtectionTriggerStatements(): string[] {
   // ---- 1. floors (366 days)
   const floors = [

@@ -263,6 +263,52 @@ describe("AU1 (B0 1): a Stripe refund that failed after `succeeded`", () => {
     });
   });
 
+  it("AU61 (review L1): a routine event of a succeeded refund (Razorpay refund.processed, Stripe refund.created) closes as refund_settled with no gateway call, even with the gateway down; refund.failed still re-fetches and reverses", async () => {
+    const r = await rzpRefunded();
+    let fetched = 0;
+    let answer: unknown = null;
+    stub((path, method) => {
+      if (method === "GET" && path === `/v1/refunds/${r.reId}`) {
+        fetched++;
+        return answer === null ? jsonResponse(503, {}) : jsonResponse(200, answer);
+      }
+      return null;
+    });
+    for (const type of ["refund.processed", "refund.created"]) {
+      const ev = await rzpRefundEvent(r, type);
+      expect(await processEvent(env, ev)).toEqual({ result: "processed" });
+      expect(await one("SELECT status, outcome FROM webhook_events WHERE id = ?1", ev)).toEqual({
+        status: "processed",
+        outcome: "refund_settled",
+      });
+    }
+    expect(fetched).toBe(0);
+    answer = rzpRefundJson(r.reId, r.pi, "failed");
+    expect(await processEvent(env, await rzpRefundEvent(r, "refund.failed"))).toEqual({
+      result: "needs_review",
+      refundReversed: r.refundId,
+    });
+    expect(fetched).toBe(1);
+
+    const s = await stripeRefunded();
+    let stripeFetched = 0;
+    stripeStub((path, method) => {
+      if (method === "GET" && path === `/v1/refunds/${s.reId}`) {
+        stripeFetched++;
+        return jsonResponse(503, {});
+      }
+      return null;
+    });
+    const created = await refundEvent(s, "refund.created", "succeeded");
+    expect(await processEvent(env, created)).toEqual({ result: "processed" });
+    expect(stripeFetched).toBe(0);
+    // refund.updated can carry a later failure: it re-fetches (here the gateway is down, so it is retried)
+    expect(await processEvent(env, await refundEvent(s, "refund.updated", "failed"))).toEqual({
+      result: "retry",
+    });
+    expect(stripeFetched).toBe(1);
+  });
+
   it("Razorpay unreachable during the re-fetch: retry, nothing written", async () => {
     const r = await rzpRefunded();
     stub((path, method) =>

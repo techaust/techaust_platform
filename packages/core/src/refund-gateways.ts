@@ -268,6 +268,20 @@ export const isRefundEventName = (provider: string, name: string): boolean =>
         ? name === "PAYMENT.CAPTURE.REFUNDED"
         : false;
 
+/**
+ * M6–M7 audit AU61 (review L1): the stored refund events that can say a refund we hold as `succeeded` came back, so only these re-fetch it (AU1, AU36): Stripe's
+ * `refund.failed` and `refund.updated` (a later `failed`, `canceled` or `requires_action`), Razorpay's `refund.failed`. Every other event of a succeeded refund
+ * (Razorpay's `refund.created`/`refund.processed`, Stripe's `refund.created` and `charge.refunded`, PayPal's `PAYMENT.CAPTURE.REFUNDED`, the only PayPal refund
+ * event this branch reads: PayPal names no refund-failed event) is routine and closes quietly with no gateway call, so an unreachable gateway never retries and
+ * dead-letters a refund that is fine.
+ */
+export const mayReverseRefund = (provider: string, name: string): boolean =>
+  provider === "stripe"
+    ? name === "refund.failed" || name === "refund.updated"
+    : provider === "razorpay"
+      ? name === "refund.failed"
+      : false;
+
 /** For the warm-up (J): one made-up refund read per gateway and one event each; returns how many read (5). */
 export function warmRefundReaders(): number {
   try {

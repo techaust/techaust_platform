@@ -12,10 +12,14 @@ import {
 } from "../src/notifications.ts";
 import {
   awaitsAction,
+  isRefundEventName,
+  mayReverseRefund,
+  RAZORPAY_REFUND_EVENTS,
   readPayPalRefund,
   readRazorpayRefund,
   readStripeRefund,
   reversalOf,
+  STRIPE_REFUND_EVENTS,
 } from "../src/refund-gateways.ts";
 
 const OUR = "01900000-0000-7000-8000-00000000000a";
@@ -105,5 +109,21 @@ describe("AU1: a refund that succeeded and came back", () => {
     ])
       expect(line.startsWith("[Placeholder] ")).toBe(true);
     expect(EMAIL_TEMPLATES).toContain("refund.reversed");
+  });
+});
+
+describe("AU61 (review L1): only an event that can mean a reversal re-fetches a succeeded refund", () => {
+  it("Stripe refund.failed and refund.updated, Razorpay refund.failed; every other mapped event (and PayPal's) is routine", () => {
+    const reversing = Object.keys(STRIPE_REFUND_EVENTS)
+      .filter((n) => mayReverseRefund("stripe", n))
+      .sort();
+    expect(reversing).toEqual(["refund.failed", "refund.updated"]);
+    expect(Object.keys(RAZORPAY_REFUND_EVENTS).filter((n) => mayReverseRefund("razorpay", n))).toEqual([
+      "refund.failed",
+    ]);
+    expect(isRefundEventName("paypal", "PAYMENT.CAPTURE.REFUNDED")).toBe(true);
+    expect(mayReverseRefund("paypal", "PAYMENT.CAPTURE.REFUNDED")).toBe(false);
+    expect(mayReverseRefund("manual", "refund.failed")).toBe(false);
+    expect(mayReverseRefund("razorpay", "refund.updated")).toBe(false);
   });
 });
