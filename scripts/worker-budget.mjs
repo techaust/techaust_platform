@@ -129,8 +129,9 @@ export const BUDGETS = {
     // M4.5 added ~20–25 KB to ~58 KB; M6.4 (L27, the lead's "before M7.1" decision brought forward): 150,000 (about 120,000 before PayPal).
     // M7.1 L3 (lead, precedent 13 2026-10-25): one Worker, ceiling 200,000 with a 160,000 plan line (measured 125,236 after M6.5, start-up 12.1 ms
     // fastest of 7). Past the plan line, or start-up past 100 ms locally, the split into a front and a portal API Worker goes to the owner.
+    // M7.5 L47 (owner, 2026-11-07): at 163,583 bytes (start-up 25–58 ms) the plan line is raised to 180,000 and the portal is not split.
     maxBytes: 200_000,
-    planBytes: 160_000,
+    planBytes: 180_000,
     maxStartupMs: 200,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, GST_CORE],
   },

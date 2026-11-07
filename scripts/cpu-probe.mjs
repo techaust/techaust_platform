@@ -1344,7 +1344,7 @@ function writeFixtures(work, seedDir) {
     "finance-rpc": { calls: [], rows: {} },
     // Brief D.7: the invoices Worker's `GatewayAdvance` dry run (apps/admin/worker/warm-advance.ts).
     "invoices-rpc": { calls: [], rows: {} },
-    // M7.5 L39: the portal's start-up dry run (apps/portal/worker/warm-routes.ts), one row per answer (its bundle's plan line, 160,000 bytes).
+    // M7.5 L39: the portal's start-up dry run (apps/portal/worker/warm-routes.ts), one row per answer (its bundle's plan line, 180,000 bytes since L47, owner 2026-11-07).
     portal: { calls: [], rows: {} },
   };
   for (const [name, c] of Object.entries(CASES)) {

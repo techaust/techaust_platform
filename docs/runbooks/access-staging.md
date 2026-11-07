@@ -91,6 +91,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Proje
    - Include: Selector **Service Token**, Value `staging-cpu-benchmark`
 4. Save the policy. If it was created separately, make sure it is in the application's **Access policies** list, then **Save** the application.
 5. Keep the **Cloudflare account** policy as it is: the two work side by side. Don't add the token to the other three Workers.
+6. **Done 2026-11-07 (M7.5 Q2 A, owner's go-ahead):** the same reusable policy `CPU benchmark (service token)` is also attached to **portal-staging** and **web-staging** (precedence 3, after `Cloudflare account members` and `Deploy check (service token)`), so the benchmark reaches all three hosts. The lead attached it through the Cloudflare API connector, a one-off write the owner allowed for this step (the connector is otherwise read-only). The jobs app does not get it.
 
 Your Zero Trust account is new, so **strict service token authentication** is on (Cloudflare's default since 2026-10-05): a refused token gets a 401/403 instead of the sign-in page. The benchmark script reports that as "Cloudflare Access refused the service token".
 
