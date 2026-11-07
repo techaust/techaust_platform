@@ -596,3 +596,71 @@ body:has(.savebar) .toasts {
 .signature__scaled:empty {
   margin: 0;
 }
+
+/* ---------- Rebuild PDF (components/rebuild-pdf.tsx; JOB-PDF-02) ----------
+   A quiet companion to a stored PDF's download: the rebuild's facts in small muted text under it, then the Owner's text action (a full 44 px target on
+   its own line). Inside the PDF panel's grid it spans both columns, under the download. Empty, the live lines take no room but stay in the tree. */
+.pdf-rebuild {
+  grid-column: 1 / -1;
+  display: grid;
+  justify-items: start;
+  min-width: 0;
+}
+
+.pdf-rebuild__lines {
+  display: grid;
+  gap: var(--space-1);
+  max-width: var(--container-prose);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  color: var(--color-text-muted);
+}
+
+.pdf-rebuild__lines:focus {
+  outline: none;
+}
+
+.pdf-rebuild__lines:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.pdf-rebuild__lines:not(:empty) {
+  margin-block: var(--space-1);
+}
+
+.pdf-rebuild__fact,
+.pdf-rebuild__status {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.pdf-rebuild__status {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.pdf-rebuild__status[data-tone="quiet"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pdf-rebuild__status .icon {
+  margin-top: 0.125rem;
+}
+
+/* a request that ended without a new file is the Owner's to act on: full-contrast words, the warning colour on the icon only */
+.pdf-rebuild__status[data-tone="problem"] {
+  color: var(--color-text);
+}
+
+.pdf-rebuild__status[data-tone="problem"] .icon {
+  color: var(--color-warning);
+}
+
+.pdf-rebuild__action {
+  justify-self: start;
+  min-height: var(--target-min);
+  gap: var(--space-2);
+}
