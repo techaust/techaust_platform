@@ -103,6 +103,15 @@ export function hourlyMessages(
             day: yesterdayIst(scheduledTime),
             skip: 0,
           } satisfies RefundMessage,
+          // Full audit M6–M7 AU11 (B6 L5): the day before yesterday too, so a day whose fetch dead-lettered (or that Razorpay settled late) is stored the
+          // next morning. Storing a day twice is a no-op: settlements are kept once by id and lines once per settlement line (the admin test
+          // `recon-twice.test.ts` proves it).
+          {
+            kind: "recon.fetch",
+            provider: "razorpay",
+            day: yesterdayIst(scheduledTime - 86_400_000),
+            skip: 0,
+          } satisfies RefundMessage,
         ]
       : []),
     // M7.2 (JOB-CRON-03, L7): the owners' weekly digest on IST Mondays at 09:00, again at 10:00 and 11:00 (its email entity makes a repeat send nothing).

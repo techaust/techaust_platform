@@ -27,7 +27,7 @@ import { isPortalAlertKind } from "@techaust/core/portal";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { isUsageKind } from "@techaust/core/usage";
 import { processBilling, processBillingDeadLetter } from "./billing.ts";
-import { processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
+import { processDeedDeadLetter, processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
 import { processDigest } from "./digest.ts";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { isErasureKeyMissing } from "./erasure.ts";
@@ -104,6 +104,9 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         if (isReceiptKind(message.body)) await processReceiptDeadLetter(env, message.body);
         else if (isPdfMessage(message.body) && message.body.kind === "pdf.statement")
           await processStatementDeadLetter(env, message.body);
+        // Full audit AU11 (B6 L6): a deed's PDF that ran out of tries rings the owners once (it was only logged).
+        else if (isPdfMessage(message.body) && message.body.kind === "pdf.deed")
+          await processDeedDeadLetter(env, message.body);
         else await processPdfDeadLetter(env, message.body);
         message.ack();
       } else if (queue.endsWith("-pdf") && isReceiptKind(message.body)) {

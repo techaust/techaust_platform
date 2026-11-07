@@ -68,7 +68,7 @@ describe("the 09:00 IST dispatch [LD76]", () => {
           "reminder.scan",
           "gateway.sweep", // M6.2, changed on purpose
           "refund.sweep", // M6.5, changed on purpose
-          ...(h === ALERTS_HOUR_IST ? ["recon.fetch"] : []),
+          ...(h === ALERTS_HOUR_IST ? ["recon.fetch", "recon.fetch"] : []), // AU11: two days, changed on purpose
           "signin.unfinished", // M7.2, changed on purpose
           "bells.sweep",
           ...(h === ALERTS_HOUR_IST ? ["requests.clock"] : []), // M7.4, changed on purpose
@@ -100,8 +100,9 @@ describe("the 09:00 IST dispatch [LD76]", () => {
     const env = makeEnv({ DB: dead });
     // M6.5 (changed on purpose): seven bodies in the one sendBatch, and the receipt sweep on the PDF queue.
     // M7.2 (changed on purpose): nine bodies. M7.4 (changed on purpose): ten (the request clock).
-    expect(await enqueueHourly(env, tick("2026-11-05"))).toBe(11);
-    expect(fakes.leads.map((s) => s.via)).toEqual(Array(10).fill("sendBatch"));
+    // Full audit AU11 (changed on purpose): eleven, the second recon day.
+    expect(await enqueueHourly(env, tick("2026-11-05"))).toBe(12);
+    expect(fakes.leads.map((s) => s.via)).toEqual(Array(11).fill("sendBatch"));
     expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual([
       "alerts.daily",
       "realisation.scan",
@@ -109,6 +110,7 @@ describe("the 09:00 IST dispatch [LD76]", () => {
       "reminder.scan",
       "gateway.sweep",
       "refund.sweep",
+      "recon.fetch",
       "recon.fetch",
       "signin.unfinished",
       "bells.sweep",
@@ -129,6 +131,7 @@ describe("the 09:00 IST dispatch [LD76]", () => {
       "reminder.scan",
       "gateway.sweep",
       "refund.sweep",
+      "recon.fetch",
       "recon.fetch",
       "signin.unfinished",
       "bells.sweep",
