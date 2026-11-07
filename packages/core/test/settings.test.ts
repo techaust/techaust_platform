@@ -474,12 +474,13 @@ describe("M3.1 settings fields", () => {
   });
 
   it("resolveSetting merges nested objects too (a field added inside a nested object)", () => {
-    const { fy: _fy, ...lutOld } = SETTINGS_DEFAULTS.tax.lut;
-    const stored = { ...SETTINGS_DEFAULTS.tax, lut: { ...lutOld, arn: "AD1234567890123" } };
+    // P7 LUT fold: the old example (`tax.lut`) is no longer a field; `realisation` is a nested object of the same row
+    const { inrMonths: _inr, ...realisationOld } = SETTINGS_DEFAULTS.tax.realisation;
+    const stored = { ...SETTINGS_DEFAULTS.tax, realisation: { ...realisationOld, warnMonths: 8 } };
     const tax = resolveSetting("tax", stored);
-    expect(tax.lut).toEqual({ arn: "AD1234567890123", fy: null });
+    expect(tax.realisation).toEqual({ ...SETTINGS_DEFAULTS.tax.realisation, warnMonths: 8 });
     // an explicit stored value of the wrong type is not hidden by the default
-    expect(() => resolveSetting("tax", { ...SETTINGS_DEFAULTS.tax, lut: null })).toThrow();
+    expect(() => resolveSetting("tax", { ...SETTINGS_DEFAULTS.tax, realisation: null })).toThrow();
   });
 });
 

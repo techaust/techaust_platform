@@ -4,13 +4,16 @@
 //   - T2: a debit note on an export under LUT is issued only while a LUT with an ARN is saved for the FY of its own issue day (Researched 2026-10-30, Rule 96A(1)
 //     CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)): in the freeze's WHERE (`noteIssueTail`) and in the trigger `documents_debit_note_lut_fy` (0054, a
 //     new trigger only: no table is rebuilt).
-//   - rt1 re-check 1: core's check (`lutForFy`, what the admin's `noteLutOf` asks) never allows what `LUT_FOR_FY_SQL` refuses over the same stored rows; the one
-//     known difference (a legacy `tax.lut` that would not fold: SQL counts it, core refuses it) is pinned as the only one.
-import { lutForFy } from "@techaust/core/invoices";
-import { legacyLutFate, resolveSetting, SETTINGS_DEFAULTS } from "@techaust/core/settings";
+//   - rt1 re-check 1, P7 LUT fold: core's check (`lutFor(fy, lutsOf(tax))`, what the admin's `noteLutOf` asks, and `lutsFromStoredTax`, the jobs reader) and
+//     `LUT_FOR_FY_SQL` agree exactly over the same stored rows. The one difference rt1 pinned (an old `tax.lut` of M3 that would not fold) is gone: 0089 folded
+//     the old key into the list, and neither side reads it any more. 0089 also re-created this trigger from the list-only text.
+import { lutFor, lutsFromStoredTax } from "@techaust/core/invoices";
+import { resolveSetting, SETTINGS_DEFAULTS } from "@techaust/core/settings";
+import { lutsOf } from "@techaust/core/tax";
 import { afterEach, describe, expect, it } from "vitest";
 import { LUT_FOR_FY_SQL } from "../src/issue.ts";
 import { noteLutTriggerStatements } from "../src/triggers.ts";
+import { debitNoteLutFyTrigger } from "../src/triggers-lut-fold.ts";
 import { all, first, rejects, run, SIGNED_ISSUER } from "./helpers.ts";
 import {
   creditedBySql,
@@ -54,11 +57,13 @@ afterEach(async () => {
 });
 
 describe("0054 documents_debit_note_lut_fy [rt1 T2; 08-C RA-19, Q39]", () => {
-  it("the migration installs exactly the generated trigger", async () => {
+  it("0089 (P7 LUT fold) installs exactly the generated list-only trigger in place of 0054's", async () => {
     const t = await first<{ sql: string }>(
       "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'documents_debit_note_lut_fy'",
     );
-    expect(t?.sql).toBe(noteLutTriggerStatements()[0]?.replace(/;$/, ""));
+    expect(t?.sql).toBe(debitNoteLutFyTrigger(LUT_FOR_FY_SQL).replace(/;$/, ""));
+    expect(t?.sql).not.toBe(noteLutTriggerStatements()[0]?.replace(/;$/, ""));
+    expect(t?.sql).not.toContain("$.lut.");
   });
 
   it("a direct issue of an LUT debit note dated 2 April 2027 without a FY 2027-28 LUT is refused; with it, it passes", async () => {
@@ -77,7 +82,7 @@ describe("0054 documents_debit_note_lut_fy [rt1 T2; 08-C RA-19, Q39]", () => {
     expect(await status(d.id)).toBe("issued");
   });
 
-  it("the FY is the note's own issue day's: a FY 2026-27 LUT covers 31 March 2027, the legacy single `lut` counts", async () => {
+  it("the FY is the note's own issue day's: a FY 2026-27 LUT covers 31 March 2027; the old single `lut` of M3 no longer counts (P7 LUT fold)", async () => {
     await setTax({ luts: [{ fy: "2627", arn: "AD1903260000001" }] });
     const p = await parentInvoice({ overseas: true, lines: [line(1_000_00)] });
     const d = await insertNoteDraft(p, "debit", await take(p));
@@ -86,6 +91,9 @@ describe("0054 documents_debit_note_lut_fy [rt1 T2; 08-C RA-19, Q39]", () => {
     await setTax({ luts: [], lut: { fy: "2728", arn: "AD1903270000002" } });
     const q = await parentInvoice({ overseas: true, lines: [line(1_000_00)] });
     const e = await insertNoteDraft(q, "debit", await take(q));
+    await rejects(rawFreeze(e.id, "2027-04-02"), /documents_debit_note_lut_fy/);
+    expect(await status(e.id)).toBe("draft");
+    await setTax({ luts: [{ fy: "2728", arn: "AD1903270000002", filedOn: null }] });
     await rawFreeze(e.id, "2027-04-02");
     expect(await status(e.id)).toBe("issued");
   });
@@ -176,14 +184,14 @@ describe("the note freeze's WHERE [rt1 T1, T2]: a refusal writes nothing", () =>
   });
 });
 
-describe("rt1 re-check 1: core's LUT-for-FY check fails closed against LUT_FOR_FY_SQL [ADM-INV-18; 08-C RA-19, Q39]", () => {
+describe("P7 LUT fold: core's LUT-for-FY check and LUT_FOR_FY_SQL agree exactly [rt1 re-check 1; ADM-INV-18; 08-C RA-19, Q39]", () => {
   const FYS = ["2526", "2627", "2728", "2829"];
   const full = Array.from({ length: 20 }, (_, i) => ({
     fy: `${30 + i}${31 + i}`,
     arn: `A${i}`,
     filedOn: null,
   }));
-  /** Stored `tax` values the admin can read (each parses): the list, the legacy `lut` of M3 in every fate, and both together. */
+  /** Stored `tax` values the admin can read (each parses): the list, an old `lut` of M3 in every former fate (now ignored by both), and both together. */
   const CASES: Record<string, unknown>[] = [
     {},
     { luts: [] },
@@ -200,9 +208,7 @@ describe("rt1 re-check 1: core's LUT-for-FY check fails closed against LUT_FOR_F
     { lut: { arn: "AD-1903", fy: "2728" } },
     { lut: { arn: "A".repeat(31), fy: "2728" } },
     { lut: { arn: "   ", fy: "2728" } },
-    { lut: { arn: "", fy: "2728" } },
     { lut: { arn: "\t", fy: "2728" } },
-    { lut: { arn: " X ", fy: "2728" } },
     { lut: { arn: null, fy: "2728" } },
     { lut: { arn: "OLD1", fy: null } },
     { luts: [{ fy: "2728", arn: "NEW", filedOn: null }], lut: { arn: "OLD", fy: "2728" } },
@@ -211,9 +217,8 @@ describe("rt1 re-check 1: core's LUT-for-FY check fails closed against LUT_FOR_F
     { luts: full },
   ];
 
-  it("for every stored value and FY, core never allows what SQL refuses; they differ only on a legacy letter that would not fold", async () => {
+  it("for every stored value and FY, core (`lutFor(lutsOf)`, `lutsFromStoredTax`) and SQL give the same answer: no difference is left", async () => {
     let counted = 0;
-    const differences: string[] = [];
     for (const stored of CASES) {
       await setTax(stored);
       const rows = await all<{ fy: string; ok: number }>(
@@ -221,35 +226,27 @@ describe("rt1 re-check 1: core's LUT-for-FY check fails closed against LUT_FOR_F
         JSON.stringify(FYS),
       );
       expect(rows.length).toBe(FYS.length);
-      // the admin reads the stored row through the schema, as `readInvoiceSettings` does
+      // the admin reads the stored row through the schema, as `readInvoiceSettings` does; the jobs Worker reads it without zod
       const tax = resolveSetting("tax", stored);
       for (const r of rows) {
         const what = `${JSON.stringify(stored)} ${r.fy}`;
-        const core = lutForFy(r.fy, tax);
-        // fail closed: core's blocker never lets through a debit note the freeze WHERE and trigger 0054 would refuse
-        if (core !== null) {
-          expect(r.ok, what).toBe(1);
+        const core = lutFor(r.fy, lutsOf(tax));
+        expect(core !== null ? 1 : 0, what).toBe(r.ok);
+        expect(lutFor(r.fy, lutsFromStoredTax(stored)) !== null ? 1 : 0, what).toBe(r.ok);
+        if (core) {
           expect(core.fy).toBe(r.fy);
           counted++;
-        } else if (r.ok === 1) {
-          // the one known difference: SQL counts the legacy `lut` of that FY (its ARN not blank once spaces are trimmed) even when
-          // `legacyLutFate` would not fold it (an ARN the list refuses, a full list); core refuses it, so nothing malformed is sealed
-          expect(tax.luts.some((l) => l.fy === r.fy)).toBe(false);
-          expect(tax.lut.fy, what).toBe(r.fy);
-          expect(["invalid", "full"], what).toContain(legacyLutFate(tax).fate);
-          differences.push(what);
         }
       }
     }
-    // both sides of the comparison were met, and the known difference is exercised (hyphen, 31 characters, a tab, a full list)
+    // both answers were met
     expect(counted).toBeGreaterThan(5);
-    expect(differences).toHaveLength(4);
   });
 
   it("with no `tax` row at all, neither counts a LUT", async () => {
     await run("DELETE FROM settings WHERE key = 'tax'");
     const r = await first<{ ok: number }>(`SELECT ${LUT_FOR_FY_SQL.replaceAll("?FY", "?1")} AS ok`, "2728");
     expect(r?.ok).toBe(0);
-    expect(lutForFy("2728", SETTINGS_DEFAULTS.tax)).toBeNull();
+    expect(lutFor("2728", lutsOf(SETTINGS_DEFAULTS.tax))).toBeNull();
   });
 });
