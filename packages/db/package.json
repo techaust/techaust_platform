@@ -23,6 +23,7 @@
     "./ledger": "./src/ledger.ts",
     "./log": "./src/log.ts",
     "./offer-redaction": "./src/offer-redaction.ts",
+    "./pdf-repairs": "./src/pdf-repairs.ts",
     "./portal-shared": "./src/portal-shared.ts",
     "./r2-sweep": "./src/r2-sweep.ts",
     "./realisation": "./src/realisation.ts",
