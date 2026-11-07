@@ -280,7 +280,7 @@ export const STATEMENT_COUNT_SQL = /* @__PURE__ */ (() =>
  * What a statement made today must close at (`?1` client, `?2` currency), from the ledger itself (M6.1, run file B): Σ (total − paid − credited − TDS) over the
  * client's issued, not voided debit documents, minus the client's credit (what its confirmed payments hold unallocated). Not Σ `balance_minor`: a document's
  * balance stops at zero, while an excess on it (paid, credited and TDS above its total) is money the client is owed, so it lowers the closing balance. Equal to
- * debits − credit notes − receipts − TDS lines + refund lines (a test proves the two agree). M6.5 (L35): each payment's free money through `paymentFreeSql` with the
+ * debits − credit notes − receipts − TDS lines + refund lines − refund-came-back lines (a test proves the two agree). M6.5 (L35): each payment's free money through `paymentFreeSql` with the
  * refunds that went out only (`succeeded`, the ones the statement lists): while a refund is still with the gateway its money is neither credit nor a line, so the
  * statement closes higher than `balance − excess − credit` of `CLIENT_FIGURES_SQL` by exactly the refunds in flight. AU45: a refund that came back is no longer
  * `succeeded`, so the ledger counts its money as the client's again, and the statement agrees: its `refund` debit and its `refund_returned` credit net to zero

@@ -39,10 +39,11 @@ export const istDayOfMsSql = (ms: string): string =>
 /**
  * M6–M7 audit AU45: refund row `f` went out and came back: a gateway refund that had succeeded and was reversed (`failed` with `reversed_at`, set once by
  * `refundReverseStatement`). Never a lost dispute (`origin = 'chargeback'`) or a manual refund (`provider = 'manual'`): trigger `payment_refunds_status_flow` of
- * 0082 already refuses to reverse them, and saying it again here keeps the statement's debit and credit lines a pair whatever a row holds.
+ * 0082 already refuses to reverse them. The reversal also needs the gateway's refund id and keeps `settled_on`, so both are required here too (early check, low
+ * 1): the debit line is dated by `settled_on`, and a row without one would print a credit with no debit. Saying it all again keeps the pair whatever a row holds.
  */
 export const refundReturnedSql = (f: string): string =>
-  `(${f}.status = 'failed' AND ${f}.reversed_at IS NOT NULL AND ${f}.origin <> 'chargeback' AND ${f}.provider <> 'manual')`;
+  `(${f}.status = 'failed' AND ${f}.reversed_at IS NOT NULL AND ${f}.settled_on IS NOT NULL AND ${f}.provider_refund_id IS NOT NULL AND ${f}.origin <> 'chargeback' AND ${f}.provider <> 'manual')`;
 
 /**
  * M6–M7 audit AU45: refund row `f` went out at some time: it succeeded, or it succeeded and came back (`refundReturnedSql`). The statement lists each such

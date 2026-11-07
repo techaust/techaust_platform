@@ -2592,7 +2592,7 @@ describe("AU45: the statement lists a refund that came back as a credit on the I
       expect(
         await first<{ r: number; w: number }>(
           `SELECT ${refundReturnedSql("x")} AS r, ${refundWentOutSql("x")} AS w
-           FROM (SELECT 'failed' AS status, 5 AS reversed_at, ?1 AS origin, ?2 AS provider) x`,
+           FROM (SELECT 'failed' AS status, 5 AS reversed_at, '2026-11-03' AS settled_on, 'rfnd_1' AS provider_refund_id, ?1 AS origin, ?2 AS provider) x`,
           origin,
           provider,
         ),
@@ -2602,9 +2602,24 @@ describe("AU45: the statement lists a refund that came back as a credit on the I
     expect(
       await first(
         `SELECT ${refundReturnedSql("x")} AS r, ${refundWentOutSql("x")} AS w
-         FROM (SELECT 'failed' AS status, NULL AS reversed_at, 'owner' AS origin, 'stripe' AS provider) x`,
+         FROM (SELECT 'failed' AS status, NULL AS reversed_at, '2026-11-03' AS settled_on, 'rfnd_1' AS provider_refund_id, 'owner' AS origin, 'stripe' AS provider) x`,
       ),
     ).toEqual({ r: 0, w: 0 });
+    // early check low 1: a reversed row without its settled day or gateway refund id is never a pair, so neither line
+    for (const [settledOn, refundId] of [
+      [null, "rfnd_1"],
+      ["2026-11-03", null],
+    ] as const) {
+      expect(
+        await first<{ r: number; w: number }>(
+          `SELECT ${refundReturnedSql("x")} AS r, ${refundWentOutSql("x")} AS w
+           FROM (SELECT 'failed' AS status, 5 AS reversed_at, ?1 AS settled_on, ?2 AS provider_refund_id, 'owner' AS origin, 'stripe' AS provider) x`,
+          settledOn,
+          refundId,
+        ),
+        `${settledOn}/${refundId}`,
+      ).toEqual({ r: 0, w: 0 });
+    }
     // L33: a pending payment refunded in full and rejected: neither line, also after a reversal
     {
       const { owner, sess, clientId } = await setup();

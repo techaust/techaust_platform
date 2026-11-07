@@ -63,6 +63,7 @@ Low findings (the lead's, in integration):
 1. `refundReturnedSql` doesn't require `settled_on IS NOT NULL` (a malformed row could print a credit with no debit; today's code never writes one): add `settled_on IS NOT NULL` and `provider_refund_id IS NOT NULL` (mirrors 0082), with a test row.
 2. `reports.ts` ledger comment formula: add "− refund-came-back lines".
 3. `apps/admin/worker/statements.ts` header's credits list is from M5.5: name receipts, TDS and the two refund kinds.
+Lead fixed 1–3 (2026-11-07): `refundReturnedSql` requires `settled_on` and `provider_refund_id` (test rows for both missing), the ledger formula, the route header; db `refund-statements` + `reports` 79 passed, admin `worker/reports.test.ts` 24 passed, biome clean.
 Noted, not blocking: no test pins the statement route's rows read (`reports-stress.test.ts` doesn't cover it; older than AU45) → follow-up.
 
 ## Builder report
