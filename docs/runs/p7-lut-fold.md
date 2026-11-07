@@ -170,3 +170,9 @@ No critical, high or medium finding.
 - **Low 2, kept:** the fold's "listed" test is slightly stricter than the old jobs reader, but only for rows the schema refuses, and it fails closed.
 - **Low 3, kept:** the ARN-trim gap (lead's decision).
 - Usage: builder agent-a8bbd6359c2c79b47, analyst agent-a6223be8be52dc033, reviewer agent-a7d5dd2c3633deeff, all claude-opus-5-5/high.
+
+## Integration (lead, 2026-11-07, after #197)
+- Took out `0089_lut_fold.sql`, its snapshot and journal entry (ea10762a), merged `main` (#194–#197), resolved two keep-both conflicts (`packages/db/src/triggers.ts`: the `pdf_repair_triggers` set and import beside `lut_fold`; `migrations.test.ts`: 0087, 0088, then 0089).
+- `drizzle-kit generate --custom --name lut_fold` gave **0089** again (main ends at 0088): journal `idx 89`, snapshot `prevId` = 0088's id. `scripts/write-triggers.ts lut_fold` wrote SQL **byte for byte identical** to the reviewed 0089 (compared with `diff`), so the merge condition's re-check is that comparison; no reviewer run. Meta biome-formatted.
+- Lead's run: `pnpm --filter @techaust/db test` 64 files, 1,134 tests passed; `pnpm check` passed (migration guard: 90 migrations, none rebuilds a referenced table). The other suites run in CI.
+- Usage: no agent run in this step.
