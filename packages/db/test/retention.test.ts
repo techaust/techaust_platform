@@ -12,6 +12,7 @@ import {
   AUDIT_EXPORT_COLUMNS,
   BACKUP_SCOPE,
   monthlyExportSql,
+  RECIPIENT_EXPORT_SQL,
   RECIPIENT_SCRUB_KEYS,
 } from "../src/backup-scope.ts";
 import { auditIpDueSql } from "../src/dp-shared.ts";
@@ -187,6 +188,49 @@ describe("the matrix and the backup scope cover every table (A.6, B.6)", () => {
     // the client's free-text decision note is not a tax record: NULL in the copy (lead, 2026-11-07)
     expect(row?.decision_note).toBeNull();
     expect(monthlyExportSql("documents")).toContain("NULL AS decision_note");
+  });
+  it("P7 ops (L2): a recipient that is not a JSON object (no CHECK guarantees one) is NULL in the copy, never the raw value", async () => {
+    // 0000_init declares `recipient` a plain nullable text: no CHECK, and no trigger, holds it to JSON.
+    const ddl = await all<{ sql: string }>(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents'",
+    );
+    expect(ddl[0]?.sql).toMatch(/`recipient` text,/);
+    expect(ddl[0]?.sql).not.toMatch(/json_valid|json_type/);
+    const sql = monthlyExportSql("documents");
+    expect(sql).toContain(RECIPIENT_EXPORT_SQL);
+    expect(sql).not.toMatch(/ELSE recipient/);
+    const client = await mkClientRow();
+    const cases = [
+      ["not JSON", "Made-up Person <made-up@example.test>", null],
+      ["a JSON string", JSON.stringify("Made-up Person made-up@example.test"), null],
+      ["a JSON array", JSON.stringify([{ email: "made-up@example.test" }]), null],
+      ["NULL", null, null],
+      [
+        "an object",
+        JSON.stringify({ legalName: "Made-up Ltd", email: "made-up@example.test", country: "IN" }),
+        { legalName: "Made-up Ltd", country: "IN" },
+      ],
+    ] as const;
+    let n = 100;
+    for (const [label, value, expected] of cases) {
+      const id = uuidv7();
+      n += 1;
+      await run(
+        `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at, recipient)
+         VALUES (?1, 'tax_invoice', 'issued', ?2, 'INR', 'inv-p7l2', '9999', ?3, ?4, 1000, '2026-10-28', '2026-11-04', 100000, 100000, 118000, 118000, ?5, 7000, ?6)`,
+        id,
+        client,
+        n,
+        `L2/${n}`,
+        "h".repeat(64),
+        value,
+      );
+      const row = (await all<Record<string, unknown>>(sql)).find((r) => r.id === id);
+      expect(row, label).toBeDefined();
+      if (expected === null) expect(row?.recipient, label).toBeNull();
+      else expect(JSON.parse(String(row?.recipient)), label).toEqual(expected);
+      expect(JSON.stringify(row), label).not.toContain("made-up@example.test");
+    }
   });
   it("every family's tables are in the matrix under that family", () => {
     for (const family of RETENTION_FAMILIES)

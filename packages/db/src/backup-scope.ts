@@ -157,13 +157,20 @@ export const RECIPIENT_SCRUB_KEYS = ["email", "contactName"] as const;
  */
 export const BLANKED_DOCUMENT_COLUMNS = ["decision_note"] as const;
 
-/** Every column of `documents` (from the schema, so a new column joins the copy), `recipient` scrubbed of `RECIPIENT_SCRUB_KEYS`, `BLANKED_DOCUMENT_COLUMNS` NULL. */
+/**
+ * The monthly copy's `recipient`: a JSON object loses `RECIPIENT_SCRUB_KEYS`; anything else (text that isn't JSON, a JSON string, array or number) is
+ * NULL, never the raw value, because `documents.recipient` has no CHECK that it is a JSON object (0000_init: a plain nullable `text`; no trigger checks
+ * it either), and `json_remove` would hand such a value back unchanged. The inner CASE runs only on valid JSON (`json_type` raises on anything else).
+ */
+export const RECIPIENT_EXPORT_SQL = `CASE WHEN json_valid(recipient) THEN CASE WHEN json_type(recipient) = 'object' THEN json_remove(recipient, ${q(RECIPIENT_SCRUB_KEYS.map((k) => `$.${k}`))}) END END AS recipient`;
+
+/** Every column of `documents` (from the schema, so a new column joins the copy), `recipient` as `RECIPIENT_EXPORT_SQL`, `BLANKED_DOCUMENT_COLUMNS` NULL. */
 const documentColumns = () =>
   Object.values(getTableColumns(documents))
     .map((c) => c.name)
     .map((c) =>
       c === "recipient"
-        ? `CASE WHEN json_valid(recipient) THEN json_remove(recipient, ${q(RECIPIENT_SCRUB_KEYS.map((k) => `$.${k}`))}) ELSE recipient END AS recipient`
+        ? RECIPIENT_EXPORT_SQL
         : BLANKED_DOCUMENT_COLUMNS.includes(c as (typeof BLANKED_DOCUMENT_COLUMNS)[number])
           ? `NULL AS ${c}`
           : c,
