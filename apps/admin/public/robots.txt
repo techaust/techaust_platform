@@ -1,3 +1,5 @@
-# The admin is never meant to be indexed (X-Robots-Tag noindex on every response; docs/08 section 3.1). Checked by scripts/check-spa-headers.mjs.
+# The admin is never indexed: X-Robots-Tag noindex on every response keeps it out of search (docs/08 section 3.1).
+# Crawling stays allowed on purpose: a crawler that may not fetch a page never sees that header, and a
+# blocked address can still appear in results as a bare link. Checked by scripts/check-spa-headers.mjs.
 User-agent: *
-Disallow: /
+Disallow:

@@ -36,6 +36,8 @@ function target(path: string): [string, string] | null {
 describe("apps/web/public/_redirects", () => {
   it("every rule is `source destination 301`, local, and every source is unique", () => {
     for (const r of rules) {
+      // `target` below models placeholders only; a splat (*) rule needs the engine's greedy match added there first
+      expect(r[0], "a splat rule needs target() to model it").not.toContain("*");
       expect(r, r.join(" ")).toHaveLength(3);
       expect(r[2]).toBe("301");
       expect(r[0]).toMatch(/^\//);

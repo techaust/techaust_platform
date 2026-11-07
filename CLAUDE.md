@@ -183,7 +183,7 @@ pnpm.cmd invite --email … --role owner --production           # production: th
 
 # Production and backups (Phase 7; docs/runbooks/environments.md, restore.md)
 gh workflow run deploy-prod.yml -f tag=main -f stage=full -f check_web=true -f confirm="deploy techaust.com main"   # stage=database for migrations and seed only; the owner approves the `production` environment
-gh workflow run backup.yml                                     # nightly at 21:10 UTC by itself; `-f monthly=true` forces the monthly 10-year copy
+gh workflow run backup.yml                                     # nightly by itself (tries 21:10, 23:10, 01:10 UTC; one copy a night); `-f monthly=true` forces the monthly 10-year copy
 powershell -ExecutionPolicy Bypass -File scripts\backup-decrypt.ps1     # the owner opens a downloaded backup (.tar and backup-private.pem)
 node scripts/drill-split.mjs <export.sql> <folder>             # a D1 export in load order (schema, data, triggers) for `wrangler d1 execute --remote --file`
 powershell -ExecutionPolicy Bypass -File scripts\set-prod-secrets.ps1   # every production Worker secret; set ones are never replaced

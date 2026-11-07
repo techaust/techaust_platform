@@ -82,7 +82,7 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
 _P7-N, 2026-11-07 (owner: "Nightly backups before launch"; the lead's decisions in [runs/p7-launch](../runs/p7-launch.md) P7-N)._ The workflow is `.github/workflows/backup.yml`; the envelope is `scripts/backup-encrypt.sh`; the owner opens a backup with `scripts/backup-decrypt.ps1`.
 
 ### 3.1 Backups: what runs and where they are
-- **When:** every night at 21:10 UTC (02:40 IST), clear of the jobs Worker's :30 hourly tick and its 22:00 UTC run, because a remote export makes the database unavailable while it runs. The owner can also start it by hand (GitHub › Actions › "Backup D1 to S3" › Run workflow); only the owner (`techaust`) may start or re-run it.
+- **When:** every night, tried at 21:10, 23:10 and 01:10 UTC (02:40, 04:40 and 06:40 IST) because GitHub starts scheduled runs late or drops them; the workflow's `gate` job skips a try once that night (from 20:30 UTC) already has a checked daily copy, so a night normally has one copy, made at whichever try ran first. Each time is clear of the jobs Worker's :30 hourly tick and its 22:00 UTC run when GitHub starts it within about 15 minutes, because a remote export makes the database unavailable while it runs. The owner can also start it by hand (GitHub › Actions › "Backup D1 to S3" › Run workflow); only the owner (`techaust`) may start or re-run it.
 - **What:** `wrangler d1 export DB --remote --env production` (the whole production D1: schema, rows, triggers, indexes and `d1_migrations`), then the OpenSSL envelope:
   - a fresh random key for each backup (32 random bytes, kept as 64 hex characters) encrypts the dump with `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -md sha256`;
   - that key is wrapped with the owner's RSA-4096 public key (`openssl pkeyutl -encrypt`, RSA-OAEP with SHA-256), the repo variable `BACKUP_PUBLIC_KEY_PEM`;
@@ -251,7 +251,7 @@ Nothing else changes: no GetObject, no DeleteObject, no DeleteObjectVersion; the
 
 ### 3.7 Known points
 - **The monthly copy's restore** is a read, not a production restore (§3.6.3). Object Lock on the bucket is the lead's hosted choice, not something the workflows need.
-- **A remote export blocks the database while it runs** (wrangler's prompt; D1 docs): hence 02:40 IST, away from the jobs crons.
+- **A remote export blocks the database while it runs** (wrangler's prompt; D1 docs): hence 02:40 IST (and the later tries at 04:40 and 06:40 IST), away from the jobs crons.
 - D1's import rules (Cloudflare import and export page): no `BEGIN TRANSACTION`/`COMMIT` and no `_cf_KV` table; one file ≤ 5 GiB; "Statement too long" means splitting an `INSERT`. There are no virtual tables in our migrations (checked 0000–0079), so export works.
 - Scheduled workflows of a public repository are switched off by GitHub after 60 days without repository activity; the run history (Actions) shows a missing night.
 

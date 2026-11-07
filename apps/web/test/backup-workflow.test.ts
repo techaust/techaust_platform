@@ -50,7 +50,7 @@ const at = (needle: string) => {
 const expr = (inner: string) => ["$", "{{ ", inner, " }}"].join("");
 
 describe("backup.yml: triggers, permissions, environment [JOB-BKP-01]", () => {
-  it("tries nightly at 21:10, 23:10 and 01:10 UTC (02:40, 04:40, 06:40 IST; clear of jobs' :30 tick and 22:00 UTC run) and runs by hand; never on a push or a pull request", () => {
+  it("tries nightly at 21:10, 23:10 and 01:10 UTC (02:40, 04:40, 06:40 IST; clear of jobs' :30 tick and 22:00 UTC run when started within about 15 minutes) and runs by hand; never on a push or a pull request", () => {
     const on = text.slice(text.indexOf("\non:\n"), text.indexOf("\npermissions:"));
     const crons = [...on.matchAll(/^ {4}- cron: "([^"]+)"$/gm)].map((m) => m[1]);
     expect(crons).toEqual(["10 21 * * *", "10 23 * * *", "10 1 * * *"]);
@@ -470,10 +470,20 @@ describe("backup.yml: the gate (three nightly tries, one backup) [JOB-BKP-01]", 
 
   it("reads only this workflow's runs with the run's own token", () => {
     expect(gateStep).toContain(`GH_TOKEN: ${expr("github.token")}`);
-    expect(gateStep).toContain('"repos/$REPO/actions/workflows/backup.yml/runs" -f status=success');
+    // every completed run counts when its daily copy was checked, whatever the run's conclusion (a failed monthly copy fails the run)
+    expect(gateStep).toContain('"repos/$REPO/actions/workflows/backup.yml/runs" -f status=completed');
     expect(gateStep).toContain('gh api "repos/$REPO/actions/runs/$id/jobs"');
-    expect(gateStep).toContain('select(.name == "backup" and .conclusion == "success")');
+    expect(gateStep).toContain(
+      `[.jobs[] | select(.name == "backup") | .steps[]? | select(.name == "Check the uploaded object" and .conclusion == "success")] | length`,
+    );
     expect(gateStep).not.toMatch(/--method (POST|PUT|PATCH|DELETE)|dispatches|rerun|cancel/);
+  });
+
+  it("the names the gate looks for exist: the job id `backup` with no display name, and its daily check step", () => {
+    // GitHub reports a job by its `name:` when it has one, so a display name would hide the job from the gate
+    expect(backupJob).not.toMatch(/^ {4}name:/m);
+    expect(steps.filter((s) => s.startsWith("name: Check the uploaded object\n"))).toHaveLength(1);
+    expect(steps[at("name: Check the uploaded object")]).toContain('--prefix "$OBJECT"');
   });
 
   /** Runs the gate's step through `bash -e` with stand-ins for `gh` and the clock (`date -u +%s`). */
@@ -567,15 +577,15 @@ describe("backup.yml: the gate (three nightly tries, one backup) [JOB-BKP-01]", 
     },
   );
 
-  it.skipIf(!hasBash)("a backup job that succeeded tonight skips the try", () => {
+  it.skipIf(!hasBash)("a daily copy checked tonight skips the try", () => {
     const r = gate({ event: "schedule", now: "2026-11-09T01:10:00Z", runs: ["111"], made: { "111": 1 } });
     expect(r.status, r.stderr).toBe(0);
     expect(r.output).toBe("run=false\n");
-    expect(r.stdout).toContain("Run 111 made a backup since 2026-11-08T20:30:00Z");
+    expect(r.stdout).toContain("Run 111 uploaded and checked a daily copy since 2026-11-08T20:30:00Z");
   });
 
   it.skipIf(!hasBash)(
-    "a successful run whose backup job was skipped, or this run itself, never counts",
+    "a run with no checked daily copy (its backup job skipped or failed early), or this run itself, never counts",
     () => {
       const r = gate({
         event: "schedule",

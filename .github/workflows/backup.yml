@@ -23,12 +23,14 @@ name: Backup D1 to S3
 # No plaintext, key or archive ever goes into an artifact, a cache or the log.
 on:
   schedule:
-    # 21:10 UTC = 02:40 IST: clear of the jobs Worker's :30 hourly tick and its 22:00 UTC run (P7 re-check L1), even when GitHub starts a
-    # scheduled run late, because a remote export makes the database unavailable while it runs.
+    # 21:10 UTC = 02:40 IST: clear of the jobs Worker's :30 hourly tick and its 22:00 UTC run (P7 re-check L1), because a remote export
+    # makes the database unavailable while it runs. The clearance holds only for a start within about 15 minutes of the scheduled time;
+    # a later start can overlap a tick (its queue work retries).
     - cron: "10 21 * * *"
     # Two later tries, 23:10 and 01:10 UTC (04:40 and 06:40 IST): GitHub starts scheduled runs late or drops them under load (the first
-    # production night's 21:10 run had not started an hour later; owner 2026-11-08). The `gate` job skips a try when a backup job succeeded
-    # since the night began (20:30 UTC), so one night makes one backup.
+    # production night's 21:10 run had not started an hour later; owner 2026-11-08). The `gate` job skips a try once a run since the
+    # night began (20:30 UTC) uploaded and checked its daily copy, so one night makes one daily copy.
+    # Kept (review 2026-11-08, finding 6): a run by hand or a re-run started from 20:30 UTC (02:00 IST) also counts as that night's copy.
     - cron: "10 23 * * *"
     - cron: "10 1 * * *"
   workflow_dispatch:
@@ -46,6 +48,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The gate finds this job by its id `backup` and its step "Check the uploaded object": never give the job a `name:` or rename that
+  # step without changing the gate (a test holds both).
   backup:
     needs: gate
     # Skipped only on the gate's clear "false": a gate that failed or said nothing still backs up (never a missed night).
@@ -267,11 +271,13 @@ jobs:
         if: always()
         run: rm -f -- "${ARCHIVE:-}" "${FINANCE_ARCHIVE:-}" "$RUNNER_TEMP/backup-public.pem"
 
-  # Decides whether this run backs up. A run by hand always does. A scheduled try is skipped when a run of this workflow whose `backup`
-  # job succeeded started since this backup night began at 20:30 UTC (so the 23:10 and 01:10 UTC tries skip after a good 21:10 run, while
-  # a by-hand run in the afternoon never stands in for the night). Any answer it can't read means "back up" (never a missed night); so does a gate that
-  # fails outright (the backup job's `if` skips only on "false"). No secret, no checkout,
-  # no package code: only the run list of this workflow, read with the run's own token.
+  # Decides whether this run backs up. A run by hand always does. A scheduled try is skipped when a run of this workflow started since
+  # this backup night began at 20:30 UTC and its `backup` job's "Check the uploaded object" step succeeded, whatever the run's
+  # conclusion: a night whose daily copy is in the bucket but whose monthly copy failed is not exported again (review 2026-11-08,
+  # finding 3; the next night's run retries the monthly copy). So the 23:10 and 01:10 UTC tries skip after a good 21:10 run, while a
+  # by-hand run in the afternoon never stands in for the night. Any answer it can't read means "back up" (never a missed night); so
+  # does a gate that fails outright (the backup job's `if` skips only on "false"). No secret, no checkout, no package code: only the
+  # run list of this workflow, read with the run's own token.
   gate:
     permissions:
       actions: read
@@ -298,23 +304,23 @@ jobs:
           # starts them. One reading of the clock; 73800 s = 20 h 30 min back lands on the night's start date.
           now="$(date -u +%s)"
           since="$(date -u -d "@$((now - 73800))" +%Y-%m-%d)T20:30:00Z"
-          if ! ids="$(gh api --method GET "repos/$REPO/actions/workflows/backup.yml/runs" -f status=success -f "created=>=$since" -f per_page=20 --jq '.workflow_runs[].id')"; then
+          if ! ids="$(gh api --method GET "repos/$REPO/actions/workflows/backup.yml/runs" -f status=completed -f "created=>=$since" -f per_page=20 --jq '.workflow_runs[].id')"; then
             echo "::warning::The list of earlier backup runs could not be read; backing up anyway."
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           for id in $ids; do
             [ "$id" = "$RUN_ID" ] && continue
-            if ! made="$(gh api "repos/$REPO/actions/runs/$id/jobs" --jq '[.jobs[] | select(.name == "backup" and .conclusion == "success")] | length')"; then
+            if ! made="$(gh api "repos/$REPO/actions/runs/$id/jobs" --jq '[.jobs[] | select(.name == "backup") | .steps[]? | select(.name == "Check the uploaded object" and .conclusion == "success")] | length')"; then
               echo "::warning::The jobs of run $id could not be read; backing up anyway."
               echo "run=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             if [ "$made" -gt 0 ]; then
               echo "run=false" >> "$GITHUB_OUTPUT"
-              echo "Run $id made a backup since $since: this try is skipped."
+              echo "Run $id uploaded and checked a daily copy since $since: this try is skipped."
               exit 0
             fi
           done
           echo "run=true" >> "$GITHUB_OUTPUT"
-          echo "No backup since $since: backing up."
+          echo "No daily copy since $since: backing up."

@@ -155,18 +155,28 @@ export function checkInlinedFonts(app, headersText, files) {
 
 /**
  * The app's own robots.txt (production check, 2026-11-08): without one, the SPA fallback answered /robots.txt with index.html, which
- * Cloudflare's managed robots block was then prepended to. The file must keep every crawler out of the whole host.
+ * Cloudflare's managed robots block was then prepended to. It must be plain robots text with a `User-agent: *` group, and it must not
+ * block crawling: the noindex in X-Robots-Tag is what keeps these hosts out of search, and a crawler that may not fetch a page never
+ * sees it (a blocked address can still be listed as a bare link). Crawlers merge every `*` group, so no `Disallow: /` anywhere; the
+ * managed block's own `Allow: /` would also outrank it (review 2026-11-08, finding 1).
  */
 export function checkRobots(app, text) {
+  const problems = [];
+  if (/<[a-z!][^>]*>/i.test(text)) problems.push(`${app} robots.txt: holds HTML, not robots rules`);
   const lines = text
     .split(/\r?\n/)
     .map((l) => l.replace(/#.*/, "").trim())
     .filter(Boolean);
-  const star = lines.findIndex((l) => /^user-agent:\s*\*$/i.test(l));
-  const next = lines.findIndex((l, i) => i > star && /^user-agent:/i.test(l));
-  const group = star < 0 ? [] : lines.slice(star + 1, next < 0 ? undefined : next);
-  const ok = group.some((l) => /^disallow:\s*\/$/i.test(l)) && !group.some((l) => /^allow:/i.test(l));
-  return ok ? [] : [`${app} robots.txt: needs "User-agent: *" with "Disallow: /" (and no Allow line)`];
+  if (!lines.some((l) => /^user-agent:\s*\*$/i.test(l)))
+    problems.push(`${app} robots.txt: needs a "User-agent: *" group`);
+  if (lines.some((l) => /^disallow:\s*\/\*?\s*$/i.test(l)))
+    problems.push(
+      `${app} robots.txt: "Disallow: /" would hide the noindex header from crawlers; keep crawling allowed ("Disallow:" empty)`,
+    );
+  for (const l of lines)
+    if (!/^(user-agent|allow|disallow|sitemap|crawl-delay):/i.test(l))
+      problems.push(`${app} robots.txt: "${l.slice(0, 60)}" is not a robots rule`);
+  return problems;
 }
 export const sourceRobotsFile = (app, base = root) => join(base, "apps", app, "public", "robots.txt");
 export const builtRobotsFile = (app, base = root) => join(base, "apps", app, "dist", "client", "robots.txt");
