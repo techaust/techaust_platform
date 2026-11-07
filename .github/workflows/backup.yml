@@ -10,7 +10,13 @@ name: Backup D1 to S3
 #      variable BACKUP_PUBLIC_KEY_PEM; the private key never leaves the owner's offline folder), one .tar with a manifest;
 #   6. the plaintext deleted at once (also when a step before failed);
 #   7. AWS by GitHub OIDC (no AWS key stored anywhere), `aws s3 cp` to s3://<BACKUP_BUCKET>/daily/, then the object's size checked with
-#      list-objects-v2 (the role has ListBucket on daily/ only and no GetObject). The bucket's lifecycle rule expires copies after 90 days.
+#      list-objects-v2 (the role has ListBucket on daily/ and monthly/ only, and no GetObject). The lifecycle rule expires daily/ copies after 90 days.
+# The monthly finance-only copy (P7 ops, docs/runs/p7-ops.md; PRD JOB-BKP-01; owner 2026-10-07; T7 F1), on the 1st of each month (the run's UTC day)
+# and when the owner starts a run with `monthly` ticked: before the plaintext is deleted, scripts/backup-monthly.mjs builds ON THE RUNNER the
+# finance-only SQL (the tables and rows packages/db/src/backup-scope.ts keeps: the invoice family, accepted offers, payments, the ledger, the finance
+# audit rows without IP or browser, the contract records; never leads, contacts, proposals or estimates). Same envelope; uploaded to
+# s3://<BACKUP_BUCKET>/monthly/techaust-prod-finance-<YYYY-MM>.tar and checked the same way; the lifecycle rule on monthly/ keeps it 10 years. A failed
+# monthly copy never costs the night's daily copy: the daily one is still uploaded, then the run fails and says why. Restore: restore.md §3.6.
 # No plaintext, key or archive ever goes into an artifact, a cache or the log.
 on:
   schedule:
@@ -18,6 +24,11 @@ on:
     # scheduled run late, because a remote export makes the database unavailable while it runs.
     - cron: "10 21 * * *"
   workflow_dispatch:
+    inputs:
+      monthly:
+        description: "Also make the monthly finance-only copy (kept 10 years). Scheduled runs make it on the 1st of each month anyway."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -81,6 +92,23 @@ jobs:
           esac
           printf '%s\n' "$BACKUP_PUBLIC_KEY_PEM" > "$RUNNER_TEMP/backup-public.pem"
           echo "Backup settings present."
+      # The monthly copy: on the 1st of the month (the run's UTC day, any trigger) or when the owner ticks `monthly`. Its names are fixed here, once.
+      - name: Is this run also the monthly copy
+        id: when
+        env:
+          MONTHLY_INPUT: ${{ inputs.monthly }}
+        run: |
+          if [ "$(date -u +%d)" = "01" ] || [ "$MONTHLY_INPUT" = "true" ]; then
+            month="$(date -u +%Y-%m)"
+            echo "monthly=true" >> "$GITHUB_OUTPUT"
+            echo "FINANCE=$RUNNER_TEMP/techaust-prod-finance-$month.sql" >> "$GITHUB_ENV"
+            echo "FINANCE_ARCHIVE=$RUNNER_TEMP/techaust-prod-finance-$month.tar" >> "$GITHUB_ENV"
+            echo "FINANCE_OBJECT=monthly/techaust-prod-finance-$month.tar" >> "$GITHUB_ENV"
+            echo "This run also makes the monthly finance-only copy for $month."
+          else
+            echo "monthly=false" >> "$GITHUB_OUTPUT"
+            echo "Daily copy only."
+          fi
       # The export. Wrangler's output goes to a private file: it holds a signed link to the plaintext dump, so only its lines without a link are
       # printed, and only on failure. WRANGLER_LOG_PATH keeps wrangler's own debug log in $RUNNER_TEMP too; both are deleted.
       - name: Export the production D1
@@ -113,16 +141,27 @@ jobs:
           echo "Exported $(wc -c < "$dump" | tr -d ' ') bytes."
       - name: Encrypt the export
         run: bash scripts/backup-encrypt.sh "$DUMP" "$RUNNER_TEMP/backup-public.pem" "$ARCHIVE"
-      # At once, and also when the export or the encryption failed: no plaintext stays on the runner.
-      - name: Delete the plaintext export
+      # The finance-only SQL from the plaintext export (node:sqlite in memory; no package is installed or run; the script prints only a table count and a
+      # size), then the same envelope. continue-on-error: a failure here must not stop the daily copy's upload below; the run's last check then fails it.
+      - name: Build and encrypt the monthly finance-only copy
+        id: monthly
+        if: steps.when.outputs.monthly == 'true'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          umask 077
+          node scripts/backup-monthly.mjs build "$DUMP" "$FINANCE"
+          bash scripts/backup-encrypt.sh "$FINANCE" "$RUNNER_TEMP/backup-public.pem" "$FINANCE_ARCHIVE"
+      # At once, and also when the export, an encryption or the monthly build failed: no plaintext (the export, the finance-only SQL) stays on the runner.
+      - name: Delete the plaintexts
         if: always()
         run: |
           find "$RUNNER_TEMP" -maxdepth 1 -type f -name 'techaust-prod-*.sql' -delete
           if find "$RUNNER_TEMP" -maxdepth 1 -type f -name 'techaust-prod-*.sql' | grep -q .; then
-            echo "::error::The plaintext export could not be deleted."
+            echo "::error::A plaintext file could not be deleted."
             exit 1
           fi
-          echo "Plaintext export deleted."
+          echo "Plaintext export (and finance-only SQL) deleted."
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_BACKUP_ROLE_ARN }}
@@ -156,6 +195,42 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Uploaded and checked: $OBJECT ($local_bytes bytes)."
-      - name: Remove the archive and the public key file
+      - name: Upload the monthly finance-only archive
+        if: steps.monthly.outcome == 'success'
+        env:
+          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+        run: aws s3 cp "$FINANCE_ARCHIVE" "s3://$BACKUP_BUCKET/$FINANCE_OBJECT" --only-show-errors --no-progress
+      # As for the daily copy: the role can list monthly/ but not read objects, so the listed size must equal the archive's.
+      - name: Check the uploaded monthly object
+        if: steps.monthly.outcome == 'success'
+        env:
+          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+          local_bytes="$(wc -c < "$FINANCE_ARCHIVE" | tr -d ' ')"
+          listed="$(aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix "$FINANCE_OBJECT" --query "Contents[?Key=='$FINANCE_OBJECT'].Size | [0]" --output text)"
+          if [ "$listed" != "$local_bytes" ]; then
+            echo "::error::$FINANCE_OBJECT is not in the bucket with $local_bytes bytes (listed: $listed)."
+            exit 1
+          fi
+          {
+            echo
+            echo "### Monthly finance-only copy (kept 10 years)"
+            echo
+            echo "- Object: \`$FINANCE_OBJECT\` ($local_bytes bytes)"
+            echo "- Manifest:"
+            echo
+            echo '```json'
+            tar -xOf "$FINANCE_ARCHIVE" manifest.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Uploaded and checked: $FINANCE_OBJECT ($local_bytes bytes)."
+      # The daily copy is in the bucket by now. A failed monthly copy still fails the run, so the owner sees it.
+      - name: Fail the run when the monthly copy failed
+        if: always() && steps.monthly.outcome == 'failure'
+        run: |
+          echo "::error::The monthly finance-only copy failed (see the step that builds it); nothing went to monthly/. Once fixed, run this workflow by hand with monthly ticked."
+          exit 1
+      - name: Remove the archives and the public key file
         if: always()
-        run: rm -f -- "${ARCHIVE:-}" "$RUNNER_TEMP/backup-public.pem"
+        run: rm -f -- "${ARCHIVE:-}" "${FINANCE_ARCHIVE:-}" "$RUNNER_TEMP/backup-public.pem"

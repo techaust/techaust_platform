@@ -31,7 +31,15 @@ concurrency:
 # P7 (docs/runs/p7-launch.md P7-B), on the shape of deploy-staging.yml (M7.5, owner's Q3 A 2026-11-01):
 #   1. guard: only the owner (techaust), only while PRODUCTION_ENABLED is 'true', only with the typed confirmation, and only main or a v* tag (the
 #      refs the `production` environment accepts the run from: started from main with "Use workflow from: main", or from a tag).
-#   2. build: NO environment and NO secret (it installs and runs package code): the seed SQL, the production builds of the admin, the portal and the
+#   1b. snapshot (stage full only; P7 ops, docs/runs/p7-ops.md; ADM-CAT-05): the newest PUBLISHED catalogue snapshot, READ from the PRODUCTION D1 with
+#      scripts/fetch-catalogue-snapshot.mjs --env production, so the website's prices are the ones the owner published in the production admin (the
+#      owner's rule in publish-catalogue.yml: production follows this approved deploy, never the 30-minute staging publisher). Lead's decision: it runs
+#      in the `backup` environment (main only, no reviewer; its D1-only token CF_API_TOKEN_BACKUP), so the deploy keeps its single owner approval, and it
+#      installs nothing but wrangler, so no package code runs where a token is. Handed to the build as an artifact; none when nothing is published yet
+#      (the first deploy), and the build then uses the seed. The run must start from main ("Use workflow from: main"; `tag` may still name a v* tag):
+#      the `backup` environment accepts main only.
+#   2. build: NO environment and NO secret (it installs and runs package code): the published snapshot (if any) into apps/web, where the web build's
+#      zod check reads it; the seed SQL, the production builds of the admin, the portal and the
 #      website (CLOUDFLARE_ENV=production, with the SPA header and Worker budget checks and the website's dist checks), the pre-bundled jobs and
 #      website Workers (dry runs: nothing is uploaded and no token is needed), no `.dev.vars` anywhere, and (stage full) the pre-production readiness
 #      check, which reads every one of those bundles. Handed on as an artifact.
@@ -66,8 +74,65 @@ jobs:
           esac
           echo "Guards passed for $TAG"
 
-  build:
+  # P7 ops: the production catalogue snapshot, read-only, before the build (stage full only; stage database builds no website).
+  snapshot:
     needs: guard
+    if: inputs.stage == 'full'
+    # The `backup` environment: deployment branch main only, no reviewer, the secret CF_API_TOKEN_BACKUP (D1 only). Not `production`: that would ask
+    # the owner to approve twice.
+    environment: backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      found: ${{ steps.found.outputs.found }}
+    steps:
+      # The workflow's own commit (main: the only ref the `backup` environment accepts), never `inputs.tag`: the code run with the token is main's.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      # Wrangler alone, from the lockfile (no secret in this step); no workspace package is installed or run in this job.
+      - name: Install wrangler only
+        run: pnpm install --frozen-lockfile --filter @techaust/deploy-tools
+      - name: Check the snapshot credentials are set
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_BACKUP }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::CF_API_TOKEN_BACKUP (environment backup) or CLOUDFLARE_ACCOUNT_ID is not set; nothing was built or changed."
+            exit 1
+          fi
+      # One `wrangler d1 execute … --env production --json --command "SELECT …"` (a read). No snapshot row: no file, and the build uses the seed. A
+      # snapshot that exists but can't be read, or whose SHA-256 doesn't match its text, fails the run: production never falls back to the seed silently.
+      - name: Fetch the published catalogue snapshot (production, read-only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_BACKUP }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WRANGLER_BIN: tools/deploy/node_modules/wrangler/bin/wrangler.js
+        run: node scripts/fetch-catalogue-snapshot.mjs --env production --out apps/web/catalogue-snapshot.json
+      - name: Was a snapshot published
+        id: found
+        run: if [ -f apps/web/catalogue-snapshot.json ]; then echo "found=true" >> "$GITHUB_OUTPUT"; else echo "found=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.found.outputs.found == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: catalogue-snapshot-production
+          path: apps/web/catalogue-snapshot.json
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    needs: [guard, snapshot]
+    # Runs after the snapshot on stage full, and without it on stage database (the snapshot job is skipped there); never after a failed guard or
+    # snapshot. An explicit condition, because a skipped job in `needs` skips every job after it in the chain unless a condition says otherwise
+    # (GitHub docs, "Defining prerequisite jobs").
+    if: >-
+      ${{ !cancelled() && needs.guard.result == 'success' &&
+      (needs.snapshot.result == 'success' || (inputs.stage == 'database' && needs.snapshot.result == 'skipped')) }}
     # No environment and no secret: this job installs and runs package code. No `cache: pnpm` either (L51): a cache saved after package code ran could
     # be restored by the deploy job.
     runs-on: ubuntu-latest
@@ -97,6 +162,13 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: pnpm install --frozen-lockfile
+      # P7 ops: the production admin's published catalogue (stage full, when one exists). The web build validates it with the core zod schema and fails on
+      # an invalid file; without it the website is built from the seed.
+      - if: needs.snapshot.outputs.found == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: catalogue-snapshot-production
+          path: apps/web
       # The seed is package code (packages/db): the settings defaults, the catalogue S1-S18, the templates and the terms; no sample data. Written here,
       # applied by the deploy job.
       - name: Write the seed SQL (no token)
@@ -145,6 +217,9 @@ jobs:
 
   deploy:
     needs: build
+    # Explicit: on stage database the snapshot job (an ancestor through build) is skipped, and the implicit success() would skip this job too. The build
+    # succeeds only after a passed guard (its own condition), so this never runs without one.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     # The `production` environment holds CF_API_TOKEN_PROD (an environment secret; no zone or DNS permission), a required reviewer (the owner) and
     # its deployment refs (branch main, tags v*). This is the only job with the token.
     environment: production

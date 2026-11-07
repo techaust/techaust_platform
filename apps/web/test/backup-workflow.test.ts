@@ -120,16 +120,22 @@ describe("backup.yml: action pins", () => {
 });
 
 describe("backup.yml: the order and the plaintext", () => {
-  it("runs: guard, settings check, export, encrypt, delete plaintext, AWS credentials, upload, check", () => {
+  it("runs: guard, settings check, monthly decision, export, encrypt, monthly build, delete plaintexts, AWS credentials, upload, check, monthly upload, check, fail", () => {
     const order = [
       "name: Who started this run",
       "name: Check the backup settings",
+      "name: Is this run also the monthly copy",
       "wrangler.js d1 export DB --remote --env production",
-      "bash scripts/backup-encrypt.sh",
-      "name: Delete the plaintext export",
+      'bash scripts/backup-encrypt.sh "$DUMP"',
+      "name: Build and encrypt the monthly finance-only copy",
+      "name: Delete the plaintexts",
       "aws-actions/configure-aws-credentials@",
-      "aws s3 cp",
-      "aws s3api list-objects-v2",
+      'aws s3 cp "$ARCHIVE"',
+      '--prefix "$OBJECT"',
+      'aws s3 cp "$FINANCE_ARCHIVE"',
+      '--prefix "$FINANCE_OBJECT"',
+      "name: Fail the run when the monthly copy failed",
+      "name: Remove the archives and the public key file",
     ].map(at);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(new Set(order).size).toBe(order.length);
@@ -172,21 +178,37 @@ describe("backup.yml: the order and the plaintext", () => {
       expect(line).toMatch(/> "\$log" 2>&1|sed -E|rm -rf/);
   });
 
-  it("deletes the plaintext right after the encryption, even when a step before failed", () => {
-    const del = steps[at("name: Delete the plaintext export")] ?? "";
+  it("deletes both plaintexts (the export and the finance-only SQL) right after the last encryption, even when a step before failed", () => {
+    const del = steps[at("name: Delete the plaintexts")] ?? "";
     expect(del).toContain("if: always()");
     expect(del).toContain("find \"$RUNNER_TEMP\" -maxdepth 1 -type f -name 'techaust-prod-*.sql' -delete");
-    expect(at("name: Delete the plaintext export")).toBe(at("bash scripts/backup-encrypt.sh") + 1);
+    expect(at("name: Delete the plaintexts")).toBe(
+      at("name: Build and encrypt the monthly finance-only copy") + 1,
+    );
+    expect(at("name: Build and encrypt the monthly finance-only copy")).toBe(
+      at('bash scripts/backup-encrypt.sh "$DUMP"') + 1,
+    );
+    // the finance-only plaintext matches the deleted pattern, in the same folder
+    expect(text).toContain('echo "FINANCE=$RUNNER_TEMP/techaust-prod-finance-$month.sql" >> "$GITHUB_ENV"');
+    // the encrypted archives and the key file go too, on every path
+    const rm = steps[at("name: Remove the archives and the public key file")] ?? "";
+    expect(rm).toContain("if: always()");
+    expect(rm).toContain(
+      ["rm -f -- ", '"$', '{ARCHIVE:-}" "$', '{FINANCE_ARCHIVE:-}" "$RUNNER_TEMP/backup-public.pem"'].join(
+        "",
+      ),
+    );
+    expect(at("name: Remove the archives and the public key file")).toBe(steps.length - 1);
   });
 
   it("uploads only the encrypted archive, to daily/, and checks its listed size (no GetObject or HeadObject)", () => {
-    const up = steps[at("aws s3 cp")] ?? "";
+    const up = steps[at('aws s3 cp "$ARCHIVE"')] ?? "";
     expect(up).toContain('aws s3 cp "$ARCHIVE" "s3://$BACKUP_BUCKET/$OBJECT"');
     expect(text).toContain('echo "OBJECT=daily/techaust-prod-$stamp.tar" >> "$GITHUB_ENV"');
     expect(text).toContain('echo "ARCHIVE=$RUNNER_TEMP/techaust-prod-$stamp.tar" >> "$GITHUB_ENV"');
-    expect(code.match(/aws s3 cp/g)).toHaveLength(1);
-    const check = steps[at("aws s3api list-objects-v2")] ?? "";
-    expect(check).toContain('--prefix "$OBJECT"');
+    expect(code.match(/aws s3 cp/g)).toHaveLength(2);
+    const check = steps[at('--prefix "$OBJECT"')] ?? "";
+    expect(check).toContain('aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix "$OBJECT"');
     expect(check).toContain('if [ "$listed" != "$local_bytes" ]; then');
     expect(code).not.toMatch(/get-object|head-object|s3 sync|s3 ls|presign/);
   });
@@ -206,6 +228,135 @@ describe("backup.yml: the order and the plaintext", () => {
       'bash scripts/backup-encrypt.sh "$DUMP" "$RUNNER_TEMP/backup-public.pem" "$ARCHIVE"',
     );
     expect(text).toContain('printf \'%s\\n\' "$BACKUP_PUBLIC_KEY_PEM" > "$RUNNER_TEMP/backup-public.pem"');
+  });
+});
+
+// ---------- the monthly finance-only copy (P7 ops, docs/runs/p7-ops.md) ----------
+
+/** A step's `run: |` block, unindented. */
+const runBlock = (step: string) => {
+  const lines = step.split("\n");
+  const start = lines.findIndex((l) => /^\s+run: \|$/.test(l));
+  expect(start, "the step has no run block").toBeGreaterThanOrEqual(0);
+  const body = lines.slice(start + 1).filter((l) => l.trim() !== "");
+  const indent = Math.min(...body.map((l) => l.search(/\S/)));
+  return `${body.map((l) => l.slice(indent)).join("\n")}\n`;
+};
+
+describe("backup.yml: the monthly finance-only copy [JOB-BKP-01, T7 F1]", () => {
+  const when = steps[at("name: Is this run also the monthly copy")] ?? "";
+  const build = steps[at("name: Build and encrypt the monthly finance-only copy")] ?? "";
+
+  it("takes a `monthly` tick on a run by hand (off by default)", () => {
+    expect(text).toMatch(
+      /\n {2}workflow_dispatch:\n {4}inputs:\n {6}monthly:\n {8}description: .+\n {8}type: boolean\n {8}default: false\n/,
+    );
+    expect(when).toContain(`MONTHLY_INPUT: ${expr("inputs.monthly")}`);
+  });
+
+  it("decides on the run's UTC day 01 or the tick, and names the copy by the UTC month under monthly/", () => {
+    expect(when).toContain('if [ "$(date -u +%d)" = "01" ] || [ "$MONTHLY_INPUT" = "true" ]; then');
+    expect(when).toContain('month="$(date -u +%Y-%m)"');
+    expect(when).toContain('echo "FINANCE_OBJECT=monthly/techaust-prod-finance-$month.tar" >> "$GITHUB_ENV"');
+    expect(when).toContain(
+      'echo "FINANCE_ARCHIVE=$RUNNER_TEMP/techaust-prod-finance-$month.tar" >> "$GITHUB_ENV"',
+    );
+  });
+
+  it("builds the finance-only SQL from the plaintext export with the repo's script (no package code, no secret), then the same envelope", () => {
+    expect(build).toContain("if: steps.when.outputs.monthly == 'true'");
+    expect(build).toContain("id: monthly");
+    expect(build).toContain("continue-on-error: true");
+    const run = runBlock(build);
+    expect(run).toBe(
+      [
+        "set -euo pipefail",
+        "umask 077",
+        'node scripts/backup-monthly.mjs build "$DUMP" "$FINANCE"',
+        'bash scripts/backup-encrypt.sh "$FINANCE" "$RUNNER_TEMP/backup-public.pem" "$FINANCE_ARCHIVE"',
+        "",
+      ].join("\n"),
+    );
+    expect(build).not.toMatch(/secrets\.|vars\.|pnpm|npx/);
+    // before the plaintext is deleted, after the daily archive is made
+    expect(at("name: Build and encrypt the monthly finance-only copy")).toBeLessThan(
+      at("name: Delete the plaintexts"),
+    );
+  });
+
+  it("uploads only the encrypted monthly archive to monthly/, checks its listed size, and only when the build succeeded", () => {
+    const up = steps[at('aws s3 cp "$FINANCE_ARCHIVE"')] ?? "";
+    expect(up).toContain("if: steps.monthly.outcome == 'success'");
+    expect(up).toContain(
+      'aws s3 cp "$FINANCE_ARCHIVE" "s3://$BACKUP_BUCKET/$FINANCE_OBJECT" --only-show-errors --no-progress',
+    );
+    expect(code).not.toMatch(/aws s3 cp "\$FINANCE"|aws s3 cp "\$DUMP"/);
+    const check = steps[at('--prefix "$FINANCE_OBJECT"')] ?? "";
+    expect(check).toContain("if: steps.monthly.outcome == 'success'");
+    expect(check).toContain('aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix "$FINANCE_OBJECT"');
+    expect(check).toContain('if [ "$listed" != "$local_bytes" ]; then');
+    expect(check).toContain('tar -xOf "$FINANCE_ARCHIVE" manifest.json');
+  });
+
+  it("a failed monthly copy never stops the daily upload, and still fails the run after it", () => {
+    const fail = steps[at("name: Fail the run when the monthly copy failed")] ?? "";
+    expect(fail).toContain("if: always() && steps.monthly.outcome == 'failure'");
+    expect(fail).toContain("exit 1");
+    expect(at("name: Fail the run when the monthly copy failed")).toBeGreaterThan(at('--prefix "$OBJECT"'));
+  });
+
+  // The decision run by bash with a stand-in `date` (Git Bash on Windows).
+  const hasBash = existsSync(
+    process.platform === "win32"
+      ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+      : "/bin/bash",
+  );
+  it.skipIf(!hasBash).each([
+    ["01", "", true],
+    ["01", "false", true],
+    ["15", "true", true],
+    ["15", "false", false],
+    ["15", "", false],
+  ] as const)("UTC day %s with monthly=%j: monthly copy %s", (day, input, monthly) => {
+    const bash =
+      process.platform === "win32"
+        ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+        : "/bin/bash";
+    const dir = mkdtempSync(join(tmpdir(), "backup-when-"));
+    try {
+      // A shell function stands in for `date` (it takes precedence over the command); it answers only the two forms the step uses.
+      const fakeDate = `date() { case "$1 $2" in "-u +%d") echo "${day}" ;; "-u +%Y-%m") echo "2026-12" ;; *) return 9 ;; esac; }`;
+      const out = join(dir, "out");
+      const env = join(dir, "env");
+      writeFileSync(out, "");
+      writeFileSync(env, "");
+      const fwdPath = (p: string) => p.replace(/\\/g, "/");
+      const r = spawnSync(bash, ["-c", `${fakeDate}\n${runBlock(when)}`], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          MONTHLY_INPUT: input,
+          GITHUB_OUTPUT: fwdPath(out),
+          GITHUB_ENV: fwdPath(env),
+          RUNNER_TEMP: "/tmp/rt",
+        },
+      });
+      expect(r.status, r.stderr).toBe(0);
+      expect(readFileSync(out, "utf8")).toBe(`monthly=${monthly}\n`);
+      const vars = readFileSync(env, "utf8");
+      if (monthly)
+        expect(vars).toBe(
+          [
+            "FINANCE=/tmp/rt/techaust-prod-finance-2026-12.sql",
+            "FINANCE_ARCHIVE=/tmp/rt/techaust-prod-finance-2026-12.tar",
+            "FINANCE_OBJECT=monthly/techaust-prod-finance-2026-12.tar",
+            "",
+          ].join("\n"),
+        );
+      else expect(vars).toBe("");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

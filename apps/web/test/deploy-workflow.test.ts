@@ -3,6 +3,8 @@
 // in a fixed order (from M6.5, owner's Q3 A 2026-11-02: admin API, admin invoices, admin finance, admin front, portal, jobs, website) with a
 // health check after each app (the admin's once its four Workers are new). M7.5 (owner's Q3 A): three jobs, the token only in the two that install
 // nothing but wrangler. Runs in Node (reads files).
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
 import * as d from "../../../scripts/deploy-worker.mjs";
+import * as f from "../../../scripts/fetch-catalogue-snapshot.mjs";
 import { PLACEMENTS } from "../../../scripts/place-build-artifact.mjs";
 
 /** Made-up repository roots for the deploy checks (removed after the file). */
@@ -329,7 +332,8 @@ describe("deploy-prod.yml: build without secrets, deploy with wrangler only, sev
       / {6}stage:\n[\s\S]*?type: choice\n\s+options: \[full, database\]\n\s+default: full/,
     );
     expect(text).toMatch(/ {6}check_web:\n[\s\S]*?type: boolean\n\s+default: true/);
-    expect(build).toContain("needs: guard");
+    expect(build).toContain("needs: [guard, snapshot]");
+    expect(build).toContain("needs.guard.result == 'success'");
   });
 
   it("runs from main or a v* tag only (the production environment's deployment refs), main by default", () => {
@@ -350,8 +354,9 @@ describe("deploy-prod.yml: build without secrets, deploy with wrangler only, sev
     expect(step.indexOf("set -o pipefail")).toBeLessThan(step.indexOf("time-travel info"));
   });
 
-  it("only the deploy job holds the token, through the production environment's secret", () => {
+  it("only the deploy job holds the production token, through the production environment's secret (the snapshot job: below)", () => {
     for (const job of [guard, build]) expect(job).not.toMatch(/secrets\.|environment:/);
+    expect(jobOf(text, "snapshot")).not.toContain("CF_API_TOKEN_PROD");
     expect(deploy).toMatch(/^ {4}environment: production$/m);
     for (const step of stepsOf(deploy).filter(hasToken))
       expect(step).toContain(`CLOUDFLARE_API_TOKEN: ${secret("CF_API_TOKEN_PROD")}`);
@@ -462,7 +467,10 @@ describe("deploy-prod.yml: build without secrets, deploy with wrangler only, sev
 
   it("uses only the production token and the account id", () => {
     const used = [...text.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
-    expect(new Set(used)).toEqual(new Set(["CF_API_TOKEN_PROD", "CLOUDFLARE_ACCOUNT_ID"]));
+    // P7 ops: and the snapshot job's D1-only backup token (in its own job, below).
+    expect(new Set(used)).toEqual(
+      new Set(["CF_API_TOKEN_PROD", "CF_API_TOKEN_BACKUP", "CLOUDFLARE_ACCOUNT_ID"]),
+    );
   });
 
   it("pins every action by commit SHA, the same pins as deploy-staging.yml", () => {
@@ -470,6 +478,181 @@ describe("deploy-prod.yml: build without secrets, deploy with wrangler only, sev
     for (const u of uses(text)) expect(u).toMatch(/@[0-9a-f]{40}$/);
     const staging = new Set(uses(workflow("deploy-staging.yml")));
     for (const u of uses(text)) expect(staging.has(u), u).toBe(true);
+  });
+});
+
+describe("deploy-prod.yml: the production catalogue snapshot before the build (P7 ops) [ADM-CAT-05]", () => {
+  const text = workflow("deploy-prod.yml");
+  const snap = jobOf(text, "snapshot");
+  const build = jobOf(text, "build");
+  const deploy = jobOf(text, "deploy");
+  const s = stepsOf(snap);
+  const b = stepsOf(build);
+  const FETCH =
+    "node scripts/fetch-catalogue-snapshot.mjs --env production --out apps/web/catalogue-snapshot.json";
+
+  it("runs after the guard and before the build, on stage full only", () => {
+    const jobs = [...text.slice(text.indexOf("\njobs:\n")).matchAll(/^ {2}([a-z][\w-]*):\n/gm)].map(
+      (m) => m[1],
+    );
+    expect(jobs).toEqual(["guard", "snapshot", "build", "deploy"]);
+    expect(snap).toContain("\n    needs: guard\n");
+    expect(snap).toContain("\n    if: inputs.stage == 'full'\n");
+  });
+
+  it("holds the D1-only backup token in the `backup` environment (main only, no reviewer), never the production one", () => {
+    expect(snap).toMatch(/^ {4}environment: backup$/m);
+    expect(snap).not.toContain("CF_API_TOKEN_PROD");
+    expect(snap).not.toMatch(/environment: production/);
+    for (const step of s.filter(hasToken))
+      expect(step).toContain(`CLOUDFLARE_API_TOKEN: ${secret("CF_API_TOKEN_BACKUP")}`);
+    expect(s.filter(hasToken).map((x) => /name: (.+)/.exec(x)?.[1])).toEqual([
+      "Check the snapshot credentials are set",
+      "Fetch the published catalogue snapshot (production, read-only)",
+    ]);
+  });
+
+  it("installs only wrangler and runs no workspace package code; the checkout is the workflow's own commit, with no credentials kept", () => {
+    expect(snap).toContain(WRANGLER_ONLY);
+    for (const line of snap
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("#") && !l.includes(WRANGLER_ONLY)))
+      for (const command of WORKSPACE_CODE) expect(line).not.toContain(command);
+    const checkout = s.find((x) => x.includes("actions/checkout@")) ?? "";
+    expect(checkout).toContain("persist-credentials: false");
+    expect(checkout).not.toContain("ref:");
+    expect(snap).not.toMatch(/^\s*cache:/m);
+  });
+
+  it("reads the production D1 with the installed wrangler, then hands the file on only when one was published", () => {
+    const fetch = s[running(s, FETCH)] ?? "";
+    expect(fetch).toContain("WRANGLER_BIN: tools/deploy/node_modules/wrangler/bin/wrangler.js");
+    expect(fetch).toContain(`CLOUDFLARE_API_TOKEN: ${secret("CF_API_TOKEN_BACKUP")}`);
+    expect(running(s, FETCH)).toBeGreaterThan(running(s, "name: Check the snapshot credentials are set"));
+    const found = s[running(s, "name: Was a snapshot published")] ?? "";
+    expect(found).toContain("id: found");
+    expect(found).toContain("if [ -f apps/web/catalogue-snapshot.json ]");
+    expect(snap).toContain(["found: $", "{{ steps.found.outputs.found }}"].join(""));
+    const upload = s[running(s, "actions/upload-artifact@")] ?? "";
+    expect(upload).toContain("if: steps.found.outputs.found == 'true'");
+    expect(upload).toContain("name: catalogue-snapshot-production");
+    expect(uploadPaths(upload)).toEqual(["apps/web/catalogue-snapshot.json"]);
+    expect(upload).toContain("retention-days: 1");
+  });
+
+  it("the build waits for it on stage full, runs without it on stage database, never after a failed guard or snapshot", () => {
+    expect(build).toContain("\n    needs: [guard, snapshot]\n");
+    expect(build).toContain(
+      [
+        "    if: >-\n      $",
+        "{{ !cancelled() && needs.guard.result == 'success' &&\n",
+        "      (needs.snapshot.result == 'success' || (inputs.stage == 'database' && needs.snapshot.result == 'skipped')) }}\n",
+      ].join(""),
+    );
+    // the deploy job: an explicit condition too (a skipped ancestor would skip it), on the build's own success
+    expect(deploy).toContain(
+      ["    if: $", "{{ !cancelled() && needs.build.result == 'success' }}\n"].join(""),
+    );
+  });
+
+  it("the build downloads the snapshot into apps/web after the install and before the website is built, with no secret", () => {
+    const dl = running(b, "name: catalogue-snapshot-production");
+    expect(dl).toBeGreaterThan(-1);
+    const step = b[dl] ?? "";
+    expect(step).toContain("actions/download-artifact@");
+    expect(step).toContain("if: needs.snapshot.outputs.found == 'true'");
+    expect(step).toMatch(/\n\s+path: apps\/web$/);
+    expect(holdsSecret(step)).toBe(false);
+    expect(dl).toBeGreaterThan(running(b, "pnpm install --frozen-lockfile"));
+    expect(dl).toBeLessThan(running(b, "pnpm --filter @techaust/web run build:production"));
+    expect(build).not.toMatch(/secrets\.|environment:/);
+  });
+});
+
+describe("scripts/fetch-catalogue-snapshot.mjs --env (P7 ops)", () => {
+  const ROW_JSON = '{"version":1,"items":[]}';
+
+  it("reads staging by default and production when asked; refuses any other environment", () => {
+    expect(f.envOf(undefined)).toBe("staging");
+    expect(f.envOf("production")).toBe("production");
+    for (const bad of ["prod", "Production", "", "staging --remote"])
+      expect(() => f.envOf(bad)).toThrow(/staging or production/);
+    expect(f.wranglerArgs()).toEqual([
+      "d1",
+      "execute",
+      "DB",
+      "--remote",
+      "--env",
+      "staging",
+      "--json",
+      "--command",
+      f.SNAPSHOT_SQL,
+    ]);
+    expect(f.wranglerArgs("production")).toEqual([
+      "d1",
+      "execute",
+      "DB",
+      "--remote",
+      "--env",
+      "production",
+      "--json",
+      "--command",
+      f.SNAPSHOT_SQL,
+    ]);
+    expect(f.SNAPSHOT_SQL).toMatch(/^SELECT /);
+  });
+
+  it("main names the environment in its log; nothing published writes no file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "fetch-env-"));
+    try {
+      const logs: string[] = [];
+      const out = join(dir, "snap.json");
+      const empty = JSON.stringify([{ results: [], success: true }]);
+      expect(
+        f.main({
+          out,
+          env: "production",
+          run: () => ({ status: 0, stdout: empty, stderr: "" }),
+          log: (m: string) => logs.push(m),
+        }),
+      ).toEqual({ found: false });
+      expect(existsSync(out)).toBe(false);
+      expect(logs.join(" ")).toContain("no published snapshot in production");
+      const sha = createHash("sha256").update(ROW_JSON).digest("hex");
+      const row = JSON.stringify([
+        {
+          results: [{ id: "0195f0e2-7c1a-7a00-8000-000000000001", json: ROW_JSON, sha256: sha }],
+          success: true,
+        },
+      ]);
+      expect(
+        f.main({
+          out,
+          env: "production",
+          run: () => ({ status: 0, stdout: row, stderr: "" }),
+          log: (m: string) => logs.push(m),
+        }).found,
+      ).toBe(true);
+      expect(readFileSync(out, "utf8")).toBe(ROW_JSON);
+      expect(logs.at(-1)).toContain("catalogue: production snapshot");
+      expect(() => f.main({ out, env: "prod", run: () => ({ status: 0, stdout: row, stderr: "" }) })).toThrow(
+        /staging or production/,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("the command line refuses a bad or missing --env before running wrangler", () => {
+    const script = fileURLToPath(new URL("../../../scripts/fetch-catalogue-snapshot.mjs", import.meta.url));
+    for (const args of [["--env", "prod"], ["--env"], ["--env", "--out", "x.json"]]) {
+      const r = spawnSync(process.execPath, [script, ...args], {
+        encoding: "utf8",
+        env: { ...process.env, WRANGLER_BIN: "no/such/wrangler.js", CLOUDFLARE_API_TOKEN: "" },
+      });
+      expect(r.status, args.join(" ")).toBe(1);
+      expect(r.stderr).toMatch(/^catalogue: --env (must be staging or production|needs a value)/);
+    }
   });
 });
 

@@ -1,9 +1,10 @@
-// Fetches the newest published catalogue snapshot from the STAGING D1 and writes it to apps/web/catalogue-snapshot.json, which the web
-// build reads (ADM-CAT-05, WEB-G-07, WEB-SVC-05). Shared by deploy-staging.yml (before the Workers are built) and publish-catalogue.yml
-// (the 30-minute check). It uses the credentials already in the job's environment (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID) and
-// only READS: `wrangler d1 execute DB --remote --env staging --json --command "SELECT ..."`.
+// Fetches the newest published catalogue snapshot from the STAGING (default) or PRODUCTION D1 and writes it to apps/web/catalogue-snapshot.json,
+// which the web build reads (ADM-CAT-05, WEB-G-07, WEB-SVC-05). Shared by deploy-staging.yml (before the Workers are built), publish-catalogue.yml
+// (the 30-minute check, staging only) and deploy-prod.yml's `snapshot` job (`--env production`, P7 ops: the production website's prices come from
+// the production admin's published list, through the normal approved deploy). It uses the credentials already in the job's environment
+// (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID) and only READS: `wrangler d1 execute DB --remote --env <env> --json --command "SELECT ..."`.
 //
-//   node scripts/fetch-catalogue-snapshot.mjs [--out <file>] [--github-output <file>]
+//   node scripts/fetch-catalogue-snapshot.mjs [--env staging|production] [--out <file>] [--github-output <file>]
 //
 // - No snapshot row: writes nothing and says so (the web build then uses the seed). A snapshot exists but the fetch fails: the script
 //   FAILS, so a job never falls back to the seed silently while a published snapshot exists (the M2.2 follow-up).
@@ -69,50 +70,51 @@ export function snapshotFromOutput(text) {
   return { id: row.id, json: row.json, sha256: row.sha256 };
 }
 
+/** The two environments whose D1 holds a published snapshot (apps/jobs/wrangler.jsonc binds `DB` in each). Staging is the default. */
+export const ENVIRONMENTS = ["staging", "production"];
+
+/** The environment named on the command line (`--env`), or staging when none is; anything else is refused. */
+export function envOf(value) {
+  if (value === undefined) return "staging";
+  if (!ENVIRONMENTS.includes(value))
+    throw new Error(`--env must be staging or production, not ${JSON.stringify(value)}`);
+  return value;
+}
+
+/** wrangler's arguments: one read of the newest snapshot in that environment's D1. */
+export const wranglerArgs = (env = "staging") => [
+  "d1",
+  "execute",
+  "DB",
+  "--remote",
+  "--env",
+  envOf(env),
+  "--json",
+  "--command",
+  SNAPSHOT_SQL,
+];
+
 /**
- * Runs wrangler through the jobs package (its config holds the `DB` binding for `--env staging`). M7.5 (owner's Q3 A): a job that installed only wrangler
+ * Runs wrangler through the jobs package (its config holds the `DB` binding for `--env staging` and `--env production`). M7.5 (owner's Q3 A): a job that installed only wrangler
  * (`@techaust/deploy-tools`) names it in WRANGLER_BIN, and wrangler runs from apps/jobs with no pnpm package code.
  */
-export function runWrangler() {
+export function runWrangler(env = "staging") {
+  const args = wranglerArgs(env);
   const bin = process.env.WRANGLER_BIN;
   if (bin) {
-    const r = spawnSync(
-      process.execPath,
-      [
-        resolve(ROOT, bin),
-        "d1",
-        "execute",
-        "DB",
-        "--remote",
-        "--env",
-        "staging",
-        "--json",
-        "--command",
-        SNAPSHOT_SQL,
-      ],
-      { cwd: resolve(ROOT, "apps/jobs"), encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-    );
+    const r = spawnSync(process.execPath, [resolve(ROOT, bin), ...args], {
+      cwd: resolve(ROOT, "apps/jobs"),
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    });
     return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", error: r.error };
   }
-  const r = spawnSync(
-    "pnpm",
-    [
-      "--filter",
-      "@techaust/jobs",
-      "exec",
-      "wrangler",
-      "d1",
-      "execute",
-      "DB",
-      "--remote",
-      "--env",
-      "staging",
-      "--json",
-      "--command",
-      SNAPSHOT_SQL,
-    ],
-    { cwd: ROOT, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, shell: process.platform === "win32" },
-  );
+  const r = spawnSync("pnpm", ["--filter", "@techaust/jobs", "exec", "wrangler", ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+    shell: process.platform === "win32",
+  });
   return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", error: r.error };
 }
 
@@ -130,28 +132,42 @@ export function fetchSnapshot(run = runWrangler) {
 }
 
 /** Fetches, writes the file when there is a snapshot, and reports through the optional GitHub output file. */
-export function main({ out = DEFAULT_OUT, githubOutput, run = runWrangler, log = console.log } = {}) {
+export function main({
+  out = DEFAULT_OUT,
+  githubOutput,
+  env = "staging",
+  run = () => runWrangler(env),
+  log = console.log,
+} = {}) {
+  envOf(env);
   const snap = fetchSnapshot(run);
   if (snap === null) {
-    log("catalogue: no published snapshot; the web build uses the seed");
+    log(`catalogue: no published snapshot in ${env}; the web build uses the seed`);
     if (githubOutput) appendFileSync(githubOutput, "found=false\nid=\nsha=\n");
     return { found: false };
   }
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, snap.json);
-  log(`catalogue: snapshot ${snap.id} (${snap.sha256.slice(0, 12)}) written to ${out}`);
+  log(`catalogue: ${env} snapshot ${snap.id} (${snap.sha256.slice(0, 12)}) written to ${out}`);
   if (githubOutput) appendFileSync(githubOutput, `found=true\nid=${snap.id}\nsha=${snap.sha256}\n`);
   return { found: true, id: snap.id, sha256: snap.sha256 };
 }
 
 function arg(name) {
   const i = process.argv.indexOf(name);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const value = process.argv[i + 1];
+  if (value === undefined || value.startsWith("--")) throw new Error(`${name} needs a value`);
+  return value;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    main({ out: arg("--out") ? resolve(arg("--out")) : DEFAULT_OUT, githubOutput: arg("--github-output") });
+    main({
+      out: arg("--out") ? resolve(arg("--out")) : DEFAULT_OUT,
+      githubOutput: arg("--github-output"),
+      env: envOf(arg("--env")),
+    });
   } catch (e) {
     console.error(`catalogue: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
