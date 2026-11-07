@@ -1,8 +1,8 @@
 # Run: AU45, the client statement's "refund returned" line
 
-Status: WAITING ON OWNER (Q1, copy 07-ZU U1–U2; builder running meanwhile)
+Status: builder running (b1: core, SQL, route)
 Tier: A (the statement's money lines and balances; client-facing figures)
-Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 started 20:35 IST (5-h reading 1 % at 20:05 IST)
+Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 started 20:35 IST (5-h reading 1 % at 20:05 IST; next relayed reading 4 % at 20:27 IST)
 
 Cloud task session `au45-statement`, branch `feat/au45-statement` (owner's blanket approval, 2026-11-07, 13: "AU45 … built before launch; its wording drafted by the lead under this approval"). Basis: [full-audit-m6-m7](full-audit-m6-m7.md) AU37, AU45, AU46, AU1.
 
@@ -11,6 +11,7 @@ Cloud task session `au45-statement`, branch `feat/au45-statement` (owner's blank
 - **U1**, the statement line's label: "Refund came back" **(Recommended)** · "Refund returned to us" · "Refund returned"
 - **U2**, a note printed once under the lines when a statement has a U1 line: "A refund that came back is one the bank or card network returned to us. The amount is your credit again." **(Recommended: include it)** · leave the note out
 Until approved, both show "[Placeholder] " (`APPROVED_07ZU = false`, `packages/core/src/copy-zu.ts`); the lead flips the flag once the answer arrives. Nothing else waits on it.
+- **Answer (2026-11-07, main session, under the owner's blanket approval of 2026-11-07):** approved as recommended: U1 "Refund came back"; U2 included word for word. `APPROVED_07ZU = true` (builder b1 told at 20:40 IST).
 
 ## Brief
 Drafted by the analyst (2026-11-07), checked and finalised by the lead (the cursor regex and the index confirmed by reading).
