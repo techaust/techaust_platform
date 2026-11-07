@@ -186,7 +186,7 @@ export const retention = new Hono<AppEnv>()
         "SELECT id, as_of, mode, started_at, finished_at, families FROM retention_runs INDEXED BY retention_runs_started ORDER BY started_at DESC, id DESC LIMIT 5",
       ),
       db.prepare(
-        "SELECT run_id, family, due, held_skipped, oldest_at, done FROM retention_run_counts WHERE run_id IN (SELECT id FROM retention_runs INDEXED BY retention_runs_started ORDER BY started_at DESC, id DESC LIMIT 5)",
+        "SELECT run_id, family, due, held_skipped, oldest_at, done, capped, more_tomorrow FROM retention_run_counts WHERE run_id IN (SELECT id FROM retention_runs INDEXED BY retention_runs_started ORDER BY started_at DESC, id DESC LIMIT 5)",
       ),
       db.prepare(RETENTION_SWITCH_SQL),
       // The leads' 14-day view (M3.2): refs and dates only, at most 50, soonest first, through `leads_delete_due`.
@@ -207,6 +207,10 @@ export const retention = new Hono<AppEnv>()
         heldSkipped: r.held_skipped,
         oldestAt: r.oldest_at,
         done: r.done === 1,
+        // Full audit AU9: a dry-run count that reached its cap is a floor ("10,000 or more"); a live family that stopped at its nightly page budget
+        // carries on tomorrow.
+        capped: r.capped === 1,
+        moreTomorrow: r.more_tomorrow === 1,
       });
       byRun.set(r.run_id as string, list);
     }

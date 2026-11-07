@@ -654,9 +654,24 @@ describe("the sweep", () => {
       link: `/proposals/${s.id}`,
     });
     expect(await picked()).not.toContain(s.id);
-    // a fourth night rings nothing new
+    // full audit AU10: the stop is recorded outside the bells, so cleaning up the bells never puts the document back in the sweep (nor rings again)
+    const mark = await all<{ refused_at: number | null }>(
+      "SELECT refused_at FROM pdf_failures WHERE document_id = ?",
+      s.id,
+    );
+    expect(mark[0]?.refused_at).toBeGreaterThan(0);
+    await realEnv.DB.prepare("DELETE FROM notifications WHERE kind = 'pdf.refused' AND entity_id = ?1")
+      .bind(s.id)
+      .run();
+    expect(await picked()).not.toContain(s.id);
+    // a fourth night rings nothing new, and the mark keeps its first time
     await dead(T0 + 3 * day);
-    expect((await refused()).length).toBe(bells.length);
+    expect(await refused()).toEqual([]);
+    expect(
+      (
+        await all<{ refused_at: number }>("SELECT refused_at FROM pdf_failures WHERE document_id = ?", s.id)
+      )[0]?.refused_at,
+    ).toBe(mark[0]?.refused_at);
   });
 });
 

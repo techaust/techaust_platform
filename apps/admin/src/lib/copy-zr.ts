@@ -323,6 +323,10 @@ export const ZR_RETENTION = {
   colHeld: "Kept for a legal hold",
   colOldest: "Oldest",
   partsPending: "Not counted yet",
+  /** Full audit AU9 (the lead's triage words): a trial count that reached its cap. */
+  atLeast: (n: string) => `${n} or more`,
+  /** Full audit AU9 (builder's draft for the lead): a family that stopped at its nightly budget and carries on the next night. */
+  moreTomorrow: "More are deleted tomorrow night",
   family: {
     email_log: "Email log",
     email_events: "Email delivery updates",
@@ -375,7 +379,7 @@ export const ZR_LEAD = {
   } as Record<string, string>,
   eraseTitle: (name: string) => `Erase ${name}?`,
   eraseBody: (name: string, email: string) =>
-    `This deletes ${name}'s enquiry and its history, and every other enquiry from ${email} that didn't become a client. A scrambled form of the address is kept only so we don't email them again. This can't be undone.`,
+    `This deletes ${name}'s enquiry and its history, and every other enquiry from ${email} that didn't become a client. A scrambled form of the address is kept only to stop emails to it and to prove what they agreed to. Email records keep the address until they expire. This can't be undone.`,
   eraseConvertedHint: "This lead became a client: erase or anonymise its contact instead.",
   eraseConfirm: "Erase lead",
   erased: (refs: string[]) =>
