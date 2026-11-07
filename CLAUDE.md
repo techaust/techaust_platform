@@ -294,6 +294,36 @@ pnpm portal:link --email … [--client CODE] [--staging]       # 15-minute sign-
   - **Backups:** `BACKUP_SCOPE` defines the finance-only monthly copy.
   - **D1 counts trigger writes:** after any statement on a table with AFTER triggers, check `changes() > 0`, never `= 1`.
   - **Migrations:** 0078 (create table, add column and index only) and 0079 (the `data_protection_triggers` set). Copy is 07-ZR: staff lines by the lead; client lines C1–C7 and the Rule 9 block await the owner.
+- **Hardening (M7.5, #189; [run file](docs/runs/m7.5-hardening.md)):**
+  - **Security** (ASVS 5.0.0 L2 and the OWASP Top 10:2025 re-map in docs/08 §3.6, with every recorded deviation):
+    - **Rate limits:** In-Worker Rate Limiting bindings on sign-in, invites, magic links, `/t/*` and per session (admin 240 a minute, portal 120), checked before any D1 work and before Turnstile. Each purpose and scope has its own `namespace_id`, required by `check-worker-config.mjs`. A limiter error lets the request through (recorded).
+    - **Cross-site GETs:** GET/HEAD under `/api/` is refused when `Sec-Fetch-Site` isn't `same-origin`.
+    - **Login challenges are single use:** a signed `iat`, `last_login_at = MAX(now, iat)`, and a right code on a spent challenge answers `challenge_used` without counting.
+    - **TOTP seals:** versioned `v1.`, with `TOTP_ENC_KEY_PREVIOUS` re-sealed at the next sign-in (the first rotation needs break-glass; incident.md).
+    - **Keys:** `acct:` keys are HMAC under `SALT_PEPPER`.
+    - **Break-glass:** only-owner guards, an audit read-back, and the clean-up of a cut-short run.
+    - **Headers:** a set-if-absent API CSP (never the `secureHeaders` CSP option, which would overwrite `sandbox`), and one `downloadHeaders()` for every download.
+    - **CSV:** one defuser in core.
+  - **D1 budget:**
+    - the shared counting env (`packages/testing/src/budget.ts`) fails any test invocation over 45 statements in a batch or 45 calls plus subrequests;
+    - its EXPLAIN sweep fails a bare `SCAN` unless allow-listed with a reason;
+    - Cloudflare counts a `db.batch()` as one query toward 50, and subrequests are 50 per invocation.
+  - **Measurement:**
+    - `scripts/route-inventory.mjs` writes `.logs/route-inventory.json`, with a parity test per app;
+    - `scripts/bench-routes.mjs` refuses every host except the staging ones;
+    - `pnpm drill:verify` takes `--import` and `--persist-to`;
+    - `f: 1` is logged per queue kind and cron branch, plus a web request line;
+    - the portal has a start-up dry run (`apps/portal/worker/warm-routes.ts`).
+  - **Usage:**
+    - `usage.daily` runs at the 06:00 IST tick, makes one GraphQL Analytics call, writes `stats_daily` `cf.*`, and rings owners' bells at 50 % and 80 % and when the token is missing or refused;
+    - the secret `CF_ANALYTICS_TOKEN` is in jobs staging `secrets.required`;
+    - the dashboard usage tile is for Owner and Accountant (`usage.read`).
+  - **Deploys:** the build job holds no secret. The deploy job installs only wrangler (`tools/deploy`, `@techaust/deploy-tools`). The artifact is downloaded to `runner.temp` and placed by `scripts/place-build-artifact.mjs`, which refuses anything outside the outputs, any `.env`/`.dev.vars` file and symlinks. `scripts/deploy-worker.mjs` (`preDeployProblems`) refuses a config with `build` or an unknown key. No pnpm cache in any job.
+  - **Other:**
+    - web `/api/health`;
+    - migration 0080 (indexes only);
+    - runbooks `incident.md`, `restore.md`, `drill-log.md` and `budget-audit.md`;
+    - secret scripts `tools/set-random-secret.ps1`, `scripts/set-ses-keys.ps1` and `scripts/set-cf-analytics-token.ps1`.
 - **Work of 2026-11-01 (PRs #137–#149; [run file](docs/runs/cloud-parallel-2026-11-01.md)):**
   - **Deed of assignment (T11, #148):** `deeds` (migrations 0061–0062, `deed_triggers`; one open deed per project by a partial unique index, frozen once final, delete only an anonymised client's draft or cancelled deeds). A draft is prepared by `deedDraftStatements` (`packages/db/src/deeds.ts`) appended after the recompute, guarded on the audit row, in every batch that can make a project eligible (completion, payments, credit use, advance, credit-note issue, void): the accepted total minus credit notes reached with Σ settled > 0, counted once (core `@techaust/core/deeds` and its SQL twin); `packages/core/test/deed-hooks.test.ts` fails any `recomputeStatement(` call site neither hooked nor allow-listed. Only "Check again" (Owner) redrafts after a cancel. Finalise (Owner, step-up) numbers `TH/DA/{FY}/{N}` and seals the 07-ZE text; jobs `pdf.deed` renders write-once; the signed upload goes write-once to `DOCS`; the portal shows signed deeds and `deed.signed` emails only contacts with portal access **and** "can see finance". Copy 07-ZJ.
   - **Style guard (#140):** `scripts/css-collisions.mjs` (in `pnpm check` and CI) fails a class that is the subject of a base rule in two stylesheets of one app; route stylesheets stay loaded for the whole SPA session, so a duplicate leaks. The shared switch's chosen half carries a 2 px ink bar.
