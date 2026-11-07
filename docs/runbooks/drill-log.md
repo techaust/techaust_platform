@@ -56,6 +56,19 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
 
 ## Entries
 
+
+### 2026-11-07: production backup (L7, first drill)
+- Who: lead, with the owner (download and decrypt); owner's yes: the launch plan (13, 2026-11-07, "Nightly backups before launch").
+- Source: `techaust-prod` (production, after `deploy-prod.yml stage=database`: 87 migrations, the seed only, no client data), via the first nightly-style run of `backup.yml` started by hand (run 42389213512, after the role's trust was corrected to GitHub's immutable subject). Archive `daily/techaust-prod-20261107T160207Z.tar`, decrypted by the owner with `scripts/backup-decrypt.ps1`: 319,083 bytes, SHA-256 matching the manifest.
+- Times (IST): backup run 21:32; decrypt 21:40; local verify 21:42 (31.2 s); remote load 21:49; total about 20 minutes (most of it waiting for the owner's download).
+- Trigger order in the file: first CREATE TRIGGER line 1741, last INSERT line 1479: data before triggers, no transactions; but `CREATE VIEW issue_guard` is the file's last statement, after the trigger created on it, so a straight remote load failed ("no such table: main.issue_guard"). Split needed: `scripts/drill-split.mjs` (new) writes schema, data, triggers in drill-verify's `loadOrder`.
+- drill:verify: row counts pass (79 tables: catalogue_items 18, templates 25, terms_versions 4, settings 8, d1_migrations 87, the rest 0); numbers vs counters pass (no series yet); ledger pass; audit tail pass (empty); triggers 299 of 299; migrations 87 of 87; "drill-verify: ok".
+- Remote: scratch D1 `techaust-restore-2026-11-07` (APAC), the three parts loaded in order (344, 145, 299 statements); counts equal the local ones (migrations 87, catalogue 18, templates 25, terms 4, settings 8, triggers 299, audit_log 0).
+- Steps a real restore adds (estimate): create D1, load the three parts, point the bindings, deploy: about 1 h.
+- RTO ≤ 4 h: met.
+- Issues and follow-ups: the view-order split is now a script and in restore.md §3.4 and §3.5; a drill on a production backup with real data at the first quarterly drill.
+- Clean-up: scratch D1 deleted (twice: the first, partly loaded attempt too); the `.tar`, `.sql`, parts and `.wrangler/drill-2026-11-07` deleted from the PC.
+
 ### 2026-11-__: staging copy and Time Travel rehearsal (M7.5, owner Q5 A)
 - Who:
 - Source: `techaust-staging`, export file: ; bookmark B0:

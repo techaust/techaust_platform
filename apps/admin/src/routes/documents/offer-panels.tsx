@@ -11,6 +11,7 @@ import type { Currency } from "../../api.ts";
 import { ConfirmDialog } from "../../components/confirm-dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
 import { Ban, CheckCircle, Download, FolderKanban, Mail, Send } from "../../components/icons.tsx";
+import { RebuildPdf } from "../../components/rebuild-pdf.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { CopyButton, Notice } from "../../components/ui.tsx";
 import { moneyText } from "../../lib/documents.ts";
@@ -51,6 +52,8 @@ export function AcceptancePanel(props: {
   docId: string;
   acceptance: AcceptanceRecord;
   certificate: "none" | "pending" | "ready";
+  /** The document's number, for the rebuild dialog's title (07-ZV line 2). */
+  number?: string | null | undefined;
 }) {
   const a = props.acceptance;
   const rows: [string, ReactNode][] = [
@@ -97,10 +100,13 @@ export function AcceptancePanel(props: {
       </h2>
       <Facts rows={rows} />
       {props.certificate === "ready" ? (
-        <a className="btn btn--secondary btn--block" href={certificateHref(props.docId)} download>
-          <Download size={20} />
-          {OFFER_COPY.downloadCertificate}
-        </a>
+        <>
+          <a className="btn btn--secondary btn--block" href={certificateHref(props.docId)} download>
+            <Download size={20} />
+            {OFFER_COPY.downloadCertificate}
+          </a>
+          <RebuildPdf kind="certificate" id={props.docId} number={props.number ?? null} ready />
+        </>
       ) : (
         <p className="hint" role="status">
           {OFFER_PENDING.certificatePending}

@@ -1,0 +1,171 @@
+{
+  "format": "techaust-backup-scope/1",
+  "monthly": [
+    {
+      "table": "documents",
+      "sql": "SELECT id, type, status, client_id, project_id, care_plan_id, parent_id, version_group_id, version, series, fy, number, number_display, currency, issue_date, due_date, valid_until, supply_type, place_of_supply_code, CASE WHEN json_valid(recipient) THEN CASE WHEN json_type(recipient) = 'object' THEN json_remove(recipient, '$.email', '$.contactName') END END AS recipient, fx_rate_micros, fx_date, fx_source, fx_no_rate_day, subtotal_minor, discount_minor, taxable_minor, cgst_minor, sgst_minor, igst_minor, round_off_minor, total_minor, total_inr_minor, paid_minor, credited_minor, balance_minor, tds_minor, terms_version_id, snapshot_r2_key, snapshot_sha256, pdf_r2_key, pdf_sha256, frozen_at, issued_by, title, contact_id, validity_days, discount_kind, discount_value, export_mode, content_sha256, computed, catalogue_reference_minor, source_document_id, source_step, issuer, sent_at, viewed_at, decided_at, decision_reason, NULL AS decision_note, decided_contact_id, voided_at, void_reason, realisation_due_at, service_completed_on, export_declaration_id, header_extras, ims_status, irn, ack_no, ack_date, signed_qr, einv_status, redacted_at, created_by, created_at, updated_at FROM documents WHERE type IN ('proforma', 'tax_invoice', 'export_invoice', 'credit_note', 'debit_note', 'receipt', 'receipt_voucher', 'refund_voucher') OR id IN (SELECT document_id FROM acceptances)"
+    },
+    {
+      "table": "document_lines",
+      "sql": "SELECT * FROM document_lines WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proforma', 'tax_invoice', 'export_invoice', 'credit_note', 'debit_note', 'receipt', 'receipt_voucher', 'refund_voucher') OR id IN (SELECT document_id FROM acceptances))"
+    },
+    {
+      "table": "document_sections",
+      "sql": "SELECT * FROM document_sections WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proforma', 'tax_invoice', 'export_invoice', 'credit_note', 'debit_note', 'receipt', 'receipt_voucher', 'refund_voucher') OR id IN (SELECT document_id FROM acceptances))"
+    },
+    {
+      "table": "payment_schedules",
+      "sql": "SELECT * FROM payment_schedules WHERE document_id IN (SELECT id FROM documents WHERE type IN ('proforma', 'tax_invoice', 'export_invoice', 'credit_note', 'debit_note', 'receipt', 'receipt_voucher', 'refund_voucher') OR id IN (SELECT document_id FROM acceptances))"
+    },
+    {
+      "table": "doc_counters",
+      "sql": "SELECT * FROM doc_counters"
+    },
+    {
+      "table": "advance_receipts",
+      "sql": "SELECT * FROM advance_receipts"
+    },
+    {
+      "table": "payments",
+      "sql": "SELECT * FROM payments"
+    },
+    {
+      "table": "payment_allocations",
+      "sql": "SELECT * FROM payment_allocations"
+    },
+    {
+      "table": "payment_refunds",
+      "sql": "SELECT * FROM payment_refunds"
+    },
+    {
+      "table": "realisation_extensions",
+      "sql": "SELECT * FROM realisation_extensions"
+    },
+    {
+      "table": "realisation_reductions",
+      "sql": "SELECT * FROM realisation_reductions"
+    },
+    {
+      "table": "realisation_advices",
+      "sql": "SELECT * FROM realisation_advices"
+    },
+    {
+      "table": "realisation_advice_payments",
+      "sql": "SELECT * FROM realisation_advice_payments"
+    },
+    {
+      "table": "settlements",
+      "sql": "SELECT * FROM settlements"
+    },
+    {
+      "table": "settlement_items",
+      "sql": "SELECT * FROM settlement_items"
+    },
+    {
+      "table": "bank_matches",
+      "sql": "SELECT * FROM bank_matches"
+    },
+    {
+      "table": "care_invoices",
+      "sql": "SELECT * FROM care_invoices"
+    },
+    {
+      "table": "fx_rates",
+      "sql": "SELECT * FROM fx_rates"
+    },
+    {
+      "table": "audit_log",
+      "sql": "SELECT id, at, actor_type, actor_id, role, action, entity_type, entity_id, CASE WHEN action IN ('alert.new_device', 'alert.2fa_change', 'alert.lockout') AND json_valid(summary) THEN json_remove(summary, '$.ua', '$.city', '$.country') ELSE summary END AS summary, request_id FROM audit_log WHERE action IN ('settings.tax.update', 'settings.numbering.update', 'settings.payment_terms.update', 'settings.bank.update', 'settings.gateways.update', 'document.issue', 'document.convert', 'document.void', 'invoice.issue', 'invoice.void', 'invoice.withdraw', 'invoice.advance_issue', 'invoice.ims_status', 'payment.record', 'payment.verify', 'payment.withdraw', 'payment.credit_apply', 'payment.credit_release', 'payment.tds_certificate', 'invoice.realisation_extend', 'refund.issue', 'refund.retry', 'refund.cancel', 'refund.status', 'refund.inr', 'recon.fetch', 'recon.match', 'recon.unmatch', 'realisation.reduce', 'export.gst', 'report.export', 'client.statement_pdf', 'client.billing_update', 'care_plan.terms')"
+    },
+    {
+      "table": "deeds",
+      "sql": "SELECT * FROM deeds WHERE number IS NOT NULL"
+    },
+    {
+      "table": "terms_versions",
+      "sql": "SELECT * FROM terms_versions WHERE id IN (SELECT terms_version_id FROM documents WHERE frozen_at IS NOT NULL AND terms_version_id IS NOT NULL)\n        OR id IN (SELECT terms_version_id FROM acceptances WHERE terms_version_id IS NOT NULL)"
+    },
+    {
+      "table": "terms_blocks",
+      "sql": "SELECT * FROM terms_blocks WHERE id IN (SELECT export_declaration_id FROM documents WHERE frozen_at IS NOT NULL AND export_declaration_id IS NOT NULL)"
+    },
+    {
+      "table": "care_plan_terms",
+      "sql": "SELECT * FROM care_plan_terms"
+    },
+    {
+      "table": "care_plan_status_log",
+      "sql": "SELECT * FROM care_plan_status_log"
+    },
+    {
+      "table": "acceptances",
+      "sql": "SELECT id, document_id, contact_id, session_id, accepted_at, pdf_sha256, terms_version_id, certificate_r2_key, via, offer_link_hash, snapshot_sha256 FROM acceptances"
+    },
+    {
+      "table": "acceptance_certificates",
+      "sql": "SELECT * FROM acceptance_certificates"
+    },
+    {
+      "table": "pdf_repairs",
+      "sql": "SELECT * FROM pdf_repairs"
+    },
+    {
+      "table": "pdf_repair_results",
+      "sql": "SELECT * FROM pdf_repair_results"
+    }
+  ],
+  "rollingOnly": [
+    "access_log",
+    "approvals",
+    "auth_attempts",
+    "bank_accounts",
+    "care_plans",
+    "catalogue_items",
+    "catalogue_price_history",
+    "checkout_sessions",
+    "client_requests",
+    "client_sessions",
+    "clients",
+    "consent_receipts",
+    "contacts",
+    "doc_access_tokens",
+    "document_sends",
+    "email_events",
+    "email_log",
+    "email_suppressions",
+    "files",
+    "hook_failures",
+    "lead_activities",
+    "leads",
+    "legal_holds",
+    "retention_switches",
+    "magic_link_tokens",
+    "milestones",
+    "notes",
+    "notifications",
+    "offer_links",
+    "payment_notices",
+    "pdf_asks",
+    "pdf_failures",
+    "projects",
+    "r2_deletions",
+    "reminders",
+    "retention_run_counts",
+    "retention_runs",
+    "review_items",
+    "settings",
+    "site_snapshots",
+    "staff_invites",
+    "staff_known_devices",
+    "staff_notification_prefs",
+    "staff_recovery_codes",
+    "staff_sessions",
+    "staff_signin_pending",
+    "staff_users",
+    "statement_pdfs",
+    "stats_daily",
+    "templates",
+    "time_logs",
+    "webhook_events"
+  ]
+}

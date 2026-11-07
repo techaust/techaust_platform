@@ -56,3 +56,9 @@ What to have open when you run it:
 - **PayPal:** **Apps & Credentials** (Sandbox) › your app; copy the **Client ID**, then the **Secret**.
 
 If a key was ever pasted anywhere else (chat, email, a document), treat it as exposed: make a new one and run the script again.
+
+## Going live (L9; the order in Settings › Gateways "Before going live")
+1. Set the live keys and the live webhook secrets (the secret scripts with `-Environment production`), with the live webhooks pointing at `https://hooks.techaust.com/<gateway>`.
+2. **Remove or disable the TEST webhooks that point at `hooks.techaust.com`** in each dashboard. Once production holds the live secrets, a test event fails the signature check, is counted, and after 5 in an hour rings the owners (P7 payments review L5).
+3. The owner sets `PAYMENTS_LIVE_ALLOWED` to "true" and deploys.
+4. Only then switch each gateway to Live in Settings. Online payments may fail for a short time between these steps.

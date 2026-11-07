@@ -75,5 +75,8 @@ export const deeds = new Hono<AppEnv>()
       number_display: string;
     }>();
     if (!row) return err(c, NOT_FOUND, 404);
-    return streamPdf(c, row.signed_r2_key, `${row.number_display.replaceAll("/", "-")}-signed.pdf`);
+    // The signed upload is never rebuilt (Rebuild PDF's scope): read as stored.
+    return streamPdf(c, row.signed_r2_key, `${row.number_display.replaceAll("/", "-")}-signed.pdf`, {
+      rebuildable: false,
+    });
   });

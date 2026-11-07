@@ -1,0 +1,272 @@
+# Run: AU45, the client statement's "refund returned" line
+
+Status: PR READY https://github.com/techaust/techaust_platform/pull/194
+Tier: A (the statement's money lines and balances; client-facing figures)
+Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 claude-opus-5-5/high (`cloudflare:workers-best-practices`, `cloudflare:wrangler` tried, unavailable in the cloud): 5-h 1 % (20:05 IST) at start, 14 % (20:29 IST) the last relayed reading ; analyst early check claude-opus-5-5/high (`cloudflare:*` tried, unavailable): 14 % (20:29 IST) at start ; designer d1 claude-opus-5-5/high (`frontend-design:frontend-design` tried, unavailable in the cloud; docs/06 followed): 14 % (20:29 IST) at start, 33 % (21:00 IST) the last relayed reading ; reviewer r1 claude-opus-5-5/high (`code-review` with its read-only helper; `security-review` would not load: its preamble needs `origin/HEAD`; checklist applied by hand): 33 % (21:00 IST) at start ; reviewer re-check claude-opus-5-5/high (`code-review` with its read-only helper; `security-review` checklist by hand, `origin/HEAD` unset): 33 % (21:00 IST) at start, 53 % (21:30 IST) the last relayed reading
+
+Cloud task session `au45-statement`, branch `feat/au45-statement` (owner's blanket approval, 2026-11-07, 13: "AU45 … built before launch; its wording drafted by the lead under this approval"). Basis: [full-audit-m6-m7](full-audit-m6-m7.md) AU37, AU45, AU46, AU1.
+
+## Questions for the owner
+**Q1 (for the main session, under the owner's delegation of 2026-11-07): approve 07-ZU U1–U2?** ([ZU](../07-content-appendix/ZU-au45-statement.md))
+- **U1**, the statement line's label: "Refund came back" **(Recommended)** · "Refund returned to us" · "Refund returned"
+- **U2**, a note printed once under the lines when a statement has a U1 line: "A refund that came back is one the bank or card network returned to us. The amount is your credit again." **(Recommended: include it)** · leave the note out
+Until approved, both show "[Placeholder] " (`APPROVED_07ZU = false`, `packages/core/src/copy-zu.ts`); the lead flips the flag once the answer arrives. Nothing else waits on it.
+- **Answer (2026-11-07, main session, under the owner's blanket approval of 2026-11-07):** approved as recommended: U1 "Refund came back"; U2 included word for word. `APPROVED_07ZU = true` (builder b1 told at 20:40 IST).
+
+## Brief
+Drafted by the analyst (2026-11-07), checked and finalised by the lead (the cursor regex and the index confirmed by reading).
+
+**PRD:** ADM-CLI-04 (totals reconcile with the ledger), JOB-PDF-01, ADM-PAY-08. **Basis:** 13 2026-11-07 (owner: AU45 before launch, wording by the lead); full-audit-m6-m7 AU37, AU45, AU46 (accepted, unchanged), AU1.
+
+### 1. The rule
+A statement is a list of dated lines; nothing is "as at" any more.
+- **`refund`** (debit, ord 5, unchanged date `settled_on`): every refund that went out: `status='succeeded'`, or went out and came back (failed with `reversed_at` set).
+- **`refund_returned`** (new, credit, ord 6, `sk` `date|6`): every reversed refund of a confirmed payment, same amount and number (the gateway refund id), dated the **IST day of `reversed_at`**. Never a lost dispute or a manual refund (the 0082 trigger already forbids reversing them; said again in SQL so the pair always matches).
+- AU37 holds: a range ending on day D before the return lists the debit only, exactly when `reversed_at >= istDayEndMsSql(D)` (the `refundOutAtSql` boundary), so past statements never move. Opening(range) is the sum of dated lines before `?3`, so closing(N) = opening(N+1) always.
+- The ledger holds: `STATEMENT_LEDGER_SQL` counts only succeeded refunds as gone; after a return the statement has a debit plus an equal credit, net zero. Also with a release allocation (refund of an invoice's excess): the reversal moves only `payment_refunds`, both sides equal T − C − A before and after (pinned by a test).
+- Anonymised clients: no change. The statement PDF is already refused for them (admin `statement-pdf.ts` route and INSERT guard, jobs `statement-pdf.ts`); the staff JSON tab keeps every line so closing = ledger.
+- Portal: **no statement view exists** in `apps/portal` (verified by the lead and the analyst). The invoice's "Refunded … on …" reads `status='succeeded'` only, so it already disappears after a return. Nothing to build there.
+
+### 2. Builder (data, logic, route, jobs, tests). Stops after this layer for the early check.
+- `packages/db/src/sql-rules.ts`: new `istDayOfMsSql(ms)` = `date(CAST(ms AS INTEGER) / 1000 + 19800, 'unixepoch')` (twin of core `toIsoDate(istDate(ms))`); `refundReturnedSql(f)` = failed AND `reversed_at` IS NOT NULL AND `origin <> 'chargeback'` AND `provider <> 'manual'` (check the real column names on `payment_refunds`); `refundWentOutSql(f)` = succeeded OR returned.
+- `packages/db/src/reports.ts` `statementSource`: the refund branch uses `refundWentOutSql("f")` instead of `refundOutAtSql(f, istDayEndMsSql("?4"))`; a new UNION ALL branch (alias `g`/`gp`, `INDEXED BY payment_refunds_client`, `gp.status='confirmed'`, `cond(istDayOfMsSql("g.reversed_at"))`, NULL parent). `LINE_DEBIT_KINDS` unchanged. Doc comments updated (AU37 → AU45, ord 6, the ledger comment).
+- Binds: `statementSource` no longer writes `?4`, so `STATEMENT_BALANCE_BEFORE_SQL(false)` has `?3` as its highest parameter. Revert `statementBalanceBeforeBinds` to its pre-AU37 shape (`cursor ? [c, cur, null, null, sk, id] : [c, cur, from]`, no `to`), and fix every caller (`apps/admin/worker/statements.ts`, `apps/jobs/src/statement-pdf.ts`, `packages/db/test/reports.test.ts`, `packages/db/test/refund-statements.test.ts`).
+- `packages/core/src/statement.ts`: `refund_returned` in `StatementKind` (a credit by not being in `STATEMENT_DEBIT_TYPES`); header comment.
+- `packages/core/src/copy-zu.ts` (pattern of `copy-zt.ts`): `APPROVED_07ZU = false`, `STATEMENT_REFUND_RETURNED_WORD` (U1), `STATEMENT_REFUND_RETURNED_NOTE` (U2), each "[Placeholder] " + line while false; subpath `./copy-zu` in `packages/core/package.json`.
+- Types and labels so typecheck stays green: `apps/admin/src/lib/reports.ts` (`statementKindText`, `statementCsvLabels`), `apps/admin/src/api.ts` (`StatementEntryView.kind` gains `refund` and `refund_returned`), `packages/pdf/src/statement-view.ts` (input kind), `packages/pdf/src/layout/statement.ts` (`StatementLineKind`), `packages/pdf/src/layout/copy.ts` (`kinds.refund_returned` in `STATEMENT_PDF_COPY` only; keep the hunk local, the invoice copy there belongs to another task). The `detailsOf` print and the note are the designer's.
+- `apps/admin/worker/statements.ts`: cursor `SK` regex `[123]` → `[1-6]` (an existing bug: a page ending on a TDS or refund line made the next page a 400).
+- `apps/jobs/src/warm.ts`: add `refund` and `refund_returned` to the warmed kinds if the list exists there.
+- No migration (`payment_refunds_client (client_id, requested_at, id)` is sought on `client_id`); no warm-fixture regeneration (the statement isn't a hot route).
+- **Tests:**
+  - `packages/db/test/refund-statements.test.ts`, `describe("AU45 …")` with a fixed `now`: payment ₹500 on 2 Nov, refund ₹200 settled 3 Nov, reversed 2026-12-05T04:30Z. (1) Nov lines `[receipt, refund]`, Dec lines `[refund_returned]` dated 2026-12-05, number the refund id, 20,000. (2) closing(Nov) = balance-before(Dec) = opening(Dec); closing(Dec) = closing(Nov) − 20,000. (3) the Nov–Dec range lists both. (4) core twin: `statementEntries` over the SQL rows gives `STATEMENT_TOTALS_SQL` and the chained closing. (5) a range through today closes at `STATEMENT_LEDGER_SQL` before and after the return. (6) the excess-refund case with a release allocation: ledger = closing before and after. (7) IST boundary: reversed at 2026-11-30T18:29:59.999Z → 30 Nov; at 18:30:00.000Z → 1 Dec; the Nov line set agrees with `refundOutAtSql(f, istDayEndMsSql('2026-11-30'))`. (8) never a line: failed without success, requested/processing, a lost dispute, an L33 refund of a payment later rejected, another client's, another currency's. (9) `istDayOfMsSql` twin across IST midnight. Update the existing refund and AU37 statement tests (debit unchanged, credit +20,000, opening unchanged; add the chain).
+  - `packages/db/test/reports.test.ts`: plans seek `payment_refunds_client` for `f` and `g`, never a scan; bind signature.
+  - `packages/core/test/statement.test.ts`: the kind is a credit; refund then return nets to zero; debit types unchanged. A `copy-zu` test (flag and placeholder marks). `packages/core/test/gst/report-csv.test.ts`: the label.
+  - `apps/admin/worker/reports.test.ts` "a client's statement": the Nov/Dec chain over HTTP; a cursor page ending on ord 4 and on ord 5 then 200 with the right `balanceBeforeMinor`; `after` with `|7` → 400.
+  - `apps/admin/src/lib/reports.test.ts`: the new word; CSV kinds length 8.
+  - `apps/jobs/test/statement-b.test.ts`: a statement with a refund and its return renders with no `totals_mismatch`.
+
+### 3. Designer (PDF and the admin tab)
+- `packages/pdf/src/layout/statement.ts`: `detailsOf` prints U1 for the new kind (the refund id beside it, like "Refund"); U2 printed once in the foot block only when an entry is `refund_returned` (`returnedNote: string | null` on `StatementLayoutView`, set by `statementView`), travelling with the last lines (never alone on a page).
+- `STATEMENT_LAYOUT_ID` `"statement-4"` → `"statement-5"` (the view hash includes it, so cached PDFs re-render); `packages/pdf/test/statement.test.ts`, `statement-layout.test.ts` (the word, the note once and escaped).
+- `packages/pdf/visual/page-count.spec.ts` has no statement fixture; the statement pins live in the local `layout-audit.spec.ts` over `packages/pdf/test/fixtures/audit.ts`. Keep the 200-entry rotation as it is; add a "statement-refund-returned" case (about 6 entries, refund and return on different days, the note) pinned at 1 page.
+- Admin tab `apps/admin/src/routes/clients/statement.tsx`: `refund` and `refund_returned` print as plain text, never a `/invoices/` link (fixes an existing dead link); U2 under the table when a loaded entry is `refund_returned`. Both themes, phone width, empty/loading/error states, axe. Screenshots of the admin tab and the PDF with a returned refund across two periods (closing = next opening).
+
+### Done
+The shared FINISH, plus: in the admin route, the PDF view and the core twin, a refund out in period N that comes back in N+1 gives closing(N) = opening(N+1), and N's statement is identical before and after the return; a range through today closes at the ledger (release-allocation case too); every statement SQL seeks an index; cursors ending on ord 4, 5 or 6 page; no refund line links to `/invoices/`; layout `statement-5`; `APPROVED_07ZU` set once ZU is approved.
+
+### Out of scope (other tasks' files)
+`apps/admin/worker/gateway/*`; core `razorpay`/`paypal`/`stripe`; `apps/jobs/src/hooks/*`, `apps/jobs/src/pdf.ts`; `apps/admin/worker/document-pdf.ts` and the invoice PDF routes; AU46 and the other AU37 period readers; the 07-ZT email; any migration.
+
+## Early check
+**Analyst, 2026-11-07, on c52187c: GO.** No critical, high or medium finding. Re-ran on the merged head (with #193): db `refund-statements` + `reports` 79 passed, admin `worker/reports.test.ts` 24 passed, jobs `statement-b` 27 passed; the lead's repo-wide `pnpm typecheck` exit 0. Checked: the IST-day expression equals AU37's `istDayEndMsSql` boundary (tests 7, 9); the debit/credit pair (same client, currency, confirmed payment, number, amount; chargeback and manual excluded in SQL and trigger; L33 rejected payment gives neither line); AU37 preserved (Nov's whole statement equal before and after a Dec return, db and HTTP); closing(N) = opening(N+1) in db, admin and core; ledger agreement incl. the release-allocation case; `(sk, id)` unique (`|5` vs `|6`); binds (3 / 6 values; D1 refuses 4 for the 3-parameter form, pinned); cursor `[1-6]`; all 7 statement reads SEARCH `payment_refunds_client` for `f` and `g`, no scan; scope clean; copy-zu word for word.
+Low findings (the lead's, in integration):
+1. `refundReturnedSql` doesn't require `settled_on IS NOT NULL` (a malformed row could print a credit with no debit; today's code never writes one): add `settled_on IS NOT NULL` and `provider_refund_id IS NOT NULL` (mirrors 0082), with a test row.
+2. `reports.ts` ledger comment formula: add "− refund-came-back lines".
+3. `apps/admin/worker/statements.ts` header's credits list is from M5.5: name receipts, TDS and the two refund kinds.
+Lead fixed 1–3 (2026-11-07): `refundReturnedSql` requires `settled_on` and `provider_refund_id` (test rows for both missing), the ledger formula, the route header; db `refund-statements` + `reports` 79 passed, admin `worker/reports.test.ts` 24 passed, biome clean.
+Noted, not blocking: no test pins the statement route's rows read (`reports-stress.test.ts` doesn't cover it; older than AU45) → follow-up.
+
+## Builder report
+### Builder b1 (2026-11-07, claude-opus-5-5/high): §2 done. Stopped for the early check
+Branch `fix/au45-statement-b1`, built on `origin/feat/au45-statement` at the head before 7b46da9 (the merge of main #193) and ed581f9 (07-ZU approved). `git merge-tree` against today's task head is clean. Commits: 61a8d15 (data, logic, route, labels, db tests) and 9f9e7bd (admin, SPA and jobs tests). No migration.
+
+**Skills.** I tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`. Both returned "Unknown skill": plugins don't load in a cloud session. No other skill in docs/14 §9 fits this task: there are no screens, no CPU benchmarks and no platform features.
+
+**Files**
+- `packages/db/src/sql-rules.ts`: new `istDayOfMsSql(ms)`, `refundReturnedSql(f)` and `refundWentOutSql(f)`.
+  - `refundReturnedSql(f)` is `failed AND reversed_at IS NOT NULL AND origin <> 'chargeback' AND provider <> 'manual'`.
+  - `refundWentOutSql(f)` is `succeeded OR returned`.
+- `packages/db/src/reports.ts`:
+  - `statementSource`'s `f` branch now uses `refundWentOutSql`.
+  - New `g`/`gp` branch: `refund_returned`, ord 6, `INDEXED BY payment_refunds_client`, `gp.status = 'confirmed'`, `cond(istDayOfMsSql("g.reversed_at"))`, NULL parent, and the same number expression as the debit line.
+  - `statementBalanceBeforeBinds` is back to its pre-AU37 shape (checked against 939d094^): `(client, currency, from, cursor?)` gives `[c, cur, from]` or `[c, cur, null, null, sk, id]`.
+  - The doc comments now describe AU45 (ord 6 and the ledger).
+  - `LINE_DEBIT_KINDS` is unchanged.
+- `packages/core/src/statement.ts`: `refund_returned` added to `StatementKind`, plus the header comment. `STATEMENT_DEBIT_TYPES` is unchanged.
+- `packages/core/src/copy-zu.ts` (new) and the `./copy-zu` export in `packages/core/package.json`:
+  - `APPROVED_07ZU = true`, as the lead relayed the approval mid-run.
+  - U1 "Refund came back" and U2, word for word, behind the `zu` gate, plus `zuAllText()`.
+- Types and labels:
+  - `apps/admin/src/lib/reports.ts`: `statementKindText` and `statementCsvLabels`.
+  - `apps/admin/src/api.ts`: `StatementEntryView.kind` gains `refund` and `refund_returned`.
+  - `packages/pdf/src/statement-view.ts` and `packages/pdf/src/layout/statement.ts`: the kind unions.
+  - `packages/pdf/src/layout/copy.ts`: only `kinds.refund_returned` in `STATEMENT_PDF_COPY`.
+- `apps/admin/worker/statements.ts`: the cursor `SK` regex `[123]` is now `[1-6]`, and both bind calls are updated.
+- `apps/jobs/src/statement-pdf.ts`: the bind call.
+- `apps/jobs/src/warm.ts`: `refund` and `refund_returned` added to `warmStatement`'s kinds.
+- Tests:
+  - `packages/db/test/refund-statements.test.ts`: a new describe "AU45 …" covering (1) to (9), the existing AU1 statement test, and the AU37 test (debit unchanged, credit +20,000, openings for Nov and Dec unchanged, Jan −20,000, closing(Nov) = opening(Dec)).
+  - `packages/db/test/reports.test.ts`: plans for `f` and `g` across all 7 statement reads, and the binds and arity test.
+  - `packages/core/test/statement.test.ts`, `packages/core/test/copy-zu.test.ts` (new), `packages/core/test/gst/report-csv.test.ts`.
+  - `apps/admin/worker/reports.test.ts`: the Nov/Dec chain over HTTP; cursors after ord 4, 5 and 6 answer 200 with the right `balanceBeforeMinor`; `|7`, `|0` and `|56` answer 400.
+  - `apps/admin/src/lib/reports.test.ts`: the word, and 8 CSV kinds.
+  - `apps/jobs/test/statement-b.test.ts`: a refund and its return render, with no `totals_mismatch`.
+
+**Commands and results.** Every heavy command went through `tools/heavy.sh`, one at a time.
+- `pnpm --filter @techaust/core test`: 133 files, 2,718 tests passed (coverage gate included).
+- `pnpm --filter @techaust/db test`: 62 files, 1,100 passed.
+- `pnpm --filter @techaust/pdf test`: 27 files, 415 passed.
+- `pnpm --filter @techaust/admin test`: 199 files, 5,312 passed.
+- `pnpm --filter @techaust/jobs test`: 52 files, 781 passed.
+- `typecheck` for core, db, pdf, admin and jobs: all exit 0.
+- `pnpm exec biome check` on the 21 changed files: clean. `apps/admin/worker/reports.test.ts` still shows 2 `useTemplate` infos at lines 104 and 107. Those lines are not mine and were already there.
+
+**The analyst's claims, checked**
+- Bind count: D1 refuses 4 values for the 3-parameter `STATEMENT_BALANCE_BEFORE_SQL(false)` and accepts 3. A test in `reports.test.ts` pins this.
+- Plan for alias `g`: `SEARCH g USING INDEX payment_refunds_client (client_id=?)` in the page (both forms), the balance before (both forms), totals, count and entries. `f` is the same. No `SCAN` of `f`, `g`, `fp`, `gp`, `payment_refunds` or `payments`.
+- `payment_refunds` has `origin` and `provider` (schema `payments.ts`; values `manual|razorpay|stripe|paypal` and `owner|outside|chargeback`).
+- The brief cites no test line numbers. The AU37 test it means is in `refund-statements.test.ts`, in the describe "AU1 (B0 1)".
+
+**Where I differed from the brief, or something worth knowing**
+1. The existing AU1 test "the statement, Collected and the refunds register drop the refund …" reversed at `Date.now()`. It would have started failing after 30 Nov 2026, because Collected and the register for November keep a refund that came back after November (AU37). It now reverses at a fixed 2026-11-20T04:30Z, and the title says what it checks.
+2. In the db tests the payment is received on 1 Nov (the `razorpayPayment` fixture), not 2 Nov. The admin test uses 2 Nov. No assertion depends on that day.
+3. The returned line shares the refund's `id` with its `refund` line. `(sk, id)` stays unique because ord 5 ≠ 6, and the admin `rowKey` is `${kind}-${id}`. **Designer:** anything keyed by `id` alone must add the kind.
+4. Because `detailsOf` returns `C.kinds[kind]` for any kind it doesn't special-case, the PDF already prints "Refund came back" beside the refund id. I left the U2 note, `STATEMENT_LAYOUT_ID` (still `statement-4`) and the visual specs to the designer.
+5. `statement.tsx` typechecks with no change. The `refund` and `refund_returned` rows still link to `/invoices/<refund id>` (the existing dead link). That fix is the designer's (§3).
+6. `warmStatement()` at start-up still uses `count = 3`, so only the first 3 kinds warm. The new kinds are exercised by the 200-line CPU test (`reports-cpu.test.ts`, passed).
+
+**Not verified**
+- The whole-repo `pnpm lint`, `pnpm check` and builds were not run, as instructed. That leaves the Worker byte and start-up budgets unchecked; the SQL text grows by one UNION branch.
+- Portal and web were not tested or typechecked. The portal imports none of the changed modules (checked by grep).
+- My test runs are on my base. They do not include 7b46da9 / #193, which the lead merged into the task branch after I started.
+
+**Open questions:** none.
+
+## Designer report
+### Designer d1 (2026-11-07, claude-opus-5-5/high): §3 done
+Branch `fix/au45-statement-d1`, built on `origin/feat/au45-statement` at 75b4a05. Commits: 99f4c5f (PDF) and f302efa (admin tab), plus this report.
+
+**Skills.** I tried `frontend-design:frontend-design` (docs/14 §9) and it returned "Unknown skill": plugins don't load in a cloud session. Instead I followed docs/06 (§7 for the PDF, §5.4 for the admin parts) and the layout's own rules directly. `dataviz` doesn't apply because there is no chart or stat tile. No other §9 skill fits.
+
+**Files**
+- `packages/pdf/src/layout/statement.ts`:
+  - `returnedNote: string | null` on `StatementLayoutView`.
+  - When the note is set, it prints first in `.stm-foot` as `<p class="stm-note" data-testid="returned-note">` (escaped, ink, 2.4 mm above the questions line, `text-wrap: pretty`).
+  - `.stm-foot` keeps `break-inside: avoid; break-before: avoid`, so the note travels with the closing row and never stands alone on a page.
+  - The returned line already printed like the refund (refund id, U1 through `C.kinds`, amount in Credit). Only the header comment changed for it.
+- `packages/pdf/src/statement-view.ts`:
+  - `statementView` sets `returnedNote` to 07-ZU U2 (`STATEMENT_REFUND_RETURNED_NOTE`) only when an entry is `refund_returned`, otherwise null.
+  - `STATEMENT_LAYOUT_ID` goes from "statement-4" to "statement-5". The history comment is kept.
+- `packages/pdf/test/statement-layout.test.ts`: new describe "AU45" (4 tests):
+  - the exact row HTML: refund id, "Refund came back", empty Debit cell, the Credit cell;
+  - the refund stays a debit;
+  - the note prints once, first in the foot, after the closing row, and not without the kind;
+  - the note is escaped;
+  - a closing below zero has no Amount due and still prints the note.
+- `packages/pdf/test/statement.test.ts`:
+  - the layout id and hash are now statement-5;
+  - new describe "AU45" (2 tests): one note for two returned refunds, none for a refund alone, the returned entry's view, and the note is part of the hash.
+- `packages/pdf/test/fixtures/audit.ts`: new case "statement" / "refund returned" with 6 entries (two invoices, a payment, TDS, a refund on 06 Nov and its return on 05 Dec). It is built through the real `statementView`. The 200-entry rotation is unchanged.
+- `packages/pdf/visual/layout-audit.spec.ts`: `"statement-refund-returned": 1`.
+- `apps/jobs/test/statement-b.test.ts`: the AU45 test also asserts the U1 cell beside the refund id, and U2 printed once in its `stm-note` paragraph.
+- `apps/admin/src/lib/reports.ts`:
+  - `statementLineIsDocument(kind)`: only `tax_invoice`, `export_invoice`, `debit_note` and `credit_note` link.
+  - `statementReturnedNote(entries)`: U2 or null.
+- `apps/admin/src/routes/clients/statement.tsx`:
+  - The Document cell links only when `statementLineIsDocument` is true. `refund` and `refund_returned` print `<span className="docno">`, which fixes the dead `/invoices/<refund id>` link.
+  - U2 shows as the first `.report-note` (body ink, not the muted hint) under the table. It appears when any loaded entry, including later "Show more" pages, is `refund_returned`.
+  - Row keys stay `${kind}-${id}`.
+  - No new CSS class.
+- `apps/admin/src/lib/reports.test.ts`: 2 tests (which kinds link; the note follows the whole loaded list).
+
+**Commands and results.** All run through `tools/heavy.sh`, one at a time.
+- `pnpm --filter @techaust/pdf test`: 27 files, **421 passed**.
+- `pnpm --filter @techaust/admin test`: 199 files, **5,314 passed**.
+- `pnpm --filter @techaust/jobs test`: 52 files, **781 passed**.
+- `pnpm --filter @techaust/pdf exec playwright test visual/layout-audit.spec.ts` (whole audit): **85 passed**, 13 skipped (the sweep skips are the existing ones). `statement-refund-returned` is 1 page and passes both the page check and the sweep. Every other pin is unchanged.
+- `pnpm typecheck`: exit 0, no TS errors.
+- `pnpm --filter @techaust/admin build`, Worker budgets:
+  - admin front 121,871 bytes (startup 30.6 ms);
+  - admin API 560,704 (62.1 ms);
+  - admin finance 435,938 (51.7 ms);
+  - admin invoices 568,040 (67.5 ms).
+  - All are within their limits, with no forbidden modules.
+  - The first try failed in `check-spa-headers` because the worktree's local `.dev.vars` from `pnpm dev:secrets` was copied into `dist/`. I moved the file aside for the build and restored it.
+- `pnpm --filter @techaust/jobs build`: jobs 872,293 bytes (limit 1,000,000), startup 65.6 ms. `.dev.vars` was moved aside in the same way.
+- `node scripts/css-collisions.mjs`: ok.
+- `pnpm exec biome check` on every changed file: clean.
+- Whole-repo `pnpm lint` (final check): exit 0. It shows 14 warnings and 8 infos, all in files I didn't touch (portal CSS, core `public-text.ts`, pdf `envelope`/`render`/`variants` tests, admin `worker/reports.test.ts` 104/107, web `catalogue.ts`).
+
+**Local fixture** (scratch scripts outside the repo, not committed; local D1 only):
+- A throwaway Owner was signed in the way `apps/admin/e2e/global-setup.ts` does it.
+- Client "Sample Statement Traders (sample)" has:
+  - invoice ₹1,18,000 on 02 Sep;
+  - a Razorpay payment of ₹1,38,000 on 04 Sep;
+  - a gateway refund of ₹15,000 settled 06 Sep and reversed 2026-10-05T04:30Z;
+  - invoice ₹59,000 on 15 Oct.
+- What the admin API answered:
+  - **September** closes at −₹5,000.00.
+  - **October** opens at −₹5,000.00, has "Refund came back" ₹15,000 credit on 05 Oct, and closes at ₹39,000.00.
+  - **Sep–Oct** lists both refund lines and closes at ₹39,000.00.
+- So closing(N) = opening(N+1).
+
+**Screenshots** (deviceScaleFactor 2, under `.logs/au45/` in the worktree, `/home/user/techaust_platform/.claude/worktrees/agent-a68661adfc10655c6/.logs/au45/`):
+- `admin-sep-{360,768,1280}-{light,dark}.png`: September. Invoice linked; payment and refund as plain text; closing −₹5,000; no note.
+- `admin-oct-{360,768,1280}-{light,dark}.png`: October. Opening −₹5,000; "Refund came back" in Credit with the refund id as plain text; U2 under the table above the proformas note.
+- `admin-sep-oct-{360,768,1280}-{light,dark}.png`: the two-month range. Refund debit 06 Sep, return credit 05 Oct, note once.
+- `admin-oct-1280-os-light-app-dark.png` and `admin-oct-1280-os-dark-app-light.png`: the in-app theme wins over the OS theme.
+- `admin-empty-768-light.png` (April: empty state, no note), `admin-loading-768-dark.png` (skeleton rows), `admin-error-360-light.png` (a 500 gives "This didn't load" with Try again).
+- `admin-focus-1280-{light,dark}.png`: keyboard focus inside the tab.
+- `pdf/pdf-sep-1.png`, `pdf/pdf-oct-1.png`, `pdf/pdf-sep-oct-1.png`: the statement PDF of the same local data, built from the admin API lines through `statementView` and the layout, printed by Chromium.
+  - September has no note.
+  - October has the line in Credit, the note in the last lines, Amount due ₹39,000.
+- `pdf/statement-refund-returned-1.png`: the layout-audit fixture, 1 page.
+- `pdf/*.pdf`: the PDFs themselves.
+
+**Checks in the browser** (Playwright 1.64.1 Chromium, local admin dev server, `TECHAUST_PORT_OFFSET=0`):
+- axe on `.statement` at 1280 px in light and dark: **no violations**.
+- Links in the tab: only the two invoices (in both the table and the card view). No refund or payment links.
+- Tab order: from → calendar → to → calendar → currency → Show → table region → invoice links → Download CSV → Make PDF. Focus is visible (2 px outline) and there is no trap.
+- Console errors: none, apart from the 500s I triggered on purpose for the error state.
+- The dev server was stopped before the suites (no vite or workerd left running from this worktree).
+
+**Not verified**
+- The real jobs Worker → Browser Run render of a `statement-5` PDF; locally Chromium printed the same HTML.
+- The note arriving on a later "Show more" page in the browser. With 5 lines the fixture fits on one page; the logic is unit-tested over the whole loaded list.
+- Portal: nothing to build there (the portal has no statement view).
+
+**Placeholder text:** none. U1 and U2 come from `@techaust/core/copy-zu`, and `APPROVED_07ZU = true`.
+
+**Open questions:** none.
+
+## Review
+**Review 1 (reviewer, 2026-11-07, on 5da8545): APPROVE.** No critical, high or medium finding. Skills: `code-review` (high; its read-only helper ran); `security-review` would not load (its preamble runs `git diff origin/HEAD...`, unset in this checkout), so its checklist was applied by hand (auth, scoping, injection, escaping, cursor input, secrets): nothing found. Verified: the rule and its pairing with 0082, AU37 (Nov identical before and after a Dec return, db and HTTP), closing(N) = opening(N+1), ledger agreement incl. release allocation, binds (3/6) and every caller, cursor `[1-6]` (ord 4/5/6 → 200; `|7`, `|0`, `|56` → 400), client and currency scoping, SEARCH in all 7 reads, PDF `statement-5` in the hash and U2 escaped once with the closing, admin links and row keys, no out-of-scope file, conventions; single-file re-runs: db 79, admin 24 + 50, jobs 27, pdf 26, core 29 passed. Visual: the designer's shots (admin Oct 1280 light/dark, Sep–Oct 360, Oct 360 dark, focus 1280 dark, `pdf-sep-oct-1.png`) read correctly; no live pass of its own. Dropped: no U2 in the CSV (07-ZU places U2 on the PDF and the tab only).
+Findings (all low) and the lead's triage:
+1. The statement kind list copied three times (`apps/admin/src/api.ts`, `packages/pdf/src/statement-view.ts`, `packages/pdf/src/layout/statement.ts`). **Fixed:** all three use core `StatementKind`.
+2. The U2 rule written twice (PDF view, admin lib). **Fixed:** `returnedNoteFor` in `@techaust/core/copy-zu`, used by both, with a core test.
+3. `istDayOfMsSql(g.reversed_at)` computed three times per row, and the client's refunds read twice (`f`, `g`). **Kept (lead):** both are index seeks over one client's refunds (a handful), within the Free-plan targets; a rewrite only pays once the statement's rows read are pinned at scale, which is the existing follow-up (listed below with this item).
+4. `apps/jobs/src/warm.ts`: the comment claimed every kind; `debit_note` and `tds` were missing. **Fixed:** all eight kinds (a debit note carries its invoice number).
+5. The admin and jobs fixtures reversed with a hand-written UPDATE. **Fixed:** both call `refundReverseStatement` and assert it changed the row.
+After the fixes (lead, 2026-11-07): core 2,723 passed, pdf 421 passed, admin `worker/reports.test.ts` + `src/lib/reports.test.ts` 74 passed, jobs `statement-b` 27 passed, repo-wide `pnpm typecheck` exit 0, biome clean on the changed files.
+
+**Re-check (reviewer, 2026-11-07, on 0a1798e): APPROVE.** Lows 1, 2, 4, 5 fixed correctly (exhaustiveness kept: `statementKindText` switch, the CSV record `satisfies Record<StatementKind, string>`, `detailsOf`); keeping low 3 accepted. Ran: jobs suite 781 passed, pdf 421, admin `worker/reports.test.ts` 24, core `copy-zu` 3, typecheck exit 0. No regression. New lows and the lead's triage:
+1. The fixtures reversed a Razorpay refund with `stripe_failed`, a code the app never stores for it. **Fixed:** `gateway_failed` (core `reversalOf`'s fallback).
+2. `apps/admin/src/api.ts` `againstNumber` comment named credit notes only. **Fixed:** credit or debit note.
+3. The admin tab shows U2 only once a `refund_returned` line is loaded, while the closing figure counts it from the first page (a return on line 55 of 60 shows the note only after "Show more"). **Kept (lead):** staff-only screen, the line itself says what it is, and the PDF the client gets checks every line; a `hasReturned` flag over the whole range is a follow-up.
+4. `StatementEntryView` and pdf `StatementInputEntry` still copy core `StatementEntry`'s other fields; `statementReturnedNote` only forwards; the note rule sits in a copy module. **Kept (lead):** cleanup by preference, no defect; listed as a follow-up.
+5. The warm statement gave every kind an invoice number. **Fixed:** a TDS line with an empty number, the refund kinds an `rfnd_…` id.
+After the fixes: jobs suite 781 passed, admin `worker/reports.test.ts` 24 passed, biome clean.
+
+## Integration notes
+- Merged by the lead into `feat/au45-statement`: origin/main with #193 (7b46da9), builder b1 (c52187c), the lead's early-check lows (a596b9e), designer d1 (5550498), the review lows (one commit) and the re-check lows (one commit). No conflicts; `packages/core/package.json` took both `./company` (#193) and `./copy-zu`. Main had not moved again when the final run started.
+- **Final run on the branch tip (2026-11-07, lead, each through `tools/heavy.sh`):** `pnpm check` exit 0 (87 migrations, none rebuilds; CSS, SPA headers, worker config, web bindings and content lint ok). `pnpm build` exit 0. `pnpm test` exit 0: **13,284 passed, 6 skipped** (core 2,723; db 1,100; pdf 421; admin 5,314; jobs 781; portal 957; web 1,152 + 4 skipped; ui 471 + 2 skipped; email 205; auth 156; testing 4).
+- The cloud session's `.dev.vars` (written by its SessionStart hook) are copied into `dist/` by the Vite plugin and refused by `check-spa-headers`, which failed the first build and web's `spa-headers` test. The lead set them aside for the build and restored them afterwards; none is in any `dist/`. CI has none, so nothing to change in code (the designer met the same).
+- **Worker bytes (limit; plan line):** admin front 121,871 (150,000); admin API 560,704 (800,000); admin finance 435,938 (800,000; 500,000); admin invoices 568,112 (800,000; 650,000); portal 163,583 (200,000; 180,000); jobs 872,527 (1,000,000). Start-up 24–84 ms, fastest of 7 (limit 200); no forbidden modules.
+- **Migrations:** none.
+- Done check: the db test, the admin HTTP test and the core twin each show a refund out in November and back in December with closing(Nov) = opening(Dec) and November unchanged by the return; the designer's local fixture shows the same in the admin tab and the PDF (Sep closes −₹5,000 = Oct opens; screenshots in `.logs/au45/`). The portal has no statement view (nothing to show there).
+
+## Lead decisions (for 13)
+- 2026-11-07, AU45: the statement lists every refund that went out (debit on its `settled_on`) and, for one that came back, a credit "refund came back" on the IST day of `reversed_at`; the statement is no longer "as at" its last day (AU37's as-at rule is kept by the dates themselves: a statement ending before the return is unchanged). The portal has no statement, so nothing changes there. Lead (analyst's draft).
+- 2026-11-07: the statement cursor accepts ord 1–6 (an existing bug: pages ending on a TDS or refund line were a 400); refund lines on the admin Statement tab no longer link to `/invoices/`. Lead.
+
+## Proposed CLAUDE.md text
+In "M6–M7 audit fixes (#190)", after the "Period readers count a refund that came back as out until `reversed_at` …" bullet, add:
+- **The statement of account is not a period reader (AU45):** it lists a refund that went out as a debit on its `settled_on` and, if it came back, a `refund_returned` credit ("Refund came back", 07-ZU) on the IST day of `reversed_at` (`refundWentOutSql`, `refundReturnedSql`, `istDayOfMsSql` in `packages/db/src/sql-rules.ts`), so a statement ending before the return never changes and every closing balance is the next opening. Its balance before a page binds no last day (`statementBalanceBeforeBinds(client, currency, from, cursor?)`). Layout `statement-5`; the cursor takes ord 1–6.
+
+## Follow-ups (for 12)
+- No test pins the admin statement route's rows read at scale (`reports-stress.test.ts` doesn't cover `/clients/:id/statement`; older than AU45; the early check's note). With it, review 1 low 3: compute the return day once and read the client's refunds once for both refund lines, if the pinned figure calls for it.
+- Admin Statement tab: show U2 from the first page when the range holds a returned refund (a `hasReturned` flag computed over the whole range by the statement API; re-check low 3).
+- Derive `StatementEntryView` (admin) and `StatementInputEntry` (pdf) from core `StatementEntry`; drop the forwarding `statementReturnedNote` (re-check low 4).
+
+## Handover
+2026-11-07, lead (cloud session `au45-statement`): built, reviewed (APPROVE), re-checked (APPROVE), final run green; PR [#194](https://github.com/techaust/techaust_platform/pull/194) opened with `tools/cloud-pr.sh`. Next: the main session reviews it, turns on auto-merge and Auto-fix, and copies "Lead decisions (for 13)", "Proposed CLAUDE.md text" and "Follow-ups (for 12)". Merge order: after #193 (taken in), before rebuild-pdf. No migration, so no renumbering.

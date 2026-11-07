@@ -49,6 +49,7 @@ import { adviceBodyOf, paidPayPal } from "./test-paypal.ts";
 import { mkNotice, mkPortalClient, mkRequest } from "./test-portal.ts";
 import { mkFile, mkMilestone, mkNote, mkProject, PDF_BYTES, upload } from "./test-projects.ts";
 import { discount, mkDraft, mkQuoteClient, mkService, mkTerms, sendBodyOf, sendDoc } from "./test-quotes.ts";
+import { lostPdfPath, REBUILD_ROUTES } from "./test-rebuild.ts";
 import { addDoc, mkReportClient } from "./test-reports.ts";
 
 const newEmail = () => `rbac-${Math.random().toString(36).slice(2, 10)}@example.com`;
@@ -1638,6 +1639,16 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       });
       return { res, rid, actor: s };
     },
+    // Rebuild PDF (JOB-PDF-02, added on purpose): each kind's rebuild of a stored PDF that is missing.
+    ...Object.fromEntries(
+      REBUILD_ROUTES.map((route): [string, Scenario] => [
+        route,
+        async () => {
+          const s = await owner();
+          return run(s, await lostPdfPath(route, s), { body: {} });
+        },
+      ]),
+    ),
   };
 
   it("there is a scenario for every route that declares an audit action", () => {

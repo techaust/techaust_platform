@@ -11,6 +11,7 @@ import { catalogueApi } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
 import { Calendar as CalendarIcon, CheckCircle, FileText, Receipt } from "../../components/icons.tsx";
 import { Markdown } from "../../components/markdown.tsx";
+import { RebuildPdf } from "../../components/rebuild-pdf.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -200,6 +201,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
               initial={v.pdf}
               canRetry={allowed(user.role, "proposals.send") && !v.client.anonymised && !erased}
               onReady={reload}
+              extra={<RebuildPdf kind="offer" id={v.id} number={v.number} ready />}
             />
           )}
           {!v.frozen && <p className="hint">{PDF_COPY.afterSend(v.type)}</p>}
@@ -208,6 +210,7 @@ export function ReadView({ view, reload }: { view: DocumentView; reload: () => v
               docId={v.acceptance.documentId}
               acceptance={v.acceptance}
               certificate={v.certificate?.state ?? "pending"}
+              number={v.number}
             />
           )}
           {v.decision && v.decision.status === "rejected" && <DeclinePanel decision={v.decision} />}

@@ -8,7 +8,8 @@
 //      failure in the clock-hour window (`stripe:sig:<hour>`, capped at 50; one owners' bell at 5; never per address);
 //   5. only then `JSON.parse` and core `parseStripeEvent`; a body it can't read is 400 `invalid_event`, not counted;
 //   6. OURS OR NOT (L5, reviewer L12): the shared Stripe account sends this endpoint the other business's `checkout.session.*` events too (an endpoint filters by
-//      event type only, V8). An event in the other mode (`livemode` true while `PAYMENTS_LIVE_ALLOWED` is not "true"), without our marks, or of another of our
+//      event type only, V8). An event in the other mode (P7 A2.2: `livemode` not the mode Stripe runs in: test while `PAYMENTS_LIVE_ALLOWED` is not "true", else
+//      Settings › Gateways' Stripe mode, `hookModeOf`), without our marks, or of another of our
 //      environments (`techaust_env` ≠ `ENVIRONMENT`) is answered 200 with NO D1 write, no queue, no review and no bell: one log line with the outcome code only;
 //   7. ours: `INSERT ... ON CONFLICT (provider, event_id) DO NOTHING` with the whitelisted facts (the event id `evt_…` is inside the signed body, so it is the
 //      idempotency key here; the payment row's unique `provider_payment_id` is the second line), the row's state read in the same batch; a new row, or one still
@@ -31,7 +32,16 @@ import {
   WEBHOOK_EVENT_STATE_SQL,
 } from "@techaust/db/gateway";
 import { logEvent } from "../log.ts";
-import { answer, HOOK_MAX_BYTES, isJsonType, readCapped, refuse, secretOf, strictUtf8 } from "./shared.ts";
+import {
+  answer,
+  HOOK_MAX_BYTES,
+  hookModeOf,
+  isJsonType,
+  readCapped,
+  refuse,
+  secretOf,
+  strictUtf8,
+} from "./shared.ts";
 
 /** The owners' bell at the fifth failure in a window (07-ZM S17; staff words, lead under the owner's delegation; the finance Worker's copy is held equal by a test). */
 export const BELL_SIGNATURES_STRIPE =
@@ -114,11 +124,18 @@ async function handleHook(req: Request, env: HookEnv, now: number, out: { o?: st
     return answer(200, { ok: true });
   }
   const e = parsed.value;
-  // M6–M7 audit AU7 L1 (B1 L1): the finance Worker runs in the Owner's gateway mode AND the flag (test while the mode is still test, even with the flag true),
-  // which this hook cannot read. So while the flag is true BOTH modes are stored, with `livemode` in the facts, and the finance judge (which re-fetches with the
-  // key of its own mode and checks `livemode` against it) decides; while the flag is false only test-mode events are kept, as before.
-  const liveAllowed = secretOf(env, "PAYMENTS_LIVE_ALLOWED") === "true";
-  const modeKept = liveAllowed || e.livemode === false;
+  // M6–M7 audit AU7 L1 (B1 L1): the finance Worker runs in the Owner's gateway mode AND the flag (test while the mode is still test, even with the flag true).
+  // P7 A2.2: the hook now reads that mode too (`hookModeOf`: no D1 read while the flag is off), so only events of the mode Stripe runs in are kept: a test-mode
+  // event in live mode, or a live one in test mode, is answered 200 with nothing written (`livemode_mismatch`). The finance judge still checks `livemode` on the
+  // re-fetched session (`expectedLivemode`), so a mode changed between the hook and the judge never reaches the ledger either.
+  // P7 early check (M1): a mode that can't be read is 503 `mode_unavailable` with nothing written (Stripe retries a non-2xx answer).
+  const mode = await hookModeOf(env, "stripe");
+  if (mode === null) {
+    out.o = "mode_unavailable";
+    logEvent("hook.mode_unavailable", { provider: "stripe" });
+    return refuse(503, "mode_unavailable");
+  }
+  const modeKept = e.livemode === (mode === "live");
   // M6.5 (L36; Step 0 point 4): a refund or dispute event carries no checkout marks (S4: Stripe copies no metadata to a Refund or a Dispute; ours sets its own
   // `techaust_refund` on the refunds we make). Kept with its whitelisted facts when its livemode is ours; the finance Worker matches the PaymentIntent to OUR
   // payment and ignores the rest (one D1 row per not-ours event on the shared account, accepted).

@@ -47,6 +47,7 @@ import { auditAf2TriggerStatements } from "./triggers-audit-af2.ts";
 import { auditAf3TriggerStatements } from "./triggers-audit-af3.ts";
 import { dataProtectionTriggerStatements } from "./triggers-data-protection.ts";
 import { advanceLutFyTrigger, debitNoteLutFyTrigger, lutFoldTriggerStatements } from "./triggers-lut-fold.ts";
+import { pdfRepairTriggerStatements } from "./triggers-pdf-repairs.ts";
 
 /**
  * Columns of an issued document that may still change (ledger, status, void and the e-invoice status). FX-1 (A0 5): `irn`, `ack_no`, `ack_date` and
@@ -2621,6 +2622,10 @@ export const TRIGGER_SETS = {
   audit_af3_triggers: {
     what: "Full audit M6–M7 fix round AF3: the clean-up's measured rows written are a whole number that only goes up",
     statements: auditAf3TriggerStatements,
+  },
+  pdf_repair_triggers: {
+    what: "Rebuild PDF: rebuild requests and results append-only, a request names a subject that may be rebuilt now with its recorded key, the next number, the new and served keys, a result belongs to its request, and a redacted offer's rebuilt PDFs go to the R2 outbox",
+    statements: pdfRepairTriggerStatements,
   },
   lut_fold: {
     what: "P7 LUT fold: the one letter of undertaking of M3 (tax.lut) folded into the list under the M5.2 rule and its key removed, and the two LUT triggers created again from the list-only rule",

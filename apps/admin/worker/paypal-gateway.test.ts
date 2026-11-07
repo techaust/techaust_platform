@@ -78,7 +78,8 @@ describe("the PayPal order [POR-06, L3, L4, L10, L19; run file C PortalPayments]
     const unit = (body.purchase_units as Record<string, unknown>[])[0] as Record<string, unknown>;
     expect(unit).toMatchObject({
       reference_id: o.checkoutId,
-      custom_id: o.checkoutId,
+      // P7: the environment mark after the checkout id (the test pool's ENVIRONMENT is "local")
+      custom_id: `${o.checkoutId}-local`,
       amount: { currency_code: "USD", value: "500.00" },
     });
     expect(String(unit.invoice_id)).toMatch(new RegExp(`-${o.checkoutId.slice(-12)}$`));
@@ -145,7 +146,8 @@ describe("the PayPal order [POR-06, L3, L4, L10, L19; run file C PortalPayments]
     ).toEqual(["failed", "failed"]);
   });
 
-  it("live while it isn't allowed: 503 live_not_allowed with ZERO calls, the token's included; no keys: gateway_unavailable [ADM-PAY-11, rule 7]", async () => {
+  it("Settings says live while it isn't allowed: the order is made on the SANDBOX host (P7 A2.3: test behaviour, never a live call), with the owners' bell; no keys: gateway_unavailable [ADM-PAY-11, rule 7]", async () => {
+    await owner();
     const c = await usdClient();
     const documentId = await usdDoc(c.clientId);
     const before = await one<{ value: string; version: number }>(
@@ -159,8 +161,16 @@ describe("the PayPal order [POR-06, L3, L4, L10, L19; run file C PortalPayments]
       .run();
     try {
       paypalStub();
-      expect(await payPalLink(c, documentId)).toEqual({ ok: false, error: "live_not_allowed" });
-      expect(paypalCalls).toEqual([]);
+      // paypalCalls records the sandbox host's calls only; any other host would answer 404 here and the order would fail
+      expect((await payPalLink(c, documentId)).ok).toBe(true);
+      expect(paypalCalls.length).toBeGreaterThan(0);
+      expect(
+        (
+          await one<{ n: number }>(
+            "SELECT count(*) AS n FROM notifications WHERE kind = 'payment.live_reverted'",
+          )
+        )?.n,
+      ).toBeGreaterThan(0);
     } finally {
       if (before)
         await env.DB.prepare("UPDATE settings SET value = ?1, version = ?2 WHERE key = 'gateways'")
@@ -168,13 +178,16 @@ describe("the PayPal order [POR-06, L3, L4, L10, L19; run file C PortalPayments]
           .run();
       else await env.DB.prepare("DELETE FROM settings WHERE key = 'gateways'").run();
     }
+    // No keys (a fresh document: the first now has its sandbox order): refused before any call or row.
+    paypalStub();
+    const fresh = await usdDoc(c.clientId);
     const noKeys = withEnv(env, { PAYPAL_CLIENT_SECRET: "" });
-    expect(await payPalLink(c, documentId, 50_000, noKeys)).toEqual({
+    expect(await payPalLink(c, fresh, 50_000, noKeys)).toEqual({
       ok: false,
       error: "gateway_unavailable",
     });
     expect(paypalCalls).toEqual([]);
-    expect(await one("SELECT id FROM checkout_sessions WHERE document_id = ?1", documentId)).toBeNull();
+    expect(await one("SELECT id FROM checkout_sessions WHERE document_id = ?1", fresh)).toBeNull();
   });
 
   it("staff never make a PayPal order (L4: the staff link is the portal page)", async () => {

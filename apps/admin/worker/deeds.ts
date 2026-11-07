@@ -26,6 +26,7 @@ import {
   parseEsignMoment,
   settledOf,
 } from "@techaust/core/deeds";
+import { downloadHeaders } from "@techaust/core/file-types";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import type { PdfDeedMessage } from "@techaust/core/pdf-jobs";
 import { decide } from "@techaust/core/permissions";
@@ -67,6 +68,7 @@ import {
 } from "./context.ts";
 import { docDownload, dropDoc, streamToDocs, type UploadRules, uploadHead } from "./docs-upload.ts";
 import { body, idParam, param, STALE_VERSION } from "./http.ts";
+import { servedPdf } from "./pdf-served.ts";
 import { sessionRefusal } from "./session-refusal.ts";
 
 // ---- refusals (staff-facing; for 07-ZJ, the lead approves staff lines under the owner's delegation) --------------------------------------------------------
@@ -906,10 +908,20 @@ export const deeds = new Hono<AppEnv>()
     const refused = storedPdfRefusal(c, row.gone);
     if (refused) return refused;
     if (row.unsigned_r2_key === null) return err(c, PDF_NOT_READY, 404);
-    return (
-      (await docDownload(c, row.unsigned_r2_key, "application/pdf", fileName(row.number_display, ""))) ??
-      err(c, PDF_NOT_READY, 404)
-    );
+    // Rebuild PDF (JOB-PDF-02, L3): the newest rebuilt unsigned PDF when there is one, else (or when that file is gone) the stored original; never the
+    // signed upload, which is not rebuildable. The same headers as `docDownload`.
+    const obj = (await servedPdf(c.env, row.unsigned_r2_key, c.var.rid)).object;
+    if (!obj) {
+      console.error(JSON.stringify({ level: "error", message: "pdf object missing", rid: c.var.rid }));
+      return err(c, PDF_NOT_READY, 404);
+    }
+    return new Response(obj.body, {
+      headers: downloadHeaders({
+        contentType: "application/pdf",
+        size: obj.size,
+        filename: fileName(row.number_display, ""),
+      }),
+    });
   })
 
   .get("/:id/pdf/signed", param(idParam), async (c) => {

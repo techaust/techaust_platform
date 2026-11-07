@@ -16,6 +16,7 @@ import {
 } from "@techaust/core/offers";
 import { proposalEventStatements } from "@techaust/db/lead-stage";
 import { auditStmt, type GuardSql } from "@techaust/db/log";
+import { servedObject } from "@techaust/db/pdf-served";
 import { type Ctx, err, NOT_FOUND, requestInfo } from "./context.ts";
 import {
   ACCEPT_AUDIT_SQL,
@@ -251,9 +252,28 @@ export async function loadOffer(
 /**
  * Streams an R2 object as a download: attachment, no sniffing, sandboxed, never cached, never indexed. M7.5 (C3b, L12; A1 F9): the shared download headers
  * (`default-src 'none'; sandbox` and `contentDisposition()`, which quotes and encodes the name) in place of a bare `sandbox` and a hand-built filename.
+ *
+ * Rebuild PDF (JOB-PDF-02, POR-05, POR-06, POR-07; L3): `key` is always the key the client-bound row records (scoping unchanged); the object served is the
+ * newest rebuilt file of that key, else the original, and the original again when a recorded rebuild's object is gone (`servedObject`,
+ * `@techaust/db/pdf-served`; one indexed D1 read). A file that is never rebuilt (the signed deed upload) passes `{ rebuildable: false }` and is read as is.
  */
-export async function streamPdf(c: Ctx, key: string, fileName: string): Promise<Response> {
-  const object = await c.env.DOCS.get(key);
+export async function streamPdf(
+  c: Ctx,
+  key: string,
+  fileName: string,
+  opts: { rebuildable: boolean } = { rebuildable: true },
+): Promise<Response> {
+  let object: R2ObjectBody | null;
+  if (opts.rebuildable) {
+    const served = await servedObject<R2ObjectBody>(c.env.DB, c.env.DOCS, key);
+    if (served.fellBack)
+      console.error(
+        JSON.stringify({ level: "error", message: "rebuilt pdf object missing", rid: c.var.rid }),
+      );
+    object = served.object;
+  } else {
+    object = await c.env.DOCS.get(key);
+  }
   if (!object) return err(c, NOT_FOUND, 404);
   return new Response(object.body, {
     headers: downloadHeaders({ contentType: "application/pdf", size: object.size, filename: fileName }),
