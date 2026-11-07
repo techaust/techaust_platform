@@ -179,6 +179,12 @@ describe("the nightly start and the pages [JOB-CRON-01; D.1–D.3]", () => {
     await processDp(env, page);
     expect(await count("magic_link_tokens", "token_hash = ?1", old)).toBe(0);
     expect(await count("magic_link_tokens", "token_hash = ?1", young)).toBe(1);
+    // full audit AU51: the rows the page's batch wrote, as D1 measured them, are on the family's row (the delete, its index entries and the count)
+    const written = await one<{ written: number }>(
+      "SELECT written FROM retention_run_counts WHERE run_id = ?1 AND family = 'sessions'",
+      page?.runId,
+    );
+    expect(written?.written).toBeGreaterThanOrEqual(2);
     await setRetentionMode("dry_run");
   });
 
