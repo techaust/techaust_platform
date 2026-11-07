@@ -149,7 +149,8 @@ describe("uuidv7Floor and the bindings", () => {
     expect(highestPlaceholder("SELECT 1")).toBe(0);
     for (const f of RETENTION_FAMILIES) {
       expect(highestPlaceholder(dryRunSql(f))).toBe(4);
-      for (const s of livePageSql(f).slice(1)) expect(highestPlaceholder(s)).toBeLessThanOrEqual(2);
+      // full audit AU40: a delete also names the run and the family (?3, ?4) to read the run's page cap; the binding gives all four.
+      for (const s of livePageSql(f).slice(1)) expect(highestPlaceholder(s)).toBe(4);
     }
     const c = cutoffsOf(figures, Date.UTC(2027, 5, 15));
     expect(bindsOf("stats", c.stats, 0)[0]).toBe("2025-06-15");
