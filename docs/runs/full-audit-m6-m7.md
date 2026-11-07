@@ -732,3 +732,23 @@ Copied by the lead. Reviewer claude-opus-5-5/high; skills `cloudflare:workers-be
   - staging D1 `rows_written` for the retention budget;
   - real gateway and SES behaviour after a refund comes back.
 - **CLAUDE.md:** the audit section was added on this branch (2026-11-07).
+
+## The owner's copy approval (2026-11-07, lead)
+- **Owner, 2026-11-07:** approved the owner's copy page as recommended (items 11–19 of the list of pending approvals). Commits f3c04f63, 815f7e95 and 452e1688:
+  - 07-ZT C1–C3 word for word, so `APPROVED_07ZT` is on;
+  - privacy notice 0.3: RB-45, 07-ZR C7, and the "New request" path in place of "Request my data";
+  - Terms 0.3: the upload sentence removed;
+  - the portal Requests empty line G13, "You haven't sent any requests yet.";
+  - the RA-29 fees note in the owner's wording;
+  - AU45, the "refund returned" statement line: yes, as its own task after this PR merges.
+- **Lead's run:**
+  - core 2713/2713, portal 957/957, jobs 780/780, admin 5310/5310;
+  - web 1021/1021, after the sitemap date test followed privacy's 0.3 effective date;
+  - email 205/205, after the refund-reversed snapshot update (only the mark removed);
+  - `pnpm check` green.
+- **Review** (reviewer, Opus 5.5 high): SEND BACK on **high 1**. The drafted privacy line "They can't see your email address or phone number" was untrue: an accepted offer's record (`ACCEPTANCE_SQL`) and certificate (`CERT_KEY_SQL`, `certificate.ts`) are scoped to the client and show the accepter's email, IP address and browser to colleagues.
+  - The owner chose the wording with the exception (a54df17a): "Other people at your organisation who have client portal access can see your name and job title. If you accept a proposal or estimate, they can also see its acceptance record, which shows your name, email address, IP address and browser."
+  - Low 4 (stale refund-notify comments) was fixed in 30c77a03.
+  - Second review (rule: after a high finding): APPROVE.
+- **Kept:** low 6, the core constant `PRIVACY_KEYED_FORM_LINE` duplicates the web page's C7 words (typographic apostrophes there). It is a follow-up: one source, or a test pinning both.
+- Usage: reviewer agent-aac3227c422cb1f6b, claude-opus-5-5/high, skills: code-review. Its `code-review` helper ran at low effort (flagged by `model-audit`; recorded in the M7.4 run file).
