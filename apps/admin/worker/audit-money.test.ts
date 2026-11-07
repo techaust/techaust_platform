@@ -5,12 +5,16 @@
 // clients' redirect and size guards; the `GET /payments/:id` flags; the recon lists' rows read at 2,000 and 5,000 payments. Invented test data.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
+import { issueFyOf } from "@techaust/core/invoices";
+import { defaultFormat, maxNumber } from "@techaust/core/numbering";
+import { RECEIPTS_DUE_SQL } from "@techaust/db/receipts";
 import { type CreditHeldScanRow, creditHeldPage } from "@techaust/db/refunds";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GATEWAY_ANSWER_MAX_BYTES, readJsonCapped } from "./gateway/answer.ts";
 import { setStubTransport, stubFetch } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { razorpayApi } from "./gateway/razorpay.ts";
+import { issueReceipt, RECEIPT_SERIES_FULL_BELL } from "./receipt-issue.ts";
 import { GATEWAY_UNSETTLED_SQL, MANUAL_UNTICKED_SQL, RECON_SCAN } from "./recon.ts";
 import { issued, linkFor, stub } from "./test-gateway.ts";
 import { call, one, rows, sessionFor } from "./test-helpers.ts";
@@ -447,6 +451,75 @@ describe("AU3 and AU5 (B0 6, 10): the same tick twice; failure paths", () => {
     });
     expect(changed.status).toBe(409);
     expect(((await json(changed)) as J).error).toMatchObject({ code: "reduction_exists" });
+  });
+});
+
+describe("AU5 (B0 10): cancel finds the refund at the gateway", () => {
+  it("a requested refund the gateway already holds (its answer was lost): the row follows the gateway, 409 refund_found", async () => {
+    const r = await rzpRefunded();
+    const o = await owner();
+    const id = uuidv7();
+    // a requested Razorpay refund of ₹10 from credit, made well before the idle period
+    await env.DB.prepare(
+      `INSERT INTO payment_refunds (id, payment_id, client_id, provider, origin, status, paid_to, reason_code, currency, amount_minor, requested_by, requested_at, updated_at)
+       VALUES (?1, ?2, ?3, 'razorpay', 'owner', 'requested', 'original', 'overpayment', 'INR', 1000, ?4, ?5, ?5)`,
+    )
+      .bind(id, r.paymentId, r.clientId, o.id, Date.now() - 60 * 60_000)
+      .run();
+    stub((path, method) =>
+      method === "GET" && path === `/v1/payments/${r.pi}/refunds`
+        ? jsonResponse(200, {
+            entity: "collection",
+            count: 1,
+            items: [{ ...rzpRefundJson(`rfnd_AU5${Date.now()}`, r.pi, "processed", 1_000), receipt: id }],
+          })
+        : null,
+    );
+    const res = await call(`/refunds/${id}/cancel`, { cookie: o.cookie, body: {} });
+    expect(res.status).toBe(409);
+    expect(((await json(res)) as J).error).toMatchObject({ code: "refund_found" });
+    expect(
+      (await one<{ status: string }>("SELECT status FROM payment_refunds WHERE id = ?1", id))?.status,
+    ).toBe("succeeded");
+  });
+});
+
+describe("AU3 (B0 7): a receipt that can't be numbered", () => {
+  it("a full series: not_eligible series_full, counted; after three tries the payment is left out of the sweep with one owners' bell", async () => {
+    const o = await owner();
+    const clientId = await mkReportClient("INR");
+    const p = await recorded(o, recordBody(clientId, 7_000));
+    const fy = issueFyOf(Date.now());
+    const full = maxNumber(defaultFormat("receipt")) + 1;
+    // (counters only move forward: this file's later tests issue no receipt)
+    await env.DB.prepare(
+      "INSERT INTO doc_counters (series, fy, next_no) VALUES ('receipt', ?1, ?2) ON CONFLICT (series, fy) DO UPDATE SET next_no = max(next_no, ?2)",
+    )
+      .bind(fy, full)
+      .run();
+    for (let i = 0; i < 3; i++)
+      expect(await issueReceipt(env, p.id as string, Date.now() + i)).toEqual({
+        result: "not_eligible",
+        why: "series_full",
+      });
+    expect(
+      await one("SELECT receipt_failures, receipt_fail_reason FROM payments WHERE id = ?1", p.id),
+    ).toEqual({ receipt_failures: 3, receipt_fail_reason: "series_full" });
+    const due = (
+      await rows<{ id: string }>(
+        RECEIPTS_DUE_SQL.replace("LIMIT 20", "LIMIT 100000"),
+        Number.MAX_SAFE_INTEGER,
+      )
+    ).map((x) => x.id);
+    expect(due).not.toContain(p.id);
+    expect(
+      (
+        await rows<{ n: number; t: string }>(
+          "SELECT count(*) AS n, max(title) AS t FROM notifications WHERE kind = 'receipt.blocked' AND entity_id = ?1",
+          p.id,
+        )
+      )[0],
+    ).toEqual({ n: await activeOwners(), t: RECEIPT_SERIES_FULL_BELL });
   });
 });
 

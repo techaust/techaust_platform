@@ -192,7 +192,13 @@ export async function issueReceipt(
     });
   } catch (e) {
     // A race (the primary key) or a refused freeze (`issue_result`): nothing was written, no number burned. Re-read.
-    if (!/UNIQUE|issue_result|documents_receipt|PRIMARY/.test(String(e) + String((e as Error)?.cause ?? "")))
+    // M6–M7 audit AU3 (B0 7): `issue_result_check`'s own words ("issue did not freeze…": the INSERT's WHERE refused it, a full series among them) were not
+    // matched here, so a full series threw and the sweep's message ended in the dead-letter queue every hour; now it is a counted refusal like the others.
+    if (
+      !/UNIQUE|issue_result|issue did not freeze|documents_receipt|PRIMARY/.test(
+        String(e) + String((e as Error)?.cause ?? ""),
+      )
+    )
       throw e;
   }
   const number = await numberOf(db, receiptId);
