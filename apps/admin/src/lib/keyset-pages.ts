@@ -32,3 +32,15 @@ export async function readPastEmptyPages<T, P extends KeysetPage<T>>(
 
 /** The list's empty state shows only when nothing is shown and there is no next page (AU32: an empty page with `next` is not the end). */
 export const showsEmpty = (rows: number, next: string | null | undefined): boolean => rows === 0 && !next;
+
+/** AU50: the line after a read that stopped at `EMPTY_PAGE_LIMIT` with nothing found and pages still left (the lead's staff line). */
+export const NO_MORE_FOUND_LINE =
+  "No more payments found in these pages. Show more to keep looking further back.";
+
+/** AU50: the last read stopped at the limit: no row in it and a next page left (an empty page with `next` null is the end, the empty state's turn). */
+export const stalledAt = (page: KeysetPage<unknown> | null | undefined): boolean =>
+  !!page && page.items.length === 0 && page.next !== null;
+
+/** The list foot's one live line: "Checking older payments…" while empty pages are read on, else AU50's line after a read that stopped, else nothing. */
+export const keysetFootLine = (checking: boolean, stalled: boolean): string =>
+  checking ? CHECKING_OLDER_LINE : stalled ? NO_MORE_FOUND_LINE : "";

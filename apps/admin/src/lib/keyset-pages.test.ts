@@ -4,7 +4,15 @@
 import { describe, expect, it, vi } from "vitest";
 import creditHeldSource from "../routes/payments/credit-held-tab.tsx?raw";
 import reconciliationSource from "../routes/reconciliation.tsx?raw";
-import { CHECKING_OLDER_LINE, EMPTY_PAGE_LIMIT, readPastEmptyPages, showsEmpty } from "./keyset-pages.ts";
+import {
+  CHECKING_OLDER_LINE,
+  EMPTY_PAGE_LIMIT,
+  keysetFootLine,
+  NO_MORE_FOUND_LINE,
+  readPastEmptyPages,
+  showsEmpty,
+  stalledAt,
+} from "./keyset-pages.ts";
 
 type Page = { items: string[]; next: string | null; period?: string };
 /** A server whose pages are `pages` in order, each naming the next by its index. */
@@ -66,6 +74,25 @@ describe("AU32: reading past empty pages", () => {
   it("the line is the lead's", () => {
     expect(CHECKING_OLDER_LINE).toBe("Checking older payments…");
   });
+
+  it("AU50: after 20 empty pages with pages left, the foot says so (the lead's line); never at the end or after rows", async () => {
+    expect(NO_MORE_FOUND_LINE).toBe(
+      "No more payments found in these pages. Show more to keep looking further back.",
+    );
+    const s = server(Array.from({ length: 30 }, (_, i) => (i === 25 ? ["late"] : [])));
+    const r = await readPastEmptyPages(s.load);
+    expect(stalledAt(r)).toBe(true);
+    expect(keysetFootLine(false, stalledAt(r))).toBe(NO_MORE_FOUND_LINE);
+    // while reading on, the checking line wins
+    expect(keysetFootLine(true, true)).toBe(CHECKING_OLDER_LINE);
+    // "Show more" finds the late row: no line
+    const more = await readPastEmptyPages(s.load, r.next ?? undefined);
+    expect(stalledAt(more)).toBe(false);
+    expect(keysetFootLine(false, stalledAt(more))).toBe("");
+    // the end (next null) is the empty state's turn, never this line
+    expect(stalledAt({ items: [], next: null })).toBe(false);
+    expect(stalledAt(undefined)).toBe(false);
+  });
 });
 
 describe("AU32: both screens read past empty pages and keep the server's next", () => {
@@ -76,7 +103,10 @@ describe("AU32: both screens read past empty pages and keep the server's next", 
     it(name, () => {
       expect(src).toContain("readPastEmptyPages(");
       expect(src).toContain("showsEmpty(");
-      expect(src).toContain("CHECKING_OLDER_LINE");
+      // AU50: the foot's one live line (checking, or nothing found in the pages read) through the shared foot
+      expect(src).toContain("keysetFootLine(");
+      expect(src).toContain("stalledAt(");
+      expect(src).toContain("<KeysetFoot");
       // the old stop: an empty page ended the list
       expect(src).not.toMatch(/items\.length > 0 \? r\.next : null/);
       expect(src).toMatch(/setNext\(r\.next\)/);

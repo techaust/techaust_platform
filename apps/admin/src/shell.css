@@ -1254,6 +1254,22 @@ body:has(.shell) {
   }
 }
 
+/* A header with several actions (PageHeader `wideActions`; the lead page, AU28): up to about 900 px the title takes its own row and the actions wrap under
+   it, start-aligned, so a long name never squeezes into a narrow column beside three buttons. */
+@media (min-width: 48rem) and (max-width: 56.24rem) {
+  .page-header--wide-actions .page-header__row {
+    flex-wrap: wrap;
+  }
+
+  .page-header--wide-actions .page-header__title {
+    flex-basis: 100%;
+  }
+
+  .page-header--wide-actions .page-header__actions {
+    flex-wrap: wrap;
+  }
+}
+
 .page-header__lede {
   max-width: var(--container-lede);
   margin: var(--space-2) 0 0;

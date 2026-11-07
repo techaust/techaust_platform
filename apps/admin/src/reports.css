@@ -30,8 +30,29 @@
   border-inline-start: 1px solid var(--color-border);
 }
 
-/* A wide screen: the index wraps rather than scrolls, every report in view; each group keeps its own row when both don't fit. */
-@media (min-width: 64rem) {
+/* A phone: the index scrolls sideways, and the edge where more reports wait fades out (AU22, B4 L4), so a cut-off label reads as "there is more". The
+   frame sets `data-more` from the scroll position (start, end, both); the mask only takes alpha, so the colour named in it never shows. */
+.report-nav[data-more="end"] {
+  mask-image: linear-gradient(to right, var(--color-text) calc(100% - var(--space-10)), transparent);
+}
+
+.report-nav[data-more="start"] {
+  mask-image: linear-gradient(to left, var(--color-text) calc(100% - var(--space-10)), transparent);
+}
+
+.report-nav[data-more="both"] {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    var(--color-text) var(--space-10),
+    var(--color-text) calc(100% - var(--space-10)),
+    transparent
+  );
+}
+
+/* From a tablet up (AU22, B4 L4: the strip cut "Care plan hours" at 768 px), the index wraps rather than scrolls, every report in view; each group keeps its
+   own row when both don't fit. */
+@media (min-width: 48rem) {
   .report-nav {
     flex-wrap: wrap;
     row-gap: var(--space-1);
@@ -925,6 +946,19 @@
 
 .m73-table.m73-table--wide .dtable__table :is(th, td) {
   padding-inline: var(--space-3);
+}
+
+/* Revenue's tables (six columns of amounts) read as DataTable's cards up to about 900 px (AU22, B4 L5: at 768 px they scrolled sideways inside their boxes);
+   the shared switch to cards happens only below 48rem. */
+@media (max-width: 56.24rem) {
+  .m73-table--cards .dtable__table {
+    display: none;
+  }
+
+  .m73-table--cards .dcards {
+    display: grid;
+    gap: var(--space-2);
+  }
 }
 
 /* Inside a box that scrolls sideways a sticky header would stick to the box, not the page (shell.css's users list does the same). */

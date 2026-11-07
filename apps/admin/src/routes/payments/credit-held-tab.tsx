@@ -11,10 +11,11 @@ import { type Column, DataTable } from "../../components/data-table.tsx";
 import { EmptyState } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Wallet } from "../../components/icons.tsx";
+import { KeysetFoot } from "../../components/keyset-foot.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { periodText, ZO_UI } from "../../lib/copy-zo.ts";
-import { CHECKING_OLDER_LINE, readPastEmptyPages, showsEmpty } from "../../lib/keyset-pages.ts";
+import { keysetFootLine, readPastEmptyPages, showsEmpty, stalledAt } from "../../lib/keyset-pages.ts";
 import { amountText, payErrorText } from "../../lib/payments.ts";
 import { type CreditHeldRow, periodsFrom, refundsApi } from "../../lib/refunds-api.ts";
 import { day } from "./parts.tsx";
@@ -42,9 +43,12 @@ export function CreditHeldTab(_props: { role: Role }) {
   const [more, setMore] = useState<CreditHeldRow[]>([]);
   const [next, setNext] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
+  // AU50: the last "Show more" stopped at the page limit with nothing found (null: no "Show more" yet, the first read decides)
+  const [moreStalled, setMoreStalled] = useState<boolean | null>(null);
   const rows = [...(list.data?.items ?? []), ...more];
   const cursor = next === undefined ? (list.data?.next ?? null) : next;
   const shown = list.data?.period;
+  const stalled = moreStalled ?? stalledAt(list.data);
   // the picker's periods start from the latest ended one the server named first (picking an older one keeps them all)
   const [base, setBase] = useState<{ period: string; frequency: "monthly" | "quarterly" } | null>(null);
   useEffect(() => {
@@ -66,6 +70,7 @@ export function CreditHeldTab(_props: { role: Role }) {
       setMore((m) => [...m, ...r.items.filter((x) => !m.some((y) => y.paymentId === x.paymentId))]);
       // AU32: the server's `next` whatever the page held (an empty page is not the end)
       setNext(r.next);
+      setMoreStalled(stalledAt(r));
     } catch (e) {
       toast("error", payErrorText(e));
     } finally {
@@ -129,6 +134,7 @@ export function CreditHeldTab(_props: { role: Role }) {
                 onChange={(e) => {
                   setMore([]);
                   setNext(undefined);
+                  setMoreStalled(null);
                   setPeriod(e.target.value);
                 }}
               >
@@ -144,7 +150,7 @@ export function CreditHeldTab(_props: { role: Role }) {
       )}
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
-      ) : (
+      ) : rows.length === 0 && stalled && list.state === "ready" ? null : (
         <div className="clients-table pay-table rf-tab__table">
           <DataTable
             caption={ZO_UI.creditHeldTab}
@@ -164,22 +170,14 @@ export function CreditHeldTab(_props: { role: Role }) {
           />
         </div>
       )}
-      {checking && (
-        <p className="hint" role="status">
-          {CHECKING_OLDER_LINE}
-        </p>
-      )}
-      {cursor && (
-        <button
-          type="button"
-          className="btn btn--secondary notes__more"
-          onClick={() => void showMore()}
-          disabled={loading}
-          aria-busy={loading || undefined}
-        >
-          {loading ? "Loading…" : ZO_UI.loadMore}
-        </button>
-      )}
+      {/* AU32, AU50: "Show more" with its live line; with nothing found and pages left, the line stands where the list would be */}
+      <KeysetFoot
+        cursor={cursor}
+        loading={loading}
+        line={keysetFootLine(checking, stalled)}
+        moreLabel={ZO_UI.loadMore}
+        onMore={() => void showMore()}
+      />
     </div>
   );
 }

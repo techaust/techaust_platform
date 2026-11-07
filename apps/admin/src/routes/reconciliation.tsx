@@ -19,6 +19,7 @@ import { Modal, useRefusalFocus } from "../components/dialog.tsx";
 import { EmptyState, PageHeader } from "../components/display.tsx";
 import { FormField } from "../components/form.tsx";
 import { CheckCircle, Landmark, RefreshCw } from "../components/icons.tsx";
+import { KeysetFoot } from "../components/keyset-foot.tsx";
 import { LoadFailed, NoAccess, useLoad } from "../components/states.tsx";
 import { Tabs } from "../components/tabs.tsx";
 import { useToast } from "../components/toast.tsx";
@@ -28,7 +29,7 @@ import { ZO_UI } from "../lib/copy-zo.ts";
 import { dateError } from "../lib/date-field.ts";
 import { GW_UI } from "../lib/gateway.ts";
 import { INV_COPY } from "../lib/invoices.ts";
-import { CHECKING_OLDER_LINE, readPastEmptyPages, showsEmpty } from "../lib/keyset-pages.ts";
+import { keysetFootLine, readPastEmptyPages, showsEmpty, stalledAt } from "../lib/keyset-pages.ts";
 import { amountText, PAY_COPY, payErrorText, todayIst } from "../lib/payments.ts";
 import {
   refundsApi,
@@ -153,15 +154,19 @@ function usePages<T extends { id: string }>(
   const [more, setMore] = useState<T[]>([]);
   const [next, setNext] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
+  // AU50: the last "Show more" stopped at the page limit with nothing found (null: no "Show more" yet, the first read decides)
+  const [moreStalled, setMoreStalled] = useState<boolean | null>(null);
   // Review part 2, P2-13: a new key (a tick, an undo) starts again from the first page, so no later page's row stays stale or shows twice.
   const [seen, setSeen] = useState(key);
   if (seen !== key) {
     setSeen(key);
     setMore([]);
     setNext(undefined);
+    setMoreStalled(null);
   }
   const rows = [...(first.data?.items ?? []), ...more];
   const cursor = next === undefined ? (first.data?.next ?? null) : next;
+  const stalled = moreStalled ?? stalledAt(first.data);
   return {
     first,
     rows,
@@ -170,6 +175,10 @@ function usePages<T extends { id: string }>(
     checking,
     /** AU32: the list's empty state only once no next page is left. */
     empty: showsEmpty(rows.length, cursor),
+    /** AU50: the foot's line (reading on, or a read that stopped at the limit with pages left). */
+    line: keysetFootLine(checking, stalled),
+    /** AU50: nothing found yet and the reading stopped: the foot's line stands in for the list (no empty table). */
+    nothingYet: rows.length === 0 && stalled && first.state === "ready",
     async showMore() {
       if (!cursor) return;
       setLoading(true);
@@ -177,6 +186,7 @@ function usePages<T extends { id: string }>(
         const r = await readPastEmptyPages(load, cursor, { onEmpty: () => setChecking(true) });
         setMore((m) => [...m, ...r.items.filter((x) => !m.some((y) => y.id === x.id))]);
         setNext(r.next);
+        setMoreStalled(stalledAt(r));
       } catch (e) {
         // Code re-check of M6.5, finding 7: a failed "Show more" says so; the cursor stays, so the button can be pressed again
         toast("error", payErrorText(e));
@@ -188,28 +198,19 @@ function usePages<T extends { id: string }>(
   };
 }
 
-/** AU32: the line while empty pages are read on (a plain hint; the designer places it). */
-function Checking(props: { on: boolean }) {
-  if (!props.on) return null;
+/** AU32, AU50: "Show more" and the foot's live line ("Checking older payments…", or nothing found in the pages read). */
+function Foot(props: {
+  pages: { cursor: string | null; loading: boolean; line: string; showMore: () => Promise<void> };
+}) {
+  const p = props.pages;
   return (
-    <p className="hint" role="status">
-      {CHECKING_OLDER_LINE}
-    </p>
-  );
-}
-
-function ShowMore(props: { cursor: string | null; loading: boolean; onMore: () => void }) {
-  if (!props.cursor) return null;
-  return (
-    <button
-      type="button"
-      className="btn btn--secondary notes__more"
-      onClick={props.onMore}
-      disabled={props.loading}
-      aria-busy={props.loading || undefined}
-    >
-      {props.loading ? "Loading…" : ZO_UI.loadMore}
-    </button>
+    <KeysetFoot
+      cursor={p.cursor}
+      loading={p.loading}
+      line={p.line}
+      moreLabel={ZO_UI.loadMore}
+      onMore={() => void p.showMore()}
+    />
   );
 }
 
@@ -312,7 +313,7 @@ function Settlements({ owner }: { owner: boolean }) {
     <>
       {pages.first.state === "failed" ? (
         <LoadFailed error={pages.first.error} onRetry={() => pages.first.reload()} />
-      ) : (
+      ) : pages.nothingYet ? null : (
         <div className="clients-table pay-table rcn-table">
           <DataTable
             caption={ZO_UI.settlements}
@@ -331,8 +332,7 @@ function Settlements({ owner }: { owner: boolean }) {
           />
         </div>
       )}
-      <Checking on={pages.checking} />
-      <ShowMore cursor={pages.cursor} loading={pages.loading} onMore={() => void pages.showMore()} />
+      <Foot pages={pages} />
       {open && <SettlementDialog row={open} onClose={() => setOpen(null)} />}
       {ticking && (
         <TickDialog
@@ -395,8 +395,7 @@ function SettlementDialog(props: { row: SettlementRow; onClose: () => void }) {
         ) : (
           <>
             {pages.rows.length > 0 && <ItemLines rows={pages.rows} currency={r.currency} />}
-            <Checking on={pages.checking} />
-            <ShowMore cursor={pages.cursor} loading={pages.loading} onMore={() => void pages.showMore()} />
+            <Foot pages={pages} />
           </>
         )}
       </div>
@@ -561,7 +560,7 @@ function Unmatched(props: { which: UnmatchedTab; owner: boolean; onWhich: (w: Un
       <p className="rcn-hint">{hint}</p>
       {pages.first.state === "failed" ? (
         <LoadFailed error={pages.first.error} onRetry={() => pages.first.reload()} />
-      ) : (
+      ) : pages.nothingYet ? null : (
         <div className="clients-table pay-table rcn-table">
           <DataTable
             caption={label}
@@ -594,8 +593,7 @@ function Unmatched(props: { which: UnmatchedTab; owner: boolean; onWhich: (w: Un
           />
         </div>
       )}
-      <Checking on={pages.checking} />
-      <ShowMore cursor={pages.cursor} loading={pages.loading} onMore={() => void pages.showMore()} />
+      <Foot pages={pages} />
       {ticking && (
         <TickDialog
           target={ticking}

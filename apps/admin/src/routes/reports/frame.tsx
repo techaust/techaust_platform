@@ -29,6 +29,26 @@ export function ReportFrame(props: { title: string; lede: ReactNode; children: R
     const left = link.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
     row.scrollLeft = nearestScrollLeft(row.scrollLeft, row.clientWidth, left, link.offsetWidth);
   }, [pathname]);
+  // AU22 (B4 L4): which edges of a scrolling index hide more reports (`data-more`, the CSS fades those edges); none once the index wraps (no overflow).
+  useEffect(() => {
+    const row = nav.current;
+    if (!row) return;
+    const update = () => {
+      const start = row.scrollLeft > 1;
+      const end = row.scrollLeft + row.clientWidth < row.scrollWidth - 1;
+      const more = start && end ? "both" : start ? "start" : end ? "end" : "";
+      if (more) row.dataset.more = more;
+      else delete row.dataset.more;
+    };
+    update();
+    row.addEventListener("scroll", update, { passive: true });
+    const sized = new ResizeObserver(update);
+    sized.observe(row);
+    return () => {
+      row.removeEventListener("scroll", update);
+      sized.disconnect();
+    };
+  }, []);
   return (
     <div className="report">
       <PageHeader title={props.title} crumbs={CRUMBS} lede={props.lede} />
