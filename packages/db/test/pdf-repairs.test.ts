@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { BACKUP_SCOPE } from "../src/backup-scope.ts";
 import {
   IST_DAY_SQL,
+  QUEUE_UNAVAILABLE_CODE,
   REPAIR_KEY_SQL,
   REQUEST_INSERT_SQL,
   RESULT_INSERT_SQL,
@@ -101,9 +102,15 @@ async function request(
     .run();
   return { id, changes: r.meta.changes };
 }
-const result = (id: string, outcome: string, at: number, sha: string | null = null) =>
+const result = (
+  id: string,
+  outcome: string,
+  at: number,
+  sha: string | null = null,
+  code = "original_present",
+) =>
   env.DB.prepare(RESULT_INSERT_SQL)
-    .bind(id, outcome, outcome === "rebuilt" ? null : "original_present", sha, sha ? 100 : null, at)
+    .bind(id, outcome, outcome === "rebuilt" ? null : code, sha, sha ? 100 : null, at)
     .run();
 
 describe("0087 and 0088", () => {
@@ -285,6 +292,21 @@ describe("REQUEST_INSERT_SQL: the throttle and the guard", () => {
       old_key: repairKey(other.key, 1),
       new_key: repairKey(other.key, 2),
     });
+  });
+
+  it("early check change 2: a request closed queue_unavailable holds no 5-minute window; any other result does", async () => {
+    const t = 1_800_000_000_000;
+    const inv = await issuedInvoice();
+    const a = await request("invoice", inv.id, inv.key, t);
+    expect((await result(a.id, "failed", t + 1, null, QUEUE_UNAVAILABLE_CODE)).meta.changes).toBe(1);
+    const b = await request("invoice", inv.id, inv.key, t + 2);
+    expect(b.changes).toBe(1);
+    expect(await first("SELECT n FROM pdf_repairs WHERE id = ?", b.id)).toEqual({ n: 2 });
+
+    const other = await issuedInvoice();
+    const c = await request("invoice", other.id, other.key, t);
+    expect((await result(c.id, "failed", t + 1, null, "dead_letter")).meta.changes).toBe(1);
+    expect((await request("invoice", other.id, other.key, t + 2)).changes).toBe(0);
   });
 
   it("Q1 = B in the guard: an open offer writes nothing (no abort); expired, it is written", async () => {

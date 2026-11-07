@@ -77,11 +77,8 @@ export const rebuildableKeyByKindSql = (kindCol: string, id: string, today: stri
 export const servedKeySql = (originalKey: string) =>
   `coalesce((SELECT r.new_key FROM pdf_repair_results r WHERE r.original_key = ${originalKey} AND r.outcome = 'rebuilt' ORDER BY r.n DESC LIMIT 1), ${originalKey})`;
 
-/** The readers' lookup (`?1` the original key): the newest rebuilt object, by the partial index `pdf_repair_results_served`. No row: serve the original. */
-export const SERVED_PDF_SQL =
-  "SELECT new_key, new_sha256, completed_at FROM pdf_repair_results WHERE original_key = ?1 AND outcome = 'rebuilt' ORDER BY n DESC LIMIT 1";
-
-export type ServedRow = { new_key: string; new_sha256: string; completed_at: number };
+/** The readers' lookup and its row live in the import-free `pdf-served.ts` (portal, jobs email); re-exported here so there is one copy. */
+export { SERVED_PDF_SQL, type ServedRow } from "./pdf-served.ts";
 
 /**
  * The subject of a route, by the id the route takes (`?1`; the certificate's route takes the DOCUMENT id) and `?2` today (IST, offers only). No row: unknown,
@@ -144,8 +141,15 @@ export type RepairOfRow = {
   completed_at: number | null;
 };
 
-/** A subject's last request blocks another: under 5 minutes old, or under 26 hours old without a result (`?2` kind, `?3` subject, `?9` now). */
-const BLOCKED = `EXISTS (SELECT 1 FROM pdf_repairs p WHERE p.subject_kind = ?2 AND p.subject_id = ?3 AND (p.requested_at > ?9 - ${REBUILD_WINDOW_MS}
+/** The result code of a request whose `pdf.rebuild` message could not be sent (the route's 503): it never holds the 5-minute window. */
+export const QUEUE_UNAVAILABLE_CODE = "queue_unavailable";
+
+/**
+ * A subject's last request blocks another: under 5 minutes old, unless its message was never sent (a `queue_unavailable` result, so "Try again in a minute"
+ * is never `too_soon`: early check change 2), or under 26 hours old without a result (`?2` kind, `?3` subject, `?9` now).
+ */
+const BLOCKED = `EXISTS (SELECT 1 FROM pdf_repairs p WHERE p.subject_kind = ?2 AND p.subject_id = ?3 AND ((p.requested_at > ?9 - ${REBUILD_WINDOW_MS}
+      AND NOT EXISTS (SELECT 1 FROM pdf_repair_results u WHERE u.repair_id = p.id AND u.code = '${QUEUE_UNAVAILABLE_CODE}'))
     OR (p.requested_at > ?9 - ${REBUILD_OPEN_MS} AND NOT EXISTS (SELECT 1 FROM pdf_repair_results r WHERE r.repair_id = p.id))))`;
 
 /**

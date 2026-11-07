@@ -4,7 +4,7 @@
 // Invented data only.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core/ids";
-import { repairKey } from "@techaust/core/pdf-repair";
+import { REBUILD_HASH_MAX_BYTES, repairKey } from "@techaust/core/pdf-repair";
 import { RESULT_INSERT_SQL } from "@techaust/db/pdf-repairs";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
@@ -15,6 +15,7 @@ import {
   sha256Hex,
   wholeRow,
 } from "../../../packages/testing/src/pdf-rebuild.ts";
+import { checkStored } from "./pdf-rebuild.ts";
 import { issueReceipt } from "./receipt-issue.ts";
 import { insert, mkContact } from "./test-clients.ts";
 import { finalisedDeed } from "./test-deeds.ts";
@@ -319,8 +320,120 @@ describe("the check and the refusals", () => {
       s.id,
     );
     expect(r).toEqual({ outcome: "failed", code: "queue_unavailable" });
-    // not in progress: the next request is only held by the 5-minute window
-    expect(await codeOf(await post(o, `/invoices/${s.id}/pdf/rebuild`, pdfQueue().env))).toBe("too_soon");
+    // Early check change 2: "Try again in a minute" works at once (a message never sent holds no window): 202 with n = 2, from the original again.
+    const retry = await post(o, `/invoices/${s.id}/pdf/rebuild`, pdfQueue().env);
+    expect(retry.status, await retry.clone().text()).toBe(202);
+    expect((await json(retry)).repair).toMatchObject({ n: 2, found: "missing" });
+    const reqs = (await repairsOf(s.id)).results;
+    expect(reqs[1]).toMatchObject({ n: 2, old_key: s.key, new_key: repairKey(s.key, 2) });
+    // ...and that request (sent) holds the window as usual
+    expect(await codeOf(await post(o, `/invoices/${s.id}/pdf/rebuild`, pdfQueue().env))).toBe(
+      "rebuild_in_progress",
+    );
+  });
+
+  it("change 7: a failed queue send whose result insert throws still answers 503 (the request stays open)", async () => {
+    const o = await owner();
+    const s = await storedInvoice(o);
+    await env.DOCS.delete(s.key);
+    const q = pdfQueue(true);
+    const real = env.DB;
+    const db = new Proxy(real, {
+      get: (t, k) => {
+        if (k === "prepare")
+          return (sql: string) =>
+            sql === RESULT_INSERT_SQL
+              ? {
+                  bind: () => ({
+                    run: async () => {
+                      throw new Error("d1 down");
+                    },
+                  }),
+                }
+              : t.prepare(sql);
+        const v = Reflect.get(t, k);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const res = await post(o, `/invoices/${s.id}/pdf/rebuild`, withEnv(q.env, { DB: db }));
+    expect(res.status).toBe(503);
+    expect(await codeOf(res)).toBe("queue_unavailable");
+    const logged = errors.mock.calls.map((a) => String(a[0]));
+    expect(logged.some((l) => l.includes("pdf.rebuild failed result not written"))).toBe(true);
+    expect(logged.some((l) => l.includes(s.key))).toBe(false);
+    errors.mockRestore();
+    expect(
+      await countOf(
+        "pdf_repair_results r JOIN pdf_repairs p ON p.id = r.repair_id",
+        "p.subject_id = ?1",
+        s.id,
+      ),
+    ).toBe(0);
+    expect(await codeOf(await post(o, `/invoices/${s.id}/pdf/rebuild`, pdfQueue().env))).toBe(
+      "rebuild_in_progress",
+    );
+  });
+
+  it("change 5: an object over 2 MB is damaged without being hashed, even when its bytes match", async () => {
+    const big = new Uint8Array(REBUILD_HASH_MAX_BYTES + 1).fill(7);
+    await env.DOCS.put("docs/probe/big-v1.pdf", big);
+    const sha = await sha256Hex(big);
+    expect(await checkStored(env.DOCS, "docs/probe/big-v1.pdf", sha)).toEqual({
+      verdict: "damaged",
+      sha256: sha,
+    });
+    const small = new Uint8Array(REBUILD_HASH_MAX_BYTES).fill(7);
+    await env.DOCS.put("docs/probe/small-v1.pdf", small);
+    expect((await checkStored(env.DOCS, "docs/probe/small-v1.pdf", await sha256Hex(small))).verdict).toBe(
+      "intact",
+    );
+  });
+
+  it("change 1: a recorded rebuild whose object is gone serves the original (the row's ETag), logged with the request id only", async () => {
+    const o = await owner();
+    const s = await storedInvoice(o);
+    await env.DOCS.delete(s.key);
+    const first = await json(await post(o, `/invoices/${s.id}/pdf/rebuild`, pdfQueue().env));
+    await completeRebuild(first.repair.id, repairKey(s.key, 1));
+    await env.DOCS.delete(repairKey(s.key, 1));
+    await putWithSha(env.DOCS, s.key, ORIGINAL_PDF);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const dl = await call(`/invoices/${s.id}/pdf`, { cookie: o.cookie });
+    expect(dl.status).toBe(200);
+    expect(dl.headers.get("ETag")).toBe(`"${s.sha}"`);
+    expect(new Uint8Array(await dl.arrayBuffer())).toEqual(ORIGINAL_PDF);
+    const logged = errors.mock.calls.map((a) => String(a[0]));
+    errors.mockRestore();
+    expect(logged.filter((l) => l.includes("rebuilt pdf object missing"))).toHaveLength(1);
+    expect(logged.some((l) => l.includes(s.key) || l.includes(repairKey(s.key, 1)))).toBe(false);
+  });
+
+  it("change 1: the supplier copy whose rebuilt object is gone serves the stored copy, never a 202 forever", async () => {
+    const o = await owner();
+    const made = await mkInvoice(o);
+    expect((await issueInvoice(o, made.id)).status).toBe(200);
+    const n = await one<{ fy: string; number: number }>(
+      "SELECT fy, number FROM documents WHERE id = ?1",
+      made.id,
+    );
+    const key = `docs/tax_invoice/20${n?.fy.slice(0, 2)}-${n?.fy.slice(2)}/${String(n?.number).padStart(4, "0")}-v1.pdf`;
+    const sha = await putWithSha(env.DOCS, key, ORIGINAL_PDF);
+    await env.DB.prepare("UPDATE documents SET pdf_r2_key = ?2, pdf_sha256 = ?3 WHERE id = ?1")
+      .bind(made.id, key, sha)
+      .run();
+    const copyKey = key.replace(/\.pdf$/, "-supplier.pdf");
+    const res = await post(o, `/invoices/${made.id}/pdf/supplier/rebuild`, pdfQueue().env);
+    expect(res.status, await res.clone().text()).toBe(202);
+    await completeRebuild((await json(res)).repair.id, repairKey(copyKey, 1));
+    await env.DOCS.delete(repairKey(copyKey, 1));
+    // the copy was re-made under its own key meanwhile (the download's self-heal)
+    await putWithSha(env.DOCS, copyKey, DAMAGED_PDF);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const dl = await call(`/invoices/${made.id}/pdf/supplier`, { cookie: o.cookie });
+    errors.mockRestore();
+    expect(dl.status).toBe(200);
+    expect(new Uint8Array(await dl.arrayBuffer())).toEqual(DAMAGED_PDF);
   });
 
   it("the state GET is the reader's: Staff reads an invoice's, Sales none; a strict empty body only", async () => {
@@ -444,6 +557,29 @@ describe("every kind: the GET and the download serve the rebuilt file", () => {
       .bind(rid, key, sha)
       .run();
     await rebuildAndServe(o, `/receipts/${rid}/pdf`, `/receipts/${rid}/pdf`, key, rid);
+  });
+
+  it("a void receipt (its payment withdrawn) is rebuilt too (early check change 8)", async () => {
+    const o = await owner();
+    const clientId = (await mkInvoiceClient()).clientId;
+    const p = await recorded(o, recordBody(clientId, 2_500));
+    const r = await issueReceipt(env, p.id as string);
+    expect(r.result).toBe("issued");
+    const rid = `rct_${p.id}`;
+    const key = nextKey("receipt");
+    const sha = await putWithSha(env.DOCS, key, ORIGINAL_PDF);
+    await env.DB.prepare("UPDATE documents SET pdf_r2_key = ?2, pdf_sha256 = ?3 WHERE id = ?1")
+      .bind(rid, key, sha)
+      .run();
+    const w = await call(`/payments/${p.id}/withdraw`, {
+      cookie: o.cookie,
+      body: { reason: "Entered twice" },
+    });
+    expect(w.status, await w.clone().text()).toBe(200);
+    expect(await one("SELECT status FROM documents WHERE id = ?1", rid)).toEqual({ status: "void" });
+    const before = await wholeRow(env.DB, "documents", "id", rid);
+    await rebuildAndServe(o, `/receipts/${rid}/pdf`, `/receipts/${rid}/pdf`, key, rid);
+    expect(await wholeRow(env.DB, "documents", "id", rid)).toBe(before);
   });
 
   it("a deed's unsigned PDF (Staff reads its state; the audit row names the deed)", async () => {

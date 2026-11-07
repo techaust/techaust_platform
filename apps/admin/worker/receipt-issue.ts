@@ -252,7 +252,7 @@ export const receiptPdf = new Hono<AppEnv>()
     if (refused) return refused;
     if (!row.pdf_r2_key || !row.pdf_sha256) return err(c, PDF_PENDING, 409);
     // Rebuild PDF (JOB-PDF-02, L3): the newest rebuilt file when there is one, else the stored original.
-    const served = await servedPdf(c.env, row.pdf_r2_key);
+    const served = await servedPdf(c.env, row.pdf_r2_key, c.var.rid);
     const obj = served.object;
     if (!obj) {
       console.error(JSON.stringify({ level: "error", message: "pdf object missing", rid: c.var.rid }));

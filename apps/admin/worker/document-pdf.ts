@@ -73,7 +73,7 @@ function pdfRoutes(types: string, retryAction: string) {
         if (row.redacted_at !== null) return err(c, PDF_ERASED, 410);
         if (row.pdf_sha256 === null || row.pdf_r2_key === null) return err(c, PDF_PENDING, 409);
         // Rebuild PDF (JOB-PDF-02, L3): the newest rebuilt file when there is one (its own SHA-256 is the ETag), else the stored original.
-        const served = await servedPdf(c.env, row.pdf_r2_key);
+        const served = await servedPdf(c.env, row.pdf_r2_key, c.var.rid);
         const obj = served.object;
         if (!obj) {
           console.error(JSON.stringify({ level: "error", message: "pdf object missing", rid: c.var.rid }));
@@ -150,7 +150,11 @@ export const invoiceSupplierPdf = new Hono<AppEnv>().get("/:id/pdf/supplier", pa
   if (refused) return refused;
   // Rebuild PDF (JOB-PDF-02, L3): a rebuilt copy wins; otherwise the stored copy, and the self-heal below while it is missing.
   const obj = (
-    await servedPdf(c.env, supplierPdfKey({ type: row.type, fy: label, number: row.number, version: 1 }))
+    await servedPdf(
+      c.env,
+      supplierPdfKey({ type: row.type, fy: label, number: row.number, version: 1 }),
+      c.var.rid,
+    )
   ).object;
   if (!obj) {
     // Not made yet. An erased client's copy is never made: 409. The copy is rendered after the original, so while the original has no PDF (not rendered yet, or its
