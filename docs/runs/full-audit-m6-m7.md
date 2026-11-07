@@ -613,3 +613,34 @@ Erase/anonymise/part: unchanged (the new checks are conditions of existing state
 ### Open questions
 - The owner's words for the Requests empty line (07-ZP).
 - At 768 the 12 monthly revenue cards make a long page; if the owner prefers, a later pass could fold the empty months. Kept as cards per the triage.
+
+## Review of the fix round (reviewer, 2026-11-07): APPROVE
+Copied by the lead (the reviewer couldn't commit). Reviewer claude-opus-5-5/high with `code-review` (its read-only helper on Opus 5.5), `security-review`, `cloudflare:workers-best-practices`, `frontend-design` and `dataviz`. Diff `05f7a521..1c24e418`, plus 55126b45. Nothing critical, high or medium.
+
+**Ran:** db 170/170, admin 110/110, portal 60/60, jobs 79/79, e2e `m73-reports` + `m74-data-protection` 29/29.
+
+**Visual pass:** admin payments, reconciliation, reports and the lead page; portal Profile and Home; both themes and in-app vs OS theme. axe 0, no sideways scroll, keyboard order fine.
+
+**Findings:**
+- **L1:** every event about a succeeded gateway refund now re-fetches it; a failing gateway retries and dead-letters a refund that is fine (`gateway/refund-events.ts:102-117`).
+- **L2:** the dead-letter names and the bell lack `refund.reversed` (`apps/jobs/src/email.ts:335-341,420`).
+- **L3:** the extracted `ERASURE_ACTION_0079` and `CLOSE_BAD_0079` lost 2 spaces of indentation against the applied 0079 (`triggers-data-protection.ts:187-199`). Regenerating would rewrite 0079 (whitespace only); the drift test folds whitespace.
+- **L4:** `REFUND_REVERSED_ROW_SQL` is built by `String.replace` on exact text (`refund-notify.ts:191`).
+- **L5:** at 390 px a tabbed Reports nav link sits partly under the fade (`reports/frame.tsx:33-51`, `reports.css`).
+- **L6:** a dead `p.rowid AS rid` and its comment (`payments.ts:424`), and a stale `reversedRefundsSql` name (`sql-rules.ts:27`).
+- **L7:**
+  - the failed-refund seek (= AU49, kept as a follow-up);
+  - `withoutErased` runs before the send-window check in `processRefundReversed` / `processRefundNotify`;
+  - three copies of the capped body reader;
+  - recon's `windowSql` duplicates `creditHeldSql`'s paging.
+
+### Lead's triage of the review (2026-11-07)
+- **AU61:**
+  - **L1:** re-fetch a succeeded refund only for events that can mean a reversal (Stripe `refund.failed` / `refund.updated`, Razorpay `refund.failed`, PayPal's denied or reversed refund events); every other event closes quietly as `refund_settled`. Test.
+  - **L2:** `refund.reversed` is named in the dead-letter alert and rings the same refund bell. Test.
+  - **L3:** restore the exact indentation, and make the drift test compare the regenerated text exactly.
+  - **L4:** one builder function takes the status clause. Test.
+  - **L5:** on `focusin`, scroll the link fully into view (`nearestScrollLeft`).
+  - **L6:** delete the dead column and fix both comments.
+  - **L7:** check the send window first. One shared capped body reader (in `packages/core` or a shared fetch helper the three packages can import without a new package). One shared bounded-window paging helper for `creditHeldSql` and recon.
+- **AU49** stays a follow-up.
