@@ -3,7 +3,10 @@
 // their SHA-256, and the frozen row read whole so "before and after" compare every column. No bare imports (the apps import this file by path), invented
 // data only.
 
-const enc = (s: string) => new TextEncoder().encode(s);
+/** ASCII text as bytes (the package's lib is plain ES2023: no TextEncoder type). */
+const enc = (s: string) => Uint8Array.from(s, (c) => c.charCodeAt(0));
+/** WebCrypto's digest, as the Workers runtime provides it (typed here: the package has no Workers or DOM types). */
+declare const crypto: { subtle: { digest(algorithm: "SHA-256", data: Uint8Array): Promise<ArrayBuffer> } };
 
 /** The parts of D1 and R2 this file uses (structural, so the package needs no Workers types). */
 type Db = { prepare(q: string): { bind(...v: unknown[]): { first(): Promise<unknown> } } };
