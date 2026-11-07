@@ -8,7 +8,7 @@
 import * as z from "zod/mini";
 import { parseIsoDate } from "../dates.ts";
 import { EMAIL_TEMPLATES } from "../email-templates.ts";
-import { type LegacyLutFate, type LutEntry, legacyLutFate, normaliseLutArn } from "../export-invoice.ts";
+import { normaliseLutArn } from "../export-invoice.ts";
 import { STATE_CODES, type StateCode, validateGstin } from "../gstin.ts";
 import {
   DEFAULT_PADDING,
@@ -230,17 +230,8 @@ export const taxSettings = z.object({
   }),
   /** G-8: exports under LUT (0 % IGST) by default; needs a saved ARN for the FY. */
   exportMode: z.enum(["lut", "igst_paid"]),
-  /**
-   * DEPRECATED (M5.2): the one letter of M3. Stored rows keep it and the current screen still saves it; `lutsOf` reads it as a list entry when its FY is
-   * not in `luts`. New code writes `luts`. An input without it reads as empty.
-   */
-  lut: z.prefault(
-    z.object({
-      arn: z.nullable(z.string()),
-      fy: z.nullable(z.string().check(z.regex(/^\d{4}$/))),
-    }),
-    { arn: null, fy: null },
-  ),
+  // P7 LUT fold: the one letter of M3 (`lut {arn, fy}`) is no longer a field. Migration 0089 folded it into `luts` and removed the key; a body or a stored
+  // row that still has it parses and the key is dropped (`z.object` strips unknown keys), so nothing reads it, nothing writes it, and a rollback cannot crash.
   /** G-8, ADM-INV-18 (M5.2): the letters of undertaking, at most one per FY, at most 20. */
   luts: z.array(lutEntry).check(
     z.maxLength(20),
@@ -325,23 +316,6 @@ export const taxSettings = z.object({
    */
   excessProvisoMinor: z.prefault(intBetween(0, 1_000_00), 1_000_00),
 });
-
-/**
- * M5.2 (analyst, early check 3; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)): folds the deprecated single `lut` of M3 into the `luts` list and clears it, unless its FY is
- * already listed (then the list entry wins and the legacy value is dropped). Applied when the `tax` row is read for a screen and when it is saved, so a
- * letter the owner deletes from the list can never come back from the old key, and a letter that was only ever in the old key is never lost, unless
- * it could not be a list entry at all. The old ARN is normalised like a list entry's (spaces dropped, upper case); one the list would still refuse is
- * dropped (`legacyLutFate` says which case, for a logged note), so a Tax save never fails on a field the person cannot see (review 8).
- */
-export function foldLegacyLut<T extends Parameters<typeof legacyLutFate>[0] & { luts: readonly LutEntry[] }>(
-  tax: T,
-): T {
-  const f = legacyLutFate(tax);
-  const luts = f.fate === "folded" ? [...tax.luts, f.entry] : tax.luts;
-  return { ...tax, luts, lut: { arn: null, fy: null } };
-}
-
-export { type LegacyLutFate, legacyLutFate };
 
 const numberingFormatOf = (check: (f: NumberingFormat) => FormatCheck) =>
   z.object({ template: z.string(), padding: z.int() }).check(
@@ -620,7 +594,6 @@ export const SETTINGS_DEFAULTS: Settings = {
     defaultSac: "",
     rounding: { lineTax: "half_up", totalInr: "nearest_rupee", totalUsd: "none" },
     exportMode: "lut",
-    lut: { arn: null, fy: null },
     luts: [],
     invoiceChecklist: { bankDetails: true, paymentLink: false },
     fxMaxAgeDays: 4,

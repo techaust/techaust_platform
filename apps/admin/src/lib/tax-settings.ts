@@ -194,8 +194,7 @@ export function buildTax(f: TaxForm, doc: Pick<SettingsDoc<"tax">, "value">, now
       ) as Tax["sacByCategory"],
       defaultSac,
       exportMode: f.exportMode,
-      // The deprecated single letter is never written again: the list is saved, the old key stays empty.
-      lut: { arn: null, fy: null },
+      // P7 LUT fold: only the list is saved (the old single `lut` of M3 is no longer a field).
       luts: f.luts,
       invoiceChecklist: { bankDetails: f.bankDetails, paymentLink: false, signatory: f.signatory },
       advanceMode: f.advanceMode,

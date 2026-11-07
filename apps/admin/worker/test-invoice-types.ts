@@ -53,7 +53,7 @@ export async function putTax(over: Record<string, unknown> = {}) {
     .run();
 }
 
-/** A pre-M5.2 `tax` row: none of the three new keys, and the single legacy `lut`. */
+/** A pre-M5.2 `tax` row: none of the three new keys, and the single legacy `lut` (as if 0089 had not run: P7 LUT fold, every reader ignores the key). */
 export async function putOldTax(lut: { arn: string | null; fy: string | null }) {
   const { luts: _l, invoiceChecklist: _c, fxMaxAgeDays: _f, ...old } = SETTINGS_DEFAULTS.tax;
   await env.DB.prepare(
