@@ -1,15 +1,15 @@
 // M7.4's words (data-protection tooling; run file docs/runs/m7.4-data-protection.md H, L25, L31, L32), in ONE place for the jobs Worker, the email template, the
 // admin and the portal; the next free 07 appendix letter is ZR (07-ZQ is M7.2's). Two kinds of line:
-//   - the CLIENT lines C1 to C7 and the Rule 9 contact block are the owner's: until the owner approves them word for word they show the "[Placeholder] " mark,
-//     and the jobs Worker queues no `request.received` email outside "local" while `APPROVED_07ZR` is false (the M6.5 receipt gate's pattern,
-//     `requestCopyGate` in apps/jobs/src/requests.ts), so no portal request is marked acknowledged by an email that wasn't sent;
+//   - the CLIENT lines C1 to C7 and the Rule 9 contact block are the owner's, approved word for word on 2026-11-07 (`APPROVED_07ZR` true); with the switch
+//     off they would show the "[Placeholder] " mark and the jobs Worker would queue no `request.received` email outside "local" (the M6.5 receipt gate's
+//     pattern, `requestCopyGate` in apps/jobs/src/portal-alerts.ts), so no portal request is marked acknowledged by an email that wasn't sent;
 //   - the STAFF lines S1 to S10 the brief gives word for word, approved by the lead under the owner's delegation, are plain; the two bell kind words for the
 //     new kinds (S3's list) are the builder's drafts for the lead, plain like M7.1's.
 // No line is legal wording invented here: the Rule 9 block is 07-A §8's Grievance Officer block word for word (the brief says "§7": §8 is the block itself);
 // Researched 2026-11-06, DPDP Rules 2025 r.14(3); SPDI r.5(9); privacy notice 07-A §§7–8 (08-C RB-47).
 
-/** The owner's approval of the client lines C1 to C7 and the Rule 9 block (07-ZR). Not yet approved. */
-export const APPROVED_07ZR: boolean = false;
+/** The owner's approval of the client lines C1 to C7 and the Rule 9 block (07-ZR): approved word for word by the owner, 2026-11-07. */
+export const APPROVED_07ZR: boolean = true;
 const zr = (line: string): string => (APPROVED_07ZR ? line : `[Placeholder] ${line}`);
 
 /**
@@ -54,7 +54,7 @@ export const REQUEST_RECEIVED_COPY = {
   closing: zr("— TecHaust Technologies"),
 } as const;
 
-/** C7 (L31; the analyst's idea, not final wording): the privacy page's line on the keyed form kept after an erasure. For the owner with C1 to C6. */
+/** C7 (L31; approved by the owner, 2026-11-07): the privacy page's line on the keyed form kept after an erasure (privacy notice v0.3, "How long we keep it"). */
 export const PRIVACY_KEYED_FORM_LINE = zr(
   "If you ask us to erase your data, we keep only a scrambled form of your email address for 3 years, so that we don't email you and can show what you agreed to.",
 );
