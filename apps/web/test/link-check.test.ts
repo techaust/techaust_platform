@@ -102,6 +102,19 @@ describe("pre-production readiness (never run by CI or staging)", () => {
 
   it("passes when every owner input is filled and aliases are confirmed", () => {
     expect(r.checkSiteConfig(filled)).toEqual([]);
+    // P7-C: the address re-exported from @techaust/core/company is read from that module's text.
+    const reExport = filled.replace(
+      /postalAddress:\s*"[^"]*"(\s*as string)?/,
+      "postalAddress: POSTAL_ADDRESS",
+    );
+    expect(reExport).toContain("postalAddress: POSTAL_ADDRESS");
+    expect(
+      r.checkSiteConfig(reExport, 'export const POSTAL_ADDRESS: string = "1 Road, Town 733133";'),
+    ).toEqual([]);
+    expect(r.checkSiteConfig(reExport, 'export const POSTAL_ADDRESS: string = "";').join()).toMatch(
+      /postal address/,
+    );
+    expect(r.checkSiteConfig(reExport).join()).toMatch(/postal address/);
   });
 
   it("says what the owner must supply for each empty input", () => {

@@ -10,6 +10,8 @@
     "test": "vitest run",
     "build:staging": "CLOUDFLARE_ENV=staging vite build && node ../../scripts/check-spa-headers.mjs portal",
     "deploy:staging": "node ../../scripts/check-staging-build.mjs portal && wrangler deploy",
+    "build:production": "CLOUDFLARE_ENV=production vite build && node ../../scripts/check-spa-headers.mjs portal && node ../../scripts/worker-budget.mjs portal",
+    "deploy:production": "node ../../scripts/check-prod-build.mjs portal && wrangler deploy",
     "types": "wrangler types --env staging",
     "e2e": "playwright test"
   },

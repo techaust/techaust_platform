@@ -7,7 +7,7 @@ _Draft by analyst R, 2026-11-07._ Targets: RPO ≤ minutes within the Time Trave
 |---|---|
 | A wrong change to a few rows or one table, inside the window | **Time Travel, "look back and copy"** (§2.2): the database is put back only for minutes |
 | The whole database is damaged, inside the window | **Time Travel, full restore** (§2.3), then the reconciliation in §4 |
-| Older than the window, or the database or account is lost | **S3 copy** (§3), Phase 7 (N8) |
+| Older than the window, or the database or account is lost | **S3 copy** (§3: the nightly encrypted backup, P7-N) |
 | A frozen PDF or file is missing from R2 | §5 |
 | Bad code | §6 (code rollback never needs a database restore) |
 
@@ -77,26 +77,100 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
 pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 migrations apply DB --remote --env staging
 ```
 
-## 3. The S3 copy (Phase 7 L1, task N8; not built: `backup.yml` is a stub)
-The design (05 §backup.yml; 08 §6.2):
-- nightly `wrangler d1 export` → age-encrypted → S3 Mumbai (versioning, Object Lock);
-- 90 daily copies, plus a monthly finance-only copy kept 10 years (owner 2026-10-07; T7 F1: the monthly copy leaves out proposals and estimates, `BACKUP_SCOPE`).
+## 3. The S3 copy: nightly encrypted backups (P7-N)
+_P7-N, 2026-11-07 (owner: "Nightly backups before launch"; the lead's decisions in [runs/p7-launch](../runs/p7-launch.md) P7-N)._ The workflow is `.github/workflows/backup.yml`; the envelope is `scripts/backup-encrypt.sh`; the owner opens a backup with `scripts/backup-decrypt.ps1`.
 
-The restore, once N8 exists:
-1. download `db-YYYYMMDD.sql.age`;
-2. decrypt on the owner's PC with the offline identity;
-3. create a new D1;
-4. import with `wrangler d1 execute <new db> --remote --file=db.sql`;
-5. run `pnpm drill:verify` against it;
-6. either point every Worker's `DB` binding at it, or copy rows back;
-7. record it.
+### 3.1 Backups: what runs and where they are
+- **When:** every night at 21:10 UTC (02:40 IST), clear of the jobs Worker's :30 hourly tick and its 22:00 UTC run, because a remote export makes the database unavailable while it runs. The owner can also start it by hand (GitHub › Actions › "Backup D1 to S3" › Run workflow); only the owner (`techaust`) may start or re-run it.
+- **What:** `wrangler d1 export DB --remote --env production` (the whole production D1: schema, rows, triggers, indexes and `d1_migrations`), then the OpenSSL envelope:
+  - a fresh random key for each backup (32 random bytes, kept as 64 hex characters) encrypts the dump with `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -md sha256`;
+  - that key is wrapped with the owner's RSA-4096 public key (`openssl pkeyutl -encrypt`, RSA-OAEP with SHA-256), the repo variable `BACKUP_PUBLIC_KEY_PEM`;
+  - one `.tar` holds exactly `dump.sql.enc`, `key.bin.enc` and `manifest.json` (format `techaust-d1-backup/1`, the UTC time, byte sizes, the SHA-256 of the plaintext dump and of the public key).
+  The plaintext dump is deleted on the runner straight after the encryption, also when a step failed. Nothing but the encrypted archive leaves the runner; nothing goes into an artifact, a cache or the log.
+- **Where:** the private S3 bucket named by the repo variable `BACKUP_BUCKET`, region **ap-south-1 (Mumbai)**, under `daily/`, one object per night: `daily/techaust-prod-YYYYMMDDTHHMMSSZ.tar` (UTC). The run's summary (Actions › the run › Summary) shows the object name, its size and the manifest.
+- **How long:** **90 days**, by the bucket's lifecycle rule (expire objects under `daily/` after 90 days). The workflow can't delete or read objects: its role may only put objects under `daily/` and list `daily/`.
+- **The private key** is `backup-private.pem`, made once by `scripts/make-backup-key.ps1` into `D:\Business\1. Parent Project\TecHaust Technologies\Backup-Keys\` (outside the repository), with an offline copy. **Without it no backup can be opened.** Never put it in the repository, in chat or in a cloud folder.
+- **Why the export's output is never printed:** wrangler 4.156.2 prints a one-hour signed download link of the **plaintext** export, and the Actions logs of this public repository are public. The workflow writes wrangler's output to a private file and prints it only on failure, with links removed.
 
-Step 6 means the `database_id` in `apps/admin/wrangler.jsonc`, `wrangler.api.jsonc`, `wrangler.finance.jsonc`, `wrangler.invoices.jsonc`, `apps/portal/wrangler.jsonc` and `apps/jobs/wrangler.jsonc`, then an approved deploy.
+What the workflow needs (the lead's hosted setup, each with the owner's yes; the workflow fails by name while one is missing):
+| Name | Kind | Holds |
+|---|---|---|
+| `backup` | GitHub environment | the secret below; deployment branch `main` |
+| `CF_API_TOKEN_BACKUP` | secret, environment `backup` | a Cloudflare API token with D1 permission only |
+| `CLOUDFLARE_ACCOUNT_ID` | repository secret | (already used by the deploys) |
+| `AWS_BACKUP_ROLE_ARN` | repository variable | the IAM role the workflow assumes by GitHub OIDC (no AWS key is stored anywhere) |
+| `BACKUP_BUCKET` | repository variable | the bucket name |
+| `BACKUP_PUBLIC_KEY_PEM` | repository variable | the owner's public key (`scripts/make-backup-key.ps1` sets it) |
 
-Known points for N8:
-- **A table-filtered export carries no triggers and no indexes.** The local export code keeps an index or trigger only if its own name is in `--table`; the remote format is unverified. The finance-only copy must be restored onto a schema built from the migrations.
-- **A remote export blocks the database while it runs** (wrangler's prompt; D1 docs): schedule the nightly export when no one works.
-- D1's import rules (Cloudflare import and export page): remove `BEGIN TRANSACTION`/`COMMIT` and any `_cf_KV` table; one file ≤ 5 GiB; "Statement too long" means splitting an `INSERT`. There are no virtual tables in our migrations (checked 0000–0079), so export works.
+The role, as the workflow expects it:
+- trust: the GitHub OIDC provider `token.actions.githubusercontent.com`, audience `sts.amazonaws.com`, subject exactly `repo:techaust/techaust_platform:environment:backup`;
+- permissions: `s3:PutObject` on `arn:aws:s3:::<bucket>/daily/*`, and `s3:ListBucket` on `arn:aws:s3:::<bucket>` with the condition `s3:prefix` like `daily/*`; nothing else (no GetObject, no DeleteObject);
+- the bucket: Block Public Access on, default encryption on, **versioning on** (P7 re-check M1, 08 §6: an overwrite by the put-only role keeps the earlier version, and the role has no DeleteObjectVersion), the 90-day lifecycle rule on `daily/` for current versions plus "permanently delete noncurrent versions" after 90 days.
+
+### 3.2 Download a backup (AWS console)
+1. Sign in to the AWS console (the TecHaust account) and switch the region to **Asia Pacific (Mumbai) ap-south-1**.
+2. Open **S3**, then the backup bucket, then the folder **daily/**.
+3. Tick the object of the night you need (`techaust-prod-<date and time>.tar`; the times are UTC) and click **Download**.
+4. Save it into this folder (git-ignored), creating it if needed:
+   `D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\`
+
+### 3.3 Open (decrypt) it on your PC
+Run this in PowerShell. It asks for the path of the `.tar` and the path of `backup-private.pem` (paths copied with "Copy as path" are fine):
+```
+powershell -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\scripts\backup-decrypt.ps1"
+```
+- It uses the OpenSSL that comes with Git for Windows (found automatically) and the `tar` in Windows.
+- It unwraps the backup's key, decrypts the dump, checks the size and SHA-256 against the manifest, and writes `techaust-prod-<date and time>.sql` **next to the `.tar`**. It never overwrites a file.
+- If the private key has a passphrase, OpenSSL asks for it in the same window. Nothing secret is printed.
+- The last line is `RESULT: OK: …` or `RESULT: FAILED: …`. "the key could not be unwrapped" means the wrong `backup-private.pem` (the message names the public key the backup was made for).
+- **The `.sql` holds production data: keep it private and delete it (and the `.tar`) after the drill or the restore.**
+
+The same by hand (for the lead, from Git Bash in a folder holding the extracted parts), if the script can't run:
+```
+openssl pkeyutl -decrypt -inkey backup-private.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 -in key.bin.enc -out key.bin
+```
+```
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 -in dump.sql.enc -out dump.sql -pass file:key.bin
+```
+Then compare `openssl dgst -sha256 dump.sql` with `plaintext.sha256` in `manifest.json`, and delete `key.bin`.
+
+### 3.4 Restore drill (Phase 7 L7, then every quarter)
+The drill proves a backup opens, loads and holds what the code says it must. Write the entry in [drill-log.md](drill-log.md) (its template) as you go. Use the newest backup.
+1. **Download and open** the backup (§3.2, §3.3).
+2. **Check the file's order** (drill-log.md step 2): the line of the first `CREATE TRIGGER` and of the last `INSERT INTO`. If the file has a `_cf_KV` table, stop and tell the lead.
+3. **Restore and verify locally** with `pnpm drill:verify` (`scripts/drill-verify.mjs`). It works **only on a local scratch database** (it never touches a remote one): `--import` loads the file into a fresh one (schema, then rows, then triggers, whatever the file's order; transactions dropped), then checks row counts, numbering against `doc_counters`, the ledger, the audit tail, every trigger of `TRIGGER_SETS` and the migration count. It refuses a `--persist-to` folder that already holds a database.
+```
+pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" drill:verify -- --import "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\techaust-prod-<date and time>.sql" --persist-to "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.wrangler\drill-<date>"
+```
+   It ends with a pass, or the list of problems (exit 1): a problem stops the drill; tell the lead.
+4. **Load it into a scratch D1 on Cloudflare** (proves Cloudflare accepts the file for a real restore):
+   1. the lead creates an empty D1 `techaust-restore-<date>` (APAC) through the connector;
+   2. if step 2 found the first `CREATE TRIGGER` **before** the last `INSERT INTO`, or the file holds `BEGIN TRANSACTION`/`COMMIT`, stop: the file needs splitting first (the lead; drill:verify's `loadOrder` shows the order it uses);
+   3. load it (wrangler finds the database by name; it asks to confirm, answer `y`):
+```
+pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 execute techaust-restore-<date> --remote --file "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\techaust-prod-<date and time>.sql"
+```
+   4. compare a few counts with step 3's printed counts (`audit_log`, `documents`, `d1_migrations`), one command each, for example:
+```
+pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 execute techaust-restore-<date> --remote --command "SELECT count(*) AS n FROM audit_log"
+```
+   `drill:verify` can't check this remote copy (it reads local databases only); the counts are the check.
+5. **Clean up:** the lead deletes the scratch D1 `techaust-restore-<date>` (connector); delete `.wrangler\drill-<date>`, the `.sql` and the `.tar` from `.logs\drill\`.
+6. **Record it:** finish the drill-log entry (times, results, RTO), and, after the first drill on the production backup (L7), set `scripts/backup-verified.json` to `{"verifiedOn": "YYYY-MM-DD", "restoreDrill": true}` (the drill's date) in a commit. Until then `scripts/check-prod-readiness.mjs` blocks the production deploy (stage full).
+
+### 3.5 A real restore from the S3 copy
+Steps 1–4 of §3.4 on the chosen night's backup, with the scratch D1 named for the incident, then:
+1. either point every Worker's `DB` binding at the restored D1, or copy rows back (Tier A SQL, checked by the analyst);
+2. the reconciliation in §4 before anyone issues a document or takes a payment;
+3. record it.
+
+Pointing the bindings means the `database_id` in `apps/admin/wrangler.jsonc`, `wrangler.api.jsonc`, `wrangler.finance.jsonc`, `wrangler.invoices.jsonc`, `apps/portal/wrangler.jsonc` and `apps/jobs/wrangler.jsonc` (each `env.production`), then an approved deploy.
+
+### 3.6 Known points and what is not built
+- **Not built yet:** the monthly finance-only copy kept 10 years (owner 2026-10-07; PRD JOB-BKP-01; T7 F1 `BACKUP_SCOPE`: it leaves out proposals and estimates). A table-filtered export carries no triggers and no indexes (the local export code keeps an index or trigger only if its own name is in `--table`), so that copy must be restored onto a schema built from the migrations. Object Lock and versioning on the bucket are the lead's hosted choice, not something the workflow needs.
+- **A remote export blocks the database while it runs** (wrangler's prompt; D1 docs): hence 02:40 IST, away from the jobs crons.
+- D1's import rules (Cloudflare import and export page): no `BEGIN TRANSACTION`/`COMMIT` and no `_cf_KV` table; one file ≤ 5 GiB; "Statement too long" means splitting an `INSERT`. There are no virtual tables in our migrations (checked 0000–0079), so export works.
+- Scheduled workflows of a public repository are switched off by GitHub after 60 days without repository activity; the run history (Actions) shows a missing night.
 
 ## 4. After a restore that loses recent work: reconcile before reopening
 Anything made after the restore point exists outside D1: PDFs and envelopes in R2, emails, and payments at the gateways.

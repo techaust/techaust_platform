@@ -8,6 +8,7 @@
 // Staff lines (lead's delegation, run file H): S3, drafted here for the lead, `{name} at {client} sent a request: {kind}` and
 // `{client} says they paid {amount} for {number}`; the kind words below are part of S3.
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
+import { POSTAL_ADDRESS } from "@techaust/core/company";
 import { offerViewedTitle } from "@techaust/core/copy-zq";
 import { APPROVED_07ZR, NEW_KIND_BELL_WORDS, REQUEST_KIND_LABELS, RULE9_BLOCK } from "@techaust/core/copy-zr";
 import { formatDate, istDate } from "@techaust/core/dates";
@@ -207,7 +208,7 @@ export async function processPortalAlert(env: Env, body: unknown): Promise<Porta
         kind_label: REQUEST_KIND_LABELS[request.kind] ?? request.kind,
         date: formatDate(istDate(request.received_at as number)),
         due_date: formatDate(istDate(request.due_at as number)),
-        rule9: RULE9_BLOCK(null),
+        rule9: RULE9_BLOCK(POSTAL_ADDRESS),
       },
       entity: { type: "client_request", id: request.id },
     });

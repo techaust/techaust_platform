@@ -53,7 +53,8 @@ describe("the verified-backup gate [RB-30: 'encrypted, off-site backups' is true
     const problems: string[] = ready.checkProdReadiness(web, "does-not-exist.json");
     // without a dist the function answers first; with one, the backup line is among the problems
     expect(Array.isArray(problems)).toBe(true);
-  });
+    // P7-B: it also reads every source file for a copy-approval flag left false (about a second alone; more under a parallel `pnpm test`).
+  }, 20_000);
 });
 
 describe("the prior-price lint [RB-22: no 'was/now' or '% off' price claims]", () => {

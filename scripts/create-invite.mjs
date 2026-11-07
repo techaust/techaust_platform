@@ -2,6 +2,9 @@
 // account is created (no inviter yet), and how the CPU benchmark makes throwaway users.
 //   pnpm invite --email owner@example.com --role owner            # local dev database
 //   pnpm invite --email owner@example.com --role owner --staging  # staging (uses your wrangler login)
+//   pnpm invite --email owner@example.com --role owner --production  # production (P7-C): your own wrangler login, never CI or an
+//                                                                     # API token; asks you to type PRODUCTION first; links on
+//                                                                     # https://admin.techaust.com (scripts/cli-target.mjs)
 // The link carries the token in the URL fragment (#t=…), so it never reaches server logs. Share it only
 // with the person it's for; it works once. Older pending invites for the address stop working, an address that already
 // has an account (other than "invited") is refused, and the audit log gets `user.invite` (actor "system", role only).
@@ -12,20 +15,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { adminOrigin, cliScope, d1Target, requireProductionConfirmation } from "./cli-target.mjs";
 import { createInviteStatements } from "./create-invite-sql.mjs";
 import { portOffset, shiftLocalUrl } from "./dev-ports.mjs";
 
 const ROLES = ["owner", "staff", "sales", "accountant"];
-const ORIGINS = {
-  local: "http://localhost:5173",
-  staging: "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev",
-};
 
 const { values } = parseArgs({
   options: {
     email: { type: "string" },
     role: { type: "string", default: "staff" },
     staging: { type: "boolean", default: false },
+    production: { type: "boolean", default: false },
     hours: { type: "string", default: "48" },
   },
 });
@@ -34,6 +35,10 @@ if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("--emai
 if (!ROLES.includes(values.role)) throw new Error(`--role must be one of ${ROLES.join(", ")}`);
 const hours = Number(values.hours);
 if (!Number.isInteger(hours) || hours < 1 || hours > 48) throw new Error("--hours must be 1–48");
+const scope = cliScope(values);
+// Production: refused in CI or with an API token, then the typed PRODUCTION, all before any remote read or write.
+if (scope === "production")
+  await requireProductionConfirmation({ what: `a ${values.role} invite for ${email}, valid ${hours} h.` });
 
 const token = randomBytes(32).toString("base64url");
 const hash = createHash("sha256").update(token).digest("hex");
@@ -48,9 +53,7 @@ const statements = createInviteStatements({
   auditId: randomUUID(),
 });
 
-const target = values.staging
-  ? ["--remote", "--env", "staging"]
-  : ["--local", "--persist-to", "../../.wrangler/state"];
+const target = d1Target(scope);
 // Run the jobs app's wrangler directly with Node (no shell), using its D1 binding and config.
 const jobs = fileURLToPath(new URL("../apps/jobs/", import.meta.url));
 const wrangler = join(jobs, "node_modules", "wrangler", "bin", "wrangler.js");
@@ -79,7 +82,7 @@ if (rows(`SELECT 1 AS x FROM staff_invites WHERE token_hash = ${q(hash)} AND use
   throw new Error("The invite was not created (the address changed while running); nothing was changed.");
 
 // The local link follows TECHAUST_PORT_OFFSET (CLOUD-1, scripts/dev-ports.mjs): the dev server the person opens it on.
-const origin = values.staging ? ORIGINS.staging : shiftLocalUrl(ORIGINS.local, portOffset());
+const origin = adminOrigin(scope, (u) => shiftLocalUrl(u, portOffset()));
 console.log(
   `Invite for ${email} (${values.role}), valid ${hours} h, single use:\n${origin}/invite#t=${token}`,
 );

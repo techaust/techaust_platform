@@ -18,7 +18,8 @@ const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 /**
  * Per scope, the build outputs the artifact may hold: `from` (a path inside the artifact, "" for its whole root) goes to `to` (a path in the checkout).
  * staging: the upload step of deploy-staging.yml's build job names several paths, so the artifact keeps them relative to the repository root.
- * production: deploy-prod.yml's build job uploads `apps/web/dist` alone, so the artifact's root is that folder's contents.
+ * production (P7): deploy-prod.yml's build job uploads the same set built for production (the pre-bundled Workers in `dist-production`), also
+ * relative to the repository root.
  */
 export const PLACEMENTS = Object.freeze({
   staging: Object.freeze([
@@ -31,7 +32,16 @@ export const PLACEMENTS = Object.freeze({
     { from: "apps/web/.wrangler/dist-staging", to: "apps/web/.wrangler/dist-staging", type: "dir" },
     { from: "apps/jobs/dist-staging", to: "apps/jobs/dist-staging", type: "dir" },
   ]),
-  production: Object.freeze([{ from: "", to: "apps/web/dist", type: "dir" }]),
+  production: Object.freeze([
+    { from: ".deploy/seed.sql", to: ".deploy/seed.sql", type: "file" },
+    { from: "apps/admin/dist", to: "apps/admin/dist", type: "dir" },
+    { from: "apps/admin/.wrangler/deploy", to: "apps/admin/.wrangler/deploy", type: "dir" },
+    { from: "apps/portal/dist", to: "apps/portal/dist", type: "dir" },
+    { from: "apps/portal/.wrangler/deploy", to: "apps/portal/.wrangler/deploy", type: "dir" },
+    { from: "apps/web/dist", to: "apps/web/dist", type: "dir" },
+    { from: "apps/web/.wrangler/dist-production", to: "apps/web/.wrangler/dist-production", type: "dir" },
+    { from: "apps/jobs/dist-production", to: "apps/jobs/dist-production", type: "dir" },
+  ]),
 });
 
 /** A local secrets file or folder: never placed, whatever folder it is in (wrangler reads `.env*` and `.dev.vars*`). */
