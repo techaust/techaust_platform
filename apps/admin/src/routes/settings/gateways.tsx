@@ -22,7 +22,7 @@ import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
 import { UnsavedChangesGuard } from "../../components/unsaved.tsx";
 import { ZM_DRAFTS } from "../../lib/copy-zm.ts";
-import { GW, GW_UI } from "../../lib/gateway.ts";
+import { GO_LIVE, GW, GW_UI } from "../../lib/gateway.ts";
 import { FormSkeleton, StaleNotice } from "./kit.tsx";
 
 const ABOUT: Record<Gateway, { name: string; for: string }> = {
@@ -80,6 +80,17 @@ function GatewayForm({
       <Notice tone="info">
         Keys are never typed here. They're stored as Cloudflare secrets, and this page only shows whether each
         one is set. They're added with the owner's go-live, and live mode opens then too.
+      </Notice>
+      {/* P7 A2.5: the safe order before any gateway goes live (staff only; builder's draft for the lead, GO_LIVE in lib/gateway.ts). */}
+      <Notice tone="info">
+        <strong>{GO_LIVE.title}</strong>
+        <p>{GO_LIVE.lead}</p>
+        <ol>
+          {GO_LIVE.steps.map((s) => (
+            <li key={s}>{s}</li>
+          ))}
+        </ol>
+        <p>{GO_LIVE.note}</p>
       </Notice>
       {failure && <Notice tone="error">{failure}</Notice>}
       <form id="gateways-form" onSubmit={save} noValidate>

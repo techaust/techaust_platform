@@ -76,7 +76,7 @@ const stripeKeyKind = (
 /** M6.3: "Cancel" on a Stripe session: expired at Stripe first; Stripe refusing (complete or expired there) is settled by the session's real state. */
 async function cancelStripe(c: Ctx, co: CheckoutRow, documentId: string): Promise<Response> {
   const db = c.env.DB;
-  const mode = await stripeModeOfSettings(db);
+  const mode = await stripeModeOfSettings(db, c.env);
   const api = stripeOf(c.env, mode);
   if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
   const now = Date.now();
@@ -117,12 +117,12 @@ async function cancelStripe(c: Ctx, co: CheckoutRow, documentId: string): Promis
 
 /**
  * M6.4 (L4, "B2 must carry" 8): "Cancel" on a PayPal order ends our row here, with no PayPal call (an order is ended by never capturing it); never a row whose
- * capture is claimed (409 `payment_processing`). The live guard still answers first (rule 7).
+ * capture is claimed (409 `payment_processing`). P7 A2.3: the mode read is the one PayPal runs in (a live mode while `PAYMENTS_LIVE_ALLOWED` is not "true"
+ * runs as test, with the owners' bell), so no live call or live row can follow from here; the cancel itself makes no PayPal call in either mode.
  */
 async function cancelPayPal(c: Ctx, co: CheckoutRow, documentId: string): Promise<Response> {
   const db = c.env.DB;
-  if ((await payPalModeOfSettings(db)) === "live" && envText(c.env, "PAYMENTS_LIVE_ALLOWED") !== "true")
-    return err(c, LIVE_NOT_ALLOWED, 503);
+  await payPalModeOfSettings(db, c.env);
   const done = await mutate(c, {
     main: checkoutEndStatement(db, { id: co.id, status: "cancelled", now: Date.now() }),
     action: "payment.link_cancel",
@@ -219,7 +219,7 @@ export const invoicePaymentLinks = new Hono<AppEnv>()
     if (co.provider === "stripe") return cancelStripe(c, co, id);
     if (co.provider === "paypal") return cancelPayPal(c, co, id);
     if (co.provider !== "razorpay") return err(c, NOT_FOUND, 404);
-    const api = razorpayOf(c.env, await gatewayModeOf(db));
+    const api = razorpayOf(c.env, await gatewayModeOf(db, c.env));
     if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
     // Razorpay first, so a link we call cancelled can never still take money.
     const cancelled = await api.cancelLink(co.provider_link_id);
@@ -398,7 +398,7 @@ export const gatewayPayments = new Hono<AppEnv>()
       // M6.3: Stripe's item names its session; with no checkout of ours for it, there is nothing to re-fetch against (L5: metadata never moves money).
       const co = await db.prepare(CHECKOUT_BY_LINK_SQL).bind("stripe", linkId).first<CheckoutRow>();
       if (!co) return err(c, NOT_RETRYABLE, 409);
-      const mode = await stripeModeOfSettings(db);
+      const mode = await stripeModeOfSettings(db, c.env);
       const api = stripeOf(c.env, mode);
       if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
       r = await settleStripe(c.env, {
@@ -411,7 +411,7 @@ export const gatewayPayments = new Hono<AppEnv>()
       });
       if (r.result === "retry") return err(c, STRIPE_GATEWAY_ERROR, 502);
     } else if (item.provider === "razorpay") {
-      const api = razorpayOf(c.env, await gatewayModeOf(db));
+      const api = razorpayOf(c.env, await gatewayModeOf(db, c.env));
       if (!api) return err(c, GATEWAY_UNAVAILABLE, 503);
       r = await settlePayment(
         c.env,

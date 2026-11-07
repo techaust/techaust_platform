@@ -163,6 +163,7 @@ const input = {
   returnUrl: RETURN,
   cancelUrl: CANCEL,
   brandName: PAYPAL_BRAND_NAME,
+  env: "staging",
 };
 
 describe("orderRequestOf [L3, L10, L19; 07-ZN line 15]", () => {
@@ -176,7 +177,7 @@ describe("orderRequestOf [L3, L10, L19; 07-ZN line 15]", () => {
       purchase_units: [
         {
           reference_id: CHECKOUT,
-          custom_id: CHECKOUT,
+          custom_id: `${CHECKOUT}-staging`,
           invoice_id: `TH/EX/2627/7-${CHECKOUT.slice(-12)}`,
           description: "Invoice TH/EX/2627/7",
           amount: { currency_code: "USD", value: "1234.56" },
@@ -350,6 +351,7 @@ describe("the readers whitelist [ADM-PAY-12, L7]", () => {
       status: "COMPLETED",
       referenceId: CHECKOUT,
       customId: CHECKOUT,
+      envMark: null,
       invoiceId: `TH/EX/2627/7-${CHECKOUT.slice(-12)}`,
       currency: "USD",
       amountMinor: 1234_56,
@@ -374,6 +376,7 @@ describe("the readers whitelist [ADM-PAY-12, L7]", () => {
       finalCapture: true,
       createdAt: Date.UTC(2026, 10, 2, 18, 45),
       customId: CHECKOUT,
+      envMark: null,
       invoiceId: `TH/EX/2627/7-${CHECKOUT.slice(-12)}`,
       orderId: ORDER,
       fee: { currency: "USD", minor: 54_12 },
@@ -746,6 +749,7 @@ describe("parsePayPalEvent, its facts and ownership [JOB-HOOK-02, L13, L15]", ()
       captureRef: null,
       refundRef: null,
       customId: CHECKOUT,
+      envMark: null,
       invoiceId: `TH/EX/2627/7-${CHECKOUT.slice(-12)}`,
       status: "APPROVED",
       currency: "USD",

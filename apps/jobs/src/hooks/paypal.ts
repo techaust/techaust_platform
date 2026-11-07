@@ -3,9 +3,11 @@
 // which is not a credential). In order, each refusal before any D1 write unless said:
 //   1. a JSON content type (any charset), else 415; a body of at most 64 KiB, read as a stream, else 413;
 //   2. `PAYPAL_WEBHOOK_ID` set (and never the simulator's literal `WEBHOOK_ID`: Step 0.4 row 21), else 503 `hook_unconfigured` (nothing written);
-//   3. the five `PAYPAL-*` headers present and well formed, the certificate URL on PayPal's own API host (`isPayPalCertUrl`; the local simulator's only while
-//      `ENVIRONMENT` is "local"), else 400 `signature_missing` (NOT counted: anyone can send no header; but counted when all five are present and well formed and
-//      only the certificate URL is refused, review part 1 finding 12);
+//   3. the five `PAYPAL-*` headers present and well formed, the certificate URL on PayPal's own API host for the mode the hook runs in (`isPayPalCertUrl` with
+//      `mode`, P7 A2.1: `api.sandbox.paypal.com` in test, `api.paypal.com` in live; the mode is test while `PAYMENTS_LIVE_ALLOWED` is not "true", else Settings ›
+//      Gateways' PayPal mode: `hookModeOf`, read only after the other headers are well formed, and a failed read is 503 `mode_unavailable` with nothing written
+//      and nothing counted; the local simulator's only while `ENVIRONMENT` is "local"), else 400 `signature_missing` (NOT counted: anyone can
+//      send no header; but counted when all five are present and well formed and only the certificate URL is refused, review part 1 finding 12);
 //   4. the certificate's key from this isolate's cache (at most 4 entries, each kept until the certificate's `notAfter` or 6 hours, whichever is sooner, and
 //      checked again on every hit), a failed URL remembered for 10 minutes (16 at most, the oldest forgotten first), at most 2 certificate fetches a minute
 //      plus 1 kept for a URL whose certificate once verified a signature (review part 1, finding 3; part 2, finding 6); a miss fetches the allow-listed URL (5 s,
@@ -16,7 +18,9 @@
 //   6. only then UTF-8 and `JSON.parse`, then core `parsePayPalEvent`; a body it can't read is 400 `invalid_event`, not counted;
 //   7. OURS OR NOT (L13, reviewer X3): an event whose `custom_id` isn't one of our checkout ids (a UUIDv7) is answered 200 with NO D1 write, no queue, no review
 //      and no bell (another use of the same PayPal account), except a refund or reversal that names its capture (re-check N3: kept, and the finance Worker
-//      finds the payment by the capture or ignores it);
+//      finds the payment by the capture or ignores it); P7 (finding 5): an event whose `custom_id` names ANOTHER environment (`<checkout id>-<env>`) is stored
+//      at once as `ignored` with outcome `other_env` and the event name and mark only, never queued (no ledger write, no review, no bell; one log line); an
+//      event with no mark (an order made before P7) keeps the rules above;
 //   8. ours: `INSERT ... ON CONFLICT (provider, event_id) DO NOTHING` with the whitelisted facts (the event id `WH-…`, else the body's SHA-256: L15), the row's
 //      state read in the same batch; a new row, or one still `received`, is queued as `gateway.event`; 200 `{ok: true}`. A queue failure is a 500 with the row
 //      kept (PayPal retries; the sweep too).
@@ -39,11 +43,22 @@ import {
   HOOK_FAILURE_WINDOW_MS,
   hookFailureKey,
   hookFailureStatements,
+  OTHER_ENV_OUTCOME,
+  WEBHOOK_EVENT_IGNORED_SQL,
   WEBHOOK_EVENT_INSERT_SQL,
   WEBHOOK_EVENT_STATE_SQL,
 } from "@techaust/db/gateway";
 import { logEvent } from "../log.ts";
-import { answer, HOOK_MAX_BYTES, isJsonType, readCapped, refuse, secretOf, strictUtf8 } from "./shared.ts";
+import {
+  answer,
+  HOOK_MAX_BYTES,
+  hookModeOf,
+  isJsonType,
+  readCapped,
+  refuse,
+  secretOf,
+  strictUtf8,
+} from "./shared.ts";
 
 /** S10: the owners' bell at the fifth failure in a window (staff words; the finance Worker keeps the same words in gateway/messages.ts). */
 export const BELL_SIGNATURES_PAYPAL =
@@ -205,14 +220,21 @@ async function handleHook(
   const raw = await readCapped(req, HOOK_MAX_BYTES);
   if (raw === null) return refuse(413, "payload_too_large");
   const local = secretOf(env, "ENVIRONMENT") === "local";
+  // P7 A2.1: the certificate host follows the mode PayPal runs in. Early check L2: asked for lazily, inside the verifier, only once the transmission id, time
+  // and signature are well formed (and no D1 read at all while the go-live flag is off), so an anonymous post never costs a read.
+  let mode: "test" | "live" | null = null;
   let certUrl: string | null = null;
   const a = await payPalHookBytes(raw, req.headers, env, {
     now,
     local,
+    modeOf: async () => {
+      mode = await hookModeOf(env, "paypal");
+      return mode;
+    },
     ids: uuidv7,
     keyFor: async (url) => {
       // `isPayPalCertUrl` already passed inside the verifier; checked again here so no other URL can ever be fetched.
-      if (!isPayPalCertUrl(url, { local })) return null;
+      if (mode === null || !isPayPalCertUrl(url, { local, mode })) return null;
       certUrl = url;
       return certKeyFor(url, now, f);
     },
@@ -229,6 +251,11 @@ async function handleHook(
 export type PayPalHookDeps = {
   readonly now: number;
   readonly local: boolean;
+  /**
+   * P7 A2.1: the mode the hook runs in (only that mode's certificate host), asked for lazily by the verifier after the cheap header checks (early check L2);
+   * null: it couldn't be read (503 `mode_unavailable`). Absent: either host (the start-up dry run).
+   */
+  readonly modeOf?: () => Promise<"test" | "live" | null>;
   /** `uuidv7` for every real call; the start-up dry run passes made-up ids (global scope refuses random values). */
   readonly ids: () => string;
   /**
@@ -276,6 +303,7 @@ export async function payPalHookBytes(
     webhookId: secretOf(env, "PAYPAL_WEBHOOK_ID"),
     keyFor: d.keyFor,
     local: d.local,
+    ...(d.modeOf ? { modeOf: d.modeOf } : {}),
   });
   if (verdict === "webhook_id_invalid") return no(503, "hook_unconfigured");
   if (verdict === "signature_missing") return no(400, "signature_missing");
@@ -283,8 +311,13 @@ export async function payPalHookBytes(
     logEvent("hook.cert_unavailable", { provider: "paypal" });
     return no(503, "cert_unavailable");
   }
+  // P7 early check (M1): Settings › Gateways couldn't be read: 503 with nothing written and no failure counted (PayPal retries a non-2xx answer).
+  if (verdict === "mode_unavailable") {
+    logEvent("hook.mode_unavailable", { provider: "paypal" });
+    return no(503, "mode_unavailable", "mode_unavailable");
+  }
   // Review part 1, finding 12: a signed post whose certificate URL we refuse is counted like a bad signature (the owners hear of it at 5), still answered
-  // `signature_missing`. A follow-up for Phase 7: tie the certificate hosts to the gateway's mode.
+  // `signature_missing`. P7 A2.1: the certificate hosts follow the gateway's mode (`hookModeOf`).
   if (verdict !== "ok") {
     try {
       await env.DB.batch(
@@ -314,8 +347,25 @@ export async function payPalHookBytes(
   if (!parsed.ok) return no(400, "invalid_event", "invalid_event");
   const e = parsed.value;
   // (7) ours or not: no D1 write for anything that isn't ours.
-  if (payPalEventOwnership(e) === "not_ours") return okAnswer("not_ours");
+  const owner = payPalEventOwnership(e, secretOf(env, "ENVIRONMENT") ?? "");
+  if (owner === "not_ours") return okAnswer("not_ours");
   const eventId = e.id ?? (await fallbackEventId(text));
+  // P7: another environment's event: kept `ignored` (so it can be traced and a redelivery is a duplicate), never queued.
+  if (owner === "other_env") {
+    logEvent("hook.other_env", { provider: "paypal" });
+    await env.DB.prepare(WEBHOOK_EVENT_IGNORED_SQL)
+      .bind(
+        d.ids(),
+        "paypal",
+        eventId,
+        e.name,
+        now,
+        OTHER_ENV_OUTCOME,
+        JSON.stringify({ event: e.name, env: e.envMark }),
+      )
+      .run();
+    return okAnswer(OTHER_ENV_OUTCOME);
+  }
   const [inserted, state] = await env.DB.batch([
     env.DB.prepare(WEBHOOK_EVENT_INSERT_SQL).bind(
       d.ids(),

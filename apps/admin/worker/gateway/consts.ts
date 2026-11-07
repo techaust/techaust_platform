@@ -4,3 +4,6 @@
 
 /** Where a "Needs review" bell opens: the Payments page's review tab. */
 export const REVIEW_LINK = "/payments?tab=review";
+
+/** Where the P7 A2.3 bell opens (a live gateway running in test mode while live payments are off): Settings › Gateways. */
+export const REVIEW_LINK_SETTINGS_GATEWAYS = "/settings/gateways";

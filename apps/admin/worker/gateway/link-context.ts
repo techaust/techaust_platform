@@ -11,6 +11,7 @@ import {
   payAmountVerdict,
   payableOnline,
 } from "@techaust/core/online-pay";
+import { effectiveMode } from "@techaust/core/payments";
 import {
   DOCUMENT_CLIENT_LINKS_SINCE_SQL,
   LINKS_PER_CLIENT_HOUR,
@@ -23,6 +24,7 @@ import {
   paymentForDocumentSql,
 } from "@techaust/db/sql-rules";
 import { cachedSetting } from "../settings-cache.ts";
+import { envText, ringLiveRevert } from "./config.ts";
 import { type CheckoutRow, DOC_STATE_SQL, type GatewayEnv } from "./settle.ts";
 
 export type LinkActor =
@@ -81,7 +83,7 @@ export type LinkContext = {
   floorMinor: number;
   /** The online maximum (Stripe: `overseasOnlineMaxUsdMinor`, L9), or null: none (Razorpay). */
   maxMinor: number | null;
-  /** Settings › Gateways' mode of this gateway. */
+  /** The mode this gateway runs in: Settings › Gateways' mode, test while live payments are off (P7 A2.3). */
   mode: "test" | "live";
 };
 
@@ -201,10 +203,12 @@ export async function linkContext(
             ? { ok: false, error: verdict.code, maximumMinor: verdict.maximumMinor }
             : { ok: false, error: verdict.code },
     );
-  const gateways = cachedSetting(
-    "gateways",
-    (modeR?.results[0] as { value: string; version: number } | undefined) ?? undefined,
-  );
+  const modeRow = (modeR?.results[0] as { value: string; version: number } | undefined) ?? undefined;
+  const gateways = cachedSetting("gateways", modeRow);
+  // P7 A2.3: the mode this gateway runs in (a live mode while `PAYMENTS_LIVE_ALLOWED` is not "true" is test, with the owners' bell once per settings version).
+  const settingsMode = gateways[a.provider].mode;
+  const mode = effectiveMode(settingsMode, envText(env, "PAYMENTS_LIVE_ALLOWED"));
+  if (settingsMode !== mode && modeRow) await ringLiveRevert(db, modeRow.version);
   const made = (linksR?.results[0] as { n: number } | undefined)?.n ?? 0;
   const linkContactId =
     a.actor.kind === "staff" ? null : a.actor.kind === "contact" ? a.actor.contactId : actorRow.id;
@@ -224,7 +228,7 @@ export async function linkContext(
       },
       floorMinor,
       maxMinor,
-      mode: gateways[a.provider].mode,
+      mode,
     },
   };
 }

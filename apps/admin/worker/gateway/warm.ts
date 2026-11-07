@@ -64,6 +64,7 @@ export function warmGateway(): number {
         documentId: "00000000-0000-7000-8000-000000000001",
         expiresAt: now + 86_400_000,
         callbackUrl: "https://portal.example.invalid/pay/return",
+        env: "warm",
         now,
       }).ok
     )
