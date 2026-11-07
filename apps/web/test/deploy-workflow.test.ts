@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
 import * as d from "../../../scripts/deploy-worker.mjs";
+import { PLACEMENTS } from "../../../scripts/place-build-artifact.mjs";
 
 /** Made-up repository roots for the deploy checks (removed after the file). */
 const scratchDirs: string[] = [];
@@ -107,6 +108,58 @@ const WORKSPACE_CODE = [
 ];
 const WRANGLER_ONLY = "pnpm install --frozen-lockfile --filter @techaust/deploy-tools";
 
+/** The paths an upload-artifact step names (`path: x` or a `path: |` block). */
+const uploadPaths = (step: string) => {
+  const lines = step.split("\n");
+  const at = lines.findIndex((l) => /^\s+path: /.test(l));
+  if (at < 0) return [];
+  const first = (lines[at] as string).trim().slice("path: ".length);
+  if (first !== "|") return [first];
+  const indent = (lines[at] as string).search(/\S/);
+  const out: string[] = [];
+  for (const l of lines.slice(at + 1)) {
+    if (l.trim() === "" || l.search(/\S/) <= indent) break;
+    out.push(l.trim());
+  }
+  return out;
+};
+const holdsSecret = (step: string) => /secrets\./.test(step);
+
+/**
+ * L57 (re-check of review 1, finding 1): the deploy job downloads the build's artifact outside the checkout and places it with the trusted script, with no
+ * secret, right after the download and before the first step that holds one; the script's placements are exactly what the build job uploads.
+ */
+const expectPlacedSafely = (
+  build: string,
+  deploy: string,
+  scope: "staging" | "production",
+  artifact: string,
+  firstSecretStep: string,
+) => {
+  const steps = stepsOf(deploy);
+  const download = running(steps, "actions/download-artifact@");
+  expect(steps.filter((s) => s.includes("actions/download-artifact@"))).toHaveLength(1);
+  expect(steps[download]).toContain(`name: ${artifact}`);
+  expect(steps[download]).toContain(`path: ${["$", "{{ runner.temp }}/", artifact].join("")}`);
+  expect(uploadPaths(steps[download] as string)).toEqual([
+    `${["$", "{{ runner.temp }}/", artifact].join("")}`,
+  ]);
+  const place = running(steps, `node scripts/place-build-artifact.mjs ${scope} "$RUNNER_TEMP/${artifact}"`);
+  expect(place).toBe(download + 1);
+  expect(holdsSecret(steps[place] as string)).toBe(false);
+  expect(hasToken(steps[place] as string)).toBe(false);
+  const firstSecret = steps.findIndex(holdsSecret);
+  if (firstSecret >= 0) {
+    expect(place).toBeLessThan(firstSecret);
+    expect(steps[firstSecret]).toContain(firstSecretStep);
+  }
+  for (const s of steps.slice(0, download)) expect(holdsSecret(s)).toBe(false);
+  const upload = stepsOf(build).find((s) => s.includes("actions/upload-artifact@")) ?? "";
+  expect(upload).toContain(`name: ${artifact}`);
+  const placed = PLACEMENTS[scope].map((p) => (scope === "production" ? p.to : p.from));
+  expect(uploadPaths(upload).sort()).toEqual([...placed].sort());
+};
+
 describe("deploy-staging.yml: three jobs, the token only where nothing but wrangler is installed (M7.5, owner's Q3 A) [A1-5]", () => {
   const text = workflow("deploy-staging.yml");
   const prepare = jobOf(text, "prepare");
@@ -182,6 +235,11 @@ describe("deploy-staging.yml: three jobs, the token only where nothing but wrang
       running(d, "node scripts/deploy-worker.mjs staging admin-api"),
     );
     expect(running(d, "actions/download-artifact")).toBeLessThan(named(d, "Seed staging D1"));
+  });
+
+  it("downloads the build outside the checkout and places only its outputs, before the seed and every other token step (L57)", () => {
+    expect(deploy).not.toMatch(/^\s+path: \.\s*$/m);
+    expectPlacedSafely(build, deploy, "staging", "staging-build", "name: Seed staging D1");
   });
 
   const ORDER = [
@@ -266,6 +324,10 @@ describe("deploy-prod.yml: build without secrets, deploy with wrangler only (M7.
     expect(build).toContain("node scripts/check-prod-readiness.mjs");
     expect(build).toContain("node scripts/check-staging-build.mjs dev-vars");
     expect(build).toContain("actions/upload-artifact@");
+  });
+
+  it("downloads the build outside the checkout and places it into apps/web/dist before any step with a secret (L57)", () => {
+    expectPlacedSafely(build, deploy, "production", "production-build", "");
   });
 
   it("the deploy job holds the production environment and installs only wrangler", () => {

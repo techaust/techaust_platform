@@ -20,7 +20,8 @@ concurrency:
 # Worker bundles) has no token at all. Each job has its own runner, but the build's ARTIFACT does reach the deploy job, and package code wrote it: a config
 # in it could carry a `build.command`, which `wrangler deploy` runs with the token set (review 1, finding 2). So scripts/deploy-worker.mjs checks the config
 # each deploy will use before wrangler starts (L51: the redirect stays inside `dist`, no `build` key, no key outside its allow list, `no_bundle`, `main` and
-# the assets inside `dist`; jobs and the website must have no redirect), and the build job writes no pnpm cache the token jobs could restore.
+# the assets inside `dist`; jobs and the website must have no redirect), and the build job writes no pnpm cache the token jobs could restore. The artifact
+# is downloaded outside the checkout and placed by scripts/place-build-artifact.mjs before any token step (L57: only the build outputs, no .env*).
 #   1. prepare (token, wrangler only): the credentials check, the deploy-check token check, migrations (owner decision M1.3: before any Worker deploys),
 #      and the published catalogue snapshot (ADM-CAT-05), handed to the build as an artifact;
 #   2. build (no token): the seed SQL, the three builds and the two pre-bundled Workers (jobs and the website's /api Worker), handed on as an artifact;
@@ -182,10 +183,16 @@ jobs:
       # Wrangler alone, from the lockfile; the build arrives as an artifact.
       - name: Install wrangler only
         run: pnpm install --frozen-lockfile --filter @techaust/deploy-tools
+      # L57 (re-check of review 1, finding 1): the artifact was written by a job that ran package code, so it never lands on the checkout directly (with
+      # `path: .` it could overwrite scripts/deploy-worker.mjs, the deploy-tools wrangler or apps/jobs/wrangler.jsonc, or add an apps/<app>/.env that wrangler
+      # loads). It goes to the runner's temp folder, and the next step, from the checkout and with no secret, places only the build outputs the upload step
+      # above names (no .env* or .dev.vars* anywhere, no symlink, nothing over an existing file), before any step that holds the token.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: staging-build
-          path: .
+          path: ${{ runner.temp }}/staging-build
+      - name: Place the build outputs (no token)
+        run: node scripts/place-build-artifact.mjs staging "$RUNNER_TEMP/staging-build"
       # The seed is insert-only (it never overwrites edits); applied after the migrations and before the first Worker deploys.
       - name: Seed staging D1
         working-directory: apps/jobs
