@@ -355,3 +355,13 @@ Analyst claude-opus-5-5/high; skill `cloudflare:workers-best-practices`. Read-on
 - **AU37 (L2):** settled on the safest reading, so filed periods don't move: the period-end and range readers count a reversed refund as out until `reversed_at` (`status = 'succeeded' OR (reversed_at IS NOT NULL AND reversed_at > <period end>)`). 08-C RA-41 gets a note. Tests across a period boundary.
 - **AU38 (L3):** a `series_full` exclusion also lifts when the FY of `receipt_tried_at` is earlier than today's FY. Test.
 - **AU39 (L4):** `redirect: "manual"` and a capped read on the SES transport and Turnstile siteverify, with tests (both hosts are fixed: defence in depth).
+
+### Lead's answers to AF2 (2026-11-07)
+- **AU40 (Q1):** a run-wide cap of 30 pages per nightly run across all families (about 15,000 rows). With index writes that stays well under D1's 100,000 rows written a day for the whole account, with room left for the business day. The families after the cap get "more tomorrow".
+- **AU41 (Q2):** no `ERASURE_HASH_KEY` on the invoices Worker, so the owner has no extra step. The email consumer stays the guard for the erased form (it skips the email and rings a bell); the plain stop is checked up front.
+- **AU42 (Q3):** a digest complaint only switches that member's digest off. There is no extra bell.
+- **AU43:**
+  - The care bell tail (staff line): "…no billing contact can receive it (they need portal access, finance access and an address that isn't stopped)".
+  - AF2's drafted staff lines are approved by the lead under the owner's delegation (the retention "{n} or more" and "More are deleted tomorrow night", the dead-letter names, the refund-email and deed-PDF bells, the consent-withdrawal close lines and the `withdrawal_required` / `export_before_received` messages).
+  - The lead updated 07-ZR's erase line (AU27) and environments.md's second settlement fetch.
+- **Routing:** the receipt-send `/receipts` link goes to the AF1 fix leg. AF2 merges the audit branch and renumbers its migrations to 0083/0084 (AF1 holds 0081/0082).
