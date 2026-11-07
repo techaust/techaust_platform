@@ -29,6 +29,7 @@ const portalOk = cfg((i) => [
   rl("RL_SESSION", `${61 + i}01`, 120),
   rl("RL_SIGNIN", `${61 + i}02`, 10),
   rl("RL_LINKS", `${61 + i}03`, 30),
+  rl("RL_SIGNOUT", `${61 + i}04`, 60),
 ]);
 
 describe("rateLimitProblems [M7.5 L22]", () => {
@@ -45,7 +46,7 @@ describe("rateLimitProblems [M7.5 L22]", () => {
     ).toEqual([]);
     expect(RATE_LIMITS).toEqual({
       admin: { RL_SESSION: 240, RL_SIGNIN: 20, RL_INVITE: 10 },
-      portal: { RL_SESSION: 120, RL_SIGNIN: 10, RL_LINKS: 30 },
+      portal: { RL_SESSION: 120, RL_SIGNIN: 10, RL_LINKS: 30, RL_SIGNOUT: 60 },
     });
   });
 
@@ -53,11 +54,21 @@ describe("rateLimitProblems [M7.5 L22]", () => {
     const c = cfg((i) =>
       i === 2
         ? undefined
-        : [rl("RL_SESSION", "7201", 120), rl("RL_SIGNIN", "7202", 10), rl("RL_LINKS", "7203", 30)],
+        : [
+            rl("RL_SESSION", "7201", 120),
+            rl("RL_SIGNIN", "7202", 10),
+            rl("RL_LINKS", "7203", 30),
+            rl("RL_SIGNOUT", "7204", 60),
+          ],
     );
-    c.ratelimits = [rl("RL_SESSION", "7101", 120), rl("RL_SIGNIN", "7102", 10), rl("RL_LINKS", "7103", 30)];
+    c.ratelimits = [
+      rl("RL_SESSION", "7101", 120),
+      rl("RL_SIGNIN", "7102", 10),
+      rl("RL_LINKS", "7103", 30),
+      rl("RL_SIGNOUT", "7104", 60),
+    ];
     expect(rateLimitProblems([["portal", c, RATE_LIMITS.portal]])).toEqual([
-      'portal env.production: ratelimits must be exactly ["RL_LINKS","RL_SESSION","RL_SIGNIN"] (not inherited: list them in every scope)',
+      'portal env.production: ratelimits must be exactly ["RL_LINKS","RL_SESSION","RL_SIGNIN","RL_SIGNOUT"] (not inherited: list them in every scope)',
     ]);
   });
 
@@ -66,6 +77,7 @@ describe("rateLimitProblems [M7.5 L22]", () => {
       rl("RL_SESSION", "6101", 120),
       rl("RL_SIGNIN", `${61 + i}02`, 10),
       rl("RL_LINKS", `${61 + i}03`, 30),
+      rl("RL_SIGNOUT", `${61 + i}04`, 60),
     ]);
     expect(rateLimitProblems([["portal", shared, RATE_LIMITS.portal]])).toEqual([
       "portal env.staging RL_SESSION: namespace_id 6101 is already used by portal (top level) RL_SESSION",
@@ -84,6 +96,7 @@ describe("rateLimitProblems [M7.5 L22]", () => {
             rl("RL_SESSION", "8101", 999),
             { name: "RL_SIGNIN", namespace_id: "8102", simple: { limit: 10, period: 10 } },
             { name: "RL_LINKS", namespace_id: 8103, simple: { limit: 30, period: 60 } },
+            rl("RL_SIGNOUT", "8104", 60),
           ]
         : (portalOk.env?.[i === 1 ? "staging" : "production"]?.ratelimits as unknown[]),
     );
