@@ -603,6 +603,11 @@ describe("the route table", () => {
       "GET /api/v1/invoices/:id/pdf invoices.read -",
       "GET /api/v1/invoices/:id/pdf/supplier invoices.supplierCopy -",
       "POST /api/v1/invoices/:id/pdf/retry invoices.draft invoice.pdf_retry",
+      // Rebuild PDF (JOB-PDF-02, added on purpose): the Owner's rebuild of the PDF and of the supplier copy, and their state
+      "POST /api/v1/invoices/:id/pdf/rebuild pdfs.rebuild pdf.rebuild",
+      "GET /api/v1/invoices/:id/pdf/rebuilds invoices.read -",
+      "POST /api/v1/invoices/:id/pdf/supplier/rebuild pdfs.rebuild pdf.rebuild",
+      "GET /api/v1/invoices/:id/pdf/supplier/rebuilds invoices.supplierCopy -",
       // M5.4 (added on purpose): send, revoke the links, pause and resume the reminders
       "POST /api/v1/invoices/:id/send invoices.send invoice.send",
       "POST /api/v1/invoices/:id/links/revoke invoices.send invoice.links_revoke",

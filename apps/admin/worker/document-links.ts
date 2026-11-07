@@ -16,6 +16,7 @@ import { type ApiError, type AppEnv, actor, err, mutate, NOT_FOUND } from "./con
 import { pdfFilename } from "./document-pdf.ts";
 import { erasureHashMap } from "./erasure-key.ts";
 import { body, idParam, param } from "./http.ts";
+import { servedPdf } from "./pdf-served.ts";
 import { CLIENT_GONE, NOT_A_QUOTE } from "./quote-model.ts";
 
 export const MAX_RECIPIENTS = 5;
@@ -278,8 +279,12 @@ export const documentLinks = new Hono<AppEnv>()
     // M7.4 (Q4 A, L43; early check 2 M1): an anonymised client's stored certificate is the Owner's and the Accountant's only, like the offer's own PDF.
     const refused = storedPdfRefusal(c, row.gone);
     if (refused) return refused;
-    const object = await c.env.DOCS.get(row.r2_key);
-    if (!object) return err(c, NOT_FOUND, 404);
+    // Rebuild PDF (JOB-PDF-02, L3): the newest rebuilt certificate when there is one, else the stored original.
+    const object = (await servedPdf(c.env, row.r2_key, c.var.rid)).object;
+    if (!object) {
+      console.error(JSON.stringify({ level: "error", message: "pdf object missing", rid: c.var.rid }));
+      return err(c, NOT_FOUND, 404);
+    }
     // The same download rules as the proposal's own PDF (document-pdf.ts): an attachment, never rendered, never cached, never sniffed.
     return new Response(object.body, {
       headers: downloadHeaders({

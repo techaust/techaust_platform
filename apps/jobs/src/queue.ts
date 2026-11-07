@@ -40,6 +40,7 @@ import { firstRun, logEvent, noteInvocation } from "./log.ts";
 import { logLutCheckDeadLetter, processLutCheck, skipLutCheck } from "./lut-check.ts";
 import { processOfferMessage } from "./offers.ts";
 import { processPdf, processPdfDeadLetter } from "./pdf.ts";
+import { processRebuild, processRebuildDeadLetter } from "./pdf-rebuild.ts";
 import { processPortalAlert } from "./portal-alerts.ts";
 import { enqueueDue, processStatementPurge, purgeLead } from "./purge.ts";
 import { processReceipt, processReceiptDeadLetter } from "./receipts.ts";
@@ -108,6 +109,9 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // Full audit AU11 (B6 L6): a deed's PDF that ran out of tries rings the owners once (it was only logged).
         else if (isPdfMessage(message.body) && message.body.kind === "pdf.deed")
           await processDeedDeadLetter(env, message.body);
+        // Rebuild PDF (JOB-PDF-02): a rebuild that ran out of tries ends `failed` / `dead_letter` and rings the owners once.
+        else if (isPdfMessage(message.body) && message.body.kind === "pdf.rebuild")
+          await processRebuildDeadLetter(env, message.body);
         else await processPdfDeadLetter(env, message.body);
         message.ack();
       } else if (queue.endsWith("-pdf") && isReceiptKind(message.body)) {
@@ -118,6 +122,14 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (queue.endsWith("-pdf") && isPdfMessage(message.body) && message.body.kind === "pdf.deed") {
         // T11: a deed's unsigned PDF (seal check, adopt or render, store once). Before the other PDF kinds (deed-pdf.ts imports pdf.ts).
         await processDeedPdf(env, message.body);
+        message.ack();
+      } else if (
+        queue.endsWith("-pdf") &&
+        isPdfMessage(message.body) &&
+        message.body.kind === "pdf.rebuild"
+      ) {
+        // Rebuild PDF (JOB-PDF-02): one request re-made from its sealed record under a new key. Before the other PDF kinds (pdf-rebuild.ts imports pdf.ts).
+        await processRebuild(env, message.body);
         message.ack();
       } else if (
         queue.endsWith("-pdf") &&

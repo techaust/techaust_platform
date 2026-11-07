@@ -214,6 +214,8 @@ export const ACTION_LABELS: Record<string, string> = {
   "email.unsuppress": Y("allowed emails to an address again"),
   "contact.unsuppress": Y("allowed emails to a contact again"),
   "receipt.send": Y("sent a payment receipt again"),
+  // Rebuild PDF (JOB-PDF-02): the builder's draft in S-style for the lead under the owner's delegation (not in 07-ZV; the designer may tighten it).
+  "pdf.rebuild": Y("asked for a stored PDF to be rebuilt"),
 };
 
 /**
@@ -252,6 +254,8 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
   // M7.4 (builder's draft label for the lead): legal holds, the erased-address lift and the clean-up switch.
   { label: "Data protection", prefixes: ["legal_hold.", "suppression.", "retention."] },
   { label: "Audit log", prefixes: ["audit."] },
+  // Rebuild PDF (JOB-PDF-02; builder's draft label for the lead).
+  { label: "Stored PDFs", prefixes: ["pdf."] },
 ];
 
 /** The actions of one filter group, in the order given. */

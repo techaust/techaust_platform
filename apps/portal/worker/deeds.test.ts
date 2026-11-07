@@ -10,7 +10,7 @@ import { DEED_PDF_SQL, DEEDS_LIST_SQL, FINANCE_CONTACT_SQL } from "./deeds.ts";
 import { type Fixtures, fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
 import app from "./index.ts";
-import { bodyOf, call, crossTenant, one, sessionFor } from "./test-helpers.ts";
+import { bodyOf, call, counted, crossTenant, one, sessionFor } from "./test-helpers.ts";
 
 const PDF = new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n");
 let seq = 0;
@@ -212,6 +212,16 @@ describe("the routes [POR-05]", () => {
     expect(
       (await call("/deeds/pdf", { cookie: s.cookie, body: { id: f.mine, clientId: f.b.id } })).status,
     ).toBe(400);
+  });
+
+  it("Rebuild PDF (JOB-PDF-02): the signed upload is never rebuilt, so its download reads it as stored, with no served-key lookup", async () => {
+    const f = await deedFixtures();
+    const s = await sessionFor(f.a.finance);
+    const c = counted();
+    const res = await call("/deeds/pdf", { cookie: s.cookie, body: { id: f.mine } }, c.env);
+    expect(res.status).toBe(200);
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(PDF);
+    expect(c.seen.some((q) => q.sql.includes("pdf_repair_results"))).toBe(false);
   });
 });
 

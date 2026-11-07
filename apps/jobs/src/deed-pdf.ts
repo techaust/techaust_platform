@@ -34,6 +34,7 @@ import {
   dayOf,
   failed,
   HALF_BELL_SQL,
+  type PdfPage,
   putPdfOnce,
   STAT_ADD_SQL,
   sha256Bytes,
@@ -44,7 +45,7 @@ export const DEED_ROW_SQL = `SELECT d.id, d.status, d.client_id, d.project_id, d
     EXISTS (SELECT 1 FROM clients c WHERE c.id = d.client_id AND c.anonymised_at IS NOT NULL) AS client_gone
   FROM deeds d WHERE d.id = ?1`;
 
-type DeedRow = {
+export type DeedRow = {
   id: string;
   status: string;
   client_id: string;
@@ -101,6 +102,40 @@ export async function processDeedDeadLetter(env: Env, msg: PdfDeedMessage, now =
     .run();
 }
 
+/**
+ * The deed's page from its sealed snapshot (shared by the first render and the rebuild, JOB-PDF-02), with its write-once key; or why not: `skip` for the layout
+ * gate (nothing placeholder is stored write-once outside "local"), a refusal `deed_seal` when the stored text doesn't hash to the sealed SHA-256, doesn't read
+ * back as a deed snapshot, or the number is missing.
+ */
+export async function deedPlan(
+  env: Env,
+  row: DeedRow,
+): Promise<
+  | { ok: true; page: () => PdfPage; key: string; snapshotSha256: string }
+  | { ok: false; code: string; skip: boolean }
+> {
+  // The generated Env types ENVIRONMENT from the staging config ("staging"); the local config says "local" (browser.ts reads it the same way).
+  const environment: string = env.ENVIRONMENT;
+  if (DEED_LAYOUT_PLACEHOLDER && environment !== "local")
+    return { ok: false, code: "layout_placeholder", skip: true };
+  const snapshot = parseDeedSnapshot(row.snapshot);
+  const sealed =
+    row.snapshot !== null &&
+    row.snapshot_sha256 !== null &&
+    (await sha256Hex(row.snapshot)) === row.snapshot_sha256 &&
+    snapshot !== null &&
+    row.number_display !== null;
+  if (!sealed || !snapshot || row.snapshot_sha256 === null || row.number_display === null)
+    return { ok: false, code: "deed_seal", skip: false };
+  const numberDisplay = row.number_display;
+  return {
+    ok: true,
+    page: () => ({ html: renderDeedHtml(deedText(snapshot, numberDisplay)), options: pdfOptionsFor() }),
+    key: deedUnsignedKey(row.id, row.snapshot_sha256),
+    snapshotSha256: row.snapshot_sha256,
+  };
+}
+
 /** Handles one `pdf.deed` message. `clock` is the pacer's (a test passes a fake). Throws for anything a retry can fix. */
 export async function processDeedPdf(
   env: Env,
@@ -113,19 +148,11 @@ export async function processDeedPdf(
   if (row.unsigned_r2_key !== null) return skip("done");
   if (row.status !== "final" && row.status !== "signed") return skip("not_final");
   if (row.client_gone === 1) return skip("client_gone");
-  // The generated Env types ENVIRONMENT from the staging config ("staging"); the local config says "local" (browser.ts reads it the same way).
-  const environment: string = env.ENVIRONMENT;
-  if (DEED_LAYOUT_PLACEHOLDER && environment !== "local") return skip("layout_placeholder");
-
-  // The seal: the stored text must hash to the sealed SHA-256 and read back as a deed snapshot; the number must be there. Anything else is refused, once.
-  const snapshot = parseDeedSnapshot(row.snapshot);
-  const sealed =
-    row.snapshot !== null &&
-    row.snapshot_sha256 !== null &&
-    (await sha256Hex(row.snapshot)) === row.snapshot_sha256 &&
-    snapshot !== null &&
-    row.number_display !== null;
-  if (!sealed || !snapshot || row.snapshot_sha256 === null || row.number_display === null) {
+  // The layout gate, then the seal: the stored text must hash to the sealed SHA-256 and read back as a deed snapshot; the number must be there. Anything else is
+  // refused, once.
+  const plan = await deedPlan(env, row);
+  if (!plan.ok && plan.skip) return skip(plan.code);
+  if (!plan.ok) {
     await env.DB.batch([
       env.DB.prepare(REFUSED_BELL_SQL).bind(
         row.id,
@@ -137,14 +164,14 @@ export async function processDeedPdf(
     return "refused";
   }
 
-  const key = deedUnsignedKey(row.id, row.snapshot_sha256);
+  const { key } = plan;
   const settle = async (pdfSha: string, usage: { browserMs: number } | null) => {
     const date = dayOf(now);
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE deeds SET unsigned_r2_key = ?2, unsigned_sha256 = ?3
          WHERE id = ?1 AND unsigned_r2_key IS NULL AND status IN ('final', 'signed') AND snapshot_sha256 = ?4`,
-      ).bind(row.id, key, pdfSha, row.snapshot_sha256),
+      ).bind(row.id, key, pdfSha, plan.snapshotSha256),
       ...(usage
         ? [
             env.DB.prepare(STAT_ADD_SQL).bind(date, "pdf.renders", 1, now),
@@ -166,8 +193,8 @@ export async function processDeedPdf(
     logEvent("pdf.deed_adopted", { layout: DEED_PDF_LAYOUT_ID });
     return "adopted";
   }
-  const html = renderDeedHtml(deedText(snapshot, row.number_display));
-  const result = await renderPaced(env as unknown as RenderEnv, html, pdfOptionsFor(), clock);
+  const page = plan.page();
+  const result = await renderPaced(env as unknown as RenderEnv, page.html, page.options, clock);
   if (!result.ok) return failed(env, msg, result, now);
   const { bytes, sha256 } = await putPdfOnce(env.DOCS, key, result.bytes);
   await settle(sha256, { browserMs: result.browserMs });

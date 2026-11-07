@@ -16,6 +16,7 @@ import { Modal, useRefusalFocus } from "../../components/dialog.tsx";
 import { StatusPill } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Alert, FileText, RefreshCw, Send } from "../../components/icons.tsx";
+import { RebuildPdf } from "../../components/rebuild-pdf.tsx";
 import { useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -398,6 +399,9 @@ export function PaymentReceiptAndRefunds(props: {
                   }
                 />
               )}
+              {/* Rebuild PDF (JOB-PDF-02): the Owner's quiet action and the rebuild's state, under the receipt's own PDF link. A void receipt's PDF is
+                  kept for the audit, so it can be rebuilt too (review finding 1; the server allows issued and void). */}
+              {r?.hasPdf && <RebuildPdf kind="receipt" id={r.id} number={r.number} ready />}
             </dd>
           </div>
           {/* review 1, finding 5: never for a payment refunded in full (the route refuses it) */}
