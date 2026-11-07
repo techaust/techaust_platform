@@ -1,5 +1,6 @@
 // The statement of account's view and content hash [ADM-CLI-04, JOB-PDF-01; M5.5b, LD79; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for what a statement lists]: pure formatting from integers into the designer's layout contract
 // (`StatementLayoutView`), a content hash that ignores the day it was made but not the data or the layout, and the page the designer's layout makes from it. All names, numbers and amounts are invented.
+import { STATEMENT_REFUND_RETURNED_NOTE } from "@techaust/core/copy-zu";
 import { describe, expect, it } from "vitest";
 import { renderStatementHtml, statementViewSha256 } from "../src/render.ts";
 import {
@@ -145,12 +146,12 @@ describe("statementViewSha256", () => {
   });
 
   it("the layout id is part of the hash: the same view under another layout id would be another object", async () => {
-    expect(STATEMENT_LAYOUT_ID).toBe("statement-4");
+    expect(STATEMENT_LAYOUT_ID).toBe("statement-5");
     const v = statementView(input());
     const content = v;
     const { canonicalJson, sha256Hex } = await import("../src/hash.ts");
     expect(await statementViewSha256(v)).toBe(
-      await sha256Hex(canonicalJson({ layout: "statement-4", ...content })),
+      await sha256Hex(canonicalJson({ layout: "statement-5", ...content })),
     );
     expect(await statementViewSha256(v)).not.toBe(
       await sha256Hex(canonicalJson({ layout: "statement-1", ...content })),
@@ -209,5 +210,76 @@ describe("the page the designer's layout makes from the view", () => {
     expect(body).toContain("TDS deducted");
     expect(body).not.toContain("null");
     expect((body.match(/data-testid="entry"/g) ?? []).length).toBe(2);
+  });
+});
+
+// AU45 (07-ZU): a refund of ₹200 that went out on 03 Nov and came back on 05 Dec, then a second one that came back too. Made-up refund ids.
+describe("AU45: a refund that came back", () => {
+  const refundPair = (id: string, out: string, back: string, before: number) =>
+    [
+      {
+        kind: "refund",
+        date: out,
+        number: id,
+        amountMinor: 200_00,
+        debitMinor: 200_00,
+        creditMinor: 0,
+        balanceMinor: before + 200_00,
+      },
+      {
+        kind: "refund_returned",
+        date: back,
+        number: id,
+        amountMinor: 200_00,
+        debitMinor: 0,
+        creditMinor: 200_00,
+        balanceMinor: before,
+      },
+    ] as const;
+  const returned = (entries: StatementViewInput["entries"]) =>
+    statementView(
+      input({
+        from: "2026-11-01",
+        to: "2026-12-31",
+        openingMinor: -500_00,
+        entries,
+        debitMinor: entries.reduce((a, e) => a + e.debitMinor, 0),
+        creditMinor: entries.reduce((a, e) => a + e.creditMinor, 0),
+        closingMinor: -500_00,
+      }),
+    );
+
+  it("sets U2 once, only when an entry is a refund that came back (two such lines: still one note)", () => {
+    const one = returned(refundPair("rfnd_SAMPLE0001", "2026-11-03", "2026-12-05", -500_00));
+    expect(one.returnedNote).toBe(STATEMENT_REFUND_RETURNED_NOTE);
+    const two = returned([
+      ...refundPair("rfnd_SAMPLE0001", "2026-11-03", "2026-12-05", -500_00),
+      ...refundPair("rfnd_SAMPLE0002", "2026-11-04", "2026-12-06", -500_00),
+    ]);
+    expect(two.returnedNote).toBe(STATEMENT_REFUND_RETURNED_NOTE);
+    const html = renderStatementHtml(two).replace(/<style>[\s\S]*?<\/style>/, "");
+    expect(html.split(STATEMENT_REFUND_RETURNED_NOTE).length - 1).toBe(1);
+    expect(html.split("Refund came back").length - 1).toBe(2);
+    // a refund that did not come back (in this range): no note
+    const outOnly = returned(refundPair("rfnd_SAMPLE0001", "2026-11-03", "2026-12-05", -500_00).slice(0, 1));
+    expect(outOnly.returnedNote).toBeNull();
+    expect(statementView(input()).returnedNote).toBeNull();
+    expect(renderStatementHtml(outOnly)).not.toContain(STATEMENT_REFUND_RETURNED_NOTE);
+  });
+
+  it("the returned line is a credit dated the day it came back, under the refund's id; the note is part of the hash", async () => {
+    const v = returned(refundPair("rfnd_SAMPLE0001", "2026-11-03", "2026-12-05", -500_00));
+    expect(v.entries[1]).toEqual({
+      date: "05 Dec 26",
+      number: "rfnd_SAMPLE0001",
+      kind: "refund_returned",
+      againstNumber: null,
+      debit: null,
+      credit: "₹200.00",
+      balance: "−₹500.00",
+    });
+    expect(v.entries[0]?.debit).toBe("₹200.00");
+    expect(v.amountDue).toBeNull();
+    expect(await statementViewSha256(v)).not.toBe(await statementViewSha256({ ...v, returnedNote: null }));
   });
 });

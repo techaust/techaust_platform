@@ -3,6 +3,7 @@
 // is the `now` passed in. All names, numbers and amounts are invented.
 import { env as realEnv } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
+import { STATEMENT_REFUND_RETURNED_NOTE, STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
 import { STATEMENT_PDF_MAX_ENTRIES } from "@techaust/core/statement";
 import { recomputeStatement } from "@techaust/db/ledger";
 import { describe, expect, it } from "vitest";
@@ -331,6 +332,14 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
     // the refund id on both lines (the debit on 12 Oct, the credit on 20 Oct)
     expect(html.split(ref).length - 1).toBe(2);
     expect(html).not.toContain("null");
+    // the credit reads 07-ZU U1, and U2 is printed once, in the last lines (layout statement-5)
+    expect(html).toContain(
+      `<td class="c-doc">${ref}</td><td class="c-details">${STATEMENT_REFUND_RETURNED_WORD}</td>`,
+    );
+    expect(html.split(STATEMENT_REFUND_RETURNED_NOTE).length - 1).toBe(1);
+    expect(html).toContain(
+      `<p class="stm-note" data-testid="returned-note">${STATEMENT_REFUND_RETURNED_NOTE}</p>`,
+    );
   });
 
   it("the same data asked for again on the same IST day is ADOPTED: no second render, the same object, the same view hash", async () => {

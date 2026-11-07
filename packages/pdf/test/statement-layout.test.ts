@@ -2,6 +2,7 @@
 // and currency, the four figures (the closing on the double rule), "Amount due" only when the client owes something, the ledger with the opening and
 // closing rows, every line kind in 07-V's words, the billing@ lines and the page footer, escaping, the CSP and no network reference; short, long (200
 // entries) and long-name fixtures. Sample data only, clearly fake.
+import { STATEMENT_REFUND_RETURNED_NOTE, STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
 import { describe, expect, it } from "vitest";
 import { footerLine } from "../src/footer.ts";
 import { STATEMENT_PDF_COPY as C } from "../src/layout/copy.ts";
@@ -68,6 +69,7 @@ const base: StatementLayoutView = {
       balance: "₹1,18,000.00",
     },
   ],
+  returnedNote: null,
   generatedOn: "28 Oct 26",
   email: "billing@techaust.com",
   footerBrand: footerLine("billing@techaust.com"),
@@ -146,6 +148,106 @@ describe("the statement page", () => {
     );
     expect(usd).toContain('<span data-testid="currency-symbol">$</span>');
     expect(usd).toContain("Currency: USD");
+  });
+});
+
+// AU45 (07-ZU): an overpayment refunded on 03 Nov that the card network returned on 05 Dec. Sample data only: the refund id is made up.
+const returned: StatementLayoutView = {
+  ...base,
+  period: { from: "01 Nov 26", to: "31 Dec 26" },
+  opening: "₹0.00",
+  debits: "₹1,20,000.00",
+  credits: "₹1,40,000.00",
+  closing: "−₹20,000.00",
+  amountDue: null,
+  entries: [
+    {
+      date: "02 Nov 26",
+      number: "TH/INV/2627/0007",
+      kind: "tax_invoice",
+      againstNumber: null,
+      debit: "₹1,00,000.00",
+      credit: null,
+      balance: "₹1,00,000.00",
+    },
+    {
+      date: "02 Nov 26",
+      number: "TH/INV/2627/0007",
+      kind: "receipt",
+      againstNumber: null,
+      debit: null,
+      credit: "₹1,20,000.00",
+      balance: "−₹20,000.00",
+    },
+    {
+      date: "03 Nov 26",
+      number: "rfnd_SAMPLE0001",
+      kind: "refund",
+      againstNumber: null,
+      debit: "₹20,000.00",
+      credit: null,
+      balance: "₹0.00",
+    },
+    {
+      date: "05 Dec 26",
+      number: "rfnd_SAMPLE0001",
+      kind: "refund_returned",
+      againstNumber: null,
+      debit: null,
+      credit: "₹20,000.00",
+      balance: "−₹20,000.00",
+    },
+  ],
+  returnedNote: STATEMENT_REFUND_RETURNED_NOTE,
+};
+
+describe("AU45: a refund that came back (07-ZU)", () => {
+  const rowOf = (html: string, details: string): string =>
+    (html.match(/<tr data-testid="entry">[\s\S]*?<\/tr>/g) ?? []).find((r) =>
+      r.includes(`<td class="c-details">${details}</td>`),
+    ) ?? "";
+
+  it("prints like the refund it reverses: the refund id, U1 as its details, the amount in the Credit column", () => {
+    expect(detailsOf("refund_returned", null)).toBe("Refund came back");
+    expect(detailsOf("refund_returned", null)).toBe(STATEMENT_REFUND_RETURNED_WORD);
+    const html = body(renderStatementHtml(returned));
+    const back = rowOf(html, "Refund came back");
+    expect(back).toBe(
+      '<tr data-testid="entry"><td class="c-date">05 Dec 26</td><td class="c-doc">rfnd_SAMPLE0001</td><td class="c-details">Refund came back</td><td class="num"></td><td class="num">₹20,000.00</td><td class="num">−₹20,000.00</td></tr>',
+    );
+    // the refund itself stays a debit, on the day it went out
+    expect(rowOf(html, C.kinds.refund)).toContain(
+      '<td class="c-date">03 Nov 26</td><td class="c-doc">rfnd_SAMPLE0001</td>',
+    );
+    expect(rowOf(html, C.kinds.refund)).toContain('<td class="num">₹20,000.00</td><td class="num"></td>');
+  });
+
+  it("prints U2 once, first in the last lines (it travels with the closing row), and never without the kind", () => {
+    const html = body(renderStatementHtml(returned));
+    expect(html.split(STATEMENT_REFUND_RETURNED_NOTE).length - 1).toBe(1);
+    expect((html.match(/data-testid="returned-note"/g) ?? []).length).toBe(1);
+    expect(html).toContain(
+      `<footer class="stm-foot"><p class="stm-note" data-testid="returned-note">${STATEMENT_REFUND_RETURNED_NOTE}</p><p class="stm-questions">`,
+    );
+    expect(html.indexOf("returned-note")).toBeGreaterThan(html.indexOf("stm-edge--closing"));
+    expect(STATEMENT_CSS).toMatch(/\.stm-foot \{[^}]*break-inside: avoid; break-before: avoid;/);
+    const none = body(renderStatementHtml(base));
+    expect(none).not.toContain("returned-note");
+    expect(none).not.toContain(STATEMENT_REFUND_RETURNED_NOTE);
+  });
+
+  it("escapes the note", () => {
+    const html = body(renderStatementHtml({ ...returned, returnedNote: 'Sample <b>note</b> & "quotes"' }));
+    expect(html).not.toContain("<b>note</b>");
+    expect(html).toContain("Sample &lt;b&gt;note&lt;/b&gt; &amp; &quot;quotes&quot;");
+  });
+
+  it("a closing below zero with the note: the closing on the double rule, no Amount due", () => {
+    const html = body(renderStatementHtml(returned));
+    expect(html).toContain('data-testid="closing">−<span data-testid="rupee">₹</span>20,000.00</dd>');
+    expect(html).not.toContain('data-testid="amount-due"');
+    expect(html).toContain("Closing balance");
+    expect(html).toContain(STATEMENT_REFUND_RETURNED_NOTE);
   });
 });
 

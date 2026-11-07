@@ -64,6 +64,8 @@ const PAGES: Record<string, number> = {
   "statement-short-3-entries": 1,
   "statement-long-200-entries": 8,
   "statement-long-names": 1,
+  // AU45: a refund that came back, with its note in the last lines
+  "statement-refund-returned": 1,
   "deed-short-inr": 2,
   "deed-long-inr": 2,
   "deed-usd": 2,
