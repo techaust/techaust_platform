@@ -25,7 +25,7 @@ Out of scope: DNSSEC (pending at the registry; re-check), the private-repository
 
 
 ## Review (reviewer, Opus 5.5 high; copied in by the lead)
-**APPROVE**: no critical or high; 1 medium, 8 low. Skills: `cloudflare:workers-best-practices`, `code-review` (high). Verified against the bundled `workers-shared` rules engine: placeholders never match an empty segment, static before dynamic, `_redirects` before assets; no open redirect (`//evil.com/`, `/evil.com/`, `/%5Cevil.com/`, `/%2F%2Fevil.com/` stay on site); query kept; `run_worker_first` paths untouched; no loop (Astro `format: "file"`, `trailingSlash: "never"`). Gate: GNU date and month ends, `gh api -f` encoding, `bash -e` with `&& continue`, `!cancelled()`, workflow-level concurrency, skipped-job runs, permissions and fork safety all sound. Tests: four files, 120 passed.
+**APPROVE**: no critical or high; 1 medium, 8 low. Skills: `cloudflare:workers-best-practices`, `code-review` (high). Verified against the bundled `workers-shared` rules engine: placeholders never match an empty segment, static before dynamic, `_redirects` before assets; no open redirect (`//evil.com/`, `/\evil.com/`, `/%5Cevil.com/`, `/%2F%2Fevil.com/` stay on site); query kept; `run_worker_first` paths untouched; no loop (Astro `format: "file"`, `trailingSlash: "never"`). Gate: GNU date and month ends, `gh api -f` encoding, `bash -e` with `&& continue`, `!cancelled()`, workflow-level concurrency, skipped-job runs, permissions and fork safety all sound. Tests: four files, 120 passed.
 1. **Medium:** `Disallow: /` in the SPAs' robots.txt is outranked by Cloudflare's managed `User-agent: *` / `Allow: /` (crawlers merge `*` groups; equal specificity, allow wins), and if the managed block went away it would hide the noindex header from crawlers. **Fixed:** empty `Disallow:`; `checkRobots` now refuses HTML, a missing `*` group, any `Disallow: /` (or `/*`) in any group and non-rule lines; decision row reworded.
 2. **Low:** CLAUDE.md, restore.md, environments.md still said one run at 21:10 UTC. **Fixed.**
 3. **Low:** a night with a checked daily copy but a failed monthly copy counted as "no backup" (runs filtered by `status=success`), so later tries exported again. **Fixed:** the gate lists `status=completed` runs and counts a run whose `backup` job's "Check the uploaded object" step succeeded.
@@ -37,7 +37,7 @@ Out of scope: DNSSEC (pending at the registry; re-check), the private-repository
 9. **Low:** non-existent addresses with a slash now pass through a 301 before the 404. **Kept** (harmless, recorded).
 
 ## Integration notes
-- Fixes on the same branch after the review; `check-spa-headers --source` ok; the four changed test files 121 passed, 1 skipped; `pnpm check` re-run below before the PR.
+- Fixes on the same branch after the review; `check-spa-headers --source` ok; the four changed test files 121 passed, 1 skipped; `pnpm check` green again before the PR.
 - Also today (owner's yes in chat, no code): Web Analytics site switched to manual snippet (visits recorded again at 21:59 UTC); GitHub secret scanning and push protection turned on (0 alerts at first read). The repository scan the owner asked for found no secret, client data or real tax or bank number in any of the 3,455 commits (gitleaks in CI plus a pattern search; only Turnstile site keys and made-up test values).
 - Not verified: the gate against GitHub's real API (the first scheduled night after the merge); robots and redirects on production (next production deploy, the owner's approval).
 
