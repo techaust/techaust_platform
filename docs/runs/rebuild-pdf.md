@@ -1,4 +1,4 @@
-Status: review and re-check APPROVE; final checks running
+Status: PR READY https://github.com/techaust/techaust_platform/pull/197
 Tier: A
 Usage: analyst (brief) claude-opus-5-5/high, skills none (the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder b1 claude-opus-5-5/high, skills none (same reason; model-audit flags it): 14 → 53 %; analyst early check claude-opus-5-5/high, skills `security-review` (failed to run: no `origin/HEAD`; checklist by hand): 53 → ~60 %; designer d1 claude-opus-5-5/high, skills `frontend-design:frontend-design` (model-audit records the attempt; "Unknown skill" in the cloud): ~60 → 71 %; builder b2 claude-opus-5-5/high, skills none (same reason; flagged): ~60 → 71 %; reviewer (review) claude-opus-5-5/high, skills `code-review` (run against `origin/main...HEAD`), `security-review` (failed to start: no `origin/HEAD`; checklist by hand): 71 → ~81 %; reviewer (re-check) claude-opus-5-5/high, skills `code-review` (`security-review` failed to start, same reason): ~81 → ~83 %
 
