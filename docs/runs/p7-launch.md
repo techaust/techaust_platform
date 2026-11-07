@@ -417,3 +417,71 @@ Why: the privacy notice and /security promise "encrypted, off-site backups" kept
    - a test of `backup-encrypt.sh` round-tripping a small file with a throwaway key pair generated in the test (it runs only where `openssl` exists; skip with a message otherwise).
 
 **Done when:** the web tests and `pnpm check` are green. Append "## P7-N report" here and push `fix/p7-n-backup`.
+
+## P7-N report (builder, Opus 5.5 high, 2026-11-07)
+Branch `fix/p7-n-backup` (from `origin/feat/p7-production` at 8258b60c), pushed. Commits: 195de8ce (workflow and scripts), ccc469c2 (tests, decrypt hardening), a15b90a9 (runbook), and this report.
+
+**Skills loaded:**
+- `cloudflare:wrangler`: led me to read the installed wrangler 4.156.2 (`d1 export --help` and its source) rather than memory. That turned up `--skip-confirmation` (non-interactive runs fall back to "yes"; I made it explicit), the printed signed URL (finding 1) and that `d1 execute <name> --remote` finds a database not in the config by name (runbook §3.4).
+- `cloudflare:workers-best-practices`: required by the run file. No Worker code changed, so it only confirmed that secrets reach steps as `env` and never sit in config.
+- `aws-core:aws-iam`: shaped the role in the runbook: OIDC trust with `sub` exactly `repo:techaust/techaust_platform:environment:backup`, `s3:PutObject` on `daily/*`, `s3:ListBucket` with the `s3:prefix` condition, no Get or Delete.
+- `aws-core:aws-storage`: shaped the bucket notes (Block Public Access, default encryption, the 90-day lifecycle on `daily/`) and the upload (no explicit SSE header, so the bucket default applies).
+
+**Files changed:**
+- `.github/workflows/backup.yml`, rewritten. What it does:
+  - runs at 21:30 UTC and on `workflow_dispatch`; the owner-only guard is kept word for word;
+  - `permissions: contents: read, id-token: write`; `environment: backup`; concurrency `backup-production`;
+  - checks out (`persist-credentials: false`) and installs only `@techaust/deploy-tools`;
+  - a settings check names every missing secret and variable, checks the PEM form, and writes the public key to `$RUNNER_TEMP`;
+  - the export runs from `apps/jobs` with `--remote --env production --skip-confirmation`, and an empty file fails;
+  - then: `scripts/backup-encrypt.sh`; the plaintext deleted (`if: always()`); `aws-actions/configure-aws-credentials` (role from `vars.AWS_BACKUP_ROLE_ARN`, `ap-south-1`, account id masked); `aws s3 cp` to `daily/techaust-prod-<UTC>.tar`; the size checked with `list-objects-v2 --prefix`; the manifest written to the job summary; the archive and key file removed (`if: always()`).
+- `scripts/backup-encrypt.sh` (new, executable):
+  - a random key (`openssl rand -hex 32`, kept as 64 hex characters plus LF, because the `enc` passphrase is one line) encrypts with `aes-256-cbc -pbkdf2 -iter 200000 -salt -md sha256`, the key fed on stdin;
+  - the key is wrapped with `pkeyutl -encrypt`, OAEP, SHA-256 for both OAEP and MGF1;
+  - one tar holds exactly `manifest.json`, `dump.sql.enc` and `key.bin.enc`. The manifest: format `techaust-d1-backup/1`, `createdAt`, byte sizes, the plaintext SHA-256, the public key's DER SHA-256;
+  - it refuses: an empty or missing dump, a missing key, a key that is not RSA, a key under 4096 bits, an existing output, an output not ending in `.tar`, an unsafe file name;
+  - the plain key lives only in a scratch folder that is removed on every exit.
+- `scripts/backup-decrypt.ps1` (new; Windows PowerShell 5.1, also pwsh):
+  - asks for the archive and `backup-private.pem` (or takes `-Archive`/`-PrivateKey`), and strips quotes from "Copy as path";
+  - finds Git for Windows' OpenSSL (next to `git.exe`, then the usual folders, then the PATH; 1.1.1 or later) and System32 `tar`;
+  - requires exactly the three parts and checks the manifest's algorithms;
+  - unwraps the key (OpenSSL asks for a passphrase itself) and decrypts next to the archive, never over an existing file;
+  - checks size and SHA-256 and deletes the output on a mismatch; the scratch key folder is removed in `finally`;
+  - native calls run under `Continue` (the PS 5.1 redirected-stderr trap that `make-backup-key.ps1` also handles);
+  - the last line is `RESULT: …` and says "keep this file private, delete it after the drill".
+- `docs/runbooks/restore.md`: §1's row and a new §3:
+  - 3.1 what runs and where, the 90-day lifecycle, the names the workflow needs, and the role and bucket shape;
+  - 3.2 download in the AWS console;
+  - 3.3 decrypt (the script and a by-hand fallback);
+  - 3.4 the restore drill, matched to what `drill-verify.mjs` really does: it is **local only**, so the drill is `drill:verify -- --import <sql> --persist-to .wrangler\drill-<date>`, then the remote load into the scratch D1 `techaust-restore-<date>`, checked by counts, then clean-up and `backup-verified.json`;
+  - 3.5 a real restore;
+  - 3.6 known points and what isn't built.
+- `apps/web/test/backup-workflow.test.ts` (new): 31 tests (18 workflow-shape, 10 envelope, 3 decrypt-script) plus one placeholder that runs only when bash or openssl is missing and warns that the round trip didn't run.
+  - **Workflow shape:** the triggers, the permissions, one job in `backup`, only the two secrets and three variables, the token only in the settings check and the export, one install (wrangler only), SHA pins (checkout, pnpm and setup-node equal to `deploy-prod.yml`'s), OIDC with no AWS keys, `persist-credentials: false`;
+  - **order and plaintext:** guard → check → export → encrypt → delete → creds → upload → verify; every name in the check; wrangler output only to a file, printed through the link-stripping `sed`, then deleted; deletion straight after the encryption with `always()`; upload of `$ARCHIVE` only; size check by listing, no get or head; no artifact or cache; secrets only as `env`/`with:` values;
+  - **envelope round trip** (bash and openssl): exactly three parts and no plaintext bytes in the tar; the manifest; the runbook's two openssl commands give back the dump byte for byte; two runs differ; six refusals write nothing; a 2048-bit key is refused;
+  - **decrypt script** (Windows PowerShell or pwsh): opens into a spaced folder, never overwrites, a wrong key fails with no `.sql`, a tar with other parts is refused.
+
+**Action pins:** checkout `3d3c42e5…` v7.0.1, pnpm/action-setup `ea17c68d…` v6.1.0 and setup-node `82076278…` v7.0.0 (the same as `deploy-prod.yml`). **`aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd` = v6.3.0**, the latest release, published 2026-09-15 (`gh api …/releases`; the SHA is `refs/tags/v6.3.0` from `git ls-remote`, the same commit `v6` points to); runs on `node24`.
+
+**Commands and results:**
+- `pnpm --filter @techaust/web exec vitest run --project node test/backup-workflow.test.ts test/workflow-actor.test.ts` (heavy, log `p7n-backup-test`): 35 passed (31 of mine, 4 of `workflow-actor.test.ts`), 1 skipped (the placeholder), including the PowerShell 5.1 round trips on this PC.
+- `pnpm --filter @techaust/web test` (heavy, `p7n-web-test`): **47 files, 1135 passed, 21 skipped**.
+- `pnpm check`, run as its parts:
+  - `pnpm lint` (heavy, `p7n-check`): 1 error, only in my **uncommitted** local patch of `site.ts` (finding 2); my files are clean (`biome check` on the test).
+  - `pnpm typecheck` (heavy, `p7n-typecheck`): 0 errors.
+  - the six guards (web bindings, content lint, worker config, SPA headers, migrations, CSS collisions): all ok.
+
+**Findings for the lead:**
+1. **Fixed in the design: wrangler prints a one-hour signed link to the plaintext export.** wrangler 4.156.2's remote `d1 export` prints "You can also download your export from the following URL manually…" with the signed URL (`exportRemotely` in `wrangler-dist/cli.js`). This repository is public, so its Actions logs are public: anyone could have downloaded the production database within the hour. The workflow sends wrangler's output to a private file, prints it only on failure with links removed, and deletes it. A test pins this. The staging drill (drill-log.md step 1) prints the link only in the owner's own terminal, which is fine.
+2. **The task branch doesn't build: `apps/web/src/config/site.ts` (6267065f, the founder bio).** The `founderBio` string holds two raw line breaks inside a `"…"` literal (line 55 → 57), so Vite/rolldown stops with "Unterminated string" and **every web test and the web typecheck fail to load** on `feat/p7-production`. Not my file, so not committed. To run the checks I escaped the breaks as `\n\n` in the working tree only, then restored it. The fix is the lead's: `\n\n` in the string (about.astro splits on the blank line), formatted by biome as `founderBio:` with the string on the next line.
+3. **Merging enables the nightly schedule.** Until the `backup` environment, `CF_API_TOKEN_BACKUP`, `AWS_BACKUP_ROLE_ARN`, `BACKUP_BUCKET`, the OIDC role and the bucket exist, each nightly run fails at "Check the backup settings" and names what is missing. `BACKUP_PUBLIC_KEY_PEM` comes from `make-backup-key.ps1`.
+4. **Visible in the public logs:** the role ARN (with the AWS account id) shows in the `with:` header of the credentials step, and the bucket name may show in an `aws` error. Neither is secret, but both are visible in public logs. To hide them, make them secrets; the tests then need the two names moved.
+5. **The token permission:** Cloudflare's `d1 export` API needs D1 edit permission on the account (export is a POST). "D1 only" fits, but read-only won't do. Not verified against the hosted token.
+
+**Not done or not verified:**
+- No hosted run: the workflow has never run on GitHub, so the OIDC trust, the bucket policy and the remote export format are unverified. Its first real run is the proof.
+- The remote export's statement order (triggers after rows, no `BEGIN`/`COMMIT`) is still unverified. Runbook §3.4 step 4.2 stops the drill if it is wrong.
+- Not built (outside the brief): PRD JOB-BKP-01's monthly finance-only copy kept 10 years (`BACKUP_SCOPE`), now listed in runbook §3.6. Object Lock and versioning are left to the lead's hosted setup.
+- A passphrase-protected private key wasn't tested (no interactive console in tests). `make-backup-key.ps1` makes one without a passphrase, which works with the decrypt script.
+- `pnpm check` didn't run as one command, because the lint had to be read past the `site.ts` patch. Each part was run and passed.
