@@ -85,6 +85,7 @@ The full plan is `docs/14-models-and-usage.md` (owner, 2026-10-29, replacing 202
   - the lock is `~/.techaust-heavy.lock`, it holds the PIDs of the wrapper and of the command, and is stale when both are gone (a lock without PIDs after 90 minutes, any lock after 6 hours)
   - commands wait while free memory is under 512 MB
   - the whole-repository lint runs only once, as a builder's or designer's final check
+  - on this 8 GB PC, run package test suites one at a time (`pnpm --filter <pkg> test`, each through `tools/heavy.sh`): a parallel `pnpm test` times out the first request of web's Worker tests under load (lead, 2026-11-07); a builder's heavy run beside a designer's dev server and browsers took free memory to 199 MB, so a browser agent waits for the lock to be free and memory over 1.5 GB before starting a dev server
 - **Agent branches and clean-up** (lead, 2026-10-23):
   - each agent creates its own branch in its worktree from `origin/<task branch>` (e.g. `fix/<task>-review-code`) and pushes only that; the lead merges it into the task branch (two agents in parallel never touch the same files; both append to the run file, so the lead keeps both sections)
   - the lead's main checkout never holds a branch an agent must check out
