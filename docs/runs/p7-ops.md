@@ -45,3 +45,145 @@ Tier: B (workflows and scripts; owner's yes to these workflow changes: 13 2026-1
 - `apps/web` tests and `pnpm check` are green;
 - your report is appended here ("## Builder report");
 - `fix/p7-ops-b1` is pushed.
+
+## Builder report
+Builder (Opus 5.5, high), branch `fix/p7-ops-b1` from `origin/feat/p7-ops` (cd5a7dd0). Commits: 3ea47669 (monthly builder), 8559e6e0 (backup workflow), 234f8fd5 (production snapshot), 45084eb5 (runbooks), plus this report. Pushed. No deploy, no hosted change, no secret value.
+
+**Skills loaded:**
+- `cloudflare:wrangler`: kept every Cloudflare call on the project's own wrangler (`WRANGLER_BIN`, the deploy-tools copy) from `apps/jobs`, whose `env.production` binds `DB` (P7-A). `--env` reaches wrangler only as `staging` or `production`. No new wrangler command was added.
+- `aws-core:aws-iam`: shaped the exact role policy in restore.md §3.6.4:
+  - `s3:PutObject` on `daily/*` and `monthly/*`;
+  - `s3:ListBucket` with `StringLike` `s3:prefix` `["daily/*", "monthly/*"]`;
+  - no Get, Delete or DeleteObjectVersion; the OIDC trust is unchanged.
+- `aws-core:aws-storage`: shaped the `monthly/` lifecycle rule (3,653 days for current and noncurrent versions, with the reason) on the versioned bucket. It also made me keep the put-only, list-to-verify pattern.
+- Context7 (GitHub Actions docs, "Defining prerequisite jobs"): a skipped job skips every later job in the chain unless a condition says otherwise. So `build` and `deploy` carry explicit `if:` conditions.
+
+### Files
+- **`scripts/backup-monthly.mjs`** (new), with `.d.mts`:
+  - **`build <export.sql> <finance.sql>`:**
+    - loads the export into an **in-memory** `node:sqlite` database, so no plaintext database file is written. It uses drill-verify's `loadOrder` (schema, then rows; transactions dropped);
+    - **never creates the triggers**; foreign keys are off (`PRAGMA foreign_keys=OFF` after the schema); `sqlite_*` statements are skipped;
+    - refuses, and writes nothing, when the export holds a table `BACKUP_SCOPE` doesn't classify, or lacks a monthly table;
+    - writes:
+      - a header: format `techaust-finance-monthly/1`, the time, the source name and the row counts;
+      - each monthly table's own definition as `CREATE TABLE IF NOT EXISTS` (no index, trigger or view);
+      - the rows of `monthlyExportSql(table)` as `INSERT`s that name their columns, in one transaction;
+    - values are exact: bigints, reals kept REAL, quotes, NUL as a cast blob, and blobs;
+    - the output is opened `wx` with mode 600 and removed on any failure;
+    - it prints only the table count and the byte size. A SQLite error prints only `errstr` (`safeMessage`), because SQLite's own message can quote part of a statement into the public log.
+  - **`restore <finance.sql> <new.db>`:** reads the copy into a new SQLite file for the owner (runbook §3.6.3).
+- **`scripts/backup-monthly-scope.json`** (new): `BACKUP_SCOPE` and every `monthlyExportSql(table)`, generated from `packages/db/src/backup-scope.ts`, which is used as it is (not edited). The runner installs only wrangler, so it can't import the TS module. The drift test regenerates the file and compares it (`UPDATE_BACKUP_SCOPE=1` rewrites it).
+- **`.github/workflows/backup.yml`:**
+  - a `monthly` boolean input;
+  - the step "Is this run also the monthly copy": the run's UTC day is `01` or the box is ticked. It sets `FINANCE`, `FINANCE_ARCHIVE` and `FINANCE_OBJECT=monthly/techaust-prod-finance-<YYYY-MM>.tar`;
+  - "Build and encrypt the monthly finance-only copy", straight after the daily encryption: no secret, `continue-on-error`;
+  - "Delete the plaintexts" (`always()`; the `techaust-prod-*.sql` pattern covers both files);
+  - the daily upload and check, unchanged;
+  - the monthly upload and the listing check, `if: steps.monthly.outcome == 'success'`, with the manifest in the summary;
+  - "Fail the run when the monthly copy failed", after the daily upload, so a monthly failure never costs the daily copy;
+  - the archives and the key file removed on every path;
+  - no new secret or variable.
+- **`.github/workflows/deploy-prod.yml`:**
+  - a new job `snapshot` (needs `guard`, `if: inputs.stage == 'full'`, `environment: backup`):
+    - checks out the workflow's own commit with `persist-credentials: false`;
+    - installs only `@techaust/deploy-tools` and checks the credentials;
+    - runs `node scripts/fetch-catalogue-snapshot.mjs --env production --out apps/web/catalogue-snapshot.json` with `CF_API_TOKEN_BACKUP` and `WRANGLER_BIN`;
+    - uploads the artifact `catalogue-snapshot-production` only when a snapshot was found;
+  - `build`: `needs: [guard, snapshot]`, with an explicit condition: after a passed guard, and after a successful snapshot (or a skipped one on stage database). It downloads the artifact into `apps/web` after the install and before any build;
+  - `deploy`: `if: !cancelled() && needs.build.result == 'success'`;
+  - the header documents all of this.
+- **`scripts/fetch-catalogue-snapshot.mjs`** (and its `.d.mts`):
+  - `--env staging|production` (default staging; anything else, or a missing value, is refused before wrangler runs);
+  - `envOf`, `wranglerArgs` and `runWrangler(env)`;
+  - `main({env})` logs the environment.
+  - The staging callers are unchanged.
+- **`docs/runbooks/restore.md`:**
+  - §1: a row for the 10-year copy;
+  - §3.1: the policy and lifecycle notes;
+  - new **§3.6**: what the monthly copy holds, how it is made, how to open and read it (including onto a schema built from the migrations), and the AWS changes;
+  - the old §3.6 became §3.7.
+- **`docs/runbooks/environments.md`:** a new "Production" section:
+  - the resources and hosts, with no routes or domains in any config;
+  - the GitHub environments;
+  - the deploy workflow: its inputs, the four jobs, the single approval, the order and the health checks;
+  - "after publishing in the production admin, run Deploy production (stage full)";
+  - rollback per 08 §6.3 and incident §2.8;
+  - the backups, with the access-method line.
+- **Tests:**
+  - `apps/web/test/backup-monthly.test.ts` (new, 26), on an export of the **real schema** (all 87 migrations through `node:sqlite`, every trigger written before the rows):
+    - the scope file equals `backup-scope.ts`, and broken scope files are refused (7);
+    - values round-trip exactly;
+    - only the monthly tables come out: the invoice and accepted proposal kept, the open proposal and draft estimate dropped, their lines likewise; the numbered deed only; the pinned terms only;
+    - finance audit rows only, with `ip` and `user_agent` absent; no lead or contact email;
+    - an amount above 2^53 and quoted multi-line text kept exactly;
+    - the copy also loads onto a migrated schema;
+    - refusals (an unclassified table, a missing monthly table, an existing output) leave nothing behind;
+    - a SQLite error's text never reaches the message;
+    - the CLI's build, restore and refusals.
+  - `apps/web/test/backup-workflow.test.ts`:
+    - the order test extended (14 points);
+    - plaintexts deleted after the last encryption, archives removed last;
+    - two `aws s3 cp`;
+    - a new block (10): the input, the decision, the build step's exact script with no secret, the monthly upload and check, and the failure step;
+    - the decision run through bash with a stand-in `date` for 5 day/input cases.
+  - `apps/web/test/deploy-workflow.test.ts`:
+    - the guard and token tests updated (secrets now `CF_API_TOKEN_PROD`, `CF_API_TOKEN_BACKUP`, `CLOUDFLARE_ACCOUNT_ID`);
+    - a new snapshot block (6): the job order, the environment and token, wrangler only and no ref, the fetch and conditional upload, the build and deploy conditions, and the download placed after the install and before the web build with no secret;
+    - a `--env` block (3) for the fetcher.
+
+### Commands and results
+- `vitest run --project node test/backup-monthly.test.ts`: 26 passed.
+- `test/backup-workflow.test.ts test/workflow-actor.test.ts`: 45 passed, 1 skipped (the existing "no bash or openssl" placeholder).
+- `test/deploy-workflow.test.ts test/prod-deploy.test.ts`: 119 passed, 1 skipped.
+- `packages/core`: `test/fetch-catalogue-snapshot.test.ts test/drill-verify.test.ts` (no coverage gate): 30 passed. Staging's use of the fetcher is unchanged.
+- Strict YAML parse of both workflows (`yaml` 2.9.1, `uniqueKeys`): ok. Jobs `guard, snapshot, build, deploy`; 18 backup steps. actionlint is not installed.
+- `bash tools/heavy.sh --log p7ops-web-test pnpm --filter @techaust/web test`: **exit 0, 48 files, 1180 passed, 21 skipped**.
+- `bash tools/heavy.sh --log p7ops-check pnpm check` (the one whole-repository lint): **exit 0**. That covers lint, typecheck and every guard: web bindings, content lint, worker config, SPA headers, migrations (87), CSS collisions.
+
+### The exact AWS changes the owner must make (before 2026-12-01; restore.md §3.6.4 has the clicks)
+1. **The backup role's inline policy, in full** (replace `<bucket>`):
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "PutBackups", "Effect": "Allow", "Action": "s3:PutObject",
+      "Resource": ["arn:aws:s3:::<bucket>/daily/*", "arn:aws:s3:::<bucket>/monthly/*"] },
+    { "Sid": "ListBackupPrefixes", "Effect": "Allow", "Action": "s3:ListBucket", "Resource": "arn:aws:s3:::<bucket>",
+      "Condition": { "StringLike": { "s3:prefix": ["daily/*", "monthly/*"] } } }
+  ]
+}
+```
+   The trust policy is unchanged. Still no GetObject, DeleteObject or DeleteObjectVersion.
+2. **A lifecycle rule `monthly-10-years`**, filtered to the prefix `monthly/`:
+   - expire current versions after **3653** days;
+   - permanently delete noncurrent versions after **3653** days. Reason: a noncurrent version exists only after a same-month re-run or a misused put-only role, and keeping it can't lose a record.
+   - The `daily/` rule (90 and 90 days) is unchanged.
+3. No GitHub change. `deploy-prod.yml`'s `snapshot` job uses the existing `backup` environment and its `CF_API_TOKEN_BACKUP`. That token must be able to read the production D1. P7-N says it has D1 edit on the account; not verified here.
+
+### Decisions I took (for the reviewer and the lead)
+- **`node:sqlite`, not the `sqlite3` command-line tool.**
+  - The brief says "the runner's sqlite3". Node's built-in SQLite is SQLite too, it needs nothing installed on the runner, and the same code runs in the tests on this PC, which has no `sqlite3` binary. So the whole path is tested here.
+  - An in-memory database also means no plaintext database file on the runner's disk.
+- **The copy carries its own table definitions** (`CREATE TABLE IF NOT EXISTS`, no index, trigger or view).
+  - The brief assumed a rows-only copy restored "onto a schema built from the migrations". That path still works, and it is tested and documented in §3.6.3 step 5.
+  - The copy also opens on its own in 10 years, when the migrations may have moved on: `backup-monthly.mjs restore` writes a plain SQLite file.
+  - Neither path can load into a D1: D1 enforces foreign keys, and the copy leaves out `clients`/`contacts` on purpose. The runbook says so.
+- **"The 1st" is the run's UTC day for any trigger**, plus the box. A manual daily run on the 1st also writes the month's copy; versioning keeps the earlier one.
+- **The snapshot job checks out the workflow's own commit (main)**, not `inputs.tag`, so the code that runs with the token is main's. The build still builds `inputs.tag`.
+
+### Gaps found (reported, not redesigned)
+1. **`acceptances` goes into the 10-year copy whole**, including `ip`, `user_agent`, `country`, `email` and `typed_name`. `monthlyExportSql` takes every other monthly table whole (L48, 08-C RB-37). L35 removes the IP and the browser from `audit_log` for this copy, but an acceptance's IP and browser stay for 10 years. This may be intended as e-acceptance evidence. It is the lead's call whether `backup-scope.ts` should give `acceptances` a column list like `audit_log`'s. I did not edit `packages/db`.
+2. **`documents.recipient`** (the client's name and address on each invoice) is in the copy. That is the tax record itself, as the owner's 2026-10-07 decision intends; noted only so nobody calls the copy "free of personal data". The runbook doesn't.
+
+### Not verified
+- **No hosted run.** Untested on GitHub or AWS: the `monthly/` upload under the new policy, the `backup` environment accepting the `snapshot` job, the production snapshot read with `CF_API_TOKEN_BACKUP`, and the explicit `if:` conditions on the job graph. The first `monthly` run by hand, and the first `full` production run, are the proof.
+- The AWS console labels in §3.6.4 ("Expire current versions of objects", "Permanently delete noncurrent versions of objects") are from memory, not read from the console today.
+- The real D1 export's format (still open from P7-N). The builder doesn't depend on the statement order, because triggers are never created. A `_cf_*` table is allowed, and a missing monthly table or an unclassified table stops the copy with a named reason.
+- **Size:** the export is read whole into memory. That is fine for today's database; V8's string limit (~512 MB) sits just above D1 Free's 500 MB per database.
+
+### Open questions
+1. **Runs from a tag.** The `backup` environment accepts `main` only, so a production deploy started with "Use workflow from: <a v* tag>" fails at `snapshot`. Starting from main with `tag: v…` works, and the workflow header and environments.md say so. Should the `backup` environment also accept `v*` tags (a hosted change, the owner's yes)? Or is "always start from main" enough?
+2. **Stage full on a database never migrated** fails at `snapshot` (no `site_snapshots` table). The launch order runs stage `database` first, and environments.md says so. Say if the job should instead treat a missing table as "nothing published".
+3. Gap 1 above (`acceptances` IP and browser in the 10-year copy).
+
+Usage: builder for P7 ops, claude-opus-5-5/high (the lead fills in the agent id from `node tools/model-audit.mjs`).
