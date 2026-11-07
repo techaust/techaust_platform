@@ -176,3 +176,6 @@ No critical, high or medium finding.
 - `drizzle-kit generate --custom --name lut_fold` gave **0089** again (main ends at 0088): journal `idx 89`, snapshot `prevId` = 0088's id. `scripts/write-triggers.ts lut_fold` wrote SQL **byte for byte identical** to the reviewed 0089 (compared with `diff`), so the merge condition's re-check is that comparison; no reviewer run. Meta biome-formatted.
 - Lead's run: `pnpm --filter @techaust/db test` 64 files, 1,134 tests passed; `pnpm check` passed (migration guard: 90 migrations, none rebuilds a referenced table). The other suites run in CI.
 - Usage: no agent run in this step.
+
+## Handover (2026-11-08)
+Merged as [#199](https://github.com/techaust/techaust_platform/pull/199) and deployed to production with the launch (D1 at 0089). Nothing left on this task. Usage: no agent run in the integration step (lead only).

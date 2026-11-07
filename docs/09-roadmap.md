@@ -155,6 +155,8 @@
 | L10 | **Post-launch hardening** | Cloudflare minimum TLS 1.2, a WAF rate-limit rule, CAA records; DMARC → `quarantine` after 2–4 weeks of clean reports; HSTS review | ✅ each change |
 | L11 | **Two-week watch** | Daily budget and error review; a fix-forward window; then a handover summary | — |
 
+**Status 2026-11-08:** L1–L8 done (the website went live on techaust.com in the early hours of 8 November; the subdomains, the first production deploy, the backups and the restore drill before it; the email DNS was already in place). L10 done except the dated items (DMARC `quarantine` and the HSTS review after 2–4 weeks). Still to do: the owner's first sign-in and Settings, the gateway test webhooks to `hooks.techaust.com`, Search Console and an uptime monitor (L7's monitoring part), L9 when the owner says so, and L11 from 8 November. Details: [runs/p7-launch](runs/p7-launch.md).
+
 ---
 
 ## Dependency view (critical path)
