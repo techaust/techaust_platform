@@ -17,6 +17,7 @@ import {
   earlierMonthOf,
   fyChoices,
   keptAsCreditLine,
+  keptOnPaymentLine,
   leftoverLine,
   monthText,
   openDocsOf,
@@ -121,6 +122,33 @@ describe("07-ZH lines 47–49 (visual review fixes, staff-only drafts)", () => {
     ]);
     // line 10's button words stay where an invoice is in context
     expect(PAY_COPY.useCredit).toBe("Use credit on this invoice");
+  });
+  it("a confirmed payment's dialog says what it keeps as credit: amount, less allocations, plus releases (audit AU17, B2 5)", () => {
+    const p = { kind: "payment", status: "confirmed", amountMinor: 10_000_00, currency: "INR" as const };
+    const a = (kind: "allocate" | "release", amountMinor: number) => ({ kind, amountMinor });
+    // 10,000 paid, 8,000 put on an invoice, 500 moved back to credit: 2,500 kept
+    expect(
+      keptOnPaymentLine(p, [a("allocate", 8_000_00), a("release", 500_00)], false, "Riverside Traders"),
+    ).toBe(keptAsCreditLine("₹2,500.00", "Riverside Traders"));
+    // put on nothing: the whole amount
+    expect(keptOnPaymentLine(p, [], false, "Riverside Traders")).toBe(
+      keptAsCreditLine("₹10,000.00", "Riverside Traders"),
+    );
+    // nothing kept, a waiting or TDS entry, a standing refund, or an older API without the flag: no line
+    expect(keptOnPaymentLine(p, [a("allocate", 10_000_00)], false, "R")).toBeNull();
+    expect(keptOnPaymentLine({ ...p, status: "pending_verification" }, [], false, "R")).toBeNull();
+    expect(keptOnPaymentLine({ ...p, kind: "tds" }, [], false, "R")).toBeNull();
+    expect(keptOnPaymentLine(p, [], true, "R")).toBeNull();
+    expect(keptOnPaymentLine(p, [], undefined, "R")).toBeNull();
+    // USD in its own currency
+    expect(
+      keptOnPaymentLine(
+        { ...p, currency: "USD", amountMinor: 1_200_00 },
+        [a("allocate", 1_000_00)],
+        false,
+        "Northwind",
+      ),
+    ).toBe(keptAsCreditLine("$200.00", "Northwind"));
   });
   it("line 50 (re-check finding 2): the letter dialog's missing-file error, apart from the file hint", () => {
     expect(PAY_UI.letterMissing).toBe(mark("Choose the bank's letter."));

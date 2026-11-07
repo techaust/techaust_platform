@@ -1521,6 +1521,12 @@ body:has(.shell) {
   }
 }
 
+/* One chip group and nothing else (FilterBar adds the class; AU17, B2 6): a single column the panel's width at every size, so the chips stay on one row
+   while they fit (the 80rem grid above would hold the group in its 22rem first column). */
+.filters.filters--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .field-icon {
   position: relative;
 }
