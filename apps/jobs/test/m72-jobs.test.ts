@@ -782,7 +782,7 @@ describe("the dead letter (early check finding 4; L13)", () => {
     const code = (await one<{ code: string }>("SELECT code FROM clients WHERE id = ?1", r.clientId))?.code;
     const body = { kind: "refund.reversed", refundId: r.refundId };
     expect(await processDeadLetter(e, "techaust-local-email-dlq", body, transport)).toBe(true);
-    expect(sent[0]?.text).toContain("Email: returned-refund email to a client");
+    expect(sent[0]?.text).toContain("Email: the email telling a client their refund came back");
     expect(sent[0]?.text).not.toContain(r.refundId);
     await processDeadLetter(e, "techaust-local-email-dlq", body, transport);
     expect(

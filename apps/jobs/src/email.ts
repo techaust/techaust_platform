@@ -335,7 +335,7 @@ export const JOB_FAILED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, use
 export const DEAD_LETTER_KIND_NAMES: Readonly<Record<string, string>> = {
   "refund.notify": "refund email to a client",
   // AU61 (review L2): the email about a refund that came back (AU1); builder's words for the lead.
-  "refund.reversed": "returned-refund email to a client",
+  "refund.reversed": "the email telling a client their refund came back",
   "staff.notify": "staff notification email",
   "digest.weekly": "owners' weekly digest",
   "signin.unfinished": "unfinished sign-in alert",

@@ -674,3 +674,8 @@ Skills: `cloudflare:workers-best-practices` (L1, L2, L4, L7: no buffering of unb
 ### Questions
 - The auth → core workspace link (L7): keep it, or should the Turnstile reader stay its own copy?
 - L2's alert words "returned-refund email to a client" are mine; approve or replace.
+
+### Lead's answers to the review fixes (2026-11-07)
+- **AU62:** `packages/auth` keeps its new workspace link to `@techaust/core`. It's internal and pure (no new outside package; packages import packages).
+- **AU63:** the dead-letter alert name for `refund.reversed` is reworded by the lead to "the email telling a client their refund came back" (staff line).
+- **AU64:** the portal bundle is 163,583 bytes (ceiling 200,000; plan line 160,000; L47 is the owner's question, and the lead's recommendation stays: raise the line to 180,000). The other three copies of a capped reader (`apps/jobs/src/hooks/shared.ts`, `usage.ts`, `apps/web/src/forms.ts`) become a follow-up.
