@@ -38,7 +38,23 @@ export type GatewayRefund = {
   /** Our `payment_refunds.id` as we sent it, when the gateway echoes it. */
   readonly ourId: string | null;
   readonly failureCode: string | null;
+  /**
+   * M6–M7 audit AU1: Stripe's `requires_action` (read as `pending`). On a refund that had already succeeded it means the money came back and the customer must
+   * act, so it reverses our refund (`reversalOf`). Absent on every other answer.
+   */
+  readonly requiresAction?: true;
 };
+
+/**
+ * M6–M7 audit AU1 (B0 1; Researched 2026-11-07, docs.stripe.com/refunds "Failed refunds": a refund can fail after `succeeded`, up to 30 days later, when the
+ * bank returns the funds): a refund we hold as `succeeded` that the gateway now shows `failed` (or, on Stripe, `requires_action` after success) is reversed with
+ * this failure code; null: it still stands. Razorpay and PayPal take the same path if their answer ever says failed after success.
+ */
+export function reversalOf(g: GatewayRefund): string | null {
+  if (g.state === "failed") return g.failureCode ?? "gateway_failed";
+  if (g.requiresAction === true) return "stripe_requires_action";
+  return null;
+}
 
 /** Razorpay's refund entity (`POST /v1/payments/{id}/refund`, `GET /v1/refunds/{id}`, an item of `GET /v1/payments/{id}/refunds`), else null. */
 export function readRazorpayRefund(v: unknown): GatewayRefund | null {
@@ -83,6 +99,7 @@ export function readStripeRefund(v: unknown): GatewayRefund | null {
     ourId: ourId(md.techaust_refund),
     failureCode:
       state === "failed" ? (code(v.failure_reason) ?? `stripe_${String(v.status)}`.slice(0, 64)) : null,
+    ...(v.status === "requires_action" ? { requiresAction: true as const } : {}),
   };
 }
 

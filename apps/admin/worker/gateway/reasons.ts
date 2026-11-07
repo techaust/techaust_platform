@@ -143,6 +143,9 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "refund_after_failed":
       // Early check 2, finding 1c (L43; builder's draft for the lead, staff-only): our row says failed, the gateway says made or on its way.
       return `${gw} shows the refund of ${m(f.paidMinor)} as made or on its way, but it is marked failed here, so the client's credit still counts it. Check it in ${gw}'s dashboard and record the refund if it was made.`;
+    case "refund_reversed":
+      // M6–M7 audit AU1 (staff-only; the builder's draft for the lead, 07-ZT line 3): a refund that had gone out came back.
+      return `${gw}'s refund of ${m(f.paidMinor)} came back after it was made, so it is marked failed and the money is the client's credit again. Check it in ${gw}'s dashboard, then refund it again or keep it as credit.`;
     case "dispute_opened":
       return `The client disputed ${m(f.paidMinor)} with their card issuer. Answer the dispute in ${gw}'s dashboard. Nothing changes here until it closes.`;
     case "dispute_closed":

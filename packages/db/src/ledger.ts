@@ -350,6 +350,13 @@ export const NO_LIVE_REFUND_SQL =
   "NOT EXISTS (SELECT 1 FROM payment_refunds wr INDEXED BY payment_refunds_payment WHERE wr.payment_id = ?1 AND wr.status <> 'failed')";
 
 /**
+ * M6–M7 audit AU4 (B0 9): the payment `?1` has no active "seen in the bank statement" tick and no active remittance advice link; a withdraw is refused (409
+ * `payment_linked`) until the Owner removes them, so no tick or advice is left naming money that no longer counts.
+ */
+export const NO_ACTIVE_LINK_SQL =
+  "NOT EXISTS (SELECT 1 FROM bank_matches wm INDEXED BY bank_matches_payment WHERE wm.payment_id = ?1 AND wm.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM realisation_advice_payments wl INDEXED BY realisation_advice_payments_active WHERE wl.payment_id = ?1 AND wl.removed_at IS NULL)";
+
+/**
  * The main statement of a withdraw: a CONFIRMED payment of a live client, by an Owner with a fresh step-up, with a reason, and (M6.5) with no refund that is not failed. A payment that stands for an M5.2
  * advance receipt is never withdrawn here (`advance_receipt_id IS NULL`): its tax invoice was issued because the money arrived, so a credit note is the
  * correction (lead's safe side; listed for the early check). Follow it with `recomputeStatement(db, {paymentIds: [paymentId]}, now, g)` (every document the payment
@@ -363,7 +370,7 @@ export function withdrawPaymentStatement(
     .prepare(
       `UPDATE payments SET status = 'withdrawn', withdrawn_by = ${sessionUser("?3")}, withdrawn_at = ?2, withdraw_reason = ?4
        WHERE id = ?1 AND status = 'confirmed' AND advance_receipt_id IS NULL AND ${clientLive("payments")} AND ${sessionSql("?3", "?2", ["owner"], true)}
-         AND ${NO_LIVE_REFUND_SQL}`,
+         AND ${NO_LIVE_REFUND_SQL} AND ${NO_ACTIVE_LINK_SQL}`,
     )
     .bind(a.paymentId, a.now, a.sessionId, a.reason);
 }

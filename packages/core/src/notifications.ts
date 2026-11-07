@@ -156,3 +156,14 @@ export function parseRefundNotify(body: unknown): RefundNotifyMessage | null {
 }
 export const refundNotify = (refundId: string): RefundNotifyMessage => ({ kind: "refund.notify", refundId });
 export const isRefundNotifyKind = (body: unknown): boolean => objOf(body)?.kind === "refund.notify";
+
+/** M6–M7 audit AU1: a refund of ours that had succeeded came back failed at the gateway and was reversed; ids only. */
+export type RefundReversedMessage = { kind: "refund.reversed"; refundId: string };
+export function parseRefundReversed(body: unknown): RefundReversedMessage | null {
+  const o = objOf(body);
+  if (!o || !exactKeys(o, ["kind", "refundId"]) || o.kind !== "refund.reversed") return null;
+  if (typeof o.refundId !== "string" || o.refundId.length < 1 || o.refundId.length > 64) return null;
+  return { kind: "refund.reversed", refundId: o.refundId };
+}
+export const refundReversed = (refundId: string): RefundReversedMessage => ({ kind: "refund.reversed", refundId });
+export const isRefundReversedKind = (body: unknown): boolean => objOf(body)?.kind === "refund.reversed";

@@ -28,7 +28,7 @@ import {
 } from "@techaust/db/gateway";
 import { adminAdvance, adminGateway } from "./gateway-rpc.ts";
 import { logEvent } from "./log.ts";
-import { sendRefundNotify } from "./refund-notify.ts";
+import { sendRefundNotify, sendRefundReversed } from "./refund-notify.ts";
 import { notifyRecentBells, RECENT_MARGIN_MS } from "./staff-notify.ts";
 
 /** The bell of a dead-lettered gateway message (07-ZI S20 and S22: "A payment needs review: {reason}."; staff words, lead under the owner's delegation). */
@@ -71,6 +71,8 @@ export async function processGateway(
       // M7.2 (Q4 A, producer 3): a refund event that moved our refund to succeeded: the client's email (its own message on the email queue). A failed send is
       // logged, never thrown (review 1, finding 8): the redelivery would be a duplicate, so `refund.sweep` sends it within the hour.
       if (r.refundNotify) await sendRefundNotify(env, r.refundNotify);
+      // M6–M7 audit AU1: a refund of ours that came back: the client's email (held behind 07-ZT's gate; a failed send is logged, never thrown).
+      if (r.refundReversed) await sendRefundReversed(env, r.refundReversed);
       // M7.2 (L9): the payment and review bells this event rang are emailed at once (the hourly `bells.sweep` is the safety net).
       if (r.result === "processed" || r.result === "needs_review")
         await notifyRecentBells(env, started - RECENT_MARGIN_MS).catch(() =>

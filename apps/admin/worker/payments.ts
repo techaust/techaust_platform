@@ -39,6 +39,7 @@ import {
   allocationStatements,
   decideApprovalStatements,
   ledgerResultStatement,
+  NO_ACTIVE_LINK_SQL,
   PAYMENT_REFERENCE_SEEN_SQL,
   paymentApprovalStatements,
   paymentNetSql,
@@ -77,6 +78,7 @@ import {
   PAYMENT_ADVANCE_BACKED,
   PAYMENT_CLOSED,
   PAYMENT_NOT_CONFIRMED,
+  PAYMENT_LINKED,
   PAYMENT_NOT_PENDING,
   PROFORMA_ASK_WHOLE,
   PROOF_ALREADY_SET,
@@ -135,6 +137,14 @@ export const noticeRecordStatement = (
          AND document_id IN (SELECT value FROM json_each(?6)) AND ${g.sql(7)}`,
     )
     .bind(a.noticeId, a.paymentId, a.by, a.now, a.clientId, JSON.stringify(a.documentIds), ...g.params);
+
+/** M6–M7 audit AU16 (B2 4): the payment's (`?1`) refunds that have not failed and its active bank tick, for `GET /payments/:id`. */
+const PAYMENT_LINKS_SQL = `SELECT EXISTS (SELECT 1 FROM payment_refunds lr INDEXED BY payment_refunds_payment WHERE lr.payment_id = ?1 AND lr.status <> 'failed') AS live_refund,
+     EXISTS (SELECT 1 FROM bank_matches lm INDEXED BY bank_matches_payment WHERE lm.payment_id = ?1 AND lm.removed_at IS NULL) AS bank_ticked`;
+
+/** M6–M7 audit AU4: payment `id` has an active bank tick or remittance advice link (the withdraw refusal; `NO_ACTIVE_LINK_SQL` negated). */
+const linkedOf = async (db: D1Database, id: string) =>
+  (await db.prepare(`SELECT 1 AS linked WHERE NOT (${NO_ACTIVE_LINK_SQL})`).bind(id).first()) !== null;
 
 /** M6.5: a refund of payment `id` that has not failed (the confirm and withdraw refusals). */
 const liveRefundOf = (db: D1Database, id: string) =>
@@ -347,11 +357,11 @@ export function paymentListSql(f: {
   cursor: boolean;
   /** M6.3 (L11): card and PayPal payments with no proof yet ("Proof awaited"), through `payments_proof_awaited`. */
   proof?: boolean;
-}): { sql: string; key: "received_on" | "recorded_at" | "rowid" } {
+}): { sql: string; key: "received_on" | "recorded_at" } {
   const where: string[] = [];
   let at = 1;
   const next = () => `?${at++}`;
-  let key: "received_on" | "recorded_at" | "rowid";
+  let key: "received_on" | "recorded_at";
   let from: string;
   let order: string;
   let cursor = "";
@@ -384,8 +394,10 @@ export function paymentListSql(f: {
     from = "payments p INDEXED BY payments_received";
     key = "received_on";
   } else {
-    from = "payments p";
-    key = "rowid";
+    // M6–M7 audit AU2 (B0 3): the rejected and withdrawn lists read one range of `payments_status_received (status, received_on, id)` (0081), newest received
+    // first, keyset `(received_on, id)`, no longer a walk of the table by rowid.
+    from = "payments p INDEXED BY payments_status_received";
+    key = "received_on";
   }
   if (f.status !== undefined) where.push(`p.status = ${next()}`);
   if (f.from) where.push(`p.received_on >= ${next()}`);
@@ -397,16 +409,13 @@ export function paymentListSql(f: {
       const b = next();
       cursor = `(p.recorded_at > ${a} OR (p.recorded_at = ${a} AND p.id > ${b}))`;
     }
-  } else if (key === "received_on") {
+  } else {
     order = "p.received_on DESC, p.id DESC";
     if (f.cursor) {
       const a = next();
       const b = next();
       cursor = `(p.received_on < ${a} OR (p.received_on = ${a} AND p.id < ${b}))`;
     }
-  } else {
-    order = "p.rowid DESC";
-    if (f.cursor) cursor = `p.rowid < ${next()}`;
   }
   if (cursor) where.push(cursor);
   return {
@@ -498,10 +507,7 @@ export const payments = new Hono<AppEnv>()
     if (q.after !== undefined) {
       const cur = decodeCursor(q.after);
       if (!cur) return err(c, BAD_REQUEST, 400);
-      if (variant.key === "rowid") {
-        if (typeof cur.k !== "number") return err(c, BAD_REQUEST, 400);
-        cursorBinds = [cur.k];
-      } else if (variant.key === "recorded_at") {
+      if (variant.key === "recorded_at") {
         if (typeof cur.k !== "number") return err(c, BAD_REQUEST, 400);
         cursorBinds = [cur.k, cur.id];
       } else {
@@ -523,12 +529,7 @@ export const payments = new Hono<AppEnv>()
     const next =
       results.length > PAGE && last
         ? encodeCursor({
-            k:
-              variant.key === "rowid"
-                ? last.rid
-                : variant.key === "recorded_at"
-                  ? last.recorded_at
-                  : last.received_on,
+            k: variant.key === "recorded_at" ? last.recorded_at : last.received_on,
             id: last.id,
           })
         : null;
@@ -538,11 +539,12 @@ export const payments = new Hono<AppEnv>()
   .get("/:id", param(idParam), async (c) => {
     const { id } = c.req.valid("param");
     // M6.4 (the designer's admin round): the advice the payment is on now, from the active link only (a link taken off is null).
-    const [p, a, adv, nt] = await c.env.DB.batch([
+    const [p, a, adv, nt, ln] = await c.env.DB.batch([
       c.env.DB.prepare(PAYMENT_READ_SQL).bind(id),
       c.env.DB.prepare(PAYMENT_ALLOCATIONS_SQL).bind(id),
       c.env.DB.prepare(PAYMENT_ADVICE_SQL).bind(id),
       c.env.DB.prepare(PAYMENT_NOTICE_SQL).bind(id),
+      c.env.DB.prepare(PAYMENT_LINKS_SQL).bind(id),
     ]);
     const row = p?.results[0] as PaymentRow | undefined;
     if (!row) return err(c, NOT_FOUND, 404);
@@ -569,6 +571,7 @@ export const payments = new Hono<AppEnv>()
       | { id: string; provider: string; kind: string; advice_ref: string; issued_on: string }
       | undefined;
     const notice = nt?.results[0] as { id: string; via: string; created_at: number } | undefined;
+    const links = ln?.results[0] as { live_refund: number; bank_ticked: number } | undefined;
     return c.json({
       payment: paymentView(row),
       allocations,
@@ -586,6 +589,10 @@ export const payments = new Hono<AppEnv>()
             issuedOn: on.issued_on,
           }
         : null,
+      // M6–M7 audit AU16 (B2 4) and AU4: what refuses a withdraw, so the screen hides Withdraw and says why: a refund that has not failed (409 `refunds_exist`),
+      // an active "seen in the bank statement" tick or advice link (409 `payment_linked`).
+      hasLiveRefund: links?.live_refund === 1,
+      bankTicked: links?.bank_ticked === 1,
     });
   })
 
@@ -1112,6 +1119,8 @@ export const payments = new Hono<AppEnv>()
       if (again.client_gone === 1) return err(c, CLIENT_GONE, 409);
       // M6.5 (L10, review fix 2): a payment with a refund that has not failed is never withdrawn (the WHERE's `NO_LIVE_REFUND_SQL`).
       if (await liveRefundOf(db, id)) return err(c, REFUNDS_EXIST, 409);
+      // M6–M7 audit AU4 (B0 9): an active bank tick or remittance advice link (the WHERE's `NO_ACTIVE_LINK_SQL`).
+      if (await linkedOf(db, id)) return err(c, PAYMENT_LINKED, 409);
       return (await sessionRefusal(c, true)) ?? err(c, STALE_VERSION, 409);
     }
     return c.json({ ok: true, id, status: "withdrawn" });

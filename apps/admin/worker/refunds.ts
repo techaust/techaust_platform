@@ -50,6 +50,7 @@ import {
 import {
   applyGatewayRefund,
   checkRefund,
+  isOurs,
   readRefund,
   refundIdleAt,
   retryAfterSeconds,
@@ -250,6 +251,8 @@ const view = (r: NonNullable<Awaited<ReturnType<typeof readRefund>>>) => ({
   attempts: r.attempts,
   settledOn: r.settled_on,
   updatedAt: r.updated_at,
+  // M6–M7 audit AU1: when a gateway refund that succeeded came back failed (null otherwise); the screens say "Came back" for such a failed refund.
+  reversedAt: r.reversed_at ?? null,
 });
 
 export const refunds = new Hono<AppEnv>()
@@ -512,6 +515,12 @@ export const refunds = new Hono<AppEnv>()
     const row = await readRefund(db, f.id);
     if (!row) return err(c, NOT_FOUND, 404);
     if (answer.ok) {
+      // M6–M7 audit AU3 (B0 8): an answer that isn't this refund (another amount, currency, our id or gateway id) is never applied: the row stays `requested`
+      // and the sweep (or "Try again") finds the refund by our id, as after a lost answer.
+      if (!isOurs(row, answer.value)) {
+        console.log(JSON.stringify({ ev: "refund", m: "answer_not_ours" }));
+        return c.json({ refund: view(row), status: "requested", facts }, 202);
+      }
       await applyGatewayRefund(c.env, row, answer.value, Date.now());
       const r = await readRefund(db, f.id);
       notifySucceeded(c, r);

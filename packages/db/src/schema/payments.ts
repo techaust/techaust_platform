@@ -321,6 +321,8 @@ export const REVIEW_KINDS = [
   "dispute_closed",
   // Early check 2, finding 1c (L43): a refund we marked failed that the gateway shows as made or pending.
   "refund_after_failed",
+  // M6–M7 audit AU1 (0082 `review_items_values_*`): a gateway refund that succeeded came back failed.
+  "refund_reversed",
 ] as const;
 /**
  * Provider references are generic (lead, 2026-11-01, M6.3/M6.4 briefs session): up to 255 characters, so a Stripe Checkout Session id (66 in Stripe's fixture, 5000

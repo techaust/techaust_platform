@@ -19,6 +19,7 @@ import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
 import {
   isBellsSweepKind,
   isRefundNotifyKind,
+  isRefundReversedKind,
   isSigninUnfinishedKind,
   isStaffNotifyKind,
 } from "@techaust/core/notifications";
@@ -42,7 +43,7 @@ import { processPdf, processPdfDeadLetter } from "./pdf.ts";
 import { processPortalAlert } from "./portal-alerts.ts";
 import { enqueueDue, processStatementPurge, purgeLead } from "./purge.ts";
 import { processReceipt, processReceiptDeadLetter } from "./receipts.ts";
-import { processRefundNotify } from "./refund-notify.ts";
+import { processRefundNotify, processRefundReversed } from "./refund-notify.ts";
 import { processRefundDeadLetter, processRefundFamily } from "./refunds.ts";
 import { processReminderSend } from "./reminders.ts";
 import { processEdfReminder, processRealisationScan } from "./reports.ts";
@@ -260,6 +261,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (queue.endsWith("-email") && isRefundNotifyKind(message.body)) {
         // M7.2 (Q4 A): one refund's client emails, before the generic path (a window wait is a NEW delayed message made inside, never a retry).
         await processRefundNotify(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-email") && isRefundReversedKind(message.body)) {
+        // M6–M7 audit AU1: a refund that came back, the client's email (held behind 07-ZT's gate), before the generic path as `refund.notify`.
+        await processRefundReversed(env, message.body);
         message.ack();
       } else if (queue.endsWith("-email") && isStaffAlert(message.body)) {
         // Expanded into ordinary emails; an alert that cannot be read or has no row is acknowledged (a retry cannot help).

@@ -94,6 +94,11 @@ export const USE_PAYMENT_VERIFY = e(
 export const PAYMENT_NOT_CONFIRMED = e("payment_not_confirmed", "Only a confirmed payment can be withdrawn.");
 /** M6.5 (L10, review fix 2): staff line drafted by the builder for the lead. */
 export const REFUNDS_EXIST = e("refunds_exist", "This payment has a refund, so it can't be withdrawn.");
+/** M6–M7 audit AU4 (B0 9): staff line drafted by the builder for the lead (07-ZT line 7). */
+export const PAYMENT_LINKED = e(
+  "payment_linked",
+  "This payment is ticked as seen in the bank statement or linked to a remittance advice. Remove that first, then withdraw it.",
+);
 /** M6.5 (part 2 item 2): a pending payment being refunded is never confirmed (staff line drafted by the builder for the lead). */
 export const REFUND_IN_PROGRESS = e(
   "refund_in_progress",

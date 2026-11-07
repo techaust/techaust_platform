@@ -280,6 +280,11 @@ export const REVIEW_KINDS = [
    * back while the client's credit still counts it. Review only; the Owner checks the gateway and records the refund (`outside`) if it was made.
    */
   "refund_after_failed",
+  /**
+   * M6–M7 audit AU1 (B0 1): a gateway refund that had succeeded came back failed (Stripe: the bank returned it; `requires_action` after success): our row is
+   * now `failed` with `reversed_at`, so the money is the client's credit again. Review only; the Owner refunds it again or keeps it as credit (0082).
+   */
+  "refund_reversed",
 ] as const;
 export type ReviewKind = (typeof REVIEW_KINDS)[number];
 export const REVIEW_RESOLUTIONS = ["confirmed", "advance_issued", "left_as_credit", "dismissed"] as const;

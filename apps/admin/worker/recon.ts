@@ -16,6 +16,7 @@ import { uuidv7 } from "@techaust/core/ids";
 import { bankMatchBody, bankMatchRemoveBody, reconFetchBody } from "@techaust/core/payment-schemas";
 import { RECON_PAGE_MAX, readRazorpayRecon, reconQueryOf } from "@techaust/core/recon";
 import {
+  BANK_MATCH_BY_ID_SQL,
   bankMatchRemoveStatement,
   bankMatchStatement,
   SETTLEMENTS_SQL,
@@ -120,17 +121,24 @@ const unmatchedQuery = z.object({
   cursor: z.optional(z.string().check(z.maxLength(200))),
 });
 
-/** Razorpay payments 5 or more days old (`?1` the last received day) that no settlement item names; keyset `(received_on, id)` from `?2`/`?3`. */
-const GATEWAY_UNSETTLED_SQL = `SELECT p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.provider_payment_id
-   FROM payments p INDEXED BY payments_confirmed
-   WHERE p.status = 'confirmed' AND p.provider = 'razorpay' AND p.kind = 'payment' AND p.received_on <= ?1
+/**
+ * Razorpay payments 5 or more days old (`?1` the last received day) that no settlement item names; keyset `(received_on, id)` from `?2`/`?3`. M6–M7 audit AU2
+ * (B0 2): one range of `payments_confirmed_provider (provider, received_on, id)` for Razorpay alone (the partial index's WHERE and the provider stated as
+ * literals), so the other gateways' and the bank's payments are never read.
+ */
+export const GATEWAY_UNSETTLED_SQL = `SELECT p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.provider_payment_id
+   FROM payments p INDEXED BY payments_confirmed_provider
+   WHERE p.provider = 'razorpay' AND p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on <= ?1
      AND (p.received_on > ?2 OR (p.received_on = ?2 AND p.id > ?3))
      AND NOT EXISTS (SELECT 1 FROM settlement_items si INDEXED BY settlement_items_payment WHERE si.payment_id = p.id)
    ORDER BY p.received_on, p.id LIMIT 51`;
-/** Confirmed manual payments verified before `?1` (UTC ms) with no live "seen in the bank statement" tick; keyset `(received_on, id)` from `?2`/`?3`. */
-const MANUAL_UNTICKED_SQL = `SELECT p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm
-   FROM payments p INDEXED BY payments_confirmed
-   WHERE p.status = 'confirmed' AND p.provider = 'manual' AND p.kind = 'payment' AND p.verified_at < ?1
+/**
+ * Confirmed manual payments verified before `?1` (UTC ms) with no live "seen in the bank statement" tick; keyset `(received_on, id)` from `?2`/`?3`. AU2: one
+ * range of `payments_confirmed_provider` for `manual` alone.
+ */
+export const MANUAL_UNTICKED_SQL = `SELECT p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm
+   FROM payments p INDEXED BY payments_confirmed_provider
+   WHERE p.provider = 'manual' AND p.status = 'confirmed' AND p.kind = 'payment' AND p.verified_at < ?1
      AND (p.received_on > ?2 OR (p.received_on = ?2 AND p.id > ?3))
      AND NOT EXISTS (SELECT 1 FROM bank_matches bm INDEXED BY bank_matches_payment WHERE bm.payment_id = p.id AND bm.removed_at IS NULL)
    ORDER BY p.received_on, p.id LIMIT 51`;
@@ -228,7 +236,33 @@ export const reconciliation = new Hono<AppEnv>()
       entityId: f.id,
       summary: { matchId: f.id, kind: f.target.kind, targetId: f.target.id, statementOn: f.statementOn },
     });
-    if (!done) return err(c, MATCH_EXISTS, 409);
+    if (!done) {
+      // M6–M7 audit AU3 (B0 6): a repeat of the same request (its id is the idempotency key) finds its own row: 200 as the first time; anything else is 409.
+      const same = await c.env.DB.prepare(BANK_MATCH_BY_ID_SQL).bind(f.id).first<{
+        target_kind: string;
+        payment_id: string | null;
+        settlement_id: string | null;
+        refund_id: string | null;
+        statement_on: string;
+        statement_ref: string | null;
+      }>();
+      const target = same
+        ? same.target_kind === "payment"
+          ? same.payment_id
+          : same.target_kind === "refund"
+            ? same.refund_id
+            : same.settlement_id
+        : null;
+      if (
+        same &&
+        same.target_kind === f.target.kind &&
+        target === f.target.id &&
+        same.statement_on === f.statementOn &&
+        same.statement_ref === (f.statementRef ?? null)
+      )
+        return c.json({ ok: true, id: f.id });
+      return err(c, MATCH_EXISTS, 409);
+    }
     return c.json({ ok: true, id: f.id });
   })
   .post("/bank-matches/:id/remove", param(idParam), body(bankMatchRemoveBody), async (c) => {
