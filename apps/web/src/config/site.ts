@@ -3,6 +3,7 @@
 // owner gives them, and the preview pages show labelled placeholders in their place, never invented values.
 // Phase 2 of M2.1 (builder) finalises this file; the shell only reads it.
 // With its extension: astro.config.mjs loads this file through Node itself (lib/quotable-build.ts).
+import { POSTAL_ADDRESS } from "@techaust/core/company";
 import { type IstWindow, istText } from "../scripts/call-time.ts";
 
 /**
@@ -38,8 +39,11 @@ export const site = {
   discoveryFallback: "/get-a-quote?service=S1",
   /** Owner decision 2026-10-22: no GA4 at launch. Empty = no consent banner, preferences show necessary only. */
   ga4Id: "",
-  /** OWNER: postal address for the legal pages (07-A `{{postal_address}}`). Empty = a labelled placeholder (never invented). */
-  postalAddress: "Pirozpur, Balurghat, Dakshin Dinajpur, West Bengal 733133" as string,
+  /**
+   * OWNER: postal address for the legal pages (07-A `{{postal_address}}`). Empty = a labelled placeholder (never invented). The value lives
+   * once in `@techaust/core/company` (`POSTAL_ADDRESS`), which the jobs Worker's Rule 9 email block reads too (P7-C); change it there.
+   */
+  postalAddress: POSTAL_ADDRESS,
   /**
    * OWNER: founder's headshot: the file name of an image put in apps/web/src/assets/founder/ (e.g. "founder.jpg", at least
    * 1200 px tall, 4:5). The build makes AVIF and WebP copies through astro:assets (WEB-G-13); a name with no file fails the
