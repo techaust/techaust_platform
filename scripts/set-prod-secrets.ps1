@@ -107,7 +107,7 @@ $plan = @(
   @{ C = "apps\jobs\wrangler.jsonc"; N = "UNSUBSCRIBE_KEY"; Make = "hex" },
   @{ C = "apps\jobs\wrangler.jsonc"; N = "RAZORPAY_WEBHOOK_SECRET"; Make = "hex" },
   @{ C = "apps\jobs\wrangler.jsonc"; N = "STRIPE_WEBHOOK_SECRET"; Make = "placeholder" },
-  @{ C = "apps\jobs\wrangler.jsonc"; N = "PAYPAL_WEBHOOK_ID"; Make = "placeholder" },
+  @{ C = "apps\jobs\wrangler.jsonc"; N = "PAYPAL_WEBHOOK_ID"; Make = "paypal-placeholder" },
   @{ C = "apps\jobs\wrangler.jsonc"; N = "CF_ANALYTICS_TOKEN"; Make = "ask"; Ask = "Cloudflare read-only Account Analytics token (the staging-usage-analytics one is fine)" }
 )
 
@@ -125,6 +125,8 @@ try {
       "b64" { $value = New-B64 }
       "hex" { $value = New-Hex }
       "placeholder" { $value = "placeholder-" + (New-Hex) }
+      # The PayPal hook refuses a webhook id that is not letters and digits, 1 to 50 (core `isPayPalWebhookId`): 503 hook_unconfigured (launch, 2026-11-08).
+      "paypal-placeholder" { $value = "placeholder" + (New-Hex).Substring(0, 32) }
       "erasure" { if ($null -eq $erasure) { $erasure = New-Hex }; $value = $erasure }
       "signin" { if ($null -eq $turnstileSignin) { $turnstileSignin = Read-Hidden "Turnstile SECRET of the production SIGN-IN widget (techaust-prod-signin)" }; $value = $turnstileSignin }
       "ask" { $value = Read-Hidden $s.Ask }

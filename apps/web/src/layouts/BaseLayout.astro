@@ -50,6 +50,10 @@ const {
   rss = false,
 } = Astro.props;
 const canonicalUrl = new URL(canonical, Astro.site).href;
+const cfBeacon =
+  process.env.CLOUDFLARE_ENV === "production" && site.cfAnalyticsSite
+    ? JSON.stringify({ token: site.cfAnalyticsSite })
+    : "";
 // Every page has a share image of its own, /og/<slug>.png, rendered after the build (scripts/build-og.mjs); the 404
 // keeps the default image.
 const og = new URL(
@@ -104,6 +108,11 @@ const og = new URL(
     <script>
       import "../scripts/local-time";
     </script>
+    {/* Cookieless Cloudflare Web Analytics, production builds only (site.cfAnalyticsSite; CSP allows the script host
+        and its report endpoint). */}
+    {cfBeacon && (
+      <script is:inline defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon={cfBeacon} />
+    )}
   </head>
   <body>
     <a class="skip-link" href="#main">{draft.skipLink}</a>

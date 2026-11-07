@@ -3,3 +3,8 @@
 /services/workforce-automation /services/workflow-automation 301
 /services/security-guard /services 301
 /calculator /pricing 301
+# The same with a trailing slash (an exact path does not match "/x/"; checked on production at launch, 2026-11-08).
+/services/knowledge-systems/ /services/ai-knowledge-assistants 301
+/services/workforce-automation/ /services/workflow-automation 301
+/services/security-guard/ /services 301
+/calculator/ /pricing 301
