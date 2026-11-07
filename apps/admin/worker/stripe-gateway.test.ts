@@ -663,6 +663,7 @@ describe("the provider contract [ADM-PAY-01]", () => {
       fetch: async () => {
         throw new Error("no network in tests");
       },
+      env: "local",
     });
     expect(await checkProviderContract(test, { liveAllowed: "false" })).toEqual([]);
     stripeStub();
@@ -675,8 +676,35 @@ describe("the provider contract [ADM-PAY-01]", () => {
         calls.push(String(i));
         return new Response("{}", { status: 200 });
       },
+      env: "local",
     });
     expect(await checkProviderContract(live, { liveAllowed: "false" })).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it("P7 early check L4: a malformed environment mark is refused before any call (no default)", async () => {
+    const calls: string[] = [];
+    const bad = stripeProvider({
+      key: ["rk", "test", "madeup"].join("_"),
+      settingsMode: "test",
+      liveFlag: "false",
+      fetch: async (i) => {
+        calls.push(String(i));
+        return new Response("{}", { status: 200 });
+      },
+      env: "",
+    });
+    const req = {
+      checkoutId: "01900000-0000-7000-8000-000000000001",
+      clientId: "c1",
+      documentId: "01900000-0000-7000-8000-000000000002",
+      currency: "USD" as const,
+      amountMinor: 50_000,
+      description: "Invoice EXP/2627/1",
+      expiresAt: Date.now() + 3_600_000,
+      callbackUrl: "https://portal.example.test/pay/return?pay=return",
+    };
+    expect(await bad.createCheckout(req)).toEqual({ ok: false, code: "provider_error" });
     expect(calls).toEqual([]);
   });
 });

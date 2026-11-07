@@ -18,6 +18,34 @@ export function liveModeAllowed(mode: ProviderMode, liveAllowedFlag: unknown): b
   return mode === "live" && (liveAllowedFlag === true || liveAllowedFlag === "true");
 }
 
+/**
+ * The mode a gateway actually runs in (P7 A2.3, the M3.1 follow-up "a live gateway reverts when the flag turns off"): live only while Settings › Gateways says live
+ * AND the go-live flag is exactly true; anything else is test, so a gateway left in live mode after the flag goes back to "false" falls back to its test keys
+ * and test hosts at once (the finance Worker rings the owners once per settings version: `gateway/config.ts`).
+ */
+export const effectiveMode = (settingsMode: unknown, liveAllowedFlag: unknown): ProviderMode =>
+  settingsMode === "live" && liveModeAllowed("live", liveAllowedFlag) ? "live" : "test";
+
+// ---- the environment mark (P7, the analyst's Phase 7 finding 5) -------------------------------------------------------------------------------------------
+// Staging and production share one sandbox account per gateway, and both environments' webhooks receive every event. So each checkout we make carries this
+// Worker's `ENVIRONMENT` (Stripe's `metadata.techaust_env` since M6.3 L5; Razorpay's `notes.techaust_env` and PayPal's `custom_id` suffix since P7), and an event
+// whose mark names ANOTHER environment is ignored quietly: no ledger write, no review item, no bell. An event with no mark (made before P7) keeps today's path.
+
+/** The key of the mark in Razorpay's `notes` and Stripe's `metadata`. */
+export const ENV_MARK_KEY = "techaust_env";
+/** An environment name as a mark (`local`, `staging`, `production`): 1 to 16 lower-case letters. */
+export const ENV_MARK = /^[a-z]{1,16}$/;
+export const isEnvMark = (v: unknown): v is string => typeof v === "string" && ENV_MARK.test(v);
+
+/** What an event's mark says about it: made here (`same`), made by another environment (`other`), or made before marks existed (`unmarked`: today's path). */
+export function envMarkVerdict(
+  mark: string | null | undefined,
+  env: string | null | undefined,
+): "same" | "other" | "unmarked" {
+  if (mark === null || mark === undefined) return "unmarked";
+  return mark === env ? "same" : "other";
+}
+
 export const PROVIDER_ERROR_CODES = [
   "unsupported",
   "live_not_allowed",

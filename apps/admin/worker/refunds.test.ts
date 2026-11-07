@@ -255,7 +255,8 @@ describe("through the gateway [C step 3, L8, L37, ADM-PAY-11]", () => {
     });
   });
 
-  it("live mode in Settings with the flag false: 503 live_not_allowed, zero fetches, nothing written (review fix 3)", async () => {
+  // P7 (the lead's decision on the early check, finding 5): refunds keep this refusal; only new checkouts fall back to test mode (A2.3).
+  it("live mode in Settings with the flag false: 503 live_not_allowed, zero fetches, nothing written (review fix 3; P7: no test fallback for refunds)", async () => {
     const o = await owner();
     const clientId = await mkReportClient("INR");
     const p = await rzpPayment(clientId, o.id);

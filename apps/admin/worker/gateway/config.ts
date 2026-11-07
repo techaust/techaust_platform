@@ -4,7 +4,11 @@
 // is refused anywhere but `ENVIRONMENT` "local" (like `PDF_RENDERER`). The three admin Workers share one generated `Env`
 // (from the front's config), so these names are read at run time by name, each checked to be a string, never cast.
 import type { RpcGateway } from "@techaust/core/gateway-rpc";
+import { effectiveMode } from "@techaust/core/payments";
+import { liveRevertBellStatement } from "@techaust/db/gateway";
 import { cachedSetting } from "../settings-cache.ts";
+import { REVIEW_LINK_SETTINGS_GATEWAYS } from "./consts.ts";
+import { BELL_LIVE_REVERTED } from "./messages.ts";
 import { type PayPalApi, payPalApi, payPalStubFetch } from "./paypal.ts";
 import { type RazorpayApi, razorpayApi } from "./razorpay.ts";
 import { type StripeApi, stripeApi, stripeStubFetch } from "./stripe.ts";
@@ -139,27 +143,67 @@ export function setStubTransport(f: typeof fetch | null): void {
   stubTransport = f ?? stubFetch;
 }
 
-/** Settings › Gateways, read through the per-isolate cache (one statement for every gateway's mode; review part 1, finding 16). */
-async function gatewaySettingsOf(db: D1Database) {
+/** P7 A2.3: the settings versions this isolate already rang the owners for (a per-isolate memo of a write that is idempotent anyway; never request state). */
+const revertBelled = new Set<number>();
+
+/**
+ * P7 A2.3 (the M3.1 follow-up "a live gateway reverts when the go-live flag is turned off"): Settings › Gateways says live for a gateway while
+ * `PAYMENTS_LIVE_ALLOWED` is not exactly "true", so every reader below answers test for it (core `effectiveMode`: its test keys and test hosts, never a live
+ * call) and every active Owner gets one bell per settings version (`liveRevertBellStatement`: `INSERT OR IGNORE`). A failed bell write never changes a payment's
+ * path (logged by code only).
+ */
+export async function ringLiveRevert(db: D1Database, version: number): Promise<void> {
+  if (revertBelled.has(version)) return;
+  try {
+    await liveRevertBellStatement(db, {
+      settingsVersion: version,
+      title: BELL_LIVE_REVERTED,
+      link: REVIEW_LINK_SETTINGS_GATEWAYS,
+    }).run();
+    if (revertBelled.size >= 64) revertBelled.clear();
+    revertBelled.add(version);
+  } catch {
+    console.log(JSON.stringify({ ev: "gw", m: "live_revert_bell_failed" }));
+  }
+}
+
+/**
+ * Settings › Gateways, read through the per-isolate cache (one statement for every gateway's mode; review part 1, finding 16). P7 A2.3: with `env`, the modes are
+ * the ones each gateway actually runs in (live only while the flag is "true"), and a live mode met while the flag is off rings the owners once.
+ */
+async function gatewaySettingsOf(db: D1Database, env?: object) {
   const row = await db
     .prepare("SELECT value, version FROM settings WHERE key = 'gateways'")
     .first<{ value: string; version: number }>();
-  return cachedSetting("gateways", row ?? undefined);
+  const s = cachedSetting("gateways", row ?? undefined);
+  if (!env) return s;
+  const flag = envText(env, "PAYMENTS_LIVE_ALLOWED");
+  const reverted =
+    row !== null &&
+    (["razorpay", "stripe", "paypal"] as const).some(
+      (g) => s[g].mode === "live" && effectiveMode(s[g].mode, flag) === "test",
+    );
+  if (reverted) await ringLiveRevert(db, row.version);
+  return {
+    razorpay: { mode: effectiveMode(s.razorpay.mode, flag) },
+    stripe: { mode: effectiveMode(s.stripe.mode, flag) },
+    paypal: { mode: effectiveMode(s.paypal.mode, flag) },
+  };
 }
 
-/** Settings › Gateways (the mode only), read through the per-isolate cache. */
-export async function gatewayModeOf(db: D1Database): Promise<"test" | "live"> {
-  return (await gatewaySettingsOf(db)).razorpay.mode;
+/** Settings › Gateways (the mode only), read through the per-isolate cache; with `env`, the mode Razorpay runs in (P7 A2.3). */
+export async function gatewayModeOf(db: D1Database, env?: object): Promise<"test" | "live"> {
+  return (await gatewaySettingsOf(db, env)).razorpay.mode;
 }
 
-/** Settings › Gateways, Stripe's mode (M6.3), read through the per-isolate cache. */
-export async function stripeModeOfSettings(db: D1Database): Promise<"test" | "live"> {
-  return (await gatewaySettingsOf(db)).stripe.mode;
+/** Settings › Gateways, Stripe's mode (M6.3), read through the per-isolate cache; with `env`, the mode Stripe runs in (P7 A2.3). */
+export async function stripeModeOfSettings(db: D1Database, env?: object): Promise<"test" | "live"> {
+  return (await gatewaySettingsOf(db, env)).stripe.mode;
 }
 
-/** Settings › Gateways, PayPal's mode (M6.4: the mode picks PayPal's host), read through the per-isolate cache. */
-export async function payPalModeOfSettings(db: D1Database): Promise<"test" | "live"> {
-  return (await gatewaySettingsOf(db)).paypal.mode;
+/** Settings › Gateways, PayPal's mode (M6.4: the mode picks PayPal's host), read through the per-isolate cache; with `env`, the mode PayPal runs in (P7 A2.3). */
+export async function payPalModeOfSettings(db: D1Database, env?: object): Promise<"test" | "live"> {
+  return (await gatewaySettingsOf(db, env)).paypal.mode;
 }
 
 /**

@@ -1,5 +1,7 @@
 // What every gateway webhook shares (M6.2's Razorpay hook helpers, moved here in M6.3 for the Stripe hook; JOB-HOOK-01..03): the JSON answer with no-store and
 // nosniff, a secret read by name, and the body read as raw bytes from a stream cut at a cap (a declared length above it is refused before reading).
+import { effectiveMode } from "@techaust/core/payments";
+import { GATEWAY_MODES_SQL } from "@techaust/db/gateway";
 
 /** The body cap (run files D): a gateway's checkout events are a few KiB. */
 export const HOOK_MAX_BYTES = 64 * 1024;
@@ -20,6 +22,25 @@ export const secretOf = (env: object, name: string): string | undefined => {
   const v: unknown = Reflect.get(env, name);
   return typeof v === "string" && v !== "" ? v : undefined;
 };
+
+/**
+ * P7 A2.1, A2.2: the mode a gateway's webhook is judged in, the finance Worker's own rule (core `effectiveMode`): test while `PAYMENTS_LIVE_ALLOWED` is not
+ * exactly "true" (no D1 read: the flag is "false" in every config until the owner's go-live); else Settings › Gateways' mode for that gateway, read by primary
+ * key (`GATEWAY_MODES_SQL`; a missing row or field is test). P7 early check (M1): a failed read is null, and the Stripe and PayPal hooks answer 503
+ * `mode_unavailable` with nothing written and no failure counted (both gateways retry a non-2xx answer), so no event of either mode is dropped on a guess.
+ */
+export async function hookModeOf(
+  env: { DB: D1Database },
+  provider: "razorpay" | "stripe" | "paypal",
+): Promise<"test" | "live" | null> {
+  if (secretOf(env, "PAYMENTS_LIVE_ALLOWED") !== "true") return "test";
+  try {
+    const row = await env.DB.prepare(GATEWAY_MODES_SQL).first<Record<string, unknown>>();
+    return effectiveMode(row?.[provider], "true");
+  } catch {
+    return null;
+  }
+}
 
 /** A JSON content type (any charset). */
 export const isJsonType = (type: string | null): boolean => /^application\/json(\s*;|$)/i.test(type ?? "");

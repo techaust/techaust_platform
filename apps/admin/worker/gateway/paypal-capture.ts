@@ -26,6 +26,7 @@
 import type { CaptureReturnState, ProcessEventResult, RefreshResult } from "@techaust/core/gateway-rpc";
 import { isUuidV7, uuidv7 } from "@techaust/core/ids";
 import { payableOnline, type ReviewKind } from "@techaust/core/online-pay";
+import { envMarkVerdict } from "@techaust/core/payments";
 import {
   invoiceIdCheckoutTail,
   judgePayPalCapture,
@@ -53,6 +54,7 @@ import {
   checkoutRefreshClaimStatement,
   type GatewayFacts,
   type GatewayPaymentArgs,
+  OTHER_ENV_OUTCOME,
   paypalAbandonStatements,
   paypalCaptureClaimStatement,
   paypalCaptureFitsStatement,
@@ -77,6 +79,7 @@ import { type PayPalApi, retryUrlOf } from "./paypal.ts";
 import {
   type CheckoutRow,
   DOC_STATE_SQL,
+  environmentOf,
   type GatewayEnv,
   REVIEW_LINK,
   reviewFactsOf,
@@ -729,7 +732,7 @@ export async function capturePayPalCheckout(
   }
   if (c.status === "creating") return { state: "not_found" };
   // The gateway itself, before any claim: no transport or keys, or live while it isn't allowed (CLAUDE.md rule 7: zero calls). Nothing is claimed or ended.
-  const api = payPalOf(env, await payPalModeOfSettings(db));
+  const api = payPalOf(env, await payPalModeOfSettings(db, env));
   if (!api || api.blocked) return { state: "retry" };
   const ctx: Ctx = { env, api, src, now, ids };
   if (c.status === "capture_pending") return refetchHeld(ctx, c);
@@ -969,6 +972,12 @@ export async function processPayPalEvent(
     return { result: status === "ignored" ? "ignored" : "processed" };
   };
   if (type === "other") return quiet("ignored", "other");
+  // P7 (finding 5): an event whose mark names another environment (the hook already keeps those `ignored`; defence in depth for a row stored otherwise) goes
+  // no further: no review item, no bell, no ledger write. No mark: today's path.
+  if (envMarkVerdict(text(facts.env), environmentOf(env)) === "other") {
+    console.log(JSON.stringify({ ev: "gw", m: "other_env", p: "paypal" }));
+    return quiet("ignored", OTHER_ENV_OUTCOME);
+  }
   // A reversal or refund: the payment by its capture (no ledger move until M6.5: a review item and a bell).
   if (type === "payment.reversed" || type === "refund.processed") {
     if (!captureId) return quiet("ignored", "no_capture");
@@ -1061,7 +1070,7 @@ export async function processPayPalEvent(
   // The approval goes straight to the capture path (it reads the mode and makes its own client); every other type needs the client here.
   if (type === "checkout.approved")
     return eventResultOf(await capturePayPalCheckout(env, checkout, src, now, ids, false));
-  const api = payPalOf(env, await payPalModeOfSettings(db));
+  const api = payPalOf(env, await payPalModeOfSettings(db, env));
   if (!api || api.blocked) return { result: "retry" };
   const ctx: Ctx = { env, api, src, now, ids };
   if (type === "checkout.approval_reversed") {
