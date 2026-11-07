@@ -321,3 +321,12 @@ Tier A: stopped here for the analyst's early check (schema, migrations, core log
 3. **The lead:** a reversed refund that had come from a PENDING gateway payment (L33: the payment was rejected when the refund succeeded) reverses the refund row, but the money does not come back as credit: a rejected payment holds none. The `refund_reversed` item tells the Owner; should such a payment be re-opened (a new trigger move `rejected → pending_verification`), or is the item enough? I left it as item only.
 4. **The lead:** an active bank tick on a refund that is later reversed stays (the refund's debit was seen in the statement); say if it should be removed with the reversal.
 5. **Merge order:** two migrations, `0081_audit_money` and `0082_audit_money_triggers`; AF2 renumbers after them.
+
+### Lead's answers to AF1 (2026-11-07)
+- **AU29:**
+  - 07-ZT staff lines 1–8 are approved by the lead under the owner's delegation.
+  - The "Send receipt again" refused-recipient line becomes "Some recipients can't get this receipt: they need portal access and finance access, and an address that isn't stopped." (lead's line; the designer wires it).
+  - C1–C3 go on the owner's copy page; the email stays gated off.
+- **AU30 (Q3):** a reversed refund that came from a pending gateway payment (L33, already rejected) stays a `refund_reversed` item. The Owner records the money from it; there's no automatic re-open of a rejected payment (safest: no money is counted without the Owner).
+- **AU31 (Q4):** a bank tick on a reversed refund is kept: the outgoing entry was real, and the bank shows the return as its own line.
+- **Merge order:** AF1 (0081, 0082) merges first, then AF2 renumbers after it.
