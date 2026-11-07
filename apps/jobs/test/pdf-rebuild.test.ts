@@ -7,14 +7,20 @@ import { uuidv7 } from "@techaust/core";
 import { type DeedSnapshot, deedSnapshotJson } from "@techaust/core/deeds";
 import { canonicalJson, sha256Hex } from "@techaust/core/hash";
 import { pdfKeys, supplierPdfKey } from "@techaust/core/pdf-jobs";
-import { type RepairKind, repairKey } from "@techaust/core/pdf-repair";
+import { REBUILD_OPEN_MS, type RepairKind, repairKey } from "@techaust/core/pdf-repair";
 import { receiptHeaderOf } from "@techaust/core/receipts";
-import { REQUEST_INSERT_SQL, requestBinds, SERVED_PDF_SQL } from "@techaust/db/pdf-repairs";
+import {
+  REQUEST_INSERT_SQL,
+  RESULT_INSERT_SQL,
+  requestBinds,
+  SERVED_PDF_SQL,
+} from "@techaust/db/pdf-repairs";
 import { describe, expect, it } from "vitest";
 import {
   sha256Hex as bytesSha,
   ORIGINAL_PDF,
   putWithSha,
+  REBUILT_PDF,
   wholeRow,
 } from "../../../packages/testing/src/pdf-rebuild.ts";
 import { stubPdf } from "../src/browser.ts";
@@ -28,7 +34,7 @@ import {
   processSnapshot,
   processSupplierCopy,
 } from "../src/pdf.ts";
-import { processRebuild, processRebuildDeadLetter, storedVerdict } from "../src/pdf-rebuild.ts";
+import { closeRequest, processRebuild, processRebuildDeadLetter, storedVerdict } from "../src/pdf-rebuild.ts";
 import { handleQueue } from "../src/queue.ts";
 import { processReceipt } from "../src/receipts.ts";
 import {
@@ -545,9 +551,61 @@ describe("refusals, skips and the queue", () => {
       },
     } as unknown as R2Bucket;
     (env as unknown as { DOCS: R2Bucket }).DOCS = docs;
+    const rebuilds = () =>
+      one<{ value: number }>(
+        "SELECT value FROM stats_daily WHERE metric = 'pdf.rebuilds' AND date = ?1 AND dimension = ''",
+        new Date(NOW).toISOString().slice(0, 10),
+      ).then((r) => r?.value ?? 0);
+    const before = await rebuilds();
     expect(await processRebuild(env, msg(repairId), NOW, clock)).toBe("skipped");
     expect(await realEnv.DOCS.head(repairKey(s.key, 1))).toBeNull();
     expect(await resultOf(repairId)).toMatchObject({ outcome: "skipped", code: "redacted" });
+    // review finding 2: a result the guard refused is no rebuild
+    expect(await rebuilds()).toBe(before);
+  });
+
+  it("review finding 3: closing never deletes a parallel run's rebuilt file; it deletes a stray when the other result made none", async () => {
+    const s = await renderedInvoice();
+    await realEnv.DOCS.delete(s.key);
+    const repairId = await request("invoice", s.id, s.key);
+    const newKey = repairKey(s.key, 1);
+    // the other run: stored the file and wrote `rebuilt`
+    const stored = await putWithSha(realEnv.DOCS, newKey, REBUILT_PDF);
+    await realEnv.DB.prepare(RESULT_INSERT_SQL)
+      .bind(repairId, "rebuilt", null, stored, REBUILT_PDF.byteLength, Date.now())
+      .run();
+    const env = mkEnv();
+    expect(
+      await closeRequest(env, { id: repairId, new_key: newKey }, "intact", "original_present", Date.now()),
+    ).toBe(false);
+    expect(await realEnv.DOCS.head(newKey)).not.toBeNull();
+    expect(await resultOf(repairId)).toMatchObject({ outcome: "rebuilt", new_key: newKey });
+
+    // another request closed without a file by the other run, and a stray left at its key: this close deletes it
+    const t = await renderedInvoice();
+    await realEnv.DOCS.delete(t.key);
+    const second = await request("invoice", t.id, t.key);
+    const strayKey = repairKey(t.key, 1);
+    await realEnv.DB.prepare(RESULT_INSERT_SQL)
+      .bind(second, "skipped", "client_gone", null, null, Date.now())
+      .run();
+    await putWithSha(realEnv.DOCS, strayKey, REBUILT_PDF);
+    expect(
+      await closeRequest(env, { id: second, new_key: strayKey }, "intact", "original_present", Date.now()),
+    ).toBe(false);
+    expect(await realEnv.DOCS.head(strayKey)).toBeNull();
+  });
+
+  it("review finding 4: a request the admin no longer counts as open (a quota delay past 25 hours) ends failed / expired without a render", async () => {
+    const s = await renderedInvoice();
+    await realEnv.DOCS.delete(s.key);
+    const repairId = await request("invoice", s.id, s.key, NOW - (REBUILD_OPEN_MS - 3_600_000) - 1);
+    const b = browser();
+    expect(await processRebuild(mkEnv(b), msg(repairId, 2), NOW, clock)).toBe("failed");
+    expect(b.pages).toHaveLength(0);
+    expect(await resultOf(repairId)).toMatchObject({ outcome: "failed", code: "expired", new_key: null });
+    expect((await bellsOf(repairId)).results.map((r) => r.kind)).toEqual(["pdf.failed"]);
+    expect(await realEnv.DOCS.head(repairKey(s.key, 1))).toBeNull();
   });
 
   it("a rate limit sends a delayed copy with the next hop (the shared `failed`); any other failure throws for the retry", async () => {

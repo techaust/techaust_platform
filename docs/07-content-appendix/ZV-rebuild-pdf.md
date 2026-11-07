@@ -40,3 +40,6 @@ Recommendation for every line: approve as written.
 ## From the early check (staff; the lead's, 2026-11-07)
 22. Bell `pdf.failed` when the saved record is missing (`envelope_missing`): "The PDF of {label} couldn't be rebuilt because its saved record is missing. A developer needs to look at it."
 23. The state line for a stopped rebuild (outcome `skipped`: the client's details were erased, the offer was redacted, or the document can no longer be rebuilt): "The rebuild was stopped because this document can no longer be rebuilt."
+
+## From the review (staff; the lead's, 2026-11-07)
+24. `rebuild_limit` (a subject has used all 99 rebuild numbers): "This PDF has been rebuilt the most times allowed (99). A developer needs to look at it."

@@ -1,5 +1,5 @@
-// Rebuild PDF, as staff see it (JOB-PDF-02, ADM-PROP-05, ADM-INV-07; run file docs/runs/rebuild-pdf.md "Screens"): the words of 07-ZV (lines 1 to 15, 19 and
-// 23, approved 2026-11-07, staff only), word for word, and the pure rules the screens follow: which line an API refusal reads as, and which lines a document's
+// Rebuild PDF, as staff see it (JOB-PDF-02, ADM-PROP-05, ADM-INV-07; run file docs/runs/rebuild-pdf.md "Screens"): the words of 07-ZV (lines 1 to 15, 19,
+// 23 and 24, approved 2026-11-07, staff only), word for word, and the pure rules the screens follow: which line an API refusal reads as, and which lines a document's
 // rebuild state shows. No I/O here (lib/pdf-repairs-api.ts calls the routes; components/rebuild-pdf.tsx draws them).
 import type { RepairFound, RepairKind, RepairOutcome } from "@techaust/core/pdf-repair";
 import { PDF_ERASED_LINE } from "./copy-zg.ts";
@@ -32,6 +32,8 @@ export const ZV = {
   clientGone: "This client's details were erased, so no PDF can be made for them.",
   queueUnavailable: "The rebuild couldn't be started. Try again in a minute.",
   offerOpen: "This offer can still be accepted. Send a new version instead.",
+  // 24. Every rebuild number used (review finding 5).
+  rebuildLimit: "This PDF has been rebuilt the most times allowed (99). A developer needs to look at it.",
   // 11.–15. and 23. The state on the document page.
   rebuilt: (date: string, fp: string) => `Rebuilt on ${date}. Fingerprint of the stored file: ${fp}.`,
   rebuilding: "Being rebuilt…",
@@ -49,7 +51,7 @@ export const numberLabel = (number: string | null | undefined) =>
   number && number.trim() !== "" ? number : "Untitled";
 
 /**
- * The line a refused POST reads as (07-ZV 6–10 and 19; `pdf_erased` is T7's 07-ZG line 2). Null for every other code (`pdf_pending`, `not_found`, the
+ * The line a refused POST reads as (07-ZV 6–10, 19 and 24; `pdf_erased` is T7's 07-ZG line 2). Null for every other code (`pdf_pending`, `not_found`, the
  * guard's answers): the screen then says the API's own message, which already carries the existing words.
  */
 export function refusalLine(code: string): string | null {
@@ -66,6 +68,8 @@ export function refusalLine(code: string): string | null {
       return ZV.queueUnavailable;
     case "offer_open":
       return ZV.offerOpen;
+    case "rebuild_limit":
+      return ZV.rebuildLimit;
     case "pdf_erased":
       return PDF_ERASED_LINE;
     default:

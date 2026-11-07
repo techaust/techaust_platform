@@ -287,6 +287,38 @@ describe("the check and the refusals", () => {
     expect(reqs[1]).toMatchObject({ n: 2, old_key: repairKey(s.key, 1), new_key: repairKey(s.key, 2) });
   });
 
+  it("review finding 5: a subject that has used all 99 rebuild numbers is 409 rebuild_limit, never a 500, with nothing written", async () => {
+    const o = await owner();
+    const s = await storedInvoice(o);
+    await env.DOCS.delete(s.key);
+    const at = Date.now() - 3_600_000;
+    // 99 requests through the insert trigger's own rules, each closed as a failed send (which holds no window)
+    await env.DB.prepare(
+      `INSERT INTO pdf_repairs (id, subject_kind, subject_id, n, original_key, old_key, old_sha256, found, new_key, requested_by, requested_at)
+       WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 99)
+       SELECT ?1 || '-' || n, 'invoice', ?2, n, ?3, ?3, NULL, 'missing', substr(?3, 1, length(?3) - 4) || '-r' || n || '.pdf', ?4, ?5 FROM seq`,
+    )
+      .bind(uuidv7(), s.id, s.key, o.id, at)
+      .run();
+    await env.DB.prepare(
+      `INSERT INTO pdf_repair_results (repair_id, original_key, n, outcome, code, new_key, new_sha256, bytes, completed_at)
+       SELECT id, original_key, n, 'failed', 'queue_unavailable', NULL, NULL, NULL, requested_at FROM pdf_repairs WHERE subject_id = ?1`,
+    )
+      .bind(s.id)
+      .run();
+    const audits = await countOf("audit_log", "action = 'pdf.rebuild' AND entity_id = ?1", s.id);
+    const res = await post(o, `/invoices/${s.id}/pdf/rebuild`, pdfQueue().env);
+    expect(res.status).toBe(409);
+    expect(await json(res)).toMatchObject({
+      error: {
+        code: "rebuild_limit",
+        message: "This PDF has been rebuilt the most times allowed (99). A developer needs to look at it.",
+      },
+    });
+    expect((await repairsOf(s.id)).results).toHaveLength(99);
+    expect(await countOf("audit_log", "action = 'pdf.rebuild' AND entity_id = ?1", s.id)).toBe(audits);
+  });
+
   it("Staff, the Accountant and Sales are 403; the Owner without a fresh code is step_up_required", async () => {
     const o = await owner();
     const s = await storedInvoice(o);

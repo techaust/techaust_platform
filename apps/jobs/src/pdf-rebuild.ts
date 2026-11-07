@@ -18,7 +18,12 @@
 // The frozen row and the old object are never touched. Bells name the document by its number (else "Untitled"); copy 07-ZV lines 16 to 18 (approved 2026-11-07).
 // Ids, codes and counts only in logs.
 import type { PdfRebuildMessage } from "@techaust/core/pdf-jobs";
-import { REBUILD_HASH_MAX_BYTES, type RepairKind } from "@techaust/core/pdf-repair";
+import {
+  REBUILD_EXPIRY_MARGIN_MS,
+  REBUILD_HASH_MAX_BYTES,
+  REBUILD_OPEN_MS,
+  type RepairKind,
+} from "@techaust/core/pdf-repair";
 import { REPAIR_READ_SQL, RESULT_INSERT_SQL, type RepairReadRow } from "@techaust/db/pdf-repairs";
 import { renderDocumentHtml } from "@techaust/pdf";
 import { renderPaced } from "./browser.ts";
@@ -73,7 +78,7 @@ const hex = (b: ArrayBuffer) =>
 
 /**
  * The stored object against its recorded hash (the admin route's `checkStored`, apps/admin/worker/pdf-rebuild.ts, read the same way): R2's own SHA-256 when the
- * head carries it, else a hash of the body (over 5 MB: damaged, never read). A recorded hash of null (a supplier copy): the checksum against the bytes; with no
+ * head carries it, else a hash of the body (over `REBUILD_HASH_MAX_BYTES`, 2 MB: damaged, never read). A recorded hash of null (a supplier copy): the checksum against the bytes; with no
  * checksum a present copy counts as intact.
  */
 export async function storedVerdict(
@@ -206,9 +211,11 @@ async function loadSubject(env: Env, req: RepairReadRow, htmlOf: HtmlOf): Promis
 
 /**
  * The result of a request that ended without a rebuilt file (`RESULT_INSERT_SQL`; once per request). Any object at the request's new key (a put whose result
- * batch never ran) is deleted first, so it never outlives the request (change 3; R2's delete of a missing key is a no-op). Returns whether it was written.
+ * batch never ran) is deleted so it never outlives the request (change 3; R2's delete of a missing key is a no-op), but only AFTER the result: when this run
+ * wrote it, or when the result another run wrote is not `rebuilt`. A parallel run's `rebuilt` file is never deleted (review finding 3). Returns whether it
+ * was written.
  */
-async function close(
+export async function closeRequest(
   env: Env,
   req: Pick<RepairReadRow, "id" | "new_key">,
   outcome: "intact" | "refused" | "failed" | "skipped",
@@ -216,12 +223,14 @@ async function close(
   now: number,
   bellStmt?: D1PreparedStatement,
 ): Promise<boolean> {
-  await env.DOCS.delete(req.new_key);
   const [r] = await env.DB.batch([
     env.DB.prepare(RESULT_INSERT_SQL).bind(req.id, outcome, code, null, null, now),
     ...(bellStmt ? [bellStmt] : []),
   ]);
-  return (r?.meta.changes ?? 0) > 0;
+  const written = (r?.meta.changes ?? 0) > 0;
+  const other = written ? null : await env.DB.prepare(REPAIR_READ_SQL).bind(req.id).first<RepairReadRow>();
+  if (written || other?.done_outcome !== "rebuilt") await env.DOCS.delete(req.new_key);
+  return written;
 }
 
 /** The `rebuilt` result with the statistics (`renders` when the browser did the work); false when its guard refused it (redacted or anonymised meanwhile). */
@@ -236,7 +245,6 @@ async function settleRebuilt(
   const date = dayOf(now);
   const [r] = await env.DB.batch([
     env.DB.prepare(RESULT_INSERT_SQL).bind(req.id, "rebuilt", null, stored.sha256, stored.bytes, now),
-    stat(env, date, "pdf.rebuilds", 1, now),
     ...(usage
       ? [
           stat(env, date, "pdf.renders", 1, now),
@@ -250,7 +258,10 @@ async function settleRebuilt(
       : []),
   ]);
   if ((r?.meta.changes ?? 0) > 0) {
+    // Counted only once the result is written: a result the guard refused (redacted or anonymised meanwhile) is no rebuild (review finding 2). The
+    // browser's time and render above count either way: the browser was used.
     await env.DB.batch([
+      stat(env, date, "pdf.rebuilds", 1, now),
       bell(env, "pdf.rebuilt", "pdf_repair", req.id, REBUILD_BELL.rebuilt(subject.label), subject.link),
     ]);
     return true;
@@ -260,7 +271,7 @@ async function settleRebuilt(
   if (again && again.done_outcome === null && !again.live) {
     const now2 = await loadSubject(env, again, renderDocumentHtml);
     const code = now2.found ? "not_found" : now2.code;
-    await close(env, req, "skipped", code, now);
+    await closeRequest(env, req, "skipped", code, now);
     logEvent("pdf.rebuild_skipped", { why: code, after: "put" });
   } else if (again && again.done_outcome !== null && again.done_outcome !== "rebuilt") {
     // A parallel run closed the request without a file while this one stored it: the stray object goes too (change 3).
@@ -290,14 +301,28 @@ export async function processRebuild(
     return "done";
   }
   const subject = await loadSubject(env, req, htmlOf);
+  // A request the admin no longer counts as open (L12: 26 hours; a quota delay can carry a message past it) is never rendered: the Owner may already have
+  // asked again, and two renders would spend the day's Browser Run time twice (review finding 4). An hour's margin keeps this side first.
+  if (subject.found && now - req.requested_at >= REBUILD_OPEN_MS - REBUILD_EXPIRY_MARGIN_MS) {
+    await closeRequest(
+      env,
+      req,
+      "failed",
+      "expired",
+      now,
+      bell(env, "pdf.failed", "pdf_repair", req.id, REBUILD_BELL.failed(subject.label), subject.link),
+    );
+    logEvent("pdf.rebuild_failed", { stage: "rebuild", code: "expired", kind: req.subject_kind });
+    return "failed";
+  }
   if (!subject.found) {
-    await close(env, req, "skipped", subject.code, now);
+    await closeRequest(env, req, "skipped", subject.code, now);
     logEvent("pdf.rebuild_skipped", { why: subject.code, kind: req.subject_kind });
     return "skipped";
   }
   // The old file came back (or was never lost): nothing is rebuilt.
   if ((await storedVerdict(env.DOCS, req.old_key, req.old_sha256)) === "intact") {
-    await close(env, req, "intact", "original_present", now);
+    await closeRequest(env, req, "intact", "original_present", now);
     logEvent("pdf.rebuild_intact", { kind: req.subject_kind });
     return "intact";
   }
@@ -335,7 +360,7 @@ export async function processRebuild(
             title,
             subject.link,
           );
-    await close(env, req, plan.as, plan.code, now, ring);
+    await closeRequest(env, req, plan.as, plan.code, now, ring);
     logEvent(plan.as === "refused" ? "pdf.refused" : "pdf.rebuild_failed", {
       stage: "rebuild",
       code: plan.code,
@@ -394,7 +419,7 @@ export async function processRebuildDeadLetter(
   }
   const label = subject.found ? subject.label : "Untitled";
   const link = subject.found ? subject.link : "/";
-  await close(
+  await closeRequest(
     env,
     req,
     "failed",

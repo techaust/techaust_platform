@@ -13,6 +13,7 @@ import {
   REBUILD_HASH_MAX_BYTES,
   REBUILD_OPEN_MS,
   REBUILD_WINDOW_MS,
+  REPAIR_MAX,
   type RepairFound,
   type RepairKind,
 } from "@techaust/core/pdf-repair";
@@ -60,6 +61,11 @@ export const REBUILD_QUEUE_UNAVAILABLE: ApiError = {
 export const REBUILD_OFFER_OPEN: ApiError = {
   code: "offer_open",
   message: "This offer can still be accepted. Send a new version instead.",
+};
+/** A subject has used every rebuild number (`n` ≤ `REPAIR_MAX`, the `pdf_repairs` CHECK): refused before the insert, never a 500 (review finding 5). 07-ZV line 24. */
+export const REBUILD_LIMIT: ApiError = {
+  code: "rebuild_limit",
+  message: "This PDF has been rebuilt the most times allowed (99). A developer needs to look at it.",
 };
 /** The existing wording of a PDF not made yet (document-pdf.ts): the existing Retry is the way. */
 const PDF_PENDING: ApiError = {
@@ -131,6 +137,17 @@ async function readSubject(c: Ctx, kind: RepairKind, id: string, now: number): P
   };
 }
 
+/** The refusals that come from the subject itself (the brief's order after `pdf_pending`); shared by the first read and the re-read after a lost race. */
+function subjectRefusal(
+  subject: Pick<SubjectRow, "gone" | "redacted" | "open">,
+  kind: RepairKind,
+): ApiError | null {
+  if (subject.gone) return REBUILD_CLIENT_GONE;
+  if (subject.redacted) return PDF_ERASED;
+  if (kind === "offer" && subject.open) return REBUILD_OFFER_OPEN;
+  return null;
+}
+
 /** A request without a result under 26 hours old is still running (L12). */
 const openRequest = (history: RepairOfRow[], now: number) =>
   history.find((r) => r.outcome === null && r.requested_at > now - REBUILD_OPEN_MS) ?? null;
@@ -160,12 +177,12 @@ async function postRebuild(c: Ctx, def: RebuildKindDef): Promise<Response> {
   if (!subject) return err(c, NOT_FOUND, 404);
   if (subject.original_key === null || (kind !== "supplier" && subject.recorded_sha === null))
     return err(c, PDF_PENDING, 409);
-  if (subject.gone) return err(c, REBUILD_CLIENT_GONE, 409);
-  if (subject.redacted) return err(c, PDF_ERASED, 409);
-  if (kind === "offer" && subject.open) return err(c, REBUILD_OFFER_OPEN, 409);
+  const refused = subjectRefusal(subject, kind);
+  if (refused) return err(c, refused, 409);
   if (openRequest(history, now)) return err(c, REBUILD_IN_PROGRESS, 409);
   const holding = lastHolding(history);
   if (holding && holding.requested_at > now - REBUILD_WINDOW_MS) return err(c, REBUILD_TOO_SOON, 429);
+  if ((history[0]?.n ?? 0) >= REPAIR_MAX) return err(c, REBUILD_LIMIT, 409);
 
   // The served key and the hash recorded for it: the newest rebuild's, else the row's (L3).
   const checkedKey = served?.new_key ?? subject.original_key;
@@ -197,7 +214,14 @@ async function postRebuild(c: Ctx, def: RebuildKindDef): Promise<Response> {
     // The access row records the accepted request (202) in this batch; a queue failure below still answers 503 (the lead's triage of change 7).
     status: 202,
   });
-  if (!written) return err(c, REBUILD_IN_PROGRESS, 409);
+  if (!written) {
+    // The guarded insert wrote nothing: the subject changed between the read and the batch (redacted, anonymised, the offer reopened is impossible but read
+    // anyway) or another request got in first. Read again so the Owner sees the real reason (review finding 6).
+    const again = await readSubject(c, kind, id, Date.now());
+    const reason = again.subject ? subjectRefusal(again.subject, kind) : null;
+    if (!again.subject) return err(c, NOT_FOUND, 404);
+    return err(c, reason ?? REBUILD_IN_PROGRESS, 409);
+  }
 
   // Awaited, never `waitUntil`: a request whose message was never sent would block the next one for 26 hours. A failed send closes the request at once.
   try {

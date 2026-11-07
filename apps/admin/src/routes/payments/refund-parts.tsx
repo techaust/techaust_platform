@@ -399,10 +399,9 @@ export function PaymentReceiptAndRefunds(props: {
                   }
                 />
               )}
-              {/* Rebuild PDF (JOB-PDF-02): the Owner's quiet action and the rebuild's state, under the receipt's own PDF link */}
-              {r?.hasPdf && r.status !== "void" && (
-                <RebuildPdf kind="receipt" id={r.id} number={r.number} ready />
-              )}
+              {/* Rebuild PDF (JOB-PDF-02): the Owner's quiet action and the rebuild's state, under the receipt's own PDF link. A void receipt's PDF is
+                  kept for the audit, so it can be rebuilt too (review finding 1; the server allows issued and void). */}
+              {r?.hasPdf && <RebuildPdf kind="receipt" id={r.id} number={r.number} ready />}
             </dd>
           </div>
           {/* review 1, finding 5: never for a payment refunded in full (the route refuses it) */}

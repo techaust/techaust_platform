@@ -48,7 +48,7 @@ describe("07-ZV, word for word", () => {
     for (const s of [ZV.body, ZV.started]) expect(quoted(s)).toBe(true);
     expect(zvPage).toContain(`"${ZV.confirm}" and "${ZV.cancel}"`);
   });
-  it("lines 6 to 10 and 19 are the approved ones and the API's own messages", () => {
+  it("lines 6 to 10, 19 and 24 are the approved ones and the API's own messages", () => {
     for (const s of [
       ZV.nothingToRebuild,
       ZV.tooSoon,
@@ -56,6 +56,7 @@ describe("07-ZV, word for word", () => {
       ZV.clientGone,
       ZV.queueUnavailable,
       ZV.offerOpen,
+      ZV.rebuildLimit,
     ]) {
       expect(quoted(s)).toBe(true);
       expect(rebuildRouteSource).toContain(`"${s}"`);
@@ -83,6 +84,7 @@ describe("refusals: code to line", () => {
     ["client_gone", ZV.clientGone],
     ["queue_unavailable", ZV.queueUnavailable],
     ["offer_open", ZV.offerOpen],
+    ["rebuild_limit", ZV.rebuildLimit],
     ["pdf_erased", PDF_ERASED_LINE],
   ])("%s", (code, line) => expect(refusalLine(code)).toBe(line));
   it("every other code keeps the API's message (pdf_pending, not_found, the guard's)", () => {

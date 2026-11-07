@@ -23,6 +23,9 @@ export const REBUILD_WINDOW_MS = 300_000;
 /** L12: a request without a result blocks another this long (the queue keeps a message 24 hours, plus a quota delay). */
 export const REBUILD_OPEN_MS = 26 * 3_600_000;
 
+/** The jobs Worker ends a request this long before the admin stops counting it as open, so a late (quota-delayed) message never renders beside a newer request. */
+export const REBUILD_EXPIRY_MARGIN_MS = 3_600_000;
+
 /**
  * An object larger than this is `damaged` without reading its body (no stored PDF comes near it; the check never streams a big object into the Worker, and
  * the hash stays well inside the Free plan's 10 ms CPU: early check change 5, 2 MB).
