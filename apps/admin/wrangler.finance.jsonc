@@ -6,7 +6,7 @@
   // only through the front's `ADMIN_FINANCE` service binding and the entrypoint bindings below, and it re-authenticates every request from the session
   // cookie the front forwards untouched. It holds no sign-in code. M6.2 (L1): it holds the gateway keys (secrets below; no public URL, so the safest home)
   // and exports `GatewayEvents` (jobs, ADMIN_GATEWAY) and `PortalPayments` (portal, ADMIN_PAY). Bindings use the front's names and ids in each scope; CI
-  // guard: scripts/check-worker-config.mjs. Production has vars only until Phase 7 (owner approval).
+  // guard: scripts/check-worker-config.mjs.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-admin-finance",
   "main": "worker/finance.ts",
@@ -58,7 +58,7 @@
     { "binding": "DOCS", "bucket_name": "techaust-local-docs" }
   ],
   // The fourth admin Worker (2026-11-03): the automatic tax invoice of a proforma paid online runs in the admin invoices Worker; this Worker calls it only
-  // for the Owner's "Try again" on a review item (worker/gateway/advance-rpc.ts). Not inherited by environments, so staging lists it too.
+  // for the Owner's "Try again" on a review item (worker/gateway/advance-rpc.ts). Not inherited by environments, so staging and production list it too.
   "services": [
     {
       "binding": "ADMIN_ADVANCE",
@@ -129,10 +129,49 @@
       "name": "techaust-platform-admin-finance",
       "workers_dev": false,
       "preview_urls": false,
+      // P7-A (docs/runs/p7-launch.md): every binding of env.staging, naming the production resources. Payments stay on TEST keys
+      // (PAYMENTS_LIVE_ALLOWED "false": a live key is refused before any call, CLAUDE.md rule 7).
       "vars": {
         "ENVIRONMENT": "production",
-        "PAYMENTS_LIVE_ALLOWED": "false"
+        "PAYMENTS_LIVE_ALLOWED": "false",
+        "PORTAL_URL": "https://portal.techaust.com/",
+        "GATEWAY_TRANSPORT": "api"
       },
+      "secrets": {
+        "required": [
+          "RAZORPAY_KEY_ID",
+          "RAZORPAY_KEY_SECRET",
+          "STRIPE_SECRET_KEY",
+          "PAYPAL_CLIENT_ID",
+          "PAYPAL_CLIENT_SECRET"
+        ]
+      },
+      "queues": {
+        "producers": [
+          { "binding": "EMAIL_QUEUE", "queue": "techaust-prod-email" },
+          { "binding": "PDF_QUEUE", "queue": "techaust-prod-pdf" },
+          { "binding": "LEADS_QUEUE", "queue": "techaust-prod-leads" }
+        ]
+      },
+      "services": [
+        {
+          "binding": "ADMIN_ADVANCE",
+          "service": "techaust-platform-admin-invoices",
+          "entrypoint": "GatewayAdvance"
+        }
+      ],
+      "r2_buckets": [
+        { "binding": "FILES", "bucket_name": "techaust-prod-files" },
+        { "binding": "DOCS", "bucket_name": "techaust-prod-docs" }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "techaust-prod",
+          "database_id": "d16029d2-373e-4b66-beb0-d77158d6dfc2",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ],
       // As the front: NO invocation logs in production from day one. Console logs stay on.
       "observability": {
         "enabled": true,

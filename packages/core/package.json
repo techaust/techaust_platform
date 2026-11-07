@@ -14,6 +14,7 @@
     "./care": "./src/care.ts",
     "./care-billing": "./src/care-billing.ts",
     "./clients": "./src/clients.ts",
+    "./company": "./src/company.ts",
     "./consent": "./src/consent.ts",
     "./dashboard": "./src/dashboard.ts",
     "./dates": "./src/dates.ts",

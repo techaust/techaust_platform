@@ -3,6 +3,10 @@
 // config against the front's (M5.0; the finance Worker's too since M6.1 stage A, the invoices Worker's since the fourth admin Worker, with the entrypoint
 // bindings of jobs, finance and the portal), the jobs crons and binding (M5.4, FX-1), and Workers
 // Traces on staging only (full audit A6 9), and the jobs Worker minified with source maps (L9).
+// P7-A (launch 2026-11-08, docs/runs/p7-launch.md): every `env.production` mirrors `env.staging` binding for binding (D1, R2, queues and consumers,
+// services and entrypoints, Browser Run, crons, rate limits, `secrets.required`, vars keys), naming the production resources and hosts; no staging
+// name, staging database id, workers.dev or localhost in production; and no `routes`/`route` in any scope of any config (the lead attaches the
+// custom domains by hand, so a deploy never takes techaust.com from the old Worker).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -90,18 +94,18 @@ export function apiConfigProblems(api, front, opts = {}) {
     ]) {
       if (c[key] !== undefined) problems.push(`${scope}: ${key} is not allowed on the API Worker`);
     }
-    // The fourth admin Worker (2026-11-03): the finance Worker binds the invoices Worker's `GatewayAdvance` (ADMIN_ADVANCE). Exactly these binding names, and
-    // none in production until Phase 7; where each points is entrypointBindingProblems' check.
+    // The fourth admin Worker (2026-11-03): the finance Worker binds the invoices Worker's `GatewayAdvance` (ADMIN_ADVANCE). Exactly these binding names, in
+    // every scope (production too since P7-A); where each points is entrypointBindingProblems' check.
     if (opts.services) {
-      const want = scope === "env.production" ? [] : [...opts.services].sort();
+      const want = [...opts.services].sort();
       const got = (c.services ?? []).map((s) => s.binding).sort();
       if (JSON.stringify(got) !== JSON.stringify(want))
         problems.push(`${scope}: services must be exactly ${JSON.stringify(want)}`);
     }
-    // M6.2 (L1): the finance Worker holds the Razorpay key pair (no public URL: the safest home). Exactly these names, and none in production until Phase 7.
-    // M7.4 (L23): the API Worker holds exactly `ERASURE_HASH_KEY`, in EVERY scope (`secretsEverywhere`).
+    // M6.2 (L1): the finance Worker holds the Razorpay key pair (no public URL: the safest home). M7.4 (L23): the API Worker holds exactly
+    // `ERASURE_HASH_KEY`. Exactly these names, in every scope (production too since P7-A).
     if (opts.secrets) {
-      const want = scope === "env.production" && !opts.secretsEverywhere ? [] : [...opts.secrets].sort();
+      const want = [...opts.secrets].sort();
       const got = [...(c.secrets?.required ?? [])].sort();
       if (JSON.stringify(got) !== JSON.stringify(want))
         problems.push(`${scope}: secrets.required must be exactly ${JSON.stringify(want)}`);
@@ -172,7 +176,7 @@ export function frontServiceProblems(front, api, finance, invoices) {
  * The fourth admin Worker (2026-11-03, brief D.2): the entrypoint bindings in every scope. The top level and `env.staging`: the finance Worker binds
  * `ADMIN_ADVANCE` to the invoices Worker's `GatewayAdvance` (the Owner's "Try again"); jobs binds `ADMIN_JOBS` to the invoices Worker's `BillingJobs`,
  * `ADMIN_ADVANCE` to its `GatewayAdvance` and `ADMIN_GATEWAY` to the finance Worker's `GatewayEvents`; the portal binds `ADMIN_PAY` to the finance
- * Worker's `PortalPayments`. `env.production`: none of them until Phase 7 (check-prod-readiness.mjs then requires the twins). Empty = passes.
+ * Worker's `PortalPayments`. `env.production` the same, naming the production Workers (P7-A). Empty = passes.
  */
 export function entrypointBindingProblems(jobs, portal, finance, invoices) {
   const problems = [];
@@ -189,10 +193,6 @@ export function entrypointBindingProblems(jobs, portal, finance, invoices) {
     for (const [who, config, binding, target, entrypoint] of wiring) {
       const c = SCOPES(config).find(([n]) => n === scope)?.[1];
       const got = bindingOf(c, binding);
-      if (scope === "env.production") {
-        if (got) problems.push(`${scope}: ${who} has no ${binding} until Phase 7`);
-        continue;
-      }
       const want = nameIn(target, scope);
       if (!got) problems.push(`${scope}: ${who}'s ${binding} service binding is missing`);
       else {
@@ -232,7 +232,7 @@ export const INVOICES_OPTS = {};
 /** M7.4 (L23): the admin API Worker's only secret, the key of the erased-address hash (the same value as the jobs Worker's). */
 export const API_SECRETS = ["ERASURE_HASH_KEY"];
 export const AUX_OPTS = {
-  "wrangler.api.jsonc": { secrets: API_SECRETS, secretsEverywhere: true },
+  "wrangler.api.jsonc": { secrets: API_SECRETS },
   "wrangler.finance.jsonc": FINANCE_OPTS,
   "wrangler.invoices.jsonc": INVOICES_OPTS,
 };
@@ -246,7 +246,8 @@ export const LIVE_FLAG_REQUIRED = ["jobs", "portal", "finance", "admin", "admin 
  * M6.2 (run file F): the gateway wiring in every scope. The top level and `env.staging`: jobs binds `ADMIN_GATEWAY` to the finance Worker's `GatewayEvents` and
  * requires `RAZORPAY_WEBHOOK_SECRET` (M6.3: and `STRIPE_WEBHOOK_SECRET`); the portal binds `ADMIN_PAY` to its `PortalPayments` and holds no gateway secret; the
  * finance Worker's `GATEWAY_TRANSPORT` is "stub" at the top level (local) and "api" on staging (M6.3: each gateway's own API; M6.2's "razorpay" is no longer
- * accepted there), with its `PORTAL_URL` and a `LEADS_QUEUE` producer onto the jobs Worker's leads queue. `env.production`: none of it until Phase 7.
+ * accepted there), with its `PORTAL_URL` and a `LEADS_QUEUE` producer onto the jobs Worker's leads queue. `env.production` the same as staging (P7-A):
+ * transport "api", payments on test keys.
  * `PAYMENTS_LIVE_ALLOWED`, wherever a config sets it, is exactly "false" (CLAUDE.md rule 7); the finance config and the admin invoices config (the two Workers
  * that write payments or issue on them; the fourth admin Worker's early check, finding 5) must set it, as "false", in every scope. Empty = passes.
  */
@@ -256,16 +257,11 @@ export function gatewayConfigProblems(jobs, portal, finance, others = []) {
   for (const [scope, j] of SCOPES(jobs)) {
     const p = SCOPES(portal).find(([n]) => n === scope)?.[1];
     const f = SCOPES(finance).find(([n]) => n === scope)?.[1];
-    const prod = scope === "env.production";
     for (const [who, c, binding, entrypoint] of [
       ["jobs", j, "ADMIN_GATEWAY", "GatewayEvents"],
       ["portal", p, "ADMIN_PAY", "PortalPayments"],
     ]) {
       const got = bindingOf(c, binding);
-      if (prod) {
-        if (got) problems.push(`${scope}: ${who} has no ${binding} until Phase 7`);
-        continue;
-      }
       if (!got) problems.push(`${scope}: ${who}'s ${binding} service binding is missing`);
       else {
         if (got.service !== f?.name)
@@ -278,8 +274,7 @@ export function gatewayConfigProblems(jobs, portal, finance, others = []) {
     // M6.3: and the Stripe webhook signing secret; the restricted key stays on the finance Worker. M6.4 (L1): and the PayPal webhook's id (its signature is
     // checked offline in jobs); PayPal's client id and secret stay on the finance Worker.
     for (const name of ["RAZORPAY_WEBHOOK_SECRET", "STRIPE_WEBHOOK_SECRET", "PAYPAL_WEBHOOK_ID"])
-      if (!prod && !jobsSecrets.includes(name))
-        problems.push(`${scope}: jobs must require the secret ${name}`);
+      if (!jobsSecrets.includes(name)) problems.push(`${scope}: jobs must require the secret ${name}`);
     if (
       jobsSecrets.some(
         (n) => n.startsWith("RAZORPAY_KEY") || n === "STRIPE_SECRET_KEY" || n.startsWith("PAYPAL_CLIENT"),
@@ -302,18 +297,15 @@ export function gatewayConfigProblems(jobs, portal, finance, others = []) {
         `${scope}: jobs ENVIRONMENT must not be "local" (the PayPal hook would take the local certificate)`,
       );
     const transport = f?.vars?.GATEWAY_TRANSPORT;
-    // M6.3: staging's transport is "api" (every gateway's own API; M6.2 named it "razorpay").
-    const wantTransport = scope === "(top level)" ? "stub" : scope === "env.staging" ? "api" : undefined;
+    // M6.3: staging's transport is "api" (every gateway's own API; M6.2 named it "razorpay"); production's too (P7-A).
+    const wantTransport = scope === "(top level)" ? "stub" : "api";
     if (transport !== wantTransport)
-      problems.push(`${scope}: finance GATEWAY_TRANSPORT must be ${wantTransport ?? "unset"}`);
-    if (!prod && !f?.vars?.PORTAL_URL)
-      problems.push(`${scope}: finance needs PORTAL_URL (Razorpay's return page)`);
-    // Early check 2, finding 2: finance queues `gateway.advance` on the jobs Worker's own leads queue (top level and staging; none in production until Phase 7).
+      problems.push(`${scope}: finance GATEWAY_TRANSPORT must be ${wantTransport}`);
+    if (!f?.vars?.PORTAL_URL) problems.push(`${scope}: finance needs PORTAL_URL (Razorpay's return page)`);
+    // Early check 2, finding 2: finance queues `gateway.advance` on the jobs Worker's own leads queue (every scope).
     const producer = (c, b) => (c?.queues?.producers ?? []).find((x) => x.binding === b)?.queue;
     const financeLeads = producer(f, "LEADS_QUEUE");
-    if (prod) {
-      if (financeLeads) problems.push(`${scope}: finance has no LEADS_QUEUE until Phase 7`);
-    } else if (!financeLeads || financeLeads !== producer(j, "LEADS_QUEUE"))
+    if (!financeLeads || financeLeads !== producer(j, "LEADS_QUEUE"))
       problems.push(
         `${scope}: finance's LEADS_QUEUE must be the jobs Worker's leads queue (${producer(j, "LEADS_QUEUE")})`,
       );
@@ -333,10 +325,10 @@ export function gatewayConfigProblems(jobs, portal, finance, others = []) {
 export const JOBS_CRONS = ["0 22 * * *", "30 * * * *"];
 
 /**
- * The jobs Worker's M5.4 wiring (LD57, LD61): in the top level and in `env.staging` both crons and the ADMIN_JOBS service binding to the `BillingJobs` entrypoint of
- * `target`, the admin Worker that exports it (the finance config since M6.1 stage A, the API config before; that config's Worker name for the scope); in `env.production` NEITHER (production has no D1, queues or admin API until Phase 7, and a production binding to a Worker that
- * does not exist would fail the deploy). Empty = passes. FX-1 (A6 3): `triggers` IS inherited by an environment that omits it (wrangler's `EnvironmentInheritable`),
- * so production must state `"triggers": { "crons": [] }`, present and empty; with no `triggers` there it would run the top level's crons.
+ * The jobs Worker's M5.4 wiring (LD57, LD61): in every scope (production too since P7-A) both crons and the ADMIN_JOBS service binding to the `BillingJobs`
+ * entrypoint of `target`, the admin Worker that exports it (the invoices config since the fourth admin Worker; that config's Worker name for the scope).
+ * Empty = passes. FX-1 (A6 3): `triggers` IS inherited by an environment that omits it (wrangler's `EnvironmentInheritable`), so each environment states its
+ * own `triggers` (a change at the top level must never reach staging or production unseen).
  */
 export function jobsConfigProblems(jobs, target) {
   const problems = [];
@@ -347,16 +339,11 @@ export function jobsConfigProblems(jobs, target) {
     }
     const crons = JSON.stringify(c.triggers?.crons ?? []);
     const bound = (c.services ?? []).find((x) => x.binding === "ADMIN_JOBS");
-    if (scope === "env.production") {
-      if (!Array.isArray(c.triggers?.crons))
-        problems.push(
-          `${scope}: needs "triggers": { "crons": [] } (an environment without its own triggers inherits the top level's)`,
-        );
-      else if (c.triggers.crons.length > 0) problems.push(`${scope}: no cron triggers until Phase 7`);
-      if (bound) problems.push(`${scope}: no ADMIN_JOBS service binding until Phase 7`);
-      continue;
-    }
-    if (crons !== JSON.stringify(JOBS_CRONS))
+    if (scope !== "(top level)" && !Array.isArray(c.triggers?.crons))
+      problems.push(
+        `${scope}: needs its own "triggers": { "crons": [...] } (an environment without its own triggers inherits the top level's)`,
+      );
+    else if (crons !== JSON.stringify(JOBS_CRONS))
       problems.push(`${scope}: crons must be exactly ${JSON.stringify(JOBS_CRONS)}`);
     const want = SCOPES(target).find(([n]) => n === scope)?.[1]?.name;
     if (!bound) problems.push(`${scope}: the ADMIN_JOBS service binding is missing`);
@@ -390,13 +377,15 @@ export function jobsBuildProblems(jobs) {
 /** M7.2 (run file F): the jobs Worker's SES-events and one-click names. */
 export const NOTIFY_SECRETS = ["SES_EVENTS_TOKEN", "UNSUBSCRIBE_KEY"];
 export const MARKETING_CONFIGURATION_SET = "techaust-marketing";
+/** P7-A: the jobs Worker's production origin (the one-click unsubscribe URL starts with it). */
+export const PRODUCTION_HOOKS_URL = "https://hooks.techaust.com/";
 
 /**
- * M7.2 (run file F, C.3, C.5): per scope of the jobs config. The top level and `env.staging` require `SES_EVENTS_TOKEN` and `UNSUBSCRIBE_KEY` (a missing one
- * aborts the deploy, so the PR is held until H2), set `PUBLIC_HOOKS_URL` (ending in "/"; local `http://localhost:8787/`; staging the jobs Worker's own
- * https workers.dev origin, which the one-click URL must start with) and `SES_MARKETING_CONFIGURATION_SET` (`techaust-marketing`). `env.staging` also redacts
- * the query string in Workers Logs (the one-click token rides in `/u?t=`; the observability guard holds the same key for every config). `env.production`:
- * neither secret and neither var until Phase 7 (hooks.techaust.com). No other app requires either secret. Empty = passes.
+ * M7.2 (run file F, C.3, C.5): per scope of the jobs config. Every scope (production too since P7-A) requires `SES_EVENTS_TOKEN` and `UNSUBSCRIBE_KEY` (a missing
+ * one aborts the deploy), sets `PUBLIC_HOOKS_URL` (ending in "/"; local `http://localhost:8787/`; staging the jobs Worker's own https workers.dev origin, which the
+ * one-click URL must start with; production `https://hooks.techaust.com/`) and `SES_MARKETING_CONFIGURATION_SET` (`techaust-marketing`). Staging and production
+ * also redact the query string in Workers Logs (the one-click token rides in `/u?t=`; the observability guard holds the same key for every config). No other
+ * app requires either secret. Empty = passes.
  */
 export function notificationConfigProblems(jobs, others = []) {
   const problems = [];
@@ -407,13 +396,6 @@ export function notificationConfigProblems(jobs, others = []) {
     }
     const required = c.secrets?.required ?? [];
     const vars = c.vars ?? {};
-    if (scope === "env.production") {
-      for (const name of NOTIFY_SECRETS)
-        if (required.includes(name)) problems.push(`${scope}: no ${name} until Phase 7`);
-      for (const name of ["PUBLIC_HOOKS_URL", "SES_MARKETING_CONFIGURATION_SET"])
-        if (name in vars) problems.push(`${scope}: no ${name} until Phase 7`);
-      continue;
-    }
     for (const name of NOTIFY_SECRETS)
       if (!required.includes(name)) problems.push(`${scope}: jobs must require the secret ${name}`);
     const url = vars.PUBLIC_HOOKS_URL;
@@ -425,9 +407,11 @@ export function notificationConfigProblems(jobs, others = []) {
       problems.push(`${scope}: PUBLIC_HOOKS_URL must be the jobs Worker's https workers.dev origin`);
     else if (scope === "env.staging" && !url.startsWith(`https://${c.name}.`))
       problems.push(`${scope}: PUBLIC_HOOKS_URL must be this Worker's own origin (${c.name})`);
+    else if (scope === "env.production" && url !== PRODUCTION_HOOKS_URL)
+      problems.push(`${scope}: PUBLIC_HOOKS_URL must be ${PRODUCTION_HOOKS_URL}`);
     if (vars.SES_MARKETING_CONFIGURATION_SET !== MARKETING_CONFIGURATION_SET)
       problems.push(`${scope}: SES_MARKETING_CONFIGURATION_SET must be "${MARKETING_CONFIGURATION_SET}"`);
-    if (scope === "env.staging" && c.observability?.redact_query_string !== true)
+    if (scope !== "(top level)" && c.observability?.redact_query_string !== true)
       problems.push(`${scope}: redact_query_string must be true (the one-click token is in /u?t=)`);
   }
   for (const [file, cfg] of others)
@@ -448,14 +432,16 @@ export const PRODUCTION_OBSERVABILITY = {
   logs: { enabled: true, invocation_logs: false },
 };
 
-/** Key-order-independent JSON, to compare two parsed blocks. */
+/** Key-order-independent JSON (at every depth, array order kept), to compare two parsed blocks. */
 const canonical = (v) =>
-  v && typeof v === "object" && !Array.isArray(v)
-    ? `{${Object.keys(v)
-        .sort()
-        .map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`)
-        .join(",")}}`
-    : JSON.stringify(v);
+  Array.isArray(v)
+    ? `[${v.map(canonical).join(",")}]`
+    : v && typeof v === "object"
+      ? `{${Object.keys(v)
+          .sort()
+          .map((k) => `${JSON.stringify(k)}:${canonical(v[k])}`)
+          .join(",")}}`
+      : JSON.stringify(v);
 
 /**
  * Workers Traces only in `env.staging` (A6 9): there, logs as before (on, invocation logs on, no log sampling), the query string
@@ -483,29 +469,22 @@ export function observabilityProblems(config) {
   return problems;
 }
 
-/** M7.1 (Q2 A, owner 2026-11-01): the file vault the portal reads (shared files), per scope; production has no R2 bucket until Phase 7. */
+/** M7.1 (Q2 A, owner 2026-11-01): the file vault the portal reads (shared files), per scope; production's since P7-A. */
 export const PORTAL_FILES_BUCKETS = {
   "(top level)": "techaust-local-files",
   "env.staging": "techaust-staging-files",
+  "env.production": "techaust-prod-files",
 };
 
 /**
- * M7.1 (run file F): the portal binds `FILES` to the local file vault at the top level and to the staging one in `env.staging`, and NOT in `env.production`
- * (no R2 there until Phase 7, and a binding there would be inherited by nothing: each scope lists its own). Empty = passes.
- */
-/**
- * M7.4 (L7, L8; run file F): the jobs Worker binds the same `FILES` buckets as the portal (local and staging only, none in production until Phase 7), for the
- * clean-up's outbox drain and weekly sweep; and requires `ERASURE_HASH_KEY` wherever it requires secrets (top level and staging). Empty = passes.
+ * M7.4 (L7, L8; run file F): the jobs Worker binds the same `FILES` buckets as the portal (every scope), for the clean-up's outbox drain and weekly sweep; and
+ * requires `ERASURE_HASH_KEY` in every scope. Empty = passes.
  */
 export function jobsDataProtectionProblems(jobs) {
   const problems = [];
   for (const [scope, c] of SCOPES(jobs)) {
     const files = (c?.r2_buckets ?? []).filter((b) => b.binding === "FILES");
     const want = PORTAL_FILES_BUCKETS[scope];
-    if (want === undefined) {
-      if (files.length > 0) problems.push(`${scope}: jobs binds no FILES bucket until Phase 7`);
-      continue;
-    }
     if (files.length !== 1 || files[0].bucket_name !== want)
       problems.push(`${scope}: jobs binds FILES to ${want}`);
     if (!(c?.secrets?.required ?? []).includes("ERASURE_HASH_KEY"))
@@ -526,15 +505,17 @@ export function leadPurgeModeProblems(configs) {
   return problems;
 }
 
+/**
+ * M7.1 (run file F): the portal binds `FILES` to the file vault of each scope (local, staging and, since P7-A, production; not inherited, so each scope lists
+ * its own). Empty = passes.
+ */
 export function portalFilesProblems(portal) {
   const problems = [];
   const filesOf = (c) => (c?.r2_buckets ?? []).filter((b) => b.binding === "FILES");
   for (const [scope, c] of SCOPES(portal)) {
     const files = filesOf(c);
     const want = PORTAL_FILES_BUCKETS[scope];
-    if (want === undefined) {
-      if (files.length > 0) problems.push(`${scope}: the portal binds no FILES bucket until Phase 7`);
-    } else if (files.length !== 1 || files[0].bucket_name !== want)
+    if (files.length !== 1 || files[0].bucket_name !== want)
       problems.push(`${scope}: the portal binds FILES to ${want}`);
   }
   return problems;
@@ -549,6 +530,8 @@ export const RATE_LIMITS = {
   admin: { RL_SESSION: 240, RL_SIGNIN: 20, RL_INVITE: 10 },
   // Full audit AU60: RL_SIGNOUT per address on the portal's sign-out (generous: a 429 still clears the cookie).
   portal: { RL_SESSION: 120, RL_SIGNIN: 10, RL_LINKS: 30, RL_SIGNOUT: 60 },
+  // P7-A: the website's form limiter (M2.4: 2 a minute per address), in every scope with its own namespace id (local 4101, staging 4201, production 4301).
+  web: { RL_FORMS: 2 },
 };
 
 /**
@@ -596,6 +579,225 @@ export function rateLimitProblems(required, others = [], none = []) {
     for (const [scope, c] of SCOPES(cfg))
       if (c?.ratelimits !== undefined)
         problems.push(`${label} ${scope}: no ratelimits (the front counts every request it forwards)`);
+  return problems;
+}
+
+/** P7-A (docs/runs/p7-launch.md): the production D1 database every production `DB` binding names (created by the lead, 2026-11-07). */
+export const PRODUCTION_D1 = {
+  database_name: "techaust-prod",
+  database_id: "d16029d2-373e-4b66-beb0-d77158d6dfc2",
+};
+
+/** A staging R2 bucket or queue name to its production twin: `techaust-staging-pdf-dlq` → `techaust-prod-pdf-dlq`. */
+export const productionResourceOf = (name) => String(name).replace(/^techaust-staging-/, "techaust-prod-");
+
+/** A staging Worker name to its production twin: `techaust-platform-admin-finance-staging` → `techaust-platform-admin-finance`. */
+export const productionWorkerOf = (name) => String(name).replace(/-staging$/, "");
+
+/** Vars that only staging has: the SES-sandbox allow-list (src/email.ts applies it on staging only). Production must not set them. */
+export const STAGING_ONLY_VARS = ["EMAIL_ALLOWED_RECIPIENTS"];
+
+/** Vars whose production value is staging's (P7-A brief: the SES region and configuration sets, the PDF renderer and pacing, the transports, the live flag). */
+export const SAME_AS_STAGING_VARS = [
+  "PAYMENTS_LIVE_ALLOWED",
+  "EMAIL_TRANSPORT",
+  "SES_REGION",
+  "SES_CONFIGURATION_SET",
+  "SES_MARKETING_CONFIGURATION_SET",
+  "PDF_RENDERER",
+  "PDF_MIN_SPACING_MS",
+  "GATEWAY_TRANSPORT",
+  "CF_ACCOUNT_TAG",
+];
+
+/** The production hosts (P7-A brief): web, admin (behind Access), portal and the jobs hooks. */
+export const PRODUCTION_ORIGINS = {
+  web: "https://techaust.com",
+  admin: "https://admin.techaust.com",
+  portal: "https://portal.techaust.com",
+  jobs: "https://hooks.techaust.com",
+};
+
+/** Each config's production vars that name a host or the environment, by config label (the labels of `WORKER_CONFIGS`). */
+const O = PRODUCTION_ORIGINS;
+export const PRODUCTION_VARS = {
+  web: {
+    ENVIRONMENT: "production",
+    TURNSTILE_HOSTNAMES: "techaust.com",
+    FORMS_ALLOWED_ORIGINS: O.web,
+  },
+  admin: {
+    ENVIRONMENT: "production",
+    TURNSTILE_HOSTNAMES: "admin.techaust.com",
+    PORTAL_ORIGIN: O.portal,
+  },
+  "admin api": { ENVIRONMENT: "production" },
+  "admin finance": { ENVIRONMENT: "production", PORTAL_URL: `${O.portal}/` },
+  "admin invoices": { ENVIRONMENT: "production" },
+  portal: {
+    ENVIRONMENT: "production",
+    TURNSTILE_HOSTNAMES: "portal.techaust.com",
+    WEBSITE_ORIGIN: O.web,
+  },
+  jobs: {
+    ENVIRONMENT: "production",
+    LEAD_ALERT_TO: "admin@techaust.com",
+    ADMIN_URL: `${O.admin}/`,
+    EMAIL_ASSET_BASE: `${O.web}/brand/`,
+    PORTAL_URL: `${O.portal}/`,
+    PUBLIC_HOOKS_URL: `${O.jobs}/`,
+  },
+};
+
+/** Every Worker config: its label (as in PRODUCTION_VARS) and its path under apps/. */
+export const WORKER_CONFIGS = [
+  ["web", "web/wrangler.jsonc"],
+  ["admin", "admin/wrangler.jsonc"],
+  ["admin api", "admin/wrangler.api.jsonc"],
+  ["admin finance", "admin/wrangler.finance.jsonc"],
+  ["admin invoices", "admin/wrangler.invoices.jsonc"],
+  ["portal", "portal/wrangler.jsonc"],
+  ["jobs", "jobs/wrangler.jsonc"],
+];
+
+/** Cloudflare's Turnstile test site keys (always pass, always fail, …): `1x`, `2x` or `3x` and twenty zeros. Never a production key. */
+const TURNSTILE_TEST_KEY = /^[123]x0{20}/;
+
+/**
+ * P7-A: `env.production` mirrors `env.staging` binding for binding, naming the production resources. Compared: the Worker name (staging's without
+ * `-staging`, equal to the top level's), `workers_dev` false; D1 (`PRODUCTION_D1`, staging's `migrations_dir`), R2 buckets and queue producers (staging's
+ * names with `techaust-staging-` → `techaust-prod-`), queue consumers with staging's settings and dead-letter queues, service bindings with staging's
+ * entrypoints pointing at the production Workers, Browser Run, the crons, the rate limits' names and limits (their ids: rateLimitProblems), the
+ * `secrets.required` set and the vars key set (minus STAGING_ONLY_VARS); SAME_AS_STAGING_VARS keep staging's value and `wantVars` holds the production
+ * hosts. Nothing in production may name staging (a `techaust-staging*` resource, a `-staging` Worker, staging's database id), workers.dev, localhost or
+ * an `http://` URL. The Turnstile site key is the production widget's (set by the lead, 2026-11-07): never empty, staging's or a test key; its
+ * hostnames are techaust.com hosts. Empty = passes.
+ */
+export function productionMirrorProblems(config, wantVars = {}) {
+  const P = "env.production";
+  const s = config.env?.staging;
+  const prod = config.env?.production;
+  if (!s || !prod) return ["env.staging and env.production are both required"];
+  const problems = [];
+  if (prod.name !== productionWorkerOf(s.name) || prod.name === s.name || prod.name !== config.name)
+    problems.push(`${P}: name must be ${config.name}, staging's without "-staging"`);
+  if (prod.workers_dev !== false) problems.push(`${P}: workers_dev must be false`);
+
+  const pairs = (key, list, twinOf) => {
+    const got = new Map((prod[key] ?? []).map((b) => [b.binding, b]));
+    const want = s[key] ?? [];
+    for (const b of want) {
+      const twin = got.get(b.binding);
+      if (!twin) problems.push(`${P}: ${list} binding ${b.binding} is missing (staging has it)`);
+      else {
+        const expected = twinOf(b);
+        if (canonical(twin) !== canonical(expected))
+          problems.push(`${P}: ${list} binding ${b.binding} must be ${JSON.stringify(expected)}`);
+      }
+    }
+    for (const name of got.keys())
+      if (!want.some((b) => b.binding === name))
+        problems.push(`${P}: ${list} binding ${name} is not on staging`);
+  };
+  pairs("d1_databases", "D1", (b) => ({
+    binding: b.binding,
+    ...PRODUCTION_D1,
+    ...(b.migrations_dir === undefined ? {} : { migrations_dir: b.migrations_dir }),
+  }));
+  pairs("r2_buckets", "R2", (b) => ({ ...b, bucket_name: productionResourceOf(b.bucket_name) }));
+  pairs("services", "service", (b) => ({ ...b, service: productionWorkerOf(b.service) }));
+  {
+    const sq = s.queues?.producers ?? [];
+    const pq = prod.queues?.producers ?? [];
+    const want = sq.map((b) => ({ ...b, queue: productionResourceOf(b.queue) }));
+    if (canonical(sortBy(pq, "binding")) !== canonical(sortBy(want, "binding")))
+      problems.push(`${P}: queue producers must be ${JSON.stringify(sortBy(want, "binding"))}`);
+    const consumerOf = (c) => ({
+      ...c,
+      queue: productionResourceOf(c.queue),
+      ...(c.dead_letter_queue === undefined
+        ? {}
+        : { dead_letter_queue: productionResourceOf(c.dead_letter_queue) }),
+    });
+    const wantC = sortBy((s.queues?.consumers ?? []).map(consumerOf), "queue");
+    if (canonical(sortBy(prod.queues?.consumers ?? [], "queue")) !== canonical(wantC))
+      problems.push(
+        `${P}: queue consumers must be staging's with the production queues: ${JSON.stringify(wantC)}`,
+      );
+  }
+  if (canonical(prod.browser) !== canonical(s.browser)) problems.push(`${P}: browser must be staging's`);
+  if (canonical(prod.triggers) !== canonical(s.triggers)) problems.push(`${P}: triggers must be staging's`);
+  const limits = (c) =>
+    sortBy(
+      (c.ratelimits ?? []).map((r) => ({ name: r.name, simple: r.simple })),
+      "name",
+    );
+  if (canonical(limits(prod)) !== canonical(limits(s)))
+    problems.push(`${P}: ratelimits must have staging's names and limits (each its own namespace_id)`);
+  const set = (a) => JSON.stringify([...(a ?? [])].sort());
+  if (set(prod.secrets?.required) !== set(s.secrets?.required))
+    problems.push(`${P}: secrets.required must be staging's: ${set(s.secrets?.required)}`);
+
+  const sv = s.vars ?? {};
+  const pv = prod.vars ?? {};
+  const wantKeys = Object.keys(sv).filter((k) => !STAGING_ONLY_VARS.includes(k));
+  if (set(Object.keys(pv)) !== set(wantKeys))
+    problems.push(
+      `${P}: vars keys must be staging's without ${STAGING_ONLY_VARS.join(", ")}: ${set(wantKeys)}`,
+    );
+  for (const k of SAME_AS_STAGING_VARS)
+    if (k in sv && pv[k] !== sv[k])
+      problems.push(`${P}: var ${k} must be staging's (${JSON.stringify(sv[k])})`);
+  for (const [k, v] of Object.entries(wantVars))
+    if (pv[k] !== v) problems.push(`${P}: var ${k} must be ${JSON.stringify(v)}`);
+  if ("TURNSTILE_SITE_KEY" in pv) {
+    const key = pv.TURNSTILE_SITE_KEY;
+    if (
+      typeof key !== "string" ||
+      key === "" ||
+      key === sv.TURNSTILE_SITE_KEY ||
+      TURNSTILE_TEST_KEY.test(key)
+    )
+      problems.push(
+        `${P}: TURNSTILE_SITE_KEY must be the production widget's key (never empty, staging's or a test key)`,
+      );
+  }
+  if ("TURNSTILE_HOSTNAMES" in pv)
+    for (const h of String(pv.TURNSTILE_HOSTNAMES).split(","))
+      if (!/^([a-z0-9-]+\.)?techaust\.com$/.test(h.trim()))
+        problems.push(`${P}: TURNSTILE_HOSTNAMES may name only techaust.com hosts (${h.trim()})`);
+
+  const text = JSON.stringify(prod);
+  const stagingIds = (s.d1_databases ?? []).map((d) => d.database_id).filter(Boolean);
+  for (const [bad, why] of [
+    ["staging", "a staging name"],
+    ["workers.dev", "a workers.dev host"],
+    ["localhost", "localhost"],
+    ["http://", "an http:// URL"],
+    ...stagingIds.map((id) => [id, "staging's database id"]),
+  ])
+    if (text.includes(bad)) problems.push(`${P}: must not name ${why} (${bad})`);
+  return problems;
+}
+
+/** A copy of `list` sorted by `key` (bindings compare as sets). */
+const sortBy = (list, key) => [...list].sort((a, b) => String(a?.[key]).localeCompare(String(b?.[key])));
+
+/**
+ * P7-A: no `routes` or `route` (custom domains included) in any scope of any config. `routes` is inherited by environments, so the top level counts too.
+ * The lead attaches techaust.com, admin., portal. and hooks. by hand: a deploy from CI must never take a hostname from the old Worker. Empty = passes.
+ */
+export function routesProblems(configs) {
+  const problems = [];
+  for (const [label, cfg] of configs) {
+    const scopes = [["(top level)", cfg], ...Object.entries(cfg.env ?? {}).map(([n, c]) => [`env.${n}`, c])];
+    for (const [scope, c] of scopes)
+      for (const key of ["routes", "route"])
+        if (c?.[key] !== undefined)
+          problems.push(
+            `${label} ${scope}: no ${key} (custom domains are attached by hand, never by a deploy)`,
+          );
+  }
   return problems;
 }
 
@@ -673,10 +875,22 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
     [
       ["apps/admin/wrangler.jsonc", front, RATE_LIMITS.admin],
       ["apps/portal/wrangler.jsonc", read("portal/wrangler.jsonc"), RATE_LIMITS.portal],
+      ["apps/web/wrangler.jsonc", read("web/wrangler.jsonc"), RATE_LIMITS.web],
     ],
-    [["apps/web/wrangler.jsonc", read("web/wrangler.jsonc")]],
+    [],
     ADMIN_AUX_CONFIGS.map((f) => [`apps/admin/${f}`, aux[f]]),
   )) {
+    console.error(p);
+    failed = true;
+  }
+  // P7-A: production mirrors staging in every config, and no config carries routes or custom domains.
+  for (const [label, file] of WORKER_CONFIGS) {
+    for (const p of productionMirrorProblems(read(file), PRODUCTION_VARS[label])) {
+      console.error(`apps/${file}: ${p}`);
+      failed = true;
+    }
+  }
+  for (const p of routesProblems(WORKER_CONFIGS.map(([, file]) => [`apps/${file}`, read(file)]))) {
     console.error(p);
     failed = true;
   }
@@ -706,6 +920,6 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   }
   if (failed) process.exit(1);
   console.log(
-    "worker config guard: ok (preview_urls is false everywhere; the admin API, finance and invoices Workers have no public URL; the entrypoint bindings point at their Workers; the portal's FILES on local and staging only; traces on staging only; jobs minified with source maps; the front's and the portal's rate limits in every scope)",
+    "worker config guard: ok (preview_urls is false everywhere; the admin API, finance and invoices Workers have no public URL; the entrypoint bindings point at their Workers; production mirrors staging with the production resources; no routes or custom domains; traces on staging only; jobs minified with source maps; the front's, the portal's and the website's rate limits in every scope)",
   );
 }

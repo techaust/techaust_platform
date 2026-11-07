@@ -1,0 +1,5 @@
+# Old site paths (techaust-web) moved at launch (owner Q3, 2026-11-07; docs/runs/phase7-production.md).
+/services/knowledge-systems /services/ai-knowledge-assistants 301
+/services/workforce-automation /services/workflow-automation 301
+/services/security-guard /services 301
+/calculator /pricing 301

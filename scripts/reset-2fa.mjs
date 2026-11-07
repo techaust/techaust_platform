@@ -2,12 +2,14 @@
 // fresh single-use 48-hour invite link. For when recovery codes are all lost. Run it yourself, locally:
 //   pnpm admin:reset-2fa --email you@example.com                # local dev database
 //   pnpm admin:reset-2fa --email you@example.com --staging      # staging, with your own `wrangler login` (OAuth)
-// Never with a production API token. The link carries the token in the URL fragment (#t=…), so it never reaches
+//   pnpm admin:reset-2fa --email you@example.com --production   # production (P7-C): your own `wrangler login`, asks you to type
+//                                                               # PRODUCTION first; links on https://admin.techaust.com
+// Never with a production API token, never in CI (scripts/cli-target.mjs refuses both). The link carries the token in the URL fragment (#t=…), so it never reaches
 // server logs; share it only with the person it is for. The reset is audit-logged (`user.reset_2fa`, actor "system").
 //
 // The ONLY active owner cannot be reset: the database's last-owner trigger refuses it, and it stays strict (no bypass).
 // For that case the script issues a one-time OWNER invite for a second address you control instead:
-//   pnpm admin:reset-2fa --email you@example.com --new-email another@example.com [--staging]
+//   pnpm admin:reset-2fa --email you@example.com --new-email another@example.com [--staging | --production]
 // Open the link, enrol that account, then reset or deactivate the lost one from Staff and invites (allowed once two
 // owners exist). The lost owner's row, sessions and recovery codes are not touched. Audit: `user.invite`, actor "system",
 // reason break-glass. Keep a sealed second owner account so you rarely need this.
@@ -18,6 +20,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { adminOrigin, cliScope, d1Target, requireProductionConfirmation } from "./cli-target.mjs";
 import { portOffset, shiftLocalUrl } from "./dev-ports.mjs";
 import {
   auditReadBackSql,
@@ -30,16 +33,12 @@ import {
   resetStatements,
 } from "./reset-2fa-sql.mjs";
 
-const ORIGINS = {
-  local: "http://localhost:5173",
-  staging: "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev",
-};
-
 const { values } = parseArgs({
   options: {
     email: { type: "string" },
     "new-email": { type: "string" },
     staging: { type: "boolean", default: false },
+    production: { type: "boolean", default: false },
     hours: { type: "string", default: "48" },
   },
 });
@@ -47,12 +46,16 @@ const email = normaliseEmail(values.email);
 if (!email) throw new Error("--email is required");
 const hours = Number(values.hours);
 if (!Number.isInteger(hours) || hours < 1 || hours > 48) throw new Error("--hours must be 1–48");
+const scope = cliScope(values);
+// Production: refused in CI or with an API token, then the typed PRODUCTION, all before any remote read or write.
+if (scope === "production")
+  await requireProductionConfirmation({
+    what: `reset the staff member ${email} (or, for the only active owner, issue a break-glass owner invite).`,
+  });
 
 const jobs = fileURLToPath(new URL("../apps/jobs/", import.meta.url));
 const wrangler = join(jobs, "node_modules", "wrangler", "bin", "wrangler.js");
-const target = values.staging
-  ? ["--remote", "--env", "staging"]
-  : ["--local", "--persist-to", "../../.wrangler/state"];
+const target = d1Target(scope);
 
 function d1(args) {
   return execFileSync(process.execPath, [wrangler, "d1", "execute", "DB", ...target, ...args], {
@@ -107,7 +110,7 @@ function readBack(expected) {
   if (problem) throw new Error(problem);
 }
 // The local link follows TECHAUST_PORT_OFFSET (CLOUD-1, scripts/dev-ports.mjs): the dev server the person opens it on.
-const origin = values.staging ? ORIGINS.staging : shiftLocalUrl(ORIGINS.local, portOffset());
+const origin = adminOrigin(scope, (u) => shiftLocalUrl(u, portOffset()));
 
 if (onlyOwner) {
   // Break-glass for the only owner: the trigger stays strict, so a second owner is invited instead (one atomic run).
@@ -115,7 +118,8 @@ if (onlyOwner) {
   const newEmail = checkBreakGlass({
     email,
     newEmail: newEmailArg,
-    staging: values.staging,
+    staging: scope === "staging",
+    production: scope === "production",
     existing: rows(`SELECT 1 AS x FROM staff_users WHERE email = ${probe}`).length,
     liveInvites: rows(
       `SELECT 1 AS x FROM staff_invites WHERE email = ${probe} AND used_at IS NULL AND expires_at > ${now}`,

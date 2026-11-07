@@ -3,6 +3,7 @@
 // owner gives them, and the preview pages show labelled placeholders in their place, never invented values.
 // Phase 2 of M2.1 (builder) finalises this file; the shell only reads it.
 // With its extension: astro.config.mjs loads this file through Node itself (lib/quotable-build.ts).
+import { POSTAL_ADDRESS } from "@techaust/core/company";
 import { type IstWindow, istText } from "../scripts/call-time.ts";
 
 /**
@@ -38,8 +39,11 @@ export const site = {
   discoveryFallback: "/get-a-quote?service=S1",
   /** Owner decision 2026-10-22: no GA4 at launch. Empty = no consent banner, preferences show necessary only. */
   ga4Id: "",
-  /** OWNER: postal address for the legal pages (07-A `{{postal_address}}`). Empty = a labelled placeholder (never invented). */
-  postalAddress: "Pirozpur, Balurghat, Dakshin Dinajpur, West Bengal 733133" as string,
+  /**
+   * OWNER: postal address for the legal pages (07-A `{{postal_address}}`). Empty = a labelled placeholder (never invented). The value lives
+   * once in `@techaust/core/company` (`POSTAL_ADDRESS`), which the jobs Worker's Rule 9 email block reads too (P7-C); change it there.
+   */
+  postalAddress: POSTAL_ADDRESS,
   /**
    * OWNER: founder's headshot: the file name of an image put in apps/web/src/assets/founder/ (e.g. "founder.jpg", at least
    * 1200 px tall, 4:5). The build makes AVIF and WebP copies through astro:assets (WEB-G-13); a name with no file fails the
@@ -47,18 +51,20 @@ export const site = {
    */
   founderPhoto: "founder.jpg" as string,
   /** OWNER: founder's short bio (About, 07 §5.7). Empty = placeholder. */
-  founderBio: "" as string,
+  // Approved word for word by the owner, 2026-11-07 (two paragraphs, split on the blank line by about.astro).
+  founderBio:
+    "I started TecHaust Technologies in Balurghat, West Bengal, on 29 June 2019, a year after finishing my BCA at MAKAUT. I’ve built software for a living ever since, and I still lead every client project myself, from the first scoping call to the day it goes live, with our senior team alongside.\n\nThe work covers custom web applications and SaaS products, Android and iOS apps, AI features and automation, and the integrations that make a business’s systems work together, for clients in India and abroad. Every project starts with a written proposal you can hold us to, and once it’s paid for, the code is yours." as string,
   /**
    * Owner confirms the Zoho aliases security@ and privacy@ deliver (U-5). `false` blocks the production deploy
-   * (scripts/check-prod-readiness.mjs). Set to `true` only on the owner's word.
+   * (scripts/check-prod-readiness.mjs). Set to `true` only on the owner's word: confirmed by the owner, 2026-11-07 (security@, privacy@, hello@ and no-reply@ added and tested; billing@ and contact@ already delivered).
    */
-  aliasesConfirmed: false as boolean,
+  aliasesConfirmed: true as boolean,
   /**
    * OWNER: the launch day, ISO date (YYYY-MM-DD). Every legal page's effective date is the launch day (owner,
    * 2026-10-22). Empty blocks the production deploy; the lead sets this and every `effective` in content/legal.ts
    * together before production (scripts/check-prod-readiness.mjs).
    */
-  launchDate: "" as string,
+  launchDate: "2026-11-08" as string,
   /**
    * `Expires` of /.well-known/security.txt (RFC 9116), ISO 8601, set to one year after it was written. The dist check
    * fails when it is in the past or more than 365 days away: renew it before it lapses.

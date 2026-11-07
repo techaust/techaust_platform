@@ -72,7 +72,7 @@ if (site.founderPhoto && !headshot)
           </p>
           {
             site.founderBio ? (
-              <CopyText text={site.founderBio} class="t-body-lg founder__bio" />
+              site.founderBio.split("\n\n").map((para) => <CopyText text={para} class="t-body-lg founder__bio" />)
             ) : (
               <Placeholder what="Founder bio, about 80 to 120 words" />
             )

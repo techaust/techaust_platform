@@ -358,7 +358,7 @@ describe("website terms 0.2 (07-ZE lines 13, 14, 15 and 6; T6) [WEB-LEGAL]", () 
   it("its version line and Changes entry are 07-ZE's, word for word", () => {
     expect(legal.terms).toEqual({
       version: "0.3",
-      effective: "2026-11-07",
+      effective: "2026-11-08",
       changes: [
         { version: "0.1", date: "2026-10-22", note: "First published draft." },
         {
