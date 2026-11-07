@@ -1,6 +1,6 @@
-Status: WAITING ON OWNER (Q1, Q2, ZV); builder starting
+Status: WAITING ON OWNER (Q1, Q2, ZV); builder running (b1)
 Tier: A
-Usage: analyst claude-opus-5-5/high (brief draft; skills: none, the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %
+Usage: analyst claude-opus-5-5/high (brief draft; skills: none, the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder (b1) started at 5-h 14 %
 
 # Rebuild PDF (cloud session `rebuild-pdf`, branch `feat/rebuild-pdf`)
 
