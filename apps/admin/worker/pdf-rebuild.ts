@@ -184,7 +184,7 @@ async function postRebuild(c: Ctx, def: RebuildKindDef): Promise<Response> {
       }),
     ),
     action: "pdf.rebuild",
-    entityType: def.entity,
+    entityType: def.entity === "deed" ? "deed" : "document",
     entityId: id,
     summary: { repairId, kind, number: subject.label, n, found },
     status: 202,
