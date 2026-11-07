@@ -1,6 +1,6 @@
 Status: reviewer running
 Tier: A
-Usage: analyst claude-opus-5-5/high (brief draft; skills: none, the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder (b1) claude-opus-5-5/high (skills: none, as above; model-audit flags both runs for that, explained): 5-h 14 → 53 %; analyst early check claude-opus-5-5/high (skills: `security-review` tried, it failed to load: no `origin/HEAD`; checklist applied by hand): 5-h 53 → 53+
+Usage: analyst (brief) claude-opus-5-5/high, skills none (the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder b1 claude-opus-5-5/high, skills none (same reason; model-audit flags it): 14 → 53 %; analyst early check claude-opus-5-5/high, skills `security-review` (failed to run: no `origin/HEAD`; checklist by hand): 53 → ~60 %; designer d1 claude-opus-5-5/high, skills `frontend-design:frontend-design` (model-audit records the attempt; "Unknown skill" in the cloud): ~60 → 71 %; builder b2 claude-opus-5-5/high, skills none (same reason; flagged): ~60 → 71 %; reviewer: started at 71 %
 
 # Rebuild PDF (cloud session `rebuild-pdf`, branch `feat/rebuild-pdf`)
 
@@ -244,11 +244,12 @@ CPU: the admin check hashes at most one PDF (native digest, ~300 KB typical) onl
 - 0087 `pdf_repairs` (drizzle: two new tables, indexes); 0088 `pdf_repair_triggers` (custom). Planned; numbers fixed at merge.
 
 ## Worker bytes
-(measured after the build)
+Measured by builder b2 (after d1, the admin front is unchanged at 122,717): admin front 122,717 / 150,000; API 573,123 / 800,000; finance 436,784 / plan 500,000 (no change from this task); invoices 579,695 / plan 650,000; portal 164,185 / plan 180,000 (+602 from this task); jobs 886,793 / 1,000,000. Start-up 30–86 ms (b1). Re-measured after the final merge before the PR.
 
 ## Handover
 - 2026-11-07 20:15 IST: branch made from `origin/main` (0ec9e8b); analyst drafting the Tier A brief.
 - 2026-11-07 20:30 IST: USAGE 14 at 20:29; origin/main (#193) taken in.
+- 2026-11-07 22:20 IST: builder b2 merged (6906b041; run file sections kept from both); origin/main (#194, no migrations) merged; reviewer starting.
 - 2026-11-07 23:00 IST: designer d1 merged (0dc73135); screenshots copied to the main checkout's `.logs/shots/rebuild-pdf/` (52 files); worktree removed. Lead's answers to d1's questions: (1) the panel's "Fingerprint" line stays (it is the recorded first file's hash, the acceptance evidence); line 11 says "of the stored file", so the two read differently; (2) the button stays where the API may refuse (lines 19 and 9 explain; the screen can't always know the offer's open state); (3) **a void receipt keeps its PDF for the audit, so it gets the action too**: designer fix in the review-fix round; (4) yes: outcome lines are the Owner's, the fact and "Being rebuilt…" are for every reader.
 - 2026-11-07 22:30 IST: USAGE 71; weekly all-models 82 %: only the planned agents (reviewer, then a re-check if needed). Merge order: #194, #195, #196, this branch, then the LUT fold (0089); this branch keeps 0087–0088.
 - 2026-11-07 21:45 IST: early check GO; builder b2 (changes 1–9, portal, attachments) and designer d1 started in parallel.
