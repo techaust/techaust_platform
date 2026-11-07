@@ -72,9 +72,7 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
     expect(await codeOf(r2)).toBe("invoice_void");
 
     const g = await issued(1);
-    await env.DB.prepare("UPDATE clients SET anonymised_at = 5 WHERE id = ?").bind(g.made.clientId).run();
-    expect(await codeOf(await send(g.s, g.made.id, { contactIds: g.ids }))).toBe("client_anonymised");
-
+    // M7.4 (0079): an anonymised client takes no new document, so the proposal is made before the client is anonymised.
     const proposal = uuidv7();
     await insert("documents", {
       id: proposal,
@@ -83,6 +81,9 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
       currency: "INR",
       version_group_id: proposal,
     });
+    await env.DB.prepare("UPDATE clients SET anonymised_at = 5 WHERE id = ?").bind(g.made.clientId).run();
+    expect(await codeOf(await send(g.s, g.made.id, { contactIds: g.ids }))).toBe("client_anonymised");
+
     expect((await send(g.s, proposal, { contactIds: g.ids })).status).toBe(404);
     expect((await send(g.s, "no-such-id", { contactIds: g.ids })).status).toBe(404);
     expect(await sendsOf(g.made.id)).toEqual([]);

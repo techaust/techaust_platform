@@ -5,6 +5,7 @@
 import { env } from "cloudflare:workers";
 import { docTokenStmt, portalFailKey, tokenHash } from "@techaust/auth";
 import { uuidv7 } from "@techaust/core";
+import { requestDueAt, requestDueAtSql } from "@techaust/core/dsr";
 import { NOTICES_OPEN_MAX, REQUESTS_PER_DAY } from "@techaust/core/portal";
 import { describe, expect, it, vi } from "vitest";
 import { fixtures } from "./fixtures.ts";
@@ -404,6 +405,13 @@ describe("requests [POR-09, POR-11, L8, L9]", () => {
       details: "My title is wrong.\nIt is Director.",
       status: "open",
     });
+    // M7.4 L42: the sign-in is the identity check, at the time the request arrived, by no staff member.
+    expect(
+      await one(
+        "SELECT channel, identity_checked_at = received_at AS checked_on_arrival, identity_checked_by FROM client_requests WHERE id = ?1",
+        id,
+      ),
+    ).toEqual({ channel: "portal", checked_on_arrival: 1, identity_checked_by: null });
     const audit = await one<{ id: string; summary: string }>(
       "SELECT id, summary FROM audit_log WHERE action = 'portal.request' AND entity_id = ?1",
       id,
@@ -462,6 +470,36 @@ describe("requests [POR-09, POR-11, L8, L9]", () => {
     expect(sixth.status).toBe(429);
     expect(((await bodyOf(sixth)).error as { code: string }).code).toBe("too_many_requests");
     expect(await countOf("client_requests", `contact_id = '${who.id}'`)).toBe(REQUESTS_PER_DAY);
+  });
+
+  it("M7.4 (E, L9, C1): the two new kinds are accepted; an open request shows its reply date; a request staff logged for the contact doesn't count against the cap", async () => {
+    const f = await fixtures();
+    const who = await extraContact(f.a.id);
+    const s = await sessionFor(who);
+    const owner = uuidv7();
+    await env.DB.prepare(
+      "INSERT INTO staff_users (id, email, name, role, status) VALUES (?1, ?2, 'Owner', 'owner', 'active')",
+    )
+      .bind(owner, `${owner}@example.test`)
+      .run();
+    // five requests staff logged today for this contact (email channel): none counts against the portal's cap
+    for (const kind of ["contact_change", "data_access", "data_correction", "data_erasure", "grievance"]) {
+      const received = Date.now() - 60_000;
+      await env.DB.prepare(
+        `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, channel, logged_by, received_at, due_at, ack_due_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?3, ?4, 'x', 'email', ?5, ?6, ${requestDueAtSql("?6")}, ?6 + 172800000, ?7, ?7)`,
+      )
+        .bind(uuidv7(), f.a.id, who.id, kind, owner, received, Date.now())
+        .run();
+    }
+    for (const kind of ["consent_withdrawal", "nomination"]) {
+      const res = await call("/requests", { cookie: s.cookie, body: { kind } });
+      expect(res.status, kind).toBe(201);
+      const r = (await bodyOf(res)).request as { kind: string; replyBy: number; createdAt: number };
+      expect(r.kind).toBe(kind);
+      expect(r.replyBy).toBe(requestDueAt(r.createdAt));
+    }
+    expect((await call("/requests", { cookie: s.cookie, body: { kind: "bogus" } })).status).toBe(400);
   });
 });
 

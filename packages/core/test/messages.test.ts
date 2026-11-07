@@ -139,6 +139,8 @@ describe("M2.4b messages [POR-01, ADM-AUTH-09, ADM-MAIL-01]", () => {
       "staff.notification",
       "refund.sent",
       "staff.signin_unfinished",
+      // M7.4 (changed on purpose): the acknowledgement of a portal request
+      "request.received",
     ]);
     for (const template of EMAIL_TEMPLATES)
       expect(

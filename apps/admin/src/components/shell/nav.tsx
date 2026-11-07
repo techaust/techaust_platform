@@ -20,6 +20,7 @@ import {
   Package,
   Receipt,
   Settings,
+  Shield,
   Wallet,
 } from "../icons.tsx";
 
@@ -56,6 +57,14 @@ export const NAV: NavItem[] = [
     label: "Clients",
     path: "/clients",
     icon: <Building />,
+    group: 1,
+  },
+  // M7.4 (G.1): every request about personal data or portal access, from clients, leads and people not in our records (the bells link here)
+  {
+    key: "requests",
+    label: "Requests",
+    path: "/requests",
+    icon: <Shield />,
     group: 1,
   },
   {

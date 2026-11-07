@@ -110,6 +110,8 @@ function makeEnv(browser: unknown = {}, over: Record<string, unknown> = {}) {
     BROWSER: browser,
     EMAIL_QUEUE: email,
     PDF_QUEUE: pdf,
+    // M7.4 (L23): the erased-address hash key (the email consumer's `h:` check).
+    ERASURE_HASH_KEY: (realEnv as unknown as { ERASURE_HASH_KEY: string }).ERASURE_HASH_KEY,
     ...over,
   } as unknown as Env;
   return { env, email, pdf };
@@ -644,7 +646,6 @@ describe("the daily cron enqueues both sweeps in one batch and reads no database
       PDF_QUEUE: pdf,
       LEADS_QUEUE: recorder(),
       EMAIL_QUEUE: recorder(),
-      LEAD_PURGE_MODE: "dry_run",
     } as unknown as Env;
     await worker.scheduled?.(
       { cron: "5 4 * * *", scheduledTime: T0 } as ScheduledController,

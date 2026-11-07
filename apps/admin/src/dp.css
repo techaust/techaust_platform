@@ -1,0 +1,803 @@
+/* M7.4 (run file G): the data-protection screens: the requests inbox and its reply clock, one request's steps and close, "Log a request", the legal-hold
+   panel and banner, Settings › Data retention's clean-up, and a lead's data tools. Tokens only (docs/06); every class starts with `dp-` so no other
+   stylesheet of the admin defines it (scripts/css-collisions.mjs). */
+
+/* ---------- the inbox's filters: "Show" as a row of radio pills that wraps on phones, "Kind" as a select ---------- */
+
+.filters.dp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4) var(--space-6);
+  margin-bottom: var(--space-5);
+}
+
+.dp-show {
+  flex: 1 1 32rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.dp-show__legend {
+  margin-bottom: var(--space-1);
+  padding: 0;
+}
+
+.dp-show__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.dp-show__opt {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dp-show__opt input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.dp-show__opt:hover {
+  background: var(--color-surface-alt);
+}
+
+/* The chosen one: the shared switch's look (selection fill, weight 600, the 2 px ink bar), so the choice never rests on the fill alone. */
+.dp-show__opt:has(input:checked) {
+  background: var(--color-selection);
+  box-shadow: inset 0 -2px 0 var(--color-text);
+  font-weight: 600;
+}
+
+.dp-show__opt:has(input:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .dp-show__opt:has(input:checked) {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
+.dp-kind {
+  flex: 0 1 18rem;
+}
+
+@media (max-width: 47.99rem) {
+  .dp-kind {
+    flex-basis: 100%;
+  }
+}
+
+/* ---------- the table's cells ---------- */
+
+.dp-row-open {
+  font-weight: 600;
+}
+
+.dp-cell {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  min-width: 0;
+}
+
+.dp-cell__meta {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-more {
+  margin-top: var(--space-4);
+}
+
+/* ---------- the reply clock: the date, a thin track filled as far as today, the days left in words ---------- */
+
+.dp-clock {
+  --dp-tone: var(--color-accent-decor);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-1);
+  min-width: 8.5rem;
+  max-width: 14rem;
+}
+
+.dp-clock--warning {
+  --dp-tone: var(--color-warning);
+}
+
+.dp-clock--danger {
+  --dp-tone: var(--color-danger);
+}
+
+.dp-clock__due {
+  font-weight: 560;
+  white-space: nowrap;
+}
+
+/* The track: a hairline of the border colour with the elapsed part in the state's colour, square-ended like the brand's strokes. */
+.dp-clock__track {
+  position: relative;
+  display: block;
+  height: 0.375rem;
+  background: var(--color-fill-subtle);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+  overflow: hidden;
+}
+
+.dp-clock__fill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  background: var(--dp-tone);
+}
+
+.dp-clock__left {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-clock--danger .dp-clock__left {
+  color: var(--color-text);
+  font-weight: 560;
+}
+
+.dp-clock--wide {
+  flex: 1 1 14rem;
+  max-width: 20rem;
+}
+
+.dp-clock--none {
+  color: var(--color-text-muted);
+}
+
+@media (forced-colors: active) {
+  .dp-clock__fill {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+}
+
+/* ---------- one request (the dialog) ---------- */
+
+.dialog--dp-request,
+.dialog--dp-log {
+  width: min(100% - 2rem, 40rem);
+}
+
+.dp-req {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.dp-req__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-3) var(--space-5);
+}
+
+.dp-req__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-3) var(--space-5);
+  margin: 0;
+}
+
+.dp-req__facts > div {
+  min-width: 0;
+}
+
+.dp-req__facts dt {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-req__facts dd {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.dp-req__facts--closed {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.dp-req__meta {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-req__h {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 600;
+}
+
+.dp-req__details {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-border-control);
+  background: var(--color-surface-alt);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.dp-req__owner {
+  margin: 0;
+}
+
+/* The steps: a sequence, so an ordered list with its marks joined by a rule; a step done carries a check in a filled square. */
+.dp-steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dp-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+}
+
+.dp-step:last-child {
+  padding-bottom: 0;
+}
+
+/* the rule from this step's mark down to the next one */
+.dp-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  inset-block: 1.5rem 0;
+  inset-inline-start: calc(0.75rem - 1px);
+  width: 2px;
+  background: var(--color-border);
+}
+
+.dp-step--done:not(:last-child)::before {
+  background: var(--color-accent-decor);
+}
+
+.dp-step__mark {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--color-border-control);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+}
+
+.dp-step--done .dp-step__mark {
+  border-color: var(--color-btn-primary-bg);
+  background: var(--color-btn-primary-bg);
+  color: var(--color-btn-primary-fg);
+}
+
+.dp-step__body {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  min-width: 0;
+}
+
+.dp-step__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-weight: 600;
+}
+
+.dp-step__when {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+.dp-step__extra {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-step__act {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+  margin-top: var(--space-1);
+}
+
+.dp-step__hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* ---------- the close form ---------- */
+
+.dp-close {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dp-close__what {
+  margin: 0 0 var(--space-2);
+}
+
+.dp-close__why {
+  margin: 0 0 var(--space-2) calc(1.25rem + var(--space-3));
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-close__group {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.dp-close__check {
+  margin: 0;
+}
+
+.dp-close__hint {
+  margin: 0 0 var(--space-3) calc(1.25rem + var(--space-3));
+}
+
+/* ---------- "Log a request" ---------- */
+
+.dp-log {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dp-log__intro {
+  margin: 0;
+}
+
+.dp-log__channels .segmented {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 29.99rem) {
+  .dp-log__channels .segmented {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* two rows: the second row's top edge and the inner edges keep their rules */
+  .dp-log__channels .segmented__opt:nth-child(n + 3) {
+    border-top: 1px solid var(--color-border-control);
+  }
+
+  .dp-log__channels .segmented__opt:nth-child(3) {
+    border-inline-start: 0;
+  }
+}
+
+.dp-log__note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 3px solid var(--color-warning);
+  background: var(--color-surface-alt);
+}
+
+.dp-find__row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.dp-find__row input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.dp-find__row .btn {
+  flex: none;
+}
+
+.dp-find__results {
+  margin-top: var(--space-2);
+}
+
+.dp-find__results .radios {
+  margin: 0;
+}
+
+.dp-find__none {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.dp-find__opt {
+  align-items: flex-start;
+  padding-block: var(--space-2);
+}
+
+.dp-find__opt input {
+  margin-top: 0.125rem;
+}
+
+.dp-find__who {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.dp-find__label {
+  margin: 0 0 var(--space-1);
+  font-weight: 560;
+}
+
+.dp-find__chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt);
+}
+
+/* ---------- legal hold: the band at the top of a held record, and the panel ---------- */
+
+/* The band: the warning colour on its rule and lock only; the words stay in the text colour so they read at AA in both themes (the M7.2 band's pattern). */
+.dp-hold-band {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-warning);
+  border-radius: var(--radius-md);
+}
+
+.dp-hold-band > svg {
+  flex: none;
+  margin-top: 0.125rem;
+  color: var(--color-warning);
+}
+
+.dp-hold-band__body {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.dp-hold-band__body p {
+  margin: 0;
+}
+
+.dp-hold-band__title {
+  font-weight: 600;
+}
+
+.dp-hold {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+}
+
+.dp-hold__state {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  margin: 0;
+}
+
+.dp-hold__history {
+  width: 100%;
+}
+
+.dp-hold__h {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+}
+
+.dp-hold__list {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dp-hold__item {
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--color-border);
+}
+
+.dp-hold__who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 560;
+}
+
+.dp-hold__when {
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.dp-hold__reason {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.dp-hold-form {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dp-hold-form > p {
+  margin: 0 0 var(--space-2);
+}
+
+/* ---------- Settings › Data retention: the clean-up, its reports, the lift ---------- */
+
+.dp-clean,
+.dp-lift {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 60rem;
+  margin-top: var(--space-10);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--color-border);
+}
+
+.dp-clean__h {
+  margin: 0;
+  font-family: var(--font-display);
+  font-stretch: var(--font-display--stretch);
+  font-size: var(--text-h4);
+  line-height: var(--text-h4--line-height);
+  font-weight: var(--text-h4--font-weight);
+}
+
+.dp-clean__lede {
+  max-width: var(--container-lede);
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.dp-clean__sub {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  font-weight: 600;
+}
+
+.dp-clean__note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+/* The switch: a panel whose rule says the mode (info for a trial, danger once real deletion is on), with the words, never the colour, carrying it. */
+.dp-live {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-info);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.dp-live--on {
+  border-inline-start-color: var(--color-danger);
+}
+
+.dp-live__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3) var(--space-6);
+}
+
+.dp-live__words {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.dp-live__label {
+  margin: 0;
+  font-weight: 600;
+}
+
+.dp-live__desc {
+  margin: var(--space-1) 0 0;
+}
+
+.dp-live__why {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-report {
+  display: grid;
+  gap: var(--space-3);
+  scroll-margin-top: calc(var(--topbar-h) + var(--space-4));
+}
+
+.dp-report:focus {
+  outline: none;
+}
+
+.dp-runs {
+  flex: none;
+}
+
+.dp-run-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.dp-leads-due {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dp-leads-due__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dp-leads-due__list a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+}
+
+.dp-lift__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-2) var(--space-3);
+  max-width: 40rem;
+}
+
+.dp-lift__form .field {
+  flex: 1 1 18rem;
+  margin: 0;
+}
+
+/* the button lines up with the field's control, below its label */
+.dp-lift__form > .btn {
+  margin-top: calc(var(--text-body--line-height) * 1em + var(--space-1));
+}
+
+@media (max-width: 47.99rem) {
+  .dp-lift__form > .btn {
+    margin-top: 0;
+  }
+}
+
+/* ---------- the erase dialog's "in parts" state (F5) ---------- */
+
+.dp-parts {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-info);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.dp-parts p {
+  margin: 0;
+}
+
+.dp-parts__bar {
+  width: 100%;
+  height: 0.375rem;
+  accent-color: var(--color-btn-primary-bg);
+}
+
+/* the client tab's request name, a button that opens the request (44 px tall, read as the row's title) */
+.dp-open {
+  min-height: var(--target-min);
+  padding-inline: 0;
+  font-weight: 600;
+  text-align: start;
+}
+
+/* ---------- a lead erase refused as too_many_leads: the references the server names (review low 11) ----------
+   The notice's own continuation, not a second alert: the same surface and left rule (neutral, so only the sentence reads as the error), its text
+   column lined up with the notice's words (rule + padding + icon + gap = space-12), the references in the document-number face on a grid so they
+   scan in columns, and one button that copies them all, one per line, for the developer. */
+.dialog .notice:has(+ .dp-refs) {
+  margin-bottom: 0;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.dp-refs {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-1) var(--space-4) var(--space-4) var(--space-12);
+  border-inline-start: 3px solid var(--color-border);
+  border-end-start-radius: var(--radius-sm);
+  border-end-end-radius: var(--radius-sm);
+  background: var(--color-surface-alt);
+}
+
+.dp-refs__h {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.dp-refs__list {
+  display: grid;
+  /* a reference (L- and five characters) is about 3.7rem in the mono face at text-sm: four columns in the dialog, three on a phone */
+  grid-template-columns: repeat(auto-fill, minmax(4.25rem, 1fr));
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.dp-refs .btn {
+  justify-self: start;
+}

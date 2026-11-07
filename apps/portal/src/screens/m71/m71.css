@@ -708,6 +708,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* M7.4 (E, C1): the reply date takes a line of its own under the state, in the text colour (it is what the person waits for) */
+.m71-req__reply {
+  flex: 1 1 100%;
+  font-weight: 560;
+}
+
+@media (min-width: 48rem) {
+  .m71-req__reply {
+    text-align: end;
+  }
+}
+
 .m71-reqform__kept {
   margin: 0 0 var(--space-5);
   padding: var(--space-3) var(--space-4);

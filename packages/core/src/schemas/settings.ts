@@ -32,6 +32,7 @@ import {
   REALISATION_MIN_DAYS,
   REALISATION_MIN_MONTHS,
 } from "../realisation-bounds.ts";
+import { RETENTION_FLOORS } from "../retention-floors.ts";
 import { isUdyamNumber, UDYAM_CATEGORIES, UDYAM_NUMBER_ERROR } from "../udyam.ts";
 
 /**
@@ -455,18 +456,17 @@ export const paymentTermsSettings = storedPaymentTermsSettings.check(
   }),
 );
 
-/**
- * The least each retention figure may be (months, but years for `financialYears`): the one place the floors live. The schema takes them as its minimums, and `resolveSetting` raises a stored
- * row that is below one to it, so a row saved before a floor existed (the email log was 1 month) reads at the floor instead of failing.
- */
-export const RETENTION_FLOORS = {
-  leadsMonths: 12,
-  emailLogMonths: 12,
-  securityLogMonths: 13,
-  financialYears: 8,
-} as const;
+// M7.4 B2 (run file J): the floors live in their own module so the jobs Worker reads them without these schemas.
+export { RETENTION_FLOORS };
 
 export const retentionSettings = z.strictObject({
+  /** M7.4 (A.8, L14): closed data requests are deleted this long after they closed; 36 by default, never below 12 (Researched 2026-10-28, SPDI r.5(9) (08-C RB-13)). */
+  requestsMonths: intBetween(RETENTION_FLOORS.requestsMonths),
+  /**
+   * M7.4 (A.8; owner 2026-10-07, 3 years of consent proof): the consent receipts and the `erased` stop rows end this long after the subject's newest receipt; 36
+   * by default, never below 12 (Researched 2026-10-28, DPDP Rules 2025 Rule 8(3) (08-C RB-09); Settled by the lead on the safest reading, 2026-11-06 (08-C RB-46)).
+   */
+  consentProofMonths: intBetween(RETENTION_FLOORS.consentProofMonths),
   /** ADM-SET-09: unconverted leads; never below the 1-year minimum (DPDP Rule 8(3)). */
   leadsMonths: intBetween(RETENTION_FLOORS.leadsMonths),
   /** At least 12 months: the logs of processing personal data are kept for one year (DPDP Rule 8(3), from 13 May 2027; Researched 2026-10-28, 08-C RB-09). A stored row below it reads as 12 (`resolveSetting`). */
@@ -666,7 +666,14 @@ export const SETTINGS_DEFAULTS: Settings = {
     // OPEN (08-C RB-23): CPA 2019 ss.2(7) and 34 read in secondary sources only: is a ₹10,000 website-use cap enforceable against a consumer? INR 10,000 is the figure the site printed before this setting existed.
     websiteLiabilityCapInrMinor: 1_000_000,
   },
-  retention: { leadsMonths: 12, emailLogMonths: 13, securityLogMonths: 13, financialYears: 10 },
+  retention: {
+    leadsMonths: 12,
+    emailLogMonths: 13,
+    securityLogMonths: 13,
+    financialYears: 10,
+    requestsMonths: 36,
+    consentProofMonths: 36,
+  },
   flags: {
     dpdpReadinessPage: false,
     weeklyDigest: true,

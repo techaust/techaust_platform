@@ -4,9 +4,11 @@ import {
   deleteAfter,
   isPurgeMessage,
   isPurgeScanMessage,
+  LEAD_DELETABLE_SQL,
   type LeadStage,
   LOST_REASON_OF_DECLINE,
   LOST_REASONS,
+  leadDeletableSql,
   normaliseEmail,
   stageAfterProposalEvent,
 } from "../src/lead-lifecycle.ts";
@@ -64,5 +66,12 @@ describe("lead life cycle", () => {
     expect(isPurgeScanMessage({ kind: "lead.purge.scan", asOf: 1, cursor: { at: "2" } })).toBe(false);
     expect(isPurgeScanMessage({ kind: "lead.purge.scan" })).toBe(false);
     expect(isPurgeScanMessage(3)).toBe(false);
+  });
+});
+
+describe("leadDeletableSql (M7.4 review 1 low 6)", () => {
+  it("is LEAD_DELETABLE_SQL with every column on the alias, so the partial index leads_delete_due still matches", () => {
+    expect(leadDeletableSql("l")).toBe("l.client_id IS NULL AND l.legal_hold = 0");
+    expect(leadDeletableSql("l").replaceAll("l.", "")).toBe(LEAD_DELETABLE_SQL);
   });
 });

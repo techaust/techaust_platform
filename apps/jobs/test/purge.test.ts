@@ -13,17 +13,21 @@ import worker from "../src/index.ts";
 import { processLead } from "../src/leads.ts";
 import { enqueueDue, PURGE_CRON, purgeLead, SCAN_SQL } from "../src/purge.ts";
 import { handleQueue } from "../src/queue.ts";
+import { setRetentionMode } from "./dp-helpers.ts";
+import { wipe } from "./wipe.ts";
 
 const NOW = 1_800_000_000_000;
 const DAY = 86_400_000;
 
 let sent: unknown[] = [];
-const makeEnv = (mode: "live" | "dry_run" = "live") =>
+// M7.4 (C.7, L4): the mode is the real-deletion switch (`setRetentionMode`), no longer an env var; `beforeEach` turns it on.
+const makeEnv = () =>
   ({
     DB: realEnv.DB,
     PDF_QUEUE: { sendBatch: async () => undefined }, // the cron also enqueues the PDF sweep and the offer sweep (M4.4, M4.5)
+    // M7.4 (L23): the erased-address hash key (the email consumer's `h:` check and the purge need it).
+    ERASURE_HASH_KEY: (realEnv as unknown as { ERASURE_HASH_KEY: string }).ERASURE_HASH_KEY,
     ENVIRONMENT: "local",
-    LEAD_PURGE_MODE: mode,
     LEAD_ALERT_TO: "owner@example.test",
     ADMIN_URL: "https://admin.example/",
     LEADS_QUEUE: {
@@ -80,11 +84,9 @@ beforeEach(async () => {
   console.log = (...a: unknown[]) => {
     logs.push(a.map(String).join(" "));
   };
-  await realEnv.DB.batch([
-    realEnv.DB.prepare("DELETE FROM notifications"),
-    realEnv.DB.prepare("DELETE FROM leads"),
-    realEnv.DB.prepare("DELETE FROM clients"),
-  ]);
+  // M7.4 (0079): a held lead is never deleted; the test wipe passes the guard (wipe.ts).
+  await wipe("notifications", "leads", "clients");
+  await setRetentionMode("live");
   return () => {
     console.log = origLog;
   };
@@ -109,7 +111,8 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
   it("a dry run logs one count per page and enqueues no per-lead messages", async () => {
     await addLead();
     await addLead();
-    const r = await enqueueDue(makeEnv("dry_run"), NOW);
+    await setRetentionMode("dry_run");
+    const r = await enqueueDue(makeEnv(), NOW);
     expect(r).toEqual({ queued: 0, more: false });
     expect(sent).toEqual([]);
     expect(logs.some((l) => l.includes('"ev":"lead.purge_dry_run_page"') && l.includes('"due":2'))).toBe(
@@ -160,7 +163,9 @@ describe("enqueueDue: the cron only enqueues [JOB-CRON-01]", () => {
           k !== "lead.purge.scan" &&
           k !== "stats.metric" &&
           k !== "documents.expire" &&
-          k !== "statement.purge", // M5.5b: the statement PDF cache clean-up rides the same daily tick (changed on purpose)
+          k !== "statement.purge" && // M5.5b: the statement PDF cache clean-up rides the same daily tick (changed on purpose)
+          k !== "retention.start" && // M7.4: the clean-up's start (changed on purpose)
+          k !== "r2.sweep",
       ),
     ).toHaveLength(0);
     // The scan message, consumed, queues the due lead.
@@ -256,12 +261,11 @@ describe("purgeLead [ADM-LEAD-05]", () => {
     expect(await purgeAudits()).toBe(1);
   });
 
-  it("dry run logs the reference and deletes nothing, and is the default for any other value", async () => {
+  it("dry run logs the reference and deletes nothing; a message in flight when the switch goes off deletes nothing", async () => {
     const id = await addLead();
-    expect(await purgeLead(makeEnv("dry_run"), id, NOW)).toBe("dry_run");
-    expect(await purgeLead({ ...makeEnv(), LEAD_PURGE_MODE: undefined } as unknown as Env, id, NOW)).toBe(
-      "dry_run",
-    );
+    await setRetentionMode("dry_run");
+    expect(await purgeLead(makeEnv(), id, NOW)).toBe("dry_run");
+    expect(await purgeLead(makeEnv(), id, NOW)).toBe("dry_run");
     expect(await exists(id)).toBe(true);
     expect(await purgeAudits()).toBe(0);
     expect(logs.some((l) => l.includes('"ev":"lead.purge_dry_run"') && l.includes('"ref":"L-T'))).toBe(true);

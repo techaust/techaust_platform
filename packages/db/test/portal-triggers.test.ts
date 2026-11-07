@@ -4,6 +4,7 @@
 // or an anonymise. Raw SQL on purpose: the triggers are the subject. All names, ids and amounts are invented test data.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
+import { REQUEST_KINDS as DSR_KINDS } from "@techaust/core/dsr";
 import {
   NOTICE_STATUSES,
   NOTICE_VIAS,
@@ -22,8 +23,17 @@ import {
   REQUEST_STATUSES_0072,
   STAFF_CLOSE_KINDS_0072,
 } from "../src/triggers.ts";
+import { dataProtectionTriggerStatements } from "../src/triggers-data-protection.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember } from "./billing-helpers.ts";
-import { all, first, insertDraftInvoice, rejects, run } from "./helpers.ts";
+import {
+  all,
+  first,
+  insertDraftInvoice,
+  REQUEST_CLOCK_COLS,
+  rejects,
+  requestClockOf,
+  run,
+} from "./helpers.ts";
 
 const migration = (name: string) => env.TEST_MIGRATIONS.find((m) => m.name === name);
 /** A migration's statements without their comment lines and breakpoints. */
@@ -32,7 +42,10 @@ const statementsOf = (name: string) =>
 
 /** Runs `fn` with trigger `name` dropped, then re-creates it exactly as 0072 does. */
 async function withoutTrigger(name: string, fn: () => Promise<unknown>): Promise<void> {
-  const create = clientPortalTriggerStatements().find((s) => s.startsWith(`CREATE TRIGGER \`${name}\``));
+  // The newest definition: M7.4 (0079) re-created some of 0072's triggers.
+  const create = [...dataProtectionTriggerStatements(), ...clientPortalTriggerStatements()].find((s) =>
+    s.startsWith(`CREATE TRIGGER \`${name}\``),
+  );
   if (!create) throw new Error(`no trigger ${name}`);
   await run(`DROP TRIGGER \`${name}\``);
   try {
@@ -67,12 +80,13 @@ type Req = {
   status?: string;
   outcome?: string | null;
 };
+// M7.4 L42: as the portal writes them, identity-checked by the sign-in when they arrive.
 function insertRequest(r: Req) {
   const contactId = r.contactId ?? null;
   const leadId = r.leadId ?? null;
   return run(
-    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, requester_email, kind, details, status, outcome, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1000, 1000)`,
+    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, lead_id, lead_ref, requester_email, kind, details, status, outcome, created_at, updated_at, ${REQUEST_CLOCK_COLS}, identity_checked_at)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1000, 1000, ${requestClockOf("1000")}, 1000)`,
     r.id ?? uuidv7(),
     r.clientId === undefined ? null : r.clientId,
     contactId,
@@ -156,7 +170,8 @@ describe("0071 and 0072 [run file A]", () => {
       "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'client_requests_kind'",
     );
     const list = /NOT IN \(([^)]*)\)/.exec(row?.sql ?? "")?.[1] ?? "";
-    expect(list.split(",").map((s) => s.trim().replaceAll("'", ""))).toEqual([...REQUEST_KINDS]);
+    // M7.4 re-created the kind trigger with its two kinds (0079); the portal still offers M7.1's five until B2 widens its form.
+    expect(list.split(",").map((s) => s.trim().replaceAll("'", ""))).toEqual([...DSR_KINDS]);
   });
 
   it("no name clashes: every 0072 trigger is new, and M6.2's contacts trigger is still there", async () => {
@@ -194,9 +209,9 @@ describe("client_requests [L8]", () => {
 
   it("an unknown kind or status is refused (and passes without the rule)", async () => {
     const client = await mkClientRow();
-    await rejects(insertRequest({ clientId: client, kind: "nomination" }), /client_requests_kind/);
+    await rejects(insertRequest({ clientId: client, kind: "export_please" }), /client_requests_kind/);
     await withoutTrigger("client_requests_kind", () =>
-      insertRequest({ clientId: client, kind: "nomination" }),
+      insertRequest({ clientId: client, kind: "export_please" }),
     );
     // An unknown status or outcome also breaks the insert state, so the values rule is shown alone with that one dropped.
     await rejects(
@@ -275,7 +290,8 @@ describe("client_requests [L8]", () => {
     await withoutTrigger("client_requests_status_flow", () => close("close_note = 'x'"));
     await close("close_note = NULL");
     await close(
-      "status = 'closed', outcome = 'declined', closed_by = ?2, closed_at = 2000, close_note = 'Not ours', updated_at = 2000",
+      // M7.4 (0079): a declined request names its reason.
+      "status = 'closed', outcome = 'declined', decline_reason = 'other', closed_by = ?2, closed_at = 2000, close_note = 'Not ours', updated_at = 2000",
       staff,
     );
     await rejects(
@@ -299,15 +315,21 @@ describe("client_requests [L8]", () => {
     const staff = await mkMember("staff");
     const owner = await mkMember("owner");
     const pastOwner = await mkMember("owner", "deactivated");
+    // M7.4 (0079): a done erasure must name the erase that fulfilled it, so these closes decline (with a reason), and an erasure request names an address.
     const closeBy = (id: string, by: string) =>
       run(
-        "UPDATE client_requests SET status = 'closed', outcome = 'done', closed_by = ?2, closed_at = 2000, updated_at = 2000 WHERE id = ?1",
+        "UPDATE client_requests SET status = 'closed', outcome = 'declined', decline_reason = 'other', closed_by = ?2, closed_at = 2000, updated_at = 2000 WHERE id = ?1",
         id,
         by,
       );
     const mk = async (kind: string) => {
       const id = uuidv7();
-      await insertRequest({ id, clientId: client, kind });
+      await insertRequest({
+        id,
+        clientId: client,
+        kind,
+        email: kind === "data_erasure" ? "someone@example.test" : null,
+      });
       return id;
     };
     for (const kind of ["data_access", "data_correction", "data_erasure"]) {
@@ -366,12 +388,12 @@ describe("client_requests [L8]", () => {
     });
   });
 
-  it("never deleted", async () => {
+  it("never deleted while open (M7.4 re-created the rule with its 366-day floor, `client_requests_delete_guard`)", async () => {
     const client = await mkClientRow();
     const id = uuidv7();
     await insertRequest({ id, clientId: client });
-    await rejects(run("DELETE FROM client_requests WHERE id = ?1", id), /client_requests_no_delete/);
-    await withoutTrigger("client_requests_no_delete", async () => {
+    await rejects(run("DELETE FROM client_requests WHERE id = ?1", id), /client_requests_delete_guard/);
+    await withoutTrigger("client_requests_delete_guard", async () => {
       await run("DELETE FROM client_requests WHERE id = ?1", id);
       await insertRequest({ id, clientId: client });
     });

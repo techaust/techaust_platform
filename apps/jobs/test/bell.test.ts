@@ -14,6 +14,8 @@ const makeEnv = () =>
     LEAD_ALERT_TO: "owner@example.test",
     ADMIN_URL: "https://admin.example/",
     EMAIL_QUEUE: { sendBatch: async (_items: { body: EmailMessage }[]) => undefined },
+    // M7.4 (L23): the lead's consent receipt takes the keyed hash of the address.
+    ERASURE_HASH_KEY: (realEnv as unknown as { ERASURE_HASH_KEY: string }).ERASURE_HASH_KEY,
   }) as unknown as Env;
 
 const contact = (over: Partial<LeadMessage> = {}, email = "asha@example.com"): LeadMessage =>
@@ -84,6 +86,32 @@ beforeEach(async () => {
     member("bell-acct", "accountant"),
     member("bell-off", "sales", "deactivated"),
   ]);
+});
+
+describe("M7.4 (A.3, FRM-05): the new lead's consent receipt", () => {
+  it("one grant receipt in the lead's batch, with the keyed hash of the address; a redelivery writes no second", async () => {
+    const env = makeEnv();
+    const m = quote();
+    expect(await processLead(env, m, T0)).toBe("created");
+    expect(await processLead(env, m, T0 + 1_000)).toBe("duplicate");
+    const [lead] = await rows<{ id: string; contact_email: string }>("SELECT id, contact_email FROM leads");
+    const receipts = await rows<Record<string, unknown>>(
+      "SELECT subject_hash, event, source, notice_version, purposes, marketing, at FROM consent_receipts WHERE lead_id = ?1",
+      lead?.id,
+    );
+    expect(receipts).toHaveLength(1);
+    const { addressHash } = await import("@techaust/core/hmac");
+    expect(receipts[0]).toMatchObject({
+      subject_hash: await addressHash(
+        (realEnv as unknown as { ERASURE_HASH_KEY: string }).ERASURE_HASH_KEY,
+        lead?.contact_email as string,
+      ),
+      event: "grant",
+      source: "web_form",
+      notice_version: m.noticeVersion,
+      at: m.submittedAt,
+    });
+  });
 });
 
 describe("new lead bell entries [ADM-G-09]", () => {

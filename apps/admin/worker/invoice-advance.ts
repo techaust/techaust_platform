@@ -134,7 +134,7 @@ export const advanceBody = z.strictObject({
 
 /** What a refused advance batch looks like when it comes back as an error. */
 const ADVANCE_REFUSED =
-  /issue did not freeze|not an issuable draft|UNIQUE constraint failed: (documents|advance_receipts)\.|documents_(invoice|parent|void|ledger|advance_lut|tds)|advance_receipts_|payment_allocations_|ledger_result_check|payments_|approvals_payment/;
+  /issue did not freeze|not an issuable draft|UNIQUE constraint failed: (documents|advance_receipts)\.|documents_(invoice|parent|void|ledger|advance_lut|tds|anonymised_lock)|advance_receipts_|payment_allocations_|ledger_result_check|payments_|approvals_payment/;
 
 const istMonthOf = (iso: string) => iso.slice(0, 7);
 

@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
+import { requestDueAtSql } from "@techaust/core/dsr";
 import { createInviteStatements } from "../../../scripts/create-invite-sql.mjs";
 import { ORIGIN } from "../playwright.config.ts";
 import { totpAt } from "./sample-data.ts";
@@ -36,6 +37,8 @@ function d1(sql: string) {
 
 const today = new Date(Date.now() + 19_800_000).toISOString().slice(0, 10);
 const run = Date.now().toString(36).toUpperCase();
+/** This run's grievance, told apart from earlier runs' and from the M7.4 spec's open one on the same client (a second run on one database). */
+const GRIEVANCE = `We got an email meant for another company (sample ${run}).`;
 /** A notice id as the portal makes them (uuidv7: `POST /payments` takes `noticeId` only in that form; review 1's tests record from one). */
 function uuid7(): string {
   const t = Date.now().toString(16).padStart(12, "0");
@@ -59,8 +62,8 @@ test.beforeAll(() => {
      WHERE d.type = 'tax_invoice' AND d.frozen_at IS NOT NULL AND d.voided_at IS NULL AND d.balance_minor > 0 AND d.currency = 'INR'
      ORDER BY d.issue_date, d.id LIMIT 1;`;
   const request = (id: string, kind: string, details: string | null, at: number) => `
-    INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, status, created_at, updated_at)
-    SELECT '${id}', c.client_id, c.id, c.id, '${kind}', ${details ? `'${details}'` : "NULL"}, 'open', ${at}, ${at}
+    INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, status, created_at, updated_at, received_at, due_at, ack_due_at, identity_checked_at)
+    SELECT '${id}', c.client_id, c.id, c.id, '${kind}', ${details ? `'${details}'` : "NULL"}, 'open', ${at}, ${at}, ${at}, ${requestDueAtSql(String(at))}, ${at} + 172800000, ${at}
       FROM contacts c JOIN documents d ON d.client_id = c.client_id
      WHERE d.type = 'tax_invoice' AND d.frozen_at IS NOT NULL AND c.anonymised_at IS NULL
        AND NOT EXISTS (SELECT 1 FROM client_requests r WHERE r.contact_id = c.id AND r.kind = '${kind}' AND r.status = 'open')
@@ -89,14 +92,27 @@ test.beforeAll(() => {
         now - 7_200_000,
       ),
       request(`req-${run}-2`, "data_erasure", null, now - 3_600_000),
-      request(
-        `req-${run}-3`,
-        "grievance",
-        "We got an email meant for another company (sample).",
-        now - 60_000,
-      ),
+      request(`req-${run}-3`, "grievance", GRIEVANCE, now - 60_000),
     ].join("\n"),
   );
+});
+
+// The requests this run wrote, closed again at the end (declined as a duplicate; one already closed answers 409 and is left as it is), so the next run on
+// the same database finds a free contact of the same client for its own (one open request per contact and kind; M7.4 review 1 low 8).
+test.afterAll(async ({ browser }) => {
+  const ctx = await browser.newContext({ baseURL: ORIGIN, storageState: here("../.e2e/owner-state.json") });
+  try {
+    for (const n of [1, 2, 3]) {
+      const res = await ctx.request.post(`/api/v1/client-requests/req-${run}-${n}/close`, {
+        headers: { Origin: ORIGIN },
+        data: { outcome: "declined", declineReason: "duplicate" },
+      });
+      // closed now, closed by the test already, or never written (no free contact)
+      expect([200, 404, 409], await res.text()).toContain(res.status());
+    }
+  } finally {
+    await ctx.close();
+  }
 });
 
 async function axe(page: Page) {
@@ -144,16 +160,21 @@ test("the client's Requests panel: close one, and the Clients count", async ({ p
   const href = (await link.getAttribute("href")) ?? "";
   await page.goto(`${href}?tab=requests`);
   await expect(page.getByRole("heading", { name: "Requests", level: 2 })).toBeVisible();
-  // the open count on Clients in the navigation, its words read out
+  // the open count, on Requests in the navigation since M7.4 (G.1), its words read out
   await expect(
     page
       .getByRole("navigation")
-      .getByText(/open client request/)
+      .getByText(/open requests?$/)
       .first(),
   ).toBeAttached();
-  const row = page.locator("tr", { hasText: "We got an email meant for another company (sample)." });
+  const row = page.locator("tr", { hasText: GRIEVANCE });
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/admin-requests-1280.png`, fullPage: true });
-  await row.getByRole("button", { name: /Close/ }).click();
+  // M7.4: the request opens its dialog (steps, close); Close request turns it into the close form
+  await row.getByRole("button", { name: "Concern about how we handle their data" }).click();
+  await page
+    .getByRole("dialog", { name: "Concern about how we handle their data" })
+    .getByRole("button", { name: "Close request" })
+    .click();
   const dialog = page.getByRole("dialog", { name: "Close this request?" });
   await dialog.getByRole("button", { name: "Close request" }).click();
   await expect(dialog.getByText("Choose Done or Declined.")).toBeVisible();

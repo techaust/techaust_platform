@@ -18,8 +18,7 @@
   // (CLAUDE.md rule 7).
   "vars": {
     "ENVIRONMENT": "local",
-    "PAYMENTS_LIVE_ALLOWED": "false",
-    "LEAD_PURGE_MODE": "dry_run"
+    "PAYMENTS_LIVE_ALLOWED": "false"
   },
   "queues": {
     "producers": [
@@ -58,8 +57,7 @@
       "preview_urls": false,
       "vars": {
         "ENVIRONMENT": "staging",
-        "PAYMENTS_LIVE_ALLOWED": "false",
-        "LEAD_PURGE_MODE": "dry_run"
+        "PAYMENTS_LIVE_ALLOWED": "false"
       },
       "queues": {
         "producers": [

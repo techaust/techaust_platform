@@ -32,6 +32,8 @@ export default defineConfig(async () => ({
           TOTP_ENC_KEY: TEST_KEY(3),
           SESSION_HMAC_KEY: TEST_KEY(4),
           TURNSTILE_SECRET: "test-turnstile-secret",
+          // M7.4 (L23): the API Worker's one secret, a fixed made-up value (the jobs tests use the same, so both reach the same hash).
+          ERASURE_HASH_KEY: ["test", "erasure", "hash", "key", "0".repeat(24)].join("-"),
           // M6.2: the finance Worker's Razorpay test values and the local simulator (tests never call Razorpay; worker/gateway/config.ts).
           RAZORPAY_KEY_ID: "rzp_test_TESTKEY0000001",
           RAZORPAY_KEY_SECRET: "test-razorpay-key-secret",

@@ -3,13 +3,14 @@
 import { env } from "cloudflare:workers";
 import { currentStep, ipKey, tokenHash, totpCode } from "@techaust/auth";
 import { ACTIONS, decide, ROLES, SETTINGS_DEFAULTS, uuidv7 } from "@techaust/core";
+import { addressHash } from "@techaust/core/hmac";
 import { describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
 import { issueReceipt } from "./receipt-issue.ts";
 import app, { createApp } from "./test-app.ts";
 import { mkLog, mkOpenProject, mkPlan, today } from "./test-care.ts";
 import { entryBody, mkItem, putPaymentTerms, siteItems } from "./test-catalogue.ts";
-import { insert, mkContact } from "./test-clients.ts";
+import { insert, mkContact, mkLead as mkLeadRow } from "./test-clients.ts";
 import {
   schedulesBody as deedSchedulesBody,
   deedStamp,
@@ -1211,6 +1212,76 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
       const s = await owner();
       const id = await mkRequest(await mkPortalClient(), "data_access");
       return run(s, `/client-requests/${id}/close`, { body: { outcome: "done", note: "Sent by email" } });
+    },
+    // M7.4 (C.2–C.8)
+    "POST /api/v1/client-requests": async () => {
+      const s = await owner();
+      return run(s, "/client-requests", {
+        body: {
+          kind: "data_access",
+          channel: "email",
+          receivedOn: todayIso(),
+          requesterEmail: `r${uuidv7()}@example.test`,
+        },
+      });
+    },
+    "POST /api/v1/client-requests/:id/step": async () => {
+      const s = await owner();
+      const id = await mkRequest(await mkPortalClient(), "grievance");
+      return run(s, `/client-requests/${id}/step`, { body: { step: "acknowledged" } });
+    },
+    "POST /api/v1/legal-holds": async () => {
+      const s = await owner();
+      const p = await mkPortalClient();
+      return run(
+        s,
+        "/legal-holds",
+        { body: { entityType: "client", entityId: p.clientId, on: true, reason: "GST notice" } },
+        "legal_hold.set",
+      );
+    },
+    "POST /api/v1/suppressions/lift": async () => {
+      const s = await owner();
+      const email = `lift-${uuidv7()}@example.test`;
+      const hash = await addressHash(env.ERASURE_HASH_KEY as string, email);
+      await insert("email_suppressions", { email: `h:${hash}`, reason: "erased", at: Date.now() });
+      return run(s, "/suppressions/lift", { body: { email } });
+    },
+    "POST /api/v1/retention/live": async () => {
+      const s = await owner();
+      const t = Date.now();
+      await insert("retention_runs", {
+        id: uuidv7(),
+        as_of: t - 1000,
+        mode: "dry_run",
+        started_at: t - 1000,
+        finished_at: t,
+        families: 11,
+      });
+      return run(s, "/retention/live", { body: { on: true } });
+    },
+    "POST /api/v1/leads/:id/export": async () => {
+      const s = await owner();
+      return run(s, `/leads/${await mkLeadRow(`x-${uuidv7()}@example.test`)}/export`, { body: {} });
+    },
+    "POST /api/v1/leads/:id/erase": async () => {
+      const s = await owner();
+      return run(s, `/leads/${await mkLeadRow(`x-${uuidv7()}@example.test`)}/erase`, {
+        body: { reason: "requested" },
+      });
+    },
+    "POST /api/v1/leads/:id/consent/withdraw": async () => {
+      const s = await owner();
+      const lead = await mkLeadRow(`x-${uuidv7()}@example.test`, {
+        consent: JSON.stringify({
+          noticeVersion: "v1",
+          purposes: ["respond_to_enquiry"],
+          at: 1,
+          ipHash: "abc",
+          marketing: true,
+        }),
+      });
+      return run(s, `/leads/${lead}/consent/withdraw`, { body: {} });
     },
     "POST /api/v1/payments/review/:id/retry": async () => {
       const s = await owner();

@@ -12,12 +12,13 @@ import { isBudgetBand, isCountryCode, isTimeline } from "@techaust/core/form-lab
 import { uuidv7 } from "@techaust/core/ids";
 import {
   deleteAfterSql,
-  LEAD_DELETABLE_SQL,
   LEAD_DUPLICATE_WINDOW_MS,
+  LEAD_NO_OPEN_REQUEST_SQL,
   LEAD_PURGE_NOTICE_DAYS,
   LEAD_STAGES,
   type LeadStage,
   LOST_REASONS,
+  leadDeletableSql,
   normaliseEmail,
   touchLeadSql,
 } from "@techaust/core/lead-lifecycle";
@@ -32,6 +33,7 @@ import {
   REPLY_TEMPLATES,
   replyTemplateById,
 } from "@techaust/core/reply-templates";
+import { RETENTION_SWITCH_SQL as SWITCH_SQL } from "@techaust/core/retention";
 import { nameOrLegal } from "@techaust/core/text";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
@@ -64,6 +66,13 @@ import {
 // ---- errors, validators ---------------------------------------------------------------------------------------------
 
 const ALREADY_CONVERTED: ApiError = { code: "already_converted", message: "That lead is already a client" };
+const ERASURE_REQUEST_OPEN: ApiError = {
+  code: "erasure_request_open",
+  message: "This person asked to be erased. Close that request before converting the lead",
+};
+/** M7.4 (round 6, L22): an open erasure request names lead `lead` (through `client_requests_open_erasure`). */
+export const OPEN_ERASURE_SQL = (lead: string) =>
+  `EXISTS (SELECT 1 FROM client_requests r WHERE r.lead_ref = ${lead} AND r.kind = 'data_erasure' AND r.status = 'open')`;
 const GSTIN_IN_USE: ApiError = { code: "gstin_in_use", message: "A client with that GSTIN already exists" };
 const OWNER_INVALID: ApiError = { code: "owner_invalid", message: "Choose an active member of staff" };
 const ANSWERS_FIXED: ApiError = {
@@ -239,9 +248,8 @@ async function runList(c: Ctx, f: z.infer<typeof listQuery>) {
   const deletion = Boolean(f.deletion);
   if (deletion) {
     // The 14-day view (it is also the dry-run report): leads the clean-up may delete that are due within the notice period.
-    where.push(
-      LEAD_DELETABLE_SQL.replaceAll("client_id", "l.client_id").replaceAll("legal_hold", "l.legal_hold"),
-    );
+    where.push(leadDeletableSql("l"));
+    where.push(LEAD_NO_OPEN_REQUEST_SQL("l.id"));
     add((n) => `l.delete_after <= ?${n}`, now + LEAD_PURGE_NOTICE_DAYS * DAY_MS);
   }
   const q = f.q?.trim();
@@ -261,16 +269,20 @@ async function runList(c: Ctx, f: z.infer<typeof listQuery>) {
   }
   const from = deletion ? "leads AS l INDEXED BY leads_delete_due" : "leads AS l";
   const sql = `SELECT ${LIST_COLUMNS}, ${col} AS k FROM ${from}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order.order} LIMIT ${limit + 1}`;
-  const { results } = await c.env.DB.prepare(sql)
-    .bind(...bind)
-    .all<ListRow>();
+  const db = c.env.DB;
+  // M7.4 (C.7, L4): the deletion view says whether the clean-up only lists (owner, 2026-10-24), from the real-deletion switch (its newest row; none: a
+  // dry run), read in the same batch. `LEAD_PURGE_MODE` is gone.
+  const [list, sw] = await db.batch([
+    db.prepare(sql).bind(...bind),
+    ...(deletion ? [db.prepare(SWITCH_SQL)] : []),
+  ]);
+  const results = (list?.results ?? []) as ListRow[];
   const page = pageOf(results, limit, dir, cur !== null, (r) => ({ k: r.k, id: r.id }));
   const items = { leads: page.items.map((r) => listItem(r, now)), next: page.next, prev: page.prev };
-  // The deletion view says whether the clean-up only lists (owner, 2026-10-24); anything but "live" is a dry run, as in jobs.
   if (deletion)
     return c.json({
       ...items,
-      purgeMode: (c.env.LEAD_PURGE_MODE as string | undefined) === "live" ? "live" : "dry_run",
+      purgeMode: (sw?.results[0] as { live: number } | undefined)?.live === 1 ? "live" : "dry_run",
     });
   return c.json(items);
 }
@@ -377,6 +389,7 @@ type LeadRow = {
   message: string | null;
   client_id: string | null;
   consent: string | null;
+  erasure_open: number;
 };
 
 // ---- the routes -----------------------------------------------------------------------------------------------------
@@ -925,12 +938,14 @@ export const leads = new Hono<AppEnv>()
 
     const lead = await db
       .prepare(
-        `SELECT id, ref, contact_name, contact_email, contact_phone, contact_company, service_code, ${SERVICE_NAME_SQL} AS service_name, message, client_id, consent FROM leads AS l WHERE id = ?1`,
+        `SELECT id, ref, contact_name, contact_email, contact_phone, contact_company, service_code, ${SERVICE_NAME_SQL} AS service_name, message, client_id, consent, ${OPEN_ERASURE_SQL("l.id")} AS erasure_open FROM leads AS l WHERE id = ?1`,
       )
       .bind(id)
       .first<LeadRow>();
     if (!lead) return err(c, NOT_FOUND, 404);
     if (lead.client_id) return err(c, ALREADY_CONVERTED, 409);
+    // M7.4 (round 6, L22): a lead an open erasure request names is never converted; the request closes against its lead erase.
+    if (lead.erasure_open === 1) return err(c, ERASURE_REQUEST_OPEN, 409);
 
     const t = Date.now();
     const clientId = uuidv7();
@@ -950,7 +965,7 @@ export const leads = new Hono<AppEnv>()
         : null;
     const title = serviceTitle(lead.service_code, lead.service_name);
     const scopeBody = lead.message ? lead.message.slice(0, 2000) : null;
-    const unconverted = "EXISTS (SELECT 1 FROM leads WHERE id = ?13 AND client_id IS NULL)";
+    const unconverted = `EXISTS (SELECT 1 FROM leads WHERE id = ?13 AND client_id IS NULL) AND NOT ${OPEN_ERASURE_SQL("?13")}`;
 
     // The draft proposal is the full draft of M4.3 (ADM-LEAD-04): its version group, the template sections of the service, the service's
     // lines and schedule, the newest terms. It is built by the same builder as the create route, before the batch, from the catalogue and
@@ -1076,9 +1091,11 @@ export const leads = new Hono<AppEnv>()
     }
     if (!done) {
       const again = await db
-        .prepare("SELECT client_id FROM leads WHERE id = ?1")
+        .prepare(`SELECT client_id, ${OPEN_ERASURE_SQL("?1")} AS erasure_open FROM leads WHERE id = ?1`)
         .bind(id)
-        .first<{ client_id: string | null }>();
+        .first<{ client_id: string | null; erasure_open: number }>();
+      if (again && again.client_id === null && again.erasure_open === 1)
+        return err(c, ERASURE_REQUEST_OPEN, 409);
       return again ? err(c, ALREADY_CONVERTED, 409) : err(c, NOT_FOUND, 404);
     }
     const made = await db

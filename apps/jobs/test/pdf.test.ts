@@ -679,7 +679,6 @@ describe("the cron", () => {
       ...base,
       LEADS_QUEUE: { sendBatch: async () => undefined },
       EMAIL_QUEUE: { sendBatch: async () => undefined },
-      LEAD_PURGE_MODE: "dry_run",
     } as unknown as Env;
     await worker.scheduled?.(
       { cron: "5 4 * * *", scheduledTime: T0 } as ScheduledController,

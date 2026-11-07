@@ -11,6 +11,7 @@ import { noteInvocation } from "./log.ts";
 import { enqueueSweep } from "./pdf.ts";
 import { enqueueStatementPurge, PURGE_CRON, purgeScanMessage } from "./purge.ts";
 import { handleQueue } from "./queue.ts";
+import { nightlyDpMessages } from "./retention.ts";
 import { enqueueStats } from "./stats.ts";
 import { unsubscribeGet, unsubscribePost } from "./unsubscribe.ts";
 import { warmConsumers, warmRazorpayHook } from "./warm.ts";
@@ -77,6 +78,8 @@ export default {
       enqueueStats(env, controller.scheduledTime, [
         expireMessage(controller.scheduledTime),
         purgeScanMessage(controller.scheduledTime),
+        // M7.4 (D.1): the clean-up's start, and on IST Sundays the vault sweep, on the IST 1st the signature sweep (nothing read here).
+        ...nightlyDpMessages(controller.scheduledTime),
       ]),
       // M5.5b: ONE message to clean the statement PDF cache (30 days, and anonymised clients); nothing read here.
       enqueueStatementPurge(env, controller.scheduledTime),

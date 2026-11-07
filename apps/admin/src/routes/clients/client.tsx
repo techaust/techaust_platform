@@ -36,6 +36,7 @@ import { ClientProjects } from "../projects/client-tabs.tsx";
 import { FilesPanel } from "../projects/files.tsx";
 import { Activity } from "./activity.tsx";
 import { Contacts } from "./contacts.tsx";
+import { LegalHoldBanner } from "./legal-hold.tsx";
 import { Overview } from "./overview.tsx";
 import { ClientsGate, CRUMBS } from "./parts.tsx";
 import { ClientRequests } from "./requests.tsx";
@@ -167,6 +168,8 @@ function ClientView(props: {
         }
       />
       <IdentityStrip data={props.data} finance={finance} />
+      {/* M7.4 (G.2): S1 on a held client, above every tab */}
+      {client.legalHold && <LegalHoldBanner />}
       {props.data.anonymised && <Notice tone="info">{PENDING.clientAnonymised}</Notice>}
       {(saveStale || conflict) &&
         (saveStale ? (

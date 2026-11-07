@@ -860,8 +860,11 @@ describe("onlinePayableSql is the twin of core payableOnline", () => {
     [{ type: "proforma" }, { country: "AE", gst_status: "overseas", state_code: null }],
     [{}, { anonymised_at: 5 }],
   ] as const)("doc %j, client %j", async (d, k) => {
-    const clientId = await mkClient(k);
+    // M7.4 (0079): an anonymised client takes no new document, so the client is anonymised after its document exists.
+    const { anonymised_at: anon, ...rest } = k as Record<string, unknown>;
+    const clientId = await mkClient(rest);
     const id = await mkIssued(clientId, d);
+    if (anon !== undefined) await run("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1", clientId, anon);
     const row = await first<{
       ok: number;
       type: string;

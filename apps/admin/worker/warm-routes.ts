@@ -166,7 +166,6 @@ export function warmEnv(
     ADMIN_ADVANCE: advanceAnswers,
     ENVIRONMENT: "warm",
     PAYMENTS_LIVE_ALLOWED: "false",
-    LEAD_PURGE_MODE: "dry_run",
     TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
     TURNSTILE_HOSTNAMES: "localhost",
     PORTAL_ORIGIN: "http://localhost:5174",

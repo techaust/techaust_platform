@@ -27,7 +27,6 @@ const makeEnv = (sent: Sent = [], over: Partial<Record<string, unknown>> = {}) =
     DB: realEnv.DB,
     PDF_QUEUE: { sendBatch: async () => undefined },
     ENVIRONMENT: "local",
-    LEAD_PURGE_MODE: "live",
     LEAD_ALERT_TO: "owner@example.test",
     ADMIN_URL: "https://admin.example/",
     LEADS_QUEUE: {

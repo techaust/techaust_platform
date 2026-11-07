@@ -44,6 +44,7 @@ import {
   signedIssuerSql,
   taxOnlyNoteExactSql,
 } from "./sql-rules.ts";
+import { dataProtectionTriggerStatements } from "./triggers-data-protection.ts";
 
 /**
  * Columns of an issued document that may still change (ledger, status, void and the e-invoice status). FX-1 (A0 5): `irn`, `ack_no`, `ack_date` and
@@ -2559,6 +2560,10 @@ export const TRIGGER_SETS = {
   email_event_triggers: {
     what: "M7.2 notifications and digest: the email log's event statuses only move up from sent, SES email events (values, never changed), suppression reasons and lower-cased addresses, and the staff notification switches",
     statements: emailEventTriggerStatements,
+  },
+  data_protection_triggers: {
+    what: "M7.4 data-protection tooling: the clock of existing requests and one consent receipt per lead back-filled, 366-day floors, legal hold, the anonymised lock, the R2 outbox, the erasure stop with the hash and end of the receipts, the request kinds, clock, steps and close, consent receipts, clean-up runs and the audit scrub",
+    statements: dataProtectionTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

@@ -56,6 +56,28 @@ export function addDays(date: CalendarDate, days: number): CalendarDate {
   return istDate(fromIst(date) + days * DAY_MS);
 }
 
+/**
+ * `date` plus whole calendar months (negative goes back), the day clamped to the end of the target month (31 Jan + 1 month = 28 or 29 Feb). The same rule as
+ * the SPA-only `addMonthsClamped` of `@techaust/core/gst` (a test holds them equal), here because Workers may not import the GST core (M7.4: the DSR clock and
+ * the retention cut-offs).
+ */
+export function addMonths(date: CalendarDate, months: number): CalendarDate {
+  if (!Number.isSafeInteger(months)) throw new RangeError(`Months must be an integer: ${months}`);
+  if (!isValidDate(date)) throw new RangeError(`Invalid date: ${JSON.stringify(date)}`);
+  const total = date.year * 12 + (date.month - 1) + months;
+  const year = Math.floor(total / 12);
+  const month = total - year * 12 + 1;
+  const out = { year, month, day: Math.min(date.day, daysInMonth(year, month)) };
+  if (!isValidDate(out)) throw new RangeError(`Date out of range: ${JSON.stringify(out)}`);
+  return out;
+}
+
+const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31] as const;
+const isLeapYear = (year: number): boolean => year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+/** The number of days (28 to 31) in a month; `month` is 1 to 12. */
+const daysInMonth = (year: number, month: number): number =>
+  month === 2 && isLeapYear(year) ? 29 : (MONTH_DAYS[month - 1] as number);
+
 /** Whole days from `a` to `b` (negative when `b` is earlier). */
 export const daysBetween = (a: CalendarDate, b: CalendarDate): number => (fromIst(b) - fromIst(a)) / DAY_MS;
 

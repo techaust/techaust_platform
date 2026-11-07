@@ -222,6 +222,8 @@ let requests: (RequestItem & { contact: string })[] = [
     status: "open",
     outcome: null,
     createdAt: NOW - 1 * DAY,
+    // M7.4 (E): the reply date of an open request (sample)
+    replyBy: NOW + 29 * DAY,
     closedAt: null,
     contact: "me",
   },
@@ -233,6 +235,7 @@ let requests: (RequestItem & { contact: string })[] = [
     outcome: "done",
     createdAt: NOW - 50 * DAY,
     closedAt: NOW - 45 * DAY,
+    replyBy: null,
     contact: "me",
   },
 ];
@@ -382,6 +385,8 @@ export function answerM71(
       outcome: null,
       createdAt: Date.now(),
       closedAt: null,
+      // M7.4 (E): the reply date the API answers with (sample: 30 days on)
+      replyBy: Date.now() + 30 * DAY,
       contact: "me",
     };
     requests = [r, ...requests];

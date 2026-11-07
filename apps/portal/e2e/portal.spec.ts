@@ -121,6 +121,34 @@ test("profile: save, a stale save, and a new request", async ({ page }) => {
   await expect(page.getByText(`${P}Request sent. We'll reply by email within 30 days.`)).toBeVisible();
   await expect(page.locator(".m71-req").first()).toContainText(`${P}Correct my personal data`);
 
+  // M7.4 (E): an open request says the day we reply by (07-ZR C1, "[Placeholder]" until the owner approves it)
+  await expect(page.locator(".m71-req").first().locator(".m71-req__reply")).toContainText(
+    /^(\[Placeholder\] )?We'll reply by email by \d{2} [A-Z][a-z]{2} \d{4}\.$/,
+  );
+
+  // M7.4 (E, L9): the two new kinds are offered (07-ZR C5 and C6)
+  await page.getByRole("button", { name: `${P}New request` }).click();
+  await expect(dialog.getByRole("radio", { name: /Withdraw my consent$/ })).toBeVisible();
+  await expect(dialog.getByRole("radio", { name: /Nominate someone to act for me$/ })).toBeVisible();
+  await dialog.getByRole("radio", { name: /Nominate someone to act for me$/ }).check();
+  await dialog.getByRole("button", { name: `${P}Send` }).click();
+  await expect(page.locator(".m71-req").first()).toContainText("Nominate someone to act for me");
+  // M74_SHOTS=<dir>: the requests with their reply dates, at 1280 and 390 px, for the designer's visual check
+  const shots = process.env.M74_SHOTS;
+  if (shots) {
+    for (const [w, theme] of [
+      [1280, "light"],
+      [390, "light"],
+      [390, "dark"],
+    ] as const) {
+      await page.setViewportSize({ width: w, height: 900 });
+      await page.emulateMedia({ colorScheme: theme });
+      await page.locator(".m71-requests").screenshot({ path: `${shots}/portal-requests-${w}-${theme}.png` });
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+
   // a second open request of a kind is refused by its code (C24)
   await page.getByRole("button", { name: `${P}New request` }).click();
   await dialog.getByRole("radio", { name: `${P}Add, remove or change a person's access` }).check();

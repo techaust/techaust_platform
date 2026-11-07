@@ -84,6 +84,12 @@ export const leads = sqliteTable(
     lastActivityAt: integer("last_activity_at"),
     deleteAfter: integer("delete_after"),
     legalHold: flag("legal_hold"),
+    /**
+     * M7.4 (A.6): the keyed hash of the address, set ONLY by an erasure (the lead erase, or a matched contact's erase or anonymisation; never the purge) by
+     * an UPDATE before the delete; its triggers write the `h:` stop and stamp the receipts (Settled by the lead on the safest reading, 2026-11-06 (08-C RB-46)).
+     * ADD COLUMN only (`leads` is referenced).
+     */
+    erasedHash: text("erased_hash"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -99,6 +105,9 @@ export const leads = sqliteTable(
     index("leads_next_action").on(t.nextActionAt, t.id),
     index("leads_duplicate_of").on(t.duplicateOf),
     index("leads_proposal").on(t.proposalId),
+    // M7.4 (L26): `contact_email` has no lower-case CHECK (a lead typed by staff keeps its case), so the erasure triggers' live-holder test and the lead
+    // erase compare `lower(contact_email)` through this expression index.
+    index("leads_contact_email_lower").on(sql`lower(${t.contactEmail})`),
     // M3.2: the board (a stage's newest activity first), the service filter, prefix search on name and company (no case), and
     // the clean-up scan and the 14-day view (only leads the clean-up may delete).
     index("leads_stage_activity").on(t.stage, t.lastActivityAt, t.id),
@@ -203,6 +212,8 @@ export const contacts = sqliteTable(
     marketingConsent: text("marketing_consent", { mode: "json" }).$type<MarketingConsent>(),
     bouncedAt: integer("bounced_at"),
     anonymisedAt: integer("anonymised_at"),
+    /** M7.4 (A.6): the keyed hash of the address, set only by the erase (an UPDATE before its DELETE) or the anonymise (in its UPDATE); ADD COLUMN only. */
+    erasedHash: text("erased_hash"),
     /** M3.3: a held contact is never erased or anonymised (added with ALTER TABLE: `acceptances` references contacts). */
     legalHold: flag("legal_hold"),
     createdAt: createdAt(),

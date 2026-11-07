@@ -71,6 +71,7 @@ describe("the 09:00 IST dispatch [LD76]", () => {
           ...(h === ALERTS_HOUR_IST ? ["recon.fetch"] : []),
           "signin.unfinished", // M7.2, changed on purpose
           "bells.sweep",
+          ...(h === ALERTS_HOUR_IST ? ["requests.clock"] : []), // M7.4, changed on purpose
         ];
         expect(kinds, `day ${day} hour ${h}`).toEqual(expected);
       }
@@ -97,9 +98,9 @@ describe("the 09:00 IST dispatch [LD76]", () => {
     const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
     const env = makeEnv({ DB: dead });
     // M6.5 (changed on purpose): seven bodies in the one sendBatch, and the receipt sweep on the PDF queue.
-    // M7.2 (changed on purpose): nine bodies.
-    expect(await enqueueHourly(env, tick("2026-11-05"))).toBe(10);
-    expect(fakes.leads.map((s) => s.via)).toEqual(Array(9).fill("sendBatch"));
+    // M7.2 (changed on purpose): nine bodies. M7.4 (changed on purpose): ten (the request clock).
+    expect(await enqueueHourly(env, tick("2026-11-05"))).toBe(11);
+    expect(fakes.leads.map((s) => s.via)).toEqual(Array(10).fill("sendBatch"));
     expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual([
       "alerts.daily",
       "realisation.scan",
@@ -110,6 +111,7 @@ describe("the 09:00 IST dispatch [LD76]", () => {
       "recon.fetch",
       "signin.unfinished",
       "bells.sweep",
+      "requests.clock",
     ]);
   });
 
@@ -129,6 +131,7 @@ describe("the 09:00 IST dispatch [LD76]", () => {
       "recon.fetch",
       "signin.unfinished",
       "bells.sweep",
+      "requests.clock",
     ]);
   });
 });
@@ -147,7 +150,8 @@ type ExportOver = {
 /** An overseas client (in INR for an INR export) and one issued export invoice for it. */
 async function mkExport(issueDate: string, o: ExportOver = {}) {
   const currency = o.currency ?? "USD";
-  const clientId = await mkClient({ currency: "USD", ...(o.anonymised ? { anonymised: true } : {}) });
+  // M7.4 (0079): an anonymised client takes no new document, so the fixture anonymises it after its export exists (below).
+  const clientId = await mkClient({ currency: "USD" });
   if (currency === "INR") await run("UPDATE clients SET currency = 'INR' WHERE id = ?1", clientId);
   const doc = await mkDoc(clientId, null, {
     type: "export_invoice",
@@ -163,6 +167,7 @@ async function mkExport(issueDate: string, o: ExportOver = {}) {
       country: "US",
     }),
   });
+  if (o.anonymised) await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", clientId);
   return { ...doc, clientId };
 }
 

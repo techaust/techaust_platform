@@ -13,7 +13,16 @@ import {
   redactionGuard,
 } from "./offer-redaction.ts";
 import { insert, mkClient, mkContact, mkLead } from "./test-clients.ts";
-import { call, countOf, one, rows, sessionFor, type TestSession, withDb } from "./test-helpers.ts";
+import {
+  call,
+  countingEnv,
+  countOf,
+  one,
+  rows,
+  sessionFor,
+  type TestSession,
+  withDb,
+} from "./test-helpers.ts";
 import { recordBody, recorded, verify } from "./test-payments.ts";
 import {
   beforeBatchHolding,
@@ -1406,5 +1415,78 @@ describe("the Emails row after an anonymise (polish sweep 5a) [ADM-CLI-05, ADM-P
       email: null,
     });
     expectNoPersonalData(view.delivery, name, email);
+  });
+});
+
+describe("M7.4 C.10 (F5, L18): anonymise in parts [ADM-CLI-05]", () => {
+  const part = (cookie: string, id: string, e: Env = env) =>
+    call(
+      `/contacts/${id}/erase`,
+      { cookie, body: { mode: "anonymise", reason: "requested", part: "offers" } },
+      e,
+    );
+
+  it("12 offers: the anonymise is 409 too_many_offers; a part redacts 10 (more), the next 2 (no more), then the anonymise goes through; each within 45 statements", async () => {
+    const o = await owner();
+    const client = await mkClient();
+    const a = await person(client, "Asha Rao");
+    const made: Offer[] = [];
+    for (let i = 0; i < 12; i++) made.push(await offer(client, a, { status: i % 2 ? "viewed" : "rejected" }));
+    expect(await code(await anonymise(o.cookie, a.id))).toBe("too_many_offers");
+    const c1 = countingEnv();
+    const first = await part(o.cookie, a.id, c1.env);
+    expect(first.status, await first.clone().text()).toBe(200);
+    expect(await json(first)).toMatchObject({ redacted: 10, more: true, part: "offers" });
+    console.log(`D1 statements, anonymise part (10 offers): ${c1.count()} (budget 45)`);
+    expect(c1.count()).toBeLessThanOrEqual(45);
+    // the contact is untouched; 10 offers redacted, one document.redact row each, linked to the part's audit row
+    expect(await one("SELECT anonymised_at, erased_hash FROM contacts WHERE id = ?", a.id)).toEqual({
+      anonymised_at: null,
+      erased_hash: null,
+    });
+    expect(await countOf("documents", "client_id = ? AND redacted_at IS NOT NULL", client)).toBe(10);
+    const partAudit = await one<{ id: string }>(
+      "SELECT id FROM audit_log WHERE action = 'contact.redact_offers' AND json_extract(summary, '$.contactId') = ?",
+      a.id,
+    );
+    expect(
+      await countOf(
+        "audit_log",
+        "action = 'document.redact' AND json_extract(summary, '$.eraseAuditId') = ?",
+        partAudit?.id,
+      ),
+    ).toBe(10);
+    // L7: the outbox holds the redacted offers' stored keys (the first offer by id is among the first part)
+    const firstIds = await rows<{ id: string }>(
+      "SELECT id FROM documents WHERE client_id = ? AND redacted_at IS NOT NULL",
+      client,
+    );
+    const redactedOffer = made.find((m) => m.id === firstIds[0]?.id);
+    expect(await countOf("r2_deletions", "bucket = 'docs' AND key = ?", redactedOffer?.keys.pdf)).toBe(1);
+    const second = await part(o.cookie, a.id);
+    expect(await json(second)).toMatchObject({ redacted: 2, more: false });
+    expect(await code(await part(o.cookie, a.id))).toBe("nothing_to_redact");
+    expect((await anonymise(o.cookie, a.id)).status).toBe(200);
+    expect(
+      await countOf("contacts", "id = ? AND anonymised_at IS NOT NULL AND erased_hash IS NOT NULL", a.id),
+    ).toBe(1);
+  });
+
+  it("a part keeps the anonymise's rules: a legal hold is 409 legal_hold with nothing written; erase mode can't take a part (400); Staff can't (403)", async () => {
+    const o = await owner();
+    const client = await mkClient();
+    const a = await person(client, "Asha Rao", { legal_hold: 1 });
+    for (let i = 0; i < 11; i++) await offer(client, a);
+    const res = await part(o.cookie, a.id);
+    expect(res.status).toBe(409);
+    expect(await code(res)).toBe("legal_hold");
+    expect(await countOf("documents", "client_id = ? AND redacted_at IS NOT NULL", client)).toBe(0);
+    const eraseWithPart = await call(`/contacts/${a.id}/erase`, {
+      cookie: o.cookie,
+      body: { mode: "erase", reason: "requested", part: "offers" },
+    });
+    expect(eraseWithPart.status).toBe(400);
+    const staff = await sessionFor("staff", { stepUp: true });
+    expect((await part(staff.cookie, a.id)).status).toBe(403);
   });
 });

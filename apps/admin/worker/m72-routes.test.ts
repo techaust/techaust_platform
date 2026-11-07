@@ -260,8 +260,10 @@ describe("unsuppress (emails.unsuppress: Owner only)", () => {
       updated_at: before?.updated_at,
     });
     expect(await one("SELECT 1 AS x FROM email_suppressions WHERE email = ?1", email)).toBeNull();
-    const gone = await mkClient({ anonymised_at: 5 });
+    // M7.4 (0079): an anonymised client takes no new contact, so the client is anonymised after its contact exists.
+    const gone = await mkClient();
     const g = await mkContact(gone, { email: `gone-${uuidv7().slice(-6)}@example.test` });
+    await env.DB.prepare("UPDATE clients SET anonymised_at = 5 WHERE id = ?1").bind(gone).run();
     const r = await call(`/contacts/${g.id}/unsuppress`, {
       cookie: o.cookie,
       body: { expectedUpdatedAt: 0 },

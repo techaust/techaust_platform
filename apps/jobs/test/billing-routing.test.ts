@@ -50,6 +50,8 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
         // M7.2 (changed on purpose): the unfinished sign-in scan and the bells sweep every hour (the digest only on Mondays: m72-jobs.test.ts).
         "signin.unfinished",
         "bells.sweep",
+        // M7.4 (changed on purpose): the request clock at 09:00 IST.
+        ...(h === 9 ? ["requests.clock"] : []),
       ];
       expect(kinds, `hour ${h}`).toEqual(expected);
     }
@@ -96,12 +98,13 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
       "recon.fetch",
       "signin.unfinished", // M7.2, changed on purpose
       "bells.sweep",
+      "requests.clock", // M7.4, changed on purpose
     ]);
     fakes.leads.length = 0;
     await run("5 5 5 5 5", istTick("2026-11-10", 9));
     expect(fakes.leads).toEqual([]);
     fakes.leads.length = 0;
-    await run(PURGE_CRON, Date.UTC(2026, 10, 9, 22, 0), makeEnv({ LEAD_PURGE_MODE: "dry_run" }));
+    await run(PURGE_CRON, Date.UTC(2026, 10, 9, 22, 0), makeEnv());
     const daily = fakes.leads.map((s) => (s.body as { kind: string }).kind);
     expect(daily).not.toContain("lut.check");
     expect(daily).not.toContain("reminder.scan");

@@ -29,8 +29,14 @@ export async function mkTerms(): Promise<string> {
 
 /** An INR business client in West Bengal with a primary contact (intra-state tax with the default company state 19). */
 export async function mkQuoteClient(over: Record<string, unknown> = {}) {
-  const clientId = await mkClient({ gst_status: "unregistered", state_code: "19", ...over });
+  // M7.4 (0079): an anonymised client takes no new contact, so an anonymised fixture is anonymised after its contact exists.
+  const { anonymised_at: anonymisedAt, ...rest } = over;
+  const clientId = await mkClient({ gst_status: "unregistered", state_code: "19", ...rest });
   const contact = await mkContact(clientId, { is_primary: 1, name: "Asha Rao" });
+  if (anonymisedAt != null)
+    await env.DB.prepare("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1")
+      .bind(clientId, anonymisedAt)
+      .run();
   return { clientId, contactId: contact.id, email: contact.email };
 }
 

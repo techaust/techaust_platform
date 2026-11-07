@@ -9,6 +9,7 @@
 // `client_requests_open_kind` backs it) and it sent fewer than 5 today in IST (429 `too_many_requests`, `REQUESTS_TODAY_SQL`). The audit row is written only if
 // the insert happened, the access row only if the audit row exists; a read in the same batch explains a refusal. Then the staff bell is asked of the jobs
 // Worker (`portal.alert`, L9: portal SQL never names a staff table). No email in M7.1 (L16): the screen acknowledges.
+import { requestDueAt, requestDueAtSql } from "@techaust/core/dsr";
 import { uuidv7 } from "@techaust/core/ids";
 import { portalAlertMessage, REQUESTS_PER_DAY } from "@techaust/core/portal";
 import { clientRequest, requestDetailsOf } from "@techaust/core/portal-schemas";
@@ -30,8 +31,11 @@ const OPEN_OF_KIND =
  * no open request of the kind; fewer than `REQUESTS_PER_DAY` since 00:00 IST. Early check 2, finding 4: the client is joined not anonymised, so the insert
  * holds the anonymised-client lock itself (not only through the guard's session read).
  */
-export const REQUEST_INSERT_SQL = `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, status, created_at, updated_at)
-   SELECT ?3, c.client_id, c.id, c.id, ?4, ?5, 'open', ?6, ?6 FROM contacts c
+// M7.4 (A.1; RB-47): the request clock is written with the row: received when sent (`created_at`), the reply date (core `requestDueAt`, its SQL twin),
+// the acknowledgement 48 hours on; the trigger `client_requests_clock_insert` checks all three. L42: a portal request is identity-checked by the sign-in that
+// sent it, so `identity_checked_at` is the time it arrived (no staff member: the trigger allows that only for `channel = 'portal'`).
+export const REQUEST_INSERT_SQL = `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, status, created_at, updated_at, received_at, due_at, ack_due_at, identity_checked_at)
+   SELECT ?3, c.client_id, c.id, c.id, ?4, ?5, 'open', ?6, ?6, ?6, ${requestDueAtSql("?6")}, ?6 + 172800000, ?6 FROM contacts c
      JOIN clients k ON k.id = c.client_id AND k.anonymised_at IS NULL
    WHERE c.client_id = ?1 AND c.id = ?2 AND c.portal_access = 1 AND c.anonymised_at IS NULL
      AND NOT EXISTS (${OPEN_OF_KIND}) AND ${REQUESTS_TODAY_SQL("?2", "?6")} < ${REQUESTS_PER_DAY}`;
@@ -122,6 +126,7 @@ export const requests = new Hono<AppEnv>().post("/", json(clientRequest), async 
     outcome: null,
     created_at: now,
     closed_at: null,
+    due_at: requestDueAt(now),
   };
   return c.json({ request: requestOf(row) }, 201);
 });

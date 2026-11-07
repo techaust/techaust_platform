@@ -34,6 +34,8 @@ export default defineConfig(async () => ({
           SES_EVENTS_TOKEN: ["ses", "events", "token", "made", "up", "for", "tests"].join("-"),
           // M7.2 (C.5): a made-up HMAC key for the digest's one-click unsubscribe links (built at run time; never a real one).
           UNSUBSCRIBE_KEY: ["unsubscribe", "key", "made", "up", "for", "tests"].join("-"),
+          // M7.4 (L23): the erased-address hash key, the same made-up value as the admin tests (both reach the same hash).
+          ERASURE_HASH_KEY: ["test", "erasure", "hash", "key", "0".repeat(24)].join("-"),
         },
       },
     }),

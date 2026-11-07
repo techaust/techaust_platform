@@ -46,6 +46,8 @@ export const EMAIL_TEMPLATES = [
   "staff.notification",
   "refund.sent",
   "staff.signin_unfinished",
+  // M7.4 (D.8, L32; POR-11): the acknowledgement of a request sent from the portal (07-ZR C2 to C4 and the Rule 9 block; the builder's plain template).
+  "request.received",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
 

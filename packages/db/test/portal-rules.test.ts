@@ -36,7 +36,7 @@ import {
   withdrawnSql,
 } from "../src/sql-rules.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember, mkSend } from "./billing-helpers.ts";
-import { all, first, run } from "./helpers.ts";
+import { all, first, REQUEST_CLOCK_COLS, requestClockOf, run } from "./helpers.ts";
 
 const DAY = 86_400_000;
 const plan = async (sql: string, ...p: unknown[]) =>
@@ -329,7 +329,7 @@ describe("REQUESTS_TODAY_SQL counts the IST day [L8]", () => {
     const at = [dayStart - 1, dayStart, dayStart + 1000, dayStart + DAY - 1, dayStart + 5];
     for (const [i, kind] of kinds.entries())
       await run(
-        `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, created_at, updated_at) VALUES (?1, ?2, ?3, ?3, ?4, 'x', ?5, ?5)`,
+        `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, created_at, updated_at, ${REQUEST_CLOCK_COLS}) VALUES (?1, ?2, ?3, ?3, ?4, 'x', ?5, ?5, ${requestClockOf("?5")})`,
         uuidv7(),
         client,
         i === 4 ? other : contact,

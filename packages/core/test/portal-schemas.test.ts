@@ -68,7 +68,10 @@ describe("clientRequest [L8]", () => {
     expect(codes(clientRequest.safeParse({ kind: "data_access", details: "x\u0007y" }))).toContain(
       "details_invalid",
     );
-    expect(clientRequest.safeParse({ kind: "nomination", details: "x" }).success).toBe(false);
+    // M7.4 (E, L9): nomination and consent withdrawal are kinds now; an unknown one is still refused.
+    expect(clientRequest.safeParse({ kind: "nomination", details: "x" }).success).toBe(true);
+    expect(clientRequest.safeParse({ kind: "consent_withdrawal" }).success).toBe(true);
+    expect(clientRequest.safeParse({ kind: "bogus", details: "x" }).success).toBe(false);
     expect(clientRequest.safeParse({ kind: "grievance", details: "x", contactId: "c" }).success).toBe(false);
   });
 });

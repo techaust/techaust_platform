@@ -321,7 +321,7 @@ describe("portal requests [POR-09, POR-11, L8]", () => {
     };
     expect(mine.items.map((i) => i.id)).toEqual([change, access]);
     expect(mine.items[0]?.canClose).toBe(true);
-    for (const q of ["status=pending", "kind=nomination", "client=%20"])
+    for (const q of ["status=pending", "kind=bogus", "client=%20", "state=late", "state=overdue&status=open"])
       expect((await call(`/client-requests?${q}`, { cookie: staff.cookie })).status, q).toBe(400);
   });
 
@@ -331,8 +331,12 @@ describe("portal requests [POR-09, POR-11, L8]", () => {
     const p = await mkPortalClient();
     const change = await mkRequest(p, "contact_change", "Add Ravi");
     const erase = await mkRequest(p, "data_erasure");
+    // M7.4 (C.4): a declined request names its reason.
     const close = (s: { cookie: string }, id: string, outcome = "done") =>
-      call(`/client-requests/${id}/close`, { cookie: s.cookie, body: { outcome, note: "Handled" } });
+      call(`/client-requests/${id}/close`, {
+        cookie: s.cookie,
+        body: { outcome, note: "Handled", ...(outcome === "declined" ? { declineReason: "other" } : {}) },
+      });
     expect((await close(staff, change)).status).toBe(200);
     const refused = await close(staff, erase);
     expect(refused.status).toBe(403);
@@ -357,12 +361,14 @@ describe("portal requests [POR-09, POR-11, L8]", () => {
     const p = await mkPortalClient();
     const id = await mkRequest(p, "data_access");
     const r = await env.DB.prepare(REQUEST_CLOSE_SQL)
-      .bind(id, "done", staff.id, Date.now(), null, "staff")
+      .bind(id, "done", staff.id, Date.now(), null, "staff", null, null, null)
       .run();
     expect(r.meta.changes).toBe(0);
     // And with the role forged as owner, the trigger refuses a Staff member as the closer.
     await expect(
-      env.DB.prepare(REQUEST_CLOSE_SQL).bind(id, "done", staff.id, Date.now(), null, "owner").run(),
+      env.DB.prepare(REQUEST_CLOSE_SQL)
+        .bind(id, "done", staff.id, Date.now(), null, "owner", null, null, null)
+        .run(),
     ).rejects.toThrow(/client_requests_owner_close/);
   });
 });

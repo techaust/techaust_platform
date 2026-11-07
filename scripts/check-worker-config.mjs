@@ -99,8 +99,9 @@ export function apiConfigProblems(api, front, opts = {}) {
         problems.push(`${scope}: services must be exactly ${JSON.stringify(want)}`);
     }
     // M6.2 (L1): the finance Worker holds the Razorpay key pair (no public URL: the safest home). Exactly these names, and none in production until Phase 7.
+    // M7.4 (L23): the API Worker holds exactly `ERASURE_HASH_KEY`, in EVERY scope (`secretsEverywhere`).
     if (opts.secrets) {
-      const want = scope === "env.production" ? [] : [...opts.secrets].sort();
+      const want = scope === "env.production" && !opts.secretsEverywhere ? [] : [...opts.secrets].sort();
       const got = [...(c.secrets?.required ?? [])].sort();
       if (JSON.stringify(got) !== JSON.stringify(want))
         problems.push(`${scope}: secrets.required must be exactly ${JSON.stringify(want)}`);
@@ -228,8 +229,10 @@ export const FINANCE_OPTS = {
 export const INVOICES_OPTS = {};
 
 /** Each auxiliary admin config's options for apiConfigProblems. */
+/** M7.4 (L23): the admin API Worker's only secret, the key of the erased-address hash (the same value as the jobs Worker's). */
+export const API_SECRETS = ["ERASURE_HASH_KEY"];
 export const AUX_OPTS = {
-  "wrangler.api.jsonc": {},
+  "wrangler.api.jsonc": { secrets: API_SECRETS, secretsEverywhere: true },
   "wrangler.finance.jsonc": FINANCE_OPTS,
   "wrangler.invoices.jsonc": INVOICES_OPTS,
 };
@@ -490,6 +493,39 @@ export const PORTAL_FILES_BUCKETS = {
  * M7.1 (run file F): the portal binds `FILES` to the local file vault at the top level and to the staging one in `env.staging`, and NOT in `env.production`
  * (no R2 there until Phase 7, and a binding there would be inherited by nothing: each scope lists its own). Empty = passes.
  */
+/**
+ * M7.4 (L7, L8; run file F): the jobs Worker binds the same `FILES` buckets as the portal (local and staging only, none in production until Phase 7), for the
+ * clean-up's outbox drain and weekly sweep; and requires `ERASURE_HASH_KEY` wherever it requires secrets (top level and staging). Empty = passes.
+ */
+export function jobsDataProtectionProblems(jobs) {
+  const problems = [];
+  for (const [scope, c] of SCOPES(jobs)) {
+    const files = (c?.r2_buckets ?? []).filter((b) => b.binding === "FILES");
+    const want = PORTAL_FILES_BUCKETS[scope];
+    if (want === undefined) {
+      if (files.length > 0) problems.push(`${scope}: jobs binds no FILES bucket until Phase 7`);
+      continue;
+    }
+    if (files.length !== 1 || files[0].bucket_name !== want)
+      problems.push(`${scope}: jobs binds FILES to ${want}`);
+    if (!(c?.secrets?.required ?? []).includes("ERASURE_HASH_KEY"))
+      problems.push(`${scope}: jobs must require the secret ERASURE_HASH_KEY`);
+  }
+  return problems;
+}
+
+/** M7.4 (review fix 17, L4): `LEAD_PURGE_MODE` is gone (the real-deletion switch replaced it); it must not reappear in any scope of any config. */
+export function leadPurgeModeProblems(configs) {
+  const problems = [];
+  for (const [file, cfg] of configs)
+    for (const [scope, c] of SCOPES(cfg))
+      if (c?.vars && "LEAD_PURGE_MODE" in c.vars)
+        problems.push(
+          `${file} ${scope}: LEAD_PURGE_MODE is gone (Settings › Data retention holds the switch)`,
+        );
+  return problems;
+}
+
 export function portalFilesProblems(portal) {
   const problems = [];
   const filesOf = (c) => (c?.r2_buckets ?? []).filter((b) => b.binding === "FILES");
@@ -561,6 +597,17 @@ if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.m
   }
   for (const p of portalFilesProblems(read("portal/wrangler.jsonc"))) {
     console.error(`apps/portal/wrangler.jsonc: ${p}`);
+    failed = true;
+  }
+  for (const p of jobsDataProtectionProblems(read("jobs/wrangler.jsonc"))) {
+    console.error(`apps/jobs/wrangler.jsonc: ${p}`);
+    failed = true;
+  }
+  for (const p of leadPurgeModeProblems([
+    ...APPS.map((a) => [`apps/${a}/wrangler.jsonc`, read(`${a}/wrangler.jsonc`)]),
+    ...ADMIN_AUX_CONFIGS.map((f) => [`apps/admin/${f}`, read(`admin/${f}`)]),
+  ])) {
+    console.error(p);
     failed = true;
   }
   for (const p of jobsBuildProblems(read("jobs/wrangler.jsonc"))) {

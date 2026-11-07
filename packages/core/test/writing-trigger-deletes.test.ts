@@ -29,6 +29,10 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
     count: 1,
     why: "the contact's erase: its checkouts, requests and payment notices are unlinked from it and keep document, amount, status and payment (M7.1: their details and note cleared)",
   },
+  "apps/admin/worker/lead-data.ts": {
+    count: 1,
+    why: "M7.4's lead erase (C.8): like the purge, a request naming the lead keeps its lead_ref and its lead_id becomes NULL (its details cleared by the unlink trigger); the receipts are stamped first by the erased_hash triggers and unlinked by ON DELETE SET NULL",
+  },
   "apps/jobs/src/purge.ts": {
     count: 1,
     why: "the nightly lead purge (M7.1): a request naming the lead keeps its lead_ref, its lead_id becomes NULL, so the delete never meets a foreign key",

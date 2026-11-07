@@ -3,7 +3,8 @@
 // request or notice is refused. Invented test data.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
-import { describe, expect, it, vi } from "vitest";
+import { requestDueAtSql } from "@techaust/core/dsr";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { processPortalAlert } from "../src/portal-alerts.ts";
 import { handleQueue } from "../src/queue.ts";
 
@@ -75,14 +76,23 @@ async function request(kind: string) {
   const w = await world();
   const id = uuidv7();
   await run(
-    "INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details) VALUES (?1, ?2, ?3, ?3, ?4, 'Words')",
+    // M7.4 (0079): the clock is written with the row, as the portal writes it (L42: and the sign-in's identity check).
+    `INSERT INTO client_requests (id, client_id, contact_id, contact_ref, kind, details, created_at, updated_at, received_at, due_at, ack_due_at, identity_checked_at)
+     VALUES (?1, ?2, ?3, ?3, ?4, 'Words', ?5, ?5, ?5, ${requestDueAtSql("?5")}, ?5 + 172800000, ?5)`,
     id,
     w.client,
     w.contact,
     kind,
+    Date.now(),
   );
   return { ...w, id, auditId: await audit("portal.request", "client_request", id, "contact", w.contact) };
 }
+
+// The last tests of this file log several lines; let the pool finish passing them on before the file's environment closes, or vitest reports
+// "EnvironmentTeardownError: Closing rpc while onUserConsoleLog was pending" (3 errors on CI for #190, every test passing).
+afterAll(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 200));
+});
 
 describe("portal.alert [L9]", () => {
   it("a data request rings every active Owner once, never Staff, a deactivated Owner or another role; a redelivery writes nothing new", async () => {

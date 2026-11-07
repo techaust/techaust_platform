@@ -21,10 +21,12 @@ export const CONTACT_ON_ISSUED_DOCUMENT_SQL =
 /**
  * A condition on `contacts c`: a lead of this person (made from the contact, or by its email at its client or at none) is under a legal hold, so the
  * person can be neither erased nor anonymised (the erase route's audit-first row, its "why" read, and the T7 redaction read, which answers the hold
- * before `too_many_offers`).
+ * before `too_many_offers`). M7.4 early check 1 M1: a lead's address is matched lower-cased (a website lead keeps the case the person typed; a contact's
+ * address is stored lower-cased), and the two ways are two EXISTS so each reads its own index (`leads_contact`, `leads_contact_email_lower`; EXPLAIN test). Both sides of the address match are
+ * expressions (`lower(c.email)`): a column's TEXT affinity on one side keeps the expression index unused.
  */
 export const HELD_LEAD_SQL =
-  "EXISTS (SELECT 1 FROM leads l WHERE l.legal_hold = 1 AND (l.contact_id = c.id OR (l.contact_email = c.email AND (l.client_id IS NULL OR l.client_id = c.client_id))))";
+  "(EXISTS (SELECT 1 FROM leads l WHERE l.contact_id = c.id AND l.legal_hold = 1) OR EXISTS (SELECT 1 FROM leads l WHERE lower(l.contact_email) = lower(c.email) AND l.legal_hold = 1 AND (l.client_id IS NULL OR l.client_id = c.client_id)))";
 
 /**
  * Portal access off, or a changed email: every live session of the contact is revoked, every unused sign-in link deleted, and (M4.5, docs/13

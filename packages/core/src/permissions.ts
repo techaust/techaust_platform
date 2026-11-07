@@ -165,6 +165,18 @@ const MATRIX = {
   // change or a grievance, `staffClose`; every data-rights kind is the Owner's, review fix 11). New docs/04 §9 rows.
   "requests.read": { owner: "allow", staff: "allow" },
   "requests.close": { owner: "allow", staff: staffClose },
+  // M7.4 (B.8; ADM-SET-09, ADM-CLI-05, ADM-LEAD-05; run file docs/runs/m7.4-data-protection.md): staff log a request that came by email, post, phone or in
+  // person (`requests.log`, Owner and Staff; its close stays `requests.close`); a legal hold is set or cleared by the Owner with a fresh code (L3); the
+  // retention report is the Owner's, and turning real deletion on is the Owner's with a fresh code (Q1 A); a lead's export and erase are the Owner's with a
+  // fresh code, as a contact's (`clients.dataExport`, `clients.dataErase`); allowing emails again to an erased address is the Owner's with a fresh code
+  // (L20). New docs/04 §9 rows.
+  "requests.log": { owner: "allow", staff: "allow" },
+  "legalHold.manage": { owner: "step-up" },
+  "retention.read": { owner: "allow" },
+  "retention.live": { owner: "step-up" },
+  "leads.dataExport": { owner: "step-up" },
+  "leads.dataErase": { owner: "step-up" },
+  "suppressions.lift": { owner: "step-up" },
   // M7.2 (L12; ADM-MAIL-02): the email log (`GET /emails`, `GET /emails/:id`) for Owner and Staff; allowing a stopped address again (deleting its suppression
   // and the contacts' `bounced_at`) is the Owner's, audited, no step-up. A member's own notification switches are `notifications.own` (L11); sending a receipt
   // again is `invoices.send`. New docs/04 §9 rows.

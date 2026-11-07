@@ -193,6 +193,17 @@ export const ACTION_LABELS: Record<string, string> = {
   "payment.notice": Y("told us about a payment they made"),
   "payment.notice_close": Y("dismissed a client's payment notice"),
   "client_request.close": Y("closed a client's request"),
+  // M7.4 (builder's drafts in S-style for the lead under the owner's delegation; the designer may tighten them).
+  "client_request.log": Y("logged a data or contact request"),
+  "client_request.step": Y("recorded a step of a request"),
+  "legal_hold.set": Y("set a legal hold"),
+  "legal_hold.clear": Y("lifted a legal hold"),
+  "suppression.lift": Y("allowed emails again to an erased address"),
+  "retention.live": Y("switched real deletion on or off"),
+  "lead.export": Y("exported a lead's personal data"),
+  "lead.erase": Y("erased a lead"),
+  "lead.consent_withdraw": Y("withdrew a lead's consent"),
+  "contact.redact_offers": Y("removed a person's details from offers"),
   // T11, the deed of assignment: 07-ZJ line 33 (staff-only; marked until the lead approves it).
   ...DEED_AUDIT,
   // M7.2 (S14, the builder's drafts, shown plain as M7.1's S5; listed in the D2 report for the lead): the notification switches, the one-click switch-off, the
@@ -237,6 +248,8 @@ export const ACTION_GROUPS: { label: string; prefixes: readonly string[] }[] = [
   { label: "Reports", prefixes: ["report."] },
   { label: "Approvals", prefixes: ["approval."] },
   { label: "Client portal", prefixes: ["portal.", "doc_token.", "client_request."] },
+  // M7.4 (builder's draft label for the lead): legal holds, the erased-address lift and the clean-up switch.
+  { label: "Data protection", prefixes: ["legal_hold.", "suppression.", "retention."] },
   { label: "Audit log", prefixes: ["audit."] },
 ];
 
@@ -291,6 +304,9 @@ export const ENTITY_LABELS: Record<string, string> = {
   deed: DEED_RECORD_TYPE,
   // M7.2 (builder's draft for the lead): an email log row (the unsuppress from the email log).
   email_log: "Emails",
+  // M7.4 (builder's drafts for the lead): the erased-address list and the clean-up switch.
+  email_suppression: "Stopped addresses",
+  retention: "Data retention",
   report: "Reports",
   audit_log: "Audit log",
 };

@@ -277,6 +277,24 @@ pnpm portal:link --email … [--client CODE] [--staging]       # 15-minute sign-
   - **Rows read** are pinned by `reports-stress.test.ts` at 2,000 clients and documents.
   - **Migration:** 0077, indexes only.
   - **Screens:** `apps/admin/src/routes/reports/*`.
+- **Data protection (M7.4, #187; [run file](docs/runs/m7.4-data-protection.md)):**
+  - **Requests and the reply clock:** data requests are logged by staff or sent from the portal (`client-requests.ts`). The reply clock ends at the end of the IST day of the earlier of +30 days and +1 calendar month (core `dsr.ts`, 08-C RB-47). The clock is written at insert, never by a trigger. Only the Owner closes the data-rights kinds (route, SQL and trigger).
+  - **Legal hold:** a hold on a client, contact or lead (`legal_holds` history, mirrored by triggers) blocks erase, anonymise and delete. A hold trigger maps to 409 `legal_hold`.
+  - **Retention:**
+    - one matrix in `packages/db/src/retention.ts`, with one `dueWhere` per family shared by the dry run and live, and `SWITCH_LIVE_SQL` inside every live statement;
+    - floors of 366 days, with `CLOCK_SKEW_MARGIN_MS` of 1 hour;
+    - real deletion is the Owner's switch in the append-only `retention_switches`, allowed only after a dry run from the last 7 days;
+    - R2 deletions go through the `r2_deletions` outbox and the sweeps;
+    - after 13 months the audit log loses `ip`, `user_agent` and the alert summary keys `ua`, `city` and `country` (RB-48).
+  - **Erasure:**
+    - only the keyed hash `HMAC-SHA256(ERASURE_HASH_KEY, lower-cased address)` is kept, as `h:` rows in `email_suppressions`, `erased_hash` on contacts and leads, and `subject_hash` on `consent_receipts` (RB-46);
+    - the same key must be on the admin API Worker (its only secret) and on jobs, and a missing key fails closed;
+    - leads can be exported and erased, and consent withdrawn;
+    - "anonymise in parts" for a person on more than 10 offers;
+    - an anonymised client's stored PDFs and payment files go to the Owner and Accountant only (`storedPdfRefusal`).
+  - **Backups:** `BACKUP_SCOPE` defines the finance-only monthly copy.
+  - **D1 counts trigger writes:** after any statement on a table with AFTER triggers, check `changes() > 0`, never `= 1`.
+  - **Migrations:** 0078 (create table, add column and index only) and 0079 (the `data_protection_triggers` set). Copy is 07-ZR: staff lines by the lead; client lines C1–C7 and the Rule 9 block await the owner.
 - **Work of 2026-11-01 (PRs #137–#149; [run file](docs/runs/cloud-parallel-2026-11-01.md)):**
   - **Deed of assignment (T11, #148):** `deeds` (migrations 0061–0062, `deed_triggers`; one open deed per project by a partial unique index, frozen once final, delete only an anonymised client's draft or cancelled deeds). A draft is prepared by `deedDraftStatements` (`packages/db/src/deeds.ts`) appended after the recompute, guarded on the audit row, in every batch that can make a project eligible (completion, payments, credit use, advance, credit-note issue, void): the accepted total minus credit notes reached with Σ settled > 0, counted once (core `@techaust/core/deeds` and its SQL twin); `packages/core/test/deed-hooks.test.ts` fails any `recomputeStatement(` call site neither hooked nor allow-listed. Only "Check again" (Owner) redrafts after a cancel. Finalise (Owner, step-up) numbers `TH/DA/{FY}/{N}` and seals the 07-ZE text; jobs `pdf.deed` renders write-once; the signed upload goes write-once to `DOCS`; the portal shows signed deeds and `deed.signed` emails only contacts with portal access **and** "can see finance". Copy 07-ZJ.
   - **Style guard (#140):** `scripts/css-collisions.mjs` (in `pnpm check` and CI) fails a class that is the subject of a base rule in two stylesheets of one app; route stylesheets stay loaded for the whole SPA session, so a duplicate leaks. The shared switch's chosen half carries a 2 px ink bar.

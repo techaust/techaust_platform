@@ -13,6 +13,7 @@ import {
   isReportKind,
 } from "@techaust/core";
 import { isDigestKind } from "@techaust/core/digest";
+import { isDpKind } from "@techaust/core/dp-jobs";
 import { isExpireKind, isExpireMessage } from "@techaust/core/expiry";
 import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
 import {
@@ -28,6 +29,7 @@ import { processBilling, processBillingDeadLetter } from "./billing.ts";
 import { processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
 import { processDigest } from "./digest.ts";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
+import { isErasureKeyMissing } from "./erasure.ts";
 import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
 import { processGateway, processGatewayDeadLetter } from "./gateway.ts";
 import { processInvoiceSend } from "./invoice-send.ts";
@@ -43,6 +45,7 @@ import { processRefundNotify } from "./refund-notify.ts";
 import { processRefundDeadLetter, processRefundFamily } from "./refunds.ts";
 import { processReminderSend } from "./reminders.ts";
 import { processEdfReminder, processRealisationScan } from "./reports.ts";
+import { processDp, processDpDeadLetter } from "./retention.ts";
 import { processSigninUnfinished } from "./signin-unfinished.ts";
 import { processStaffAlert } from "./staff-alerts.ts";
 import { processBellsSweep, processStaffNotify } from "./staff-notify.ts";
@@ -52,6 +55,14 @@ import { logStatsDeadLetter, processStats, skipStats } from "./stats.ts";
 /** A staff alert (`{ kind: "staff.alert", auditId }`) shares the email queue with ordinary emails (M2.4b). */
 const isStaffAlert = (body: unknown) =>
   typeof body === "object" && body !== null && (body as { kind?: unknown }).kind === "staff.alert";
+
+/** A body's `kind` (or an email's `template`) for a log line, only when it is a plain code: never a value from the message itself. */
+const kindOf = (body: unknown): string | undefined => {
+  if (typeof body !== "object" || body === null) return undefined;
+  const k =
+    (body as { kind?: unknown; template?: unknown }).kind ?? (body as { template?: unknown }).template;
+  return typeof k === "string" && /^[a-z0-9._-]{1,40}$/.test(k) ? k : undefined;
+};
 
 /**
  * A dead-lettered message whose alert could not be sent is retried with long, growing delays (5 minutes, doubling, at
@@ -141,6 +152,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // M6.5: a refund check that ran out of tries becomes a `refund_stuck` review item with the owners' bell; the sweep and the fetch only log.
         await processRefundDeadLetter(env, message.body);
         message.ack();
+      } else if (isDlq && isDpKind(message.body)) {
+        // M7.4 (D): a clean-up, drain, sweep, hash or clock message that ran out of tries: logged; the next night (or hour) repeats it. A live clean-up page
+        // also rings the Owners' `job.failed` bell, once per run and family (early check 2, low 6).
+        await processDpDeadLetter(env, queue, message.body);
+        message.ack();
       } else if (isDlq && isPortalAlertKind(message.body)) {
         // M7.1 (L9): a portal bell that ran out of tries: the request or notice itself is stored and shows in the admin's lists, so no alert and no retry.
         logEvent("portal_alert.dead_letter", { queue });
@@ -166,6 +182,11 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         const verdict = await processRefundFamily(env, message.body, message.attempts);
         if (verdict === "ack") message.ack();
         else message.retry({ delaySeconds: verdict.retry });
+      } else if (queue.endsWith("-leads") && isDpKind(message.body)) {
+        // M7.4 (D): the clean-up, the R2 outbox and sweeps, the consent hash fill, the request clock; before the lead fall-through (a body of this family,
+        // valid or not, can never become a lead).
+        await processDp(env, message.body);
+        message.ack();
       } else if (queue.endsWith("-leads") && isPurgeScanMessage(message.body)) {
         await enqueueDue(env, message.body.asOf, message.body.cursor);
         message.ack();
@@ -268,11 +289,21 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       }
     } catch (e) {
       // A database or network error: let the queue redeliver. The error text may carry values, so only its type is logged.
-      logEvent("queue.error", {
-        queue,
-        attempts: message.attempts,
-        error: e instanceof Error ? e.name : "unknown",
-      });
+      // Early check 2, low 4: a Worker without ERASURE_HASH_KEY has its own event (it never clears by itself: the owner's H1 step sets the key), still retried,
+      // so an email to an erased address is never sent for want of the key.
+      if (isErasureKeyMissing(e))
+        logEvent("erasure.key_missing", {
+          queue,
+          attempts: message.attempts,
+          kind: kindOf(message.body),
+          f: 1,
+        });
+      else
+        logEvent("queue.error", {
+          queue,
+          attempts: message.attempts,
+          error: e instanceof Error ? e.name : "unknown",
+        });
       // The email queue uses the email backoff here too (FX-1, A6 4); the other queues keep their short one.
       message.retry({
         delaySeconds: isDlq

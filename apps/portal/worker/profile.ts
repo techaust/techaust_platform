@@ -28,7 +28,7 @@ export const ME_SQL =
  */
 export const COLLEAGUES_SQL = `SELECT c.name, c.title, c.id = ?2 AS you FROM contacts c
    WHERE c.client_id = ?1 AND c.portal_access = 1 AND c.anonymised_at IS NULL ORDER BY c.name COLLATE NOCASE, c.id LIMIT 50`;
-const REQUEST_COLS = "r.id, r.kind, r.details, r.status, r.outcome, r.created_at, r.closed_at";
+const REQUEST_COLS = "r.id, r.kind, r.details, r.status, r.outcome, r.created_at, r.closed_at, r.due_at";
 /** ?1 client, ?2 contact, ?3 the page size plus one: the contact's own requests, newest first (never the staff's close note). */
 export const MY_REQUESTS_SQL = `SELECT ${REQUEST_COLS} FROM client_requests r INDEXED BY client_requests_contact
    WHERE r.contact_id = ?2 AND r.client_id = ?1 ORDER BY r.created_at DESC, r.id DESC LIMIT ?3`;
@@ -56,6 +56,8 @@ export type RequestRow = {
   outcome: string | null;
   created_at: number;
   closed_at: number | null;
+  /** M7.4 (E, C1): the end of the IST reply day (`requestDueAt`); null on a row from before the clock. */
+  due_at: number | null;
 };
 
 /** One of the contact's own requests (C19, C23): its kind, their words, open or closed with the outcome. */
@@ -67,6 +69,8 @@ export const requestOf = (r: RequestRow) => ({
   outcome: r.outcome,
   createdAt: r.created_at,
   closedAt: r.closed_at,
+  // M7.4 (E, C1 "We'll reply by email by {date}."): an open request's reply date (UTC ms; the screen shows its IST day).
+  replyBy: r.status === "open" ? r.due_at : null,
 });
 
 /** The profile's data: the contact's own details, the colleagues (name and title), and a page of their requests. */

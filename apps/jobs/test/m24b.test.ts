@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emailLogId, processDeadLetter, processEmail } from "../src/email.ts";
 import { handleQueue } from "../src/queue.ts";
 import { processStaffAlert } from "../src/staff-alerts.ts";
+import { wipe } from "./wipe.ts";
 
 // 23 Oct 2026, 14:05 IST
 const AT = Date.UTC(2026, 9, 23, 8, 35);
@@ -19,6 +20,8 @@ const makeEnv = (over: Record<string, unknown> = {}) =>
   ({
     DB: realEnv.DB,
     ENVIRONMENT: "local",
+    // M7.4 (L23): the erased-address hash key (the email consumer's `h:` check and the purge need it).
+    ERASURE_HASH_KEY: (realEnv as unknown as { ERASURE_HASH_KEY: string }).ERASURE_HASH_KEY,
     LEAD_ALERT_TO: "owner-alert@example.test",
     EMAIL_ALLOWED_RECIPIENTS: "",
     EMAIL_TRANSPORT: "log",
@@ -52,10 +55,8 @@ beforeEach(async () => {
     spies.push(
       vi.spyOn(console, m).mockImplementation((...a: unknown[]) => void logs.push(a.map(String).join(" "))),
     );
-  await realEnv.DB.batch([
-    realEnv.DB.prepare("DELETE FROM email_log"),
-    realEnv.DB.prepare("DELETE FROM email_suppressions"),
-  ]);
+  // M7.4 (0079): the email log keeps its 366-day floor; the test wipe passes it (wipe.ts).
+  await wipe("email_log", "email_suppressions");
 });
 afterEach(() => {
   for (const s of spies.splice(0)) s.mockRestore();

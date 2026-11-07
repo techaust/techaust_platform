@@ -127,12 +127,12 @@ describe("overview and reading [ADM-SET-01..10]", () => {
     }
   });
 
-  it("tax and retention point to 08-C §5 (07-ZK line 12: one pointer, no list named); retention says what is not built yet", async () => {
+  it("tax and retention point to 08-C §5 (07-ZK line 12: one pointer, no list named); retention carries no stale 'arrives in M7.4' note (M7.4 review 1 low 10)", async () => {
     const o = await owner();
     expect((await json(await call(GROUP("tax"), { cookie: o.cookie }))).meta.verify).toBe("08-C §5");
     const r = await json(await call(GROUP("retention"), { cookie: o.cookie }));
     expect(r.meta.verify).toBe("08-C §5");
-    expect(r.meta.notes).toMatch(/M7\.4/);
+    expect(r.meta).not.toHaveProperty("notes");
   });
 });
 

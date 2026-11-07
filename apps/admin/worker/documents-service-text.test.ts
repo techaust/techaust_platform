@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { gapSectionsOf } from "./document-save.ts";
 import { ITEMS_OF_DOCUMENT, ITEMS_OF_SAVE } from "./quote-model.ts";
 import { putPaymentTerms } from "./test-catalogue.ts";
-import { insert } from "./test-clients.ts";
+import { insert, unAnonymise } from "./test-clients.ts";
 import { call, one, rows, sessionFor, type TestSession } from "./test-helpers.ts";
 import {
   codeOf,
@@ -487,7 +487,7 @@ describe("POST /documents/:id/sections/fill-from-catalogue [ADM-PROP-02]", () =>
     const gone = await fill(o, made.id, sec.id, v.updatedAt);
     expect(gone.status).toBe(409);
     expect(await codeOf(gone)).toBe("client_anonymised");
-    await env.DB.prepare("UPDATE clients SET anonymised_at = NULL WHERE id = ?").bind(made.clientId).run();
+    await unAnonymise(made.clientId);
     const ready = await hideEmptySections(o, made.id);
     expect((await sendDoc(o, made.id, ready)).status).toBe(200);
     const sent = await fill(o, made.id, sec.id, ready);

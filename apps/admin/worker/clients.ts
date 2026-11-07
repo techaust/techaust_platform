@@ -23,11 +23,14 @@ import {
   type TaxCheck,
   type TaxInput,
 } from "@techaust/core/clients";
+import { receiptOf, withdrawalOf } from "@techaust/core/consent";
 import { suppressionReasonLabel } from "@techaust/core/email-events";
 import { uuidv7 } from "@techaust/core/ids";
 import { normaliseEmail } from "@techaust/core/lead-lifecycle";
 import { decide, type Role } from "@techaust/core/permissions";
+import { processorsBlock } from "@techaust/core/processors";
 import { nameOrLegal } from "@techaust/core/text";
+import { INSERT_RECEIPT_GUARDED_SQL } from "@techaust/db/consent";
 import {
   CONTACT_ON_ISSUED_DOCUMENT_SQL,
   deleteContactAccess,
@@ -50,6 +53,7 @@ import {
   requestInfo,
   STEP_UP_REQUIRED,
 } from "./context.ts";
+import { erasureHash, erasureHashMap, hashFromMap, receiptHashOrNull } from "./erasure-key.ts";
 import { clientFinance } from "./figures.ts";
 import { dropObjects } from "./files.ts";
 import {
@@ -66,8 +70,10 @@ import {
 } from "./http.ts";
 import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
+import { KEYED_FORM_MONTHS_SQL, keyedFormMonthsOf } from "./lead-data.ts";
 import {
   dropOfferObjects,
+  MATCHED_LEAD_EMAILS_SQL,
   type RedactionPlan,
   readRedactionPlan,
   redactionCancelStatements,
@@ -467,6 +473,8 @@ const exportRequest = z.strictObject({
       "files",
       "client_requests",
       "payment_notices",
+      "consent_receipts",
+      "time_notes",
     ]),
   ),
   after: z.optional(z.string().check(z.maxLength(400))),
@@ -474,6 +482,8 @@ const exportRequest = z.strictObject({
 const eraseRequest = z.strictObject({
   mode: z.enum(["erase", "anonymise"]),
   reason: z.enum(ERASE_REASONS),
+  // C.10 (F5, L18): "offers" redacts the next 10 never-accepted offers naming the person without anonymising them (anonymise only).
+  part: z.optional(z.literal("offers")),
 });
 
 const norm = (v: string | null | undefined) => {
@@ -982,11 +992,11 @@ const UNIQUE_PRIMARY = /contacts\.client_id|contacts_one_primary/;
 export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?: true }> = {
   leads: {
     sql: (cur) =>
-      `SELECT * FROM leads WHERE (contact_id = ?1 OR (contact_email = ?2 AND (client_id IS NULL OR client_id = ?3)))${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+      `SELECT * FROM leads WHERE (contact_id = ?1 OR (lower(contact_email) = lower(?2) AND (client_id IS NULL OR client_id = ?3)))${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
   lead_activities: {
     sql: (cur) =>
-      `SELECT id, lead_id, kind, body, actor_id, created_at FROM lead_activities WHERE lead_id IN (SELECT id FROM leads WHERE contact_id = ?1 OR (contact_email = ?2 AND (client_id IS NULL OR client_id = ?3)))${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
+      `SELECT id, lead_id, kind, body, actor_id, created_at FROM lead_activities WHERE lead_id IN (SELECT id FROM leads WHERE contact_id = ?1 OR (lower(contact_email) = lower(?2) AND (client_id IS NULL OR client_id = ?3)))${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
   // No token hash: a session is described by its times and where it came from.
   sessions: {
@@ -1050,6 +1060,18 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
     sql: (cur) =>
       `SELECT id, document_id, via, amount_minor, currency, paid_on, reference, note, status, close_note, closed_at, created_at FROM payment_notices WHERE contact_id = ?1${cur ? " AND id > ?5" : ""} ORDER BY id LIMIT 51`,
   },
+  // M7.4 (C.9, FRM-05; Researched 2026-10-28, DPDP Act s.6(10) (08-C RB-28)): the proof of what this person agreed to (grants and withdrawals), while linked.
+  consent_receipts: {
+    sql: (cur) =>
+      `SELECT id, event, source, notice_version, purposes, marketing, at FROM consent_receipts WHERE contact_id = ?1${cur ? " AND (at, id) > (?4, ?5)" : ""} ORDER BY at, id LIMIT 51`,
+    time: true,
+  },
+  // M7.4 (C.9; M3.5 follow-up): the notes of the time entries on an individual client's projects and care plans (they can name the person), only for its
+  // last live contact, as the erase clears them (TIME_NOTE_CLEAR_SQL). Minutes and dates are staff records and stay out.
+  time_notes: {
+    sql: (cur) =>
+      `SELECT t.id, t.work_date, t.note, (SELECT code FROM projects WHERE id = t.project_id) AS project_code FROM time_logs t WHERE t.note IS NOT NULL AND (t.project_id IN (SELECT id FROM projects WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")}) OR t.care_plan_id IN (SELECT id FROM care_plans WHERE ${LAST_LIVE_INDIVIDUAL("care_plans.client_id")}))${cur ? " AND t.id > ?5" : ""} ORDER BY t.id LIMIT 51`,
+  },
   // The client's notes and file records, only where the erase would delete them: the contact is an individual client's last live
   // contact (`LAST_LIVE_INDIVIDUAL`; the manifest lists these two parts only then, and the SQL repeats the condition). Metadata only:
   // never the file bytes or the R2 key. Settled by the lead on the safest reading, 2026-10-30 (08-C RB-36): the export lists the files; their contents on request; for EU and UK persons a full copy (GDPR Art. 15(3)) with others' data redacted, by hand.
@@ -1063,11 +1085,29 @@ export const EXPORT_PARTS: Record<string, { sql: (cur: boolean) => string; time?
   },
 };
 /** The export parts that exist only for an individual client's last live contact. */
-const LAST_CONTACT_PARTS = ["notes", "files"];
+const LAST_CONTACT_PARTS = ["notes", "files", "time_notes"];
 
 /** The statements that anonymise (or delete) a person's leads: the lead this contact was made from (`leads.contact_id`, which survives an email change), or by the contact's current email at this client or at none. */
-const MATCHED_LEADS =
-  "SELECT l.id FROM leads l WHERE l.contact_id = ?1 OR (l.contact_email = (SELECT email FROM contacts WHERE id = ?1) AND (l.client_id IS NULL OR l.client_id = (SELECT client_id FROM contacts WHERE id = ?1)))";
+// M7.4 early check 1 M1: the address is matched lower-cased on both sides (a website lead keeps the case the person typed), and the two ways are two
+// SELECTs so each reads its own index (`leads_contact`, `leads_contact_email_lower`; EXPLAIN test in `dp-contacts.test.ts`).
+export const MATCHED_LEADS =
+  "SELECT l.id FROM leads l WHERE l.contact_id = ?1 UNION SELECT l.id FROM leads l WHERE lower(l.contact_email) = lower((SELECT email FROM contacts WHERE id = ?1)) AND (l.client_id IS NULL OR l.client_id = (SELECT client_id FROM contacts WHERE id = ?1))";
+
+/** M7.4 (L24, L37): the keyed hashes an erase or anonymise binds: the contact's, and `{address: hash}` for the matched leads (the contact's own included). */
+export type EraseHashes = { email: string; contact: string; leads: string };
+
+/**
+ * M7.4 (L24): the hashes read before the batch still fit it (on `contacts c` of the audit-first row; `?at` the hash map, `?at+1` the address read): the
+ * contact's address is the one hashed, and every matched lead still to be marked has its address in the map, so no lead is left without its hash.
+ */
+export const HASHES_FRESH_SQL = (at: number) =>
+  `c.email = ?${at + 1} AND NOT EXISTS (SELECT 1 FROM leads l WHERE (l.contact_id = c.id OR (lower(l.contact_email) = lower(c.email) AND (l.client_id IS NULL OR l.client_id = c.client_id)))
+     AND l.erased_hash IS NULL AND lower(l.contact_email) NOT GLOB 'anonymised+*@invalid' AND NOT EXISTS (SELECT 1 FROM json_each(?${at}) j WHERE j.key = lower(l.contact_email)))`;
+
+const NOTHING_TO_REDACT: ApiError = {
+  code: "nothing_to_redact",
+  message: "No offer names this person any more. Anonymise them now",
+};
 
 /**
  * Lead decision (2026-10-31, 07-ZH line 22): a contact whose erase would anonymise its individual client (its last live contact) is refused while a payment
@@ -1132,6 +1172,19 @@ export const contacts = new Hono<AppEnv>()
         w[2] !== undefined && w[2] !== (row as unknown as Record<string, unknown>)[w[1]],
     );
     if (!changes.length) return c.json({ ok: true, changed: false, updatedAt: row.updated_at });
+    // M7.4 (C.9, FRM-05; Researched 2026-10-28, DPDP Act s.6(10) (08-C RB-28)): a granted or withdrawn marketing consent appends its receipt in the same
+    // batch, with the keyed hash of the address (A.3: computed at insert).
+    const receipt =
+      consentJson == null
+        ? null
+        : f.marketingConsent === true
+          ? receiptOf({ kind: "contact", id, consent: JSON.parse(consentJson), noticeVersion: null })
+          : (withdrawalOf({ kind: "contact", id, consent: consent as never, noticeVersion: null }, t, "staff")
+              ?.receipt ?? null);
+    // Review 1 low 3: without the key the change still saves; the receipt waits with a NULL hash for the nightly `consent.hash` (erasures stay fail-closed).
+    const receiptHash = receipt
+      ? await receiptHashOrNull(c.env, email ?? row.email, "contact_consent")
+      : null;
     const names = changes.map(([n]) => n);
     // Portal access ends (off, or a new address): sessions and unused sign-in links go in the same batch.
     const endsAccess =
@@ -1176,6 +1229,26 @@ export const contacts = new Hono<AppEnv>()
             )
             .bind(id, f.expectedUpdatedAt, version, ...changes.map((ch) => ch[2]), ...g.params),
           ...(endsAccess ? revokeContactAccess(db, id, t, g) : []),
+          ...(receipt
+            ? [
+                db
+                  .prepare(INSERT_RECEIPT_GUARDED_SQL(g.sql(12)))
+                  .bind(
+                    uuidv7(),
+                    receiptHash,
+                    null,
+                    id,
+                    receipt.event,
+                    receipt.source,
+                    receipt.noticeVersion,
+                    JSON.stringify(receipt.purposes),
+                    receipt.marketing ? 1 : 0,
+                    receipt.ipHash,
+                    receipt.at,
+                    ...g.params,
+                  ),
+              ]
+            : []),
         ],
       });
     } catch (e) {
@@ -1212,7 +1285,7 @@ export const contacts = new Hono<AppEnv>()
     let out: Record<string, unknown>;
     let rows: number;
     if (!f.part) {
-      const [client, supp] = await db.batch<Record<string, unknown>>([
+      const [client, supp, keep] = await db.batch<Record<string, unknown>>([
         db
           .prepare(
             contact.client_type === "individual"
@@ -1221,12 +1294,17 @@ export const contacts = new Hono<AppEnv>()
           )
           .bind(contact.client_id),
         db.prepare("SELECT * FROM email_suppressions WHERE email = ?1").bind(contact.email),
+        db.prepare(KEYED_FORM_MONTHS_SQL),
       ]);
       const { client_type: _kind, last_live: _last, ...plain } = contact;
       out = {
         contact: plain,
         client: client?.results[0] ?? null,
         suppression: supp?.results[0] ?? null,
+        // M7.4 (C.9; RB-36's gap): who receives the person's data, 07-A §3 word for word, and the privacy page.
+        processors: processorsBlock(),
+        // L31 (RB-46): after an erasure, a keyed form of the address is kept this long, only to stop emails and prove consent.
+        keyedFormMonths: keyedFormMonthsOf(keep?.results[0]),
         // The parts to ask for next, in order (notes and files only for an individual client's last live contact).
         manifest: Object.keys(EXPORT_PARTS).filter(
           (p) => contact.last_live === 1 || !LAST_CONTACT_PARTS.includes(p),
@@ -1286,21 +1364,52 @@ export const contacts = new Hono<AppEnv>()
   //      on the safest reading, 2026-10-30 (08-C RB-37)) ----
   .post("/:id/erase", param(idParam), body(eraseRequest), async (c) => {
     const { id } = c.req.valid("param");
-    const { mode, reason } = c.req.valid("json");
+    const { mode, reason, part } = c.req.valid("json");
+    // C.10 (F5, L18): a part is an anonymise's offers only.
+    if (part !== undefined && mode !== "anonymise") return err(c, BAD_REQUEST, 400);
     // T7 (Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): erase mode redacts nothing (a frozen offer naming the person refuses the erase).
-    const plan = mode === "erase" ? null : await readRedactionPlan(c.env.DB, id);
+    const plan = mode === "erase" ? null : await readRedactionPlan(c.env.DB, id, { part: part === "offers" });
+    // M7.4 (L24, L37): the addresses to hash. Anonymise reads them in T7's read (no new statement); erase runs its own read (one statement).
+    let head: { email: string; lead_emails: string } | null;
     if (plan) {
       if (!plan.head) return err(c, NOT_FOUND, 404);
       if (plan.head.anonymised_at !== null) return err(c, ANONYMISED, 409);
       // A legal hold stops both modes, so it is answered before the offer cap (review row 2; the batch checks it again).
       if (plan.head.held) return err(c, LEGAL_HOLD, 409);
       if (plan.tooMany) return err(c, TOO_MANY_OFFERS, 409);
+      if (plan.part && plan.ids.length === 0) return err(c, NOTHING_TO_REDACT, 409);
+      head = { email: plan.head.email ?? "", lead_emails: plan.head.lead_emails };
+    } else {
+      head = await c.env.DB.prepare(
+        `SELECT c.email, ${MATCHED_LEAD_EMAILS_SQL("c")} AS lead_emails FROM contacts c WHERE c.id = ?1`,
+      )
+        .bind(id)
+        .first<{ email: string; lead_emails: string }>();
+      if (!head) return err(c, NOT_FOUND, 404);
     }
+    // The contact's own address is always in the map, so a lead made with it between the read and the batch still gets its hash (the batch also refuses a
+    // matched lead whose address the map lacks).
+    const hashes: EraseHashes | null = plan?.part
+      ? null
+      : {
+          email: head.email,
+          contact: await erasureHash(c.env, head.email),
+          leads: await erasureHashMap(c.env, [head.email, ...(JSON.parse(head.lead_emails) as string[])]),
+        };
     // M6.5 (L15; early check 1, part 2 item 2): an individual client is not anonymised while a refund to it is open. The trigger
     // `clients_anonymise_no_open_refund` refuses the batch (nothing is written, no statement is added: T7's cap of 45), and the answer is 409 `refunds_pending`.
     try {
-      return await eraseBatch(c, id, mode, reason, plan);
+      if (plan?.part) return await redactPart(c, id, reason, plan);
+      return await eraseBatch(c, id, mode, reason, plan, hashes as EraseHashes);
     } catch (e) {
+      // N4: the batch's first row reads every hold, so a hold trigger refuses only a hold set in between; it is the same answer, never a 500.
+      if (
+        refusedWith(
+          e,
+          /leads_held_no_erase|contacts_held_no_|clients_held_no_anonymise|documents_held_no_redact/,
+        )
+      )
+        return err(c, LEGAL_HOLD, 409);
       if (!refusedWith(e, /clients_anonymise_no_open_refund/)) throw e;
       return err(
         c,
@@ -1323,6 +1432,7 @@ async function eraseBatch(
   mode: "erase" | "anonymise",
   reason: string,
   plan: RedactionPlan | null,
+  hashes: EraseHashes,
 ): Promise<Response> {
   const db = c.env.DB;
   const t = Date.now();
@@ -1332,6 +1442,8 @@ async function eraseBatch(
   const who = requestInfo(c);
   // T7: the read's conditions on the audit row (anonymise only; its placeholders follow ?9).
   const fresh = plan ? redactionGuard(plan, 11) : null;
+  // M7.4 (L24): the hash map's and the read address's placeholders follow the T7 guard (or the reason).
+  const mapAt = fresh ? 17 : 10;
   const done = await mutate(c, {
     action: erase ? "contact.erase" : "contact.anonymise",
     entityType: "client",
@@ -1354,8 +1466,12 @@ async function eraseBatch(
         `json_object('contactId', c.id, 'mode', ?8, 'reason', ?9${fresh ? ", 'offers', CAST(?10 AS INTEGER)" : ""})`,
         `FROM contacts c JOIN clients cl ON cl.id = c.client_id
          WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}
-           AND NOT ${PAYMENTS_PENDING_ON_LAST("?7")}${fresh ? ` AND ${fresh.sql}` : ""}`,
-        fresh && plan ? [id, mode, reason, plan.ids.length, ...fresh.params] : [id, mode, reason],
+           AND NOT ${PAYMENTS_PENDING_ON_LAST("?7")}${fresh ? ` AND ${fresh.sql}` : ""} AND ${HASHES_FRESH_SQL(mapAt)}`,
+        [
+          ...(fresh && plan ? [id, mode, reason, plan.ids.length, ...fresh.params] : [id, mode, reason]),
+          hashes.leads,
+          hashes.email,
+        ],
       ),
     after: (g, auditId) => [
       // 1. what the person wrote and what the bell shows about their leads (matched by the contact's email, before it changes)
@@ -1371,10 +1487,11 @@ async function eraseBatch(
         .bind(id, ...g.params),
       db
         .prepare(
-          `UPDATE leads SET contact_name = ?2, contact_email = ?3, contact_phone = NULL, contact_company = NULL, message = NULL, call_window = NULL, utm = NULL, source_page = NULL, referrer_host = NULL, next_action_note = NULL, consent = CASE WHEN consent IS NULL THEN NULL ELSE json_remove(consent, '$.ipHash') END, updated_at = ?4
-           WHERE id IN (${MATCHED_LEADS}) AND ${g.sql(5)}`,
+          `UPDATE leads SET contact_name = ?2, contact_email = ?3, contact_phone = NULL, contact_company = NULL, message = NULL, call_window = NULL, utm = NULL, source_page = NULL, referrer_host = NULL, next_action_note = NULL, consent = CASE WHEN consent IS NULL THEN NULL ELSE json_remove(consent, '$.ipHash') END, updated_at = ?4,
+             erased_hash = ${hashFromMap(5)}
+           WHERE id IN (${MATCHED_LEADS}) AND ${g.sql(6)}`,
         )
-        .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
+        .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, hashes.leads, ...g.params),
       // 2a. (anonymise) T7, the first statement of step 2e: the redacted offers' sends that never got a link are cancelled, BEFORE this contact's links
       //     are deleted below: after, "no link" also matched their emailed sends and the Emails row read "Not sent" (polish sweep 5a).
       ...(plan ? redactionCancelStatements(db, plan, g, t) : []),
@@ -1546,13 +1663,24 @@ async function eraseBatch(
           `UPDATE documents SET contact_id = NULL, content_sha256 = NULL, updated_at = max(updated_at + 1, ?2) WHERE contact_id = ?1 AND frozen_at IS NULL AND ${g.sql(3)}`,
         )
         .bind(id, t, ...g.params),
+      // M7.4 (A.6, round 2 M7.4-1): the erase sets the keyed hash by UPDATE before its DELETE (guarded like it), so the triggers write the stop, remove the
+      // plain row and stamp the receipts (+1 statement; the anonymise binds it into its UPDATE below, +0).
+      ...(erase
+        ? [
+            db
+              .prepare(
+                `UPDATE contacts SET erased_hash = ?2 WHERE id = ?1 AND anonymised_at IS NULL AND ${g.sql(3)}`,
+              )
+              .bind(id, hashes.contact, ...g.params),
+          ]
+        : []),
       erase
         ? db.prepare(`DELETE FROM contacts WHERE id = ?1 AND ${g.sql(2)}`).bind(id, ...g.params)
         : db
             .prepare(
-              `UPDATE contacts SET name = ?2, email = ?3, phone = NULL, title = NULL, is_primary = 0, is_billing = 0, portal_access = 0, can_see_finance = 0, marketing_consent = NULL, bounced_at = NULL, anonymised_at = ?4, updated_at = ?4 WHERE id = ?1 AND ${g.sql(5)}`,
+              `UPDATE contacts SET name = ?2, email = ?3, phone = NULL, title = NULL, is_primary = 0, is_billing = 0, portal_access = 0, can_see_finance = 0, marketing_consent = NULL, bounced_at = NULL, anonymised_at = ?4, updated_at = ?4, erased_hash = ?5 WHERE id = ?1 AND ${g.sql(6)}`,
             )
-            .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, ...g.params),
+            .bind(id, ANONYMISED_CONTACT, anonymisedEmail(id), t, hashes.contact, ...g.params),
     ],
   });
   if (done) {
@@ -1575,4 +1703,68 @@ async function eraseBatch(
   if (why.pending) return err(c, PAYMENTS_PENDING, 409);
   // Anonymise: what remains is the T7 read gone out of date (409 at once, nothing written).
   return err(c, plan ? STALE_VERSION : NOT_AVAILABLE, 409);
+}
+
+/**
+ * C.10 (F5, L18; T7: Settled by the lead on the safest reading, 2026-10-30 (08-C RB-37)): "anonymise in parts". The next 10 never-accepted offers naming
+ * the person are redacted with T7's statements and guards, without anonymising the contact; the Owner repeats until 10 or fewer remain, then the normal
+ * anonymise runs. The same hold rules as the anonymise (the audit row is written only while no hold stands on the contact, its client or a lead of the person,
+ * and the read is still true: `redactionGuard` in part mode). One `document.redact` audit row per offer, linked to this part's `contact.redact_offers` row.
+ * Statements: the read (2) + the audit row + step 2e (10) + the access row.
+ */
+async function redactPart(c: Ctx, id: string, reason: string, plan: RedactionPlan): Promise<Response> {
+  const db = c.env.DB;
+  const t = Date.now();
+  const user = actor(c);
+  const who = requestInfo(c);
+  const fresh = redactionGuard(plan, 11);
+  const done = await mutate(c, {
+    action: "contact.redact_offers",
+    entityType: "client",
+    entityId: null,
+    auditFirst: (auditId, w) =>
+      auditRow(
+        db,
+        auditId,
+        w,
+        "contact.redact_offers",
+        "c.client_id",
+        "json_object('contactId', c.id, 'mode', ?8, 'reason', ?9, 'offers', CAST(?10 AS INTEGER), 'part', json('true'))",
+        `FROM contacts c JOIN clients cl ON cl.id = c.client_id
+         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL} AND ${fresh.sql}`,
+        [id, "anonymise", reason, plan.ids.length, ...fresh.params],
+      ),
+    after: (g, auditId) => [
+      ...redactionCancelStatements(db, plan, g, t),
+      ...redactionStatements(db, plan, g, {
+        contactId: id,
+        eraseAuditId: auditId,
+        t,
+        actor: { id: user.id, role: user.role },
+        ip: who.ip,
+        ua: who.ua,
+        requestId: who.requestId,
+      }),
+    ],
+  });
+  if (done) {
+    if (plan.keys.length) c.executionCtx.waitUntil(dropOfferObjects(c.env, plan.keys));
+    return c.json({
+      ok: true,
+      mode: "anonymise",
+      part: "offers",
+      redacted: plan.ids.length,
+      more: plan.more,
+    });
+  }
+  const why = await db
+    .prepare(
+      `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
+    )
+    .bind(id)
+    .first<{ gone: number | null; held: number }>();
+  if (!why) return err(c, NOT_FOUND, 404);
+  if (why.gone !== null) return err(c, ANONYMISED, 409);
+  if (why.held) return err(c, LEGAL_HOLD, 409);
+  return err(c, STALE_VERSION, 409);
 }

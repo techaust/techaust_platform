@@ -21,7 +21,6 @@
   "vars": {
     "ENVIRONMENT": "local",
     "PAYMENTS_LIVE_ALLOWED": "false",
-    "LEAD_PURGE_MODE": "dry_run",
     "PORTAL_URL": "http://localhost:5174/",
     "GATEWAY_TRANSPORT": "stub"
   },
@@ -87,7 +86,6 @@
       "vars": {
         "ENVIRONMENT": "staging",
         "PAYMENTS_LIVE_ALLOWED": "false",
-        "LEAD_PURGE_MODE": "dry_run",
         "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/",
         "GATEWAY_TRANSPORT": "api"
       },

@@ -14,3 +14,5 @@ SES_EVENTS_TOKEN=
 # SES_EVENTS_TOKEN_PREVIOUS=
 # M7.2 (C.5): the HMAC key of the weekly digest's one-click unsubscribe links (a local fake from `pnpm dev:secrets`; staging: run file F, H2).
 UNSUBSCRIBE_KEY=
+# M7.4 (L23): the erased-address hash key; the SAME value as the admin API Worker (a local fake from `pnpm dev:secrets`). Staging: scripts/set-erasure-hash-key.ps1.
+ERASURE_HASH_KEY=

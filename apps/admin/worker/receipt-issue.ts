@@ -18,7 +18,7 @@ import { receiptHeaderOf, receiptIdOf, receiptSealOf } from "@techaust/core/rece
 import { RECEIPT_ALLOCATIONS_SQL, RECEIPT_PAYMENT_SQL, receiptIssueStatements } from "@techaust/db/receipts";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
-import { clientGoneSql } from "./anonymised.ts";
+import { clientGoneSql, storedPdfRefusal } from "./anonymised.ts";
 import { type AppEnv, err, mutate, NOT_FOUND } from "./context.ts";
 import { SUPPLIER_ASK_SQL, SUPPLIER_ASK_WINDOW_MS } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
@@ -199,8 +199,12 @@ export const receiptPdf = new Hono<AppEnv>()
       pdf_r2_key: string | null;
       pdf_sha256: string | null;
       frozen_at: number | null;
+      gone: number;
     }>();
     if (!row || row.frozen_at === null || !row.number_display) return err(c, NOT_FOUND, 404);
+    // M7.4 (Q4 A): an anonymised client's stored receipt is the Owner's and the Accountant's only.
+    const refused = storedPdfRefusal(c, row.gone);
+    if (refused) return refused;
     if (!row.pdf_r2_key || !row.pdf_sha256) return err(c, PDF_PENDING, 409);
     const obj = await c.env.DOCS.get(row.pdf_r2_key);
     if (!obj) return err(c, PDF_PENDING, 409);

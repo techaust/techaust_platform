@@ -112,9 +112,36 @@ describe("preview-URL guard (audit M1)", () => {
 describe("admin API Worker config guard (M5.0)", () => {
   const read = (p: string) =>
     guard.parseJsonc(readFileSync(new URL(`../../admin/${p}`, import.meta.url), "utf8"));
-  const api = read("wrangler.api.jsonc");
+  const realApi = read("wrangler.api.jsonc");
+  /** M7.4 (L23): the API Worker's one secret is checked with its options (`AUX_OPTS`); these older cases read the config without it. */
+  const withoutSecret = (c: Record<string, unknown> & { env: Record<string, Record<string, unknown>> }) => {
+    const out = structuredClone(c);
+    delete out.secrets;
+    for (const scope of Object.values(out.env)) delete scope.secrets;
+    return out;
+  };
+  const api = withoutSecret(realApi);
   const front = read("wrangler.jsonc");
   const clone = () => structuredClone(api);
+
+  it("M7.4 (L23): the real API config passes with its options: exactly ERASURE_HASH_KEY in every scope; another name, a missing one, or none at all fails", () => {
+    const opts = guard.AUX_OPTS["wrangler.api.jsonc"];
+    expect(opts.secrets).toEqual(["ERASURE_HASH_KEY"]);
+    expect(guard.apiConfigProblems(realApi, front, opts)).toEqual([]);
+    for (const c of [realApi, realApi.env.staging, realApi.env.production])
+      expect(c.secrets.required).toEqual(["ERASURE_HASH_KEY"]);
+    const extra = structuredClone(realApi);
+    extra.env.staging.secrets = { required: ["ERASURE_HASH_KEY", "RAZORPAY_KEY_ID"] };
+    delete extra.env.production.secrets;
+    expect(guard.apiConfigProblems(extra, front, opts)).toEqual([
+      'env.staging: secrets.required must be exactly ["ERASURE_HASH_KEY"]',
+      'env.production: secrets.required must be exactly ["ERASURE_HASH_KEY"]',
+    ]);
+    // without the options (any other admin Worker), a secret is refused outright
+    expect(guard.apiConfigProblems(realApi, front)).toContain(
+      "(top level): secrets is not allowed on the API Worker",
+    );
+  });
 
   it("the real configs pass", () => {
     expect(guard.apiConfigProblems(api, front)).toEqual([]);
@@ -387,7 +414,7 @@ describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
     // The API Worker may hold none.
     const a = structuredClone(api);
     a.env.staging.services = [{ binding: "ADMIN_ADVANCE", service: "x" }];
-    expect(guard.apiConfigProblems(a, front)).toEqual([
+    expect(guard.apiConfigProblems(a, front, guard.AUX_OPTS["wrangler.api.jsonc"])).toEqual([
       "env.staging: services is not allowed on the API Worker",
     ]);
   });
@@ -675,6 +702,50 @@ describe("M7.1 (run file F, Q2 A): the portal reads the file vault on local and 
     prod.env.production.r2_buckets = [{ binding: "FILES", bucket_name: "techaust-files" }];
     expect(guard.portalFilesProblems(prod)).toEqual([
       "env.production: the portal binds no FILES bucket until Phase 7",
+    ]);
+  });
+});
+
+describe("M7.4 (run file F, L7, L8, L23, review fix 17): jobs' FILES and erasure key; LEAD_PURGE_MODE gone everywhere", () => {
+  const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
+  const jobs = read("jobs/wrangler.jsonc");
+  const all: [string, unknown][] = [
+    ...["admin", "jobs", "portal", "web"].map(
+      (a) => [`apps/${a}/wrangler.jsonc`, read(`${a}/wrangler.jsonc`)] as [string, unknown],
+    ),
+    ...["wrangler.api.jsonc", "wrangler.finance.jsonc", "wrangler.invoices.jsonc"].map(
+      (f) => [`apps/admin/${f}`, read(`admin/${f}`)] as [string, unknown],
+    ),
+  ];
+  it("the real configs pass", () => {
+    expect(guard.jobsDataProtectionProblems(jobs)).toEqual([]);
+    expect(guard.leadPurgeModeProblems(all)).toEqual([]);
+  });
+  it("fails jobs without FILES on staging, FILES in production, or without the erasure key", () => {
+    const copy = () => JSON.parse(JSON.stringify(jobs));
+    const noFiles = copy();
+    noFiles.env.staging.r2_buckets = noFiles.env.staging.r2_buckets.filter(
+      (b: { binding: string }) => b.binding !== "FILES",
+    );
+    expect(guard.jobsDataProtectionProblems(noFiles)).toEqual([
+      "env.staging: jobs binds FILES to techaust-staging-files",
+    ]);
+    const prod = copy();
+    prod.env.production.r2_buckets = [{ binding: "FILES", bucket_name: "techaust-files" }];
+    expect(guard.jobsDataProtectionProblems(prod)).toEqual([
+      "env.production: jobs binds no FILES bucket until Phase 7",
+    ]);
+    const noKey = copy();
+    noKey.secrets.required = noKey.secrets.required.filter((n: string) => n !== "ERASURE_HASH_KEY");
+    expect(guard.jobsDataProtectionProblems(noKey)).toEqual([
+      "(top level): jobs must require the secret ERASURE_HASH_KEY",
+    ]);
+  });
+  it("fails LEAD_PURGE_MODE in any scope of any config", () => {
+    const back = JSON.parse(JSON.stringify(read("admin/wrangler.finance.jsonc")));
+    back.env.staging.vars.LEAD_PURGE_MODE = "dry_run";
+    expect(guard.leadPurgeModeProblems([["apps/admin/wrangler.finance.jsonc", back]])).toEqual([
+      "apps/admin/wrangler.finance.jsonc env.staging: LEAD_PURGE_MODE is gone (Settings › Data retention holds the switch)",
     ]);
   });
 });

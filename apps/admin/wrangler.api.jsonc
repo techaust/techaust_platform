@@ -14,9 +14,11 @@
   "observability": { "enabled": true, "redact_query_string": true },
   "vars": {
     "ENVIRONMENT": "local",
-    "PAYMENTS_LIVE_ALLOWED": "false",
-    "LEAD_PURGE_MODE": "dry_run"
+    "PAYMENTS_LIVE_ALLOWED": "false"
   },
+  // M7.4 (L23): the key of the erased-address hash, this Worker's ONLY secret (scripts/check-worker-config.mjs allows exactly this name); the SAME value as
+  // the jobs Worker's (scripts/set-erasure-hash-key.ps1). `secrets` is not inherited: every scope names it.
+  "secrets": { "required": ["ERASURE_HASH_KEY"] },
   "queues": {
     "producers": [
       { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
@@ -54,9 +56,9 @@
       "preview_urls": false,
       "vars": {
         "ENVIRONMENT": "staging",
-        "PAYMENTS_LIVE_ALLOWED": "false",
-        "LEAD_PURGE_MODE": "dry_run"
+        "PAYMENTS_LIVE_ALLOWED": "false"
       },
+      "secrets": { "required": ["ERASURE_HASH_KEY"] },
       "queues": {
         "producers": [
           { "binding": "EMAIL_QUEUE", "queue": "techaust-staging-email" },
@@ -84,6 +86,7 @@
         "ENVIRONMENT": "production",
         "PAYMENTS_LIVE_ALLOWED": "false"
       },
+      "secrets": { "required": ["ERASURE_HASH_KEY"] },
       // As the front: NO invocation logs in production from day one. Console logs stay on.
       "observability": {
         "enabled": true,

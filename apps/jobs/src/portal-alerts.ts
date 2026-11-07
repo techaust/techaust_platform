@@ -9,6 +9,8 @@
 // `{client} says they paid {amount} for {number}`; the kind words below are part of S3.
 import { ANONYMISED_CLIENT } from "@techaust/core/clients";
 import { offerViewedTitle } from "@techaust/core/copy-zq";
+import { APPROVED_07ZR, NEW_KIND_BELL_WORDS, REQUEST_KIND_LABELS, RULE9_BLOCK } from "@techaust/core/copy-zr";
+import { formatDate, istDate } from "@techaust/core/dates";
 import { formatMoney, money } from "@techaust/core/money";
 import { staffNotify } from "@techaust/core/notifications";
 import {
@@ -38,13 +40,25 @@ export const OFFER_VIEW_BELLS_SQL = `INSERT OR IGNORE INTO notifications (id, us
    WHERE u.status = 'active' AND (u.role = 'owner' OR u.id IN (SELECT s.created_by FROM document_sends s WHERE s.document_id = ?1))`;
 
 /** S3 (draft for the lead): the kind of a request as a bell names it. */
-export const REQUEST_KIND_WORDS: Record<RequestKind, string> = {
+export const REQUEST_KIND_WORDS: Record<RequestKind | keyof typeof NEW_KIND_BELL_WORDS, string> = {
   contact_change: "change to a person's portal access",
   data_access: "copy of their personal data",
   data_correction: "correction of their personal data",
   data_erasure: "erasure of their personal data",
   grievance: "concern about how we handle their data",
+  // M7.4 (L9): the two new kinds (builder's drafts for the lead, 07-ZR).
+  ...NEW_KIND_BELL_WORDS,
 };
+
+/**
+ * M7.4 (D.8, L32): the acknowledgement email is queued only while 07-ZR's client lines are approved, or locally (the M6.5 receipt gate's pattern): no
+ * "[Placeholder]" line ever leaves "local", and no request is marked acknowledged by an email that wasn't sent.
+ */
+export const requestCopyGate = { approved: (): boolean => APPROVED_07ZR };
+
+/** ?1 the request, ?2 now: acknowledged once, when its email is queued (L32), never before it arrived (the trigger `client_requests_steps` holds the same). */
+export const REQUEST_ACK_SQL =
+  "UPDATE client_requests SET acknowledged_at = max(?2, received_at), updated_at = max(updated_at, ?2) WHERE id = ?1 AND status = 'open' AND acknowledged_at IS NULL";
 
 type AuditRow = {
   id: string;
@@ -60,6 +74,11 @@ type RequestRow = {
   client_name: string;
   client_gone: number;
   contact_name: string | null;
+  /** M7.4: the live contact's address (the acknowledgement's recipient), and the clock. */
+  contact_email?: string | null;
+  received_at?: number | null;
+  due_at?: number | null;
+  acknowledged_at?: number | null;
 };
 type NoticeRow = {
   id: string;
@@ -71,7 +90,8 @@ type NoticeRow = {
 };
 
 /** ?1 the audit id. The request the row names, only when the row is a portal request. */
-export const REQUEST_OF_AUDIT_SQL = `SELECT r.id, r.kind, r.client_id, k.display_name AS client_name, (k.anonymised_at IS NOT NULL) AS client_gone, c.name AS contact_name
+export const REQUEST_OF_AUDIT_SQL = `SELECT r.id, r.kind, r.client_id, k.display_name AS client_name, (k.anonymised_at IS NOT NULL) AS client_gone, c.name AS contact_name,
+     c.email AS contact_email, r.received_at, r.due_at, r.acknowledged_at
    FROM client_requests r JOIN clients k ON k.id = r.client_id LEFT JOIN contacts c ON c.id = r.contact_id AND c.anonymised_at IS NULL
    WHERE r.id = (SELECT a.entity_id FROM audit_log a WHERE a.id = ?1 AND a.action = 'portal.request' AND a.entity_type = 'client_request')`;
 /** ?1 the audit id. The notice the row names, only when the row is a payment notice. */
@@ -167,10 +187,32 @@ export async function processPortalAlert(env: Env, body: unknown): Promise<Porta
     logEvent("portal_alert.ignored", { why: "no_entity" });
     return "ignored";
   }
-  await db
+  const bells = db
     .prepare(BELLS_SQL)
-    .bind(bell.kind, bell.entityType, bell.entityId, bell.title, bell.link, bell.staffToo ? 1 : 0)
-    .run();
+    .bind(bell.kind, bell.entityType, bell.entityId, bell.title, bell.link, bell.staffToo ? 1 : 0);
+  // M7.4 (D.8, L32): a portal request is acknowledged by email to the contact who sent it (C2 to C4 and the Rule 9 block), queued first (its `email_log`
+  // claim is keyed on the request and the address, so a redelivery sends nothing twice), then `acknowledged_at` is set in the bells' batch.
+  const ack =
+    request?.contact_email &&
+    request.client_gone !== 1 &&
+    request.acknowledged_at == null &&
+    typeof request.received_at === "number" &&
+    typeof request.due_at === "number" &&
+    (requestCopyGate.approved() || (env.ENVIRONMENT as string) === "local");
+  if (ack && request) {
+    await env.EMAIL_QUEUE.send({
+      template: "request.received",
+      to: request.contact_email as string,
+      data: {
+        kind_label: REQUEST_KIND_LABELS[request.kind] ?? request.kind,
+        date: formatDate(istDate(request.received_at as number)),
+        due_date: formatDate(istDate(request.due_at as number)),
+        rule9: RULE9_BLOCK(null),
+      },
+      entity: { type: "client_request", id: request.id },
+    });
+    await db.batch([bells, db.prepare(REQUEST_ACK_SQL).bind(request.id, Date.now())]);
+  } else await bells.run();
   return "belled";
 }
 

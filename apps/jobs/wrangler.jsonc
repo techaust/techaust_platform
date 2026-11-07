@@ -29,9 +29,6 @@
     "SES_CONFIGURATION_SET": "techaust-transactional",
     "ADMIN_URL": "http://localhost:5173/",
     "EMAIL_ASSET_BASE": "http://localhost:4321/brand/",
-    // Lead retention clean-up (M3.2): "dry_run" only logs the lead references it would delete; "live" deletes. Dry run
-    // everywhere until the owner says otherwise; production has no value (and no cron) until Phase 7.
-    "LEAD_PURGE_MODE": "dry_run",
     // PDFs (M4.4). PDF_RENDERER "stub" (local only; refused anywhere else) returns a fixed one-page PDF, because the Browser Run binding
     // does not work locally. PDF_MIN_SPACING_MS: the Free plan allows one Quick Action request every 10 s. PORTAL_URL: where M4.5's
     // client links point.
@@ -83,7 +80,9 @@
       "STRIPE_WEBHOOK_SECRET",
       "PAYPAL_WEBHOOK_ID",
       "SES_EVENTS_TOKEN",
-      "UNSUBSCRIBE_KEY"
+      "UNSUBSCRIBE_KEY",
+      // M7.4 (L23): the key of the erased-address hash, the SAME value as the admin API Worker's (scripts/set-erasure-hash-key.ps1, runbook environments.md).
+      "ERASURE_HASH_KEY"
     ]
   },
   // D1 (docs/05 §5). Migrations live in packages/db; local dev and tests use a local database.
@@ -97,7 +96,12 @@
   ],
   // The sent documents' envelopes and PDFs (M4.4): fixed keys docs/<type>/<fy>/<number>-v<version>.{json,pdf}, written once and never
   // overwritten (If-None-Match). The admin Worker binds the same bucket to stream a PDF to staff. Production has no bucket until Phase 7.
-  "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-local-docs" }],
+  // M7.4 (L7, L8): the file vault, for the clean-up only: the outbox drain deletes the objects of deleted file rows, the weekly sweep lists for orphans (no
+  // read of any object's bytes, no write). The same bucket the admin binds (wrangler.api.jsonc); the owner's yes with H1.
+  "r2_buckets": [
+    { "binding": "DOCS", "bucket_name": "techaust-local-docs" },
+    { "binding": "FILES", "bucket_name": "techaust-local-files" }
+  ],
   // Queues (docs/05 §11): one unit of work per message, 5 tries (the email queue 10, with a 60 s to 1 h backoff in src/queue.ts: FX-1, A6 4), then the dead-letter queue. max_batch_size is 1 (the
   // brief said 5): the Free plan's 10 ms CPU limit applies per invocation, so a batch of five messages could pass it. The web Worker produces to
   // the leads queue; this Worker consumes it and produces to the email queue. The dead-letter consumers have no further
@@ -170,7 +174,6 @@
         "SES_CONFIGURATION_SET": "techaust-transactional",
         "ADMIN_URL": "https://techaust-platform-admin-staging.techaust-technologies-153.workers.dev/",
         "EMAIL_ASSET_BASE": "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev/brand/",
-        "LEAD_PURGE_MODE": "dry_run",
         "PDF_RENDERER": "browser",
         "PDF_MIN_SPACING_MS": "10000",
         "PORTAL_URL": "https://techaust-platform-portal-staging.techaust-technologies-153.workers.dev/",
@@ -180,7 +183,10 @@
       // Browser Run (PDF rendering, M4.4): `env.BROWSER.quickAction("pdf", ...)`. It needs no API token, but it is not inherited and
       // does not work locally, so only staging has it. The owner switches Browser Run on before the M4.4 merge (run file, H2).
       "browser": { "binding": "BROWSER" },
-      "r2_buckets": [{ "binding": "DOCS", "bucket_name": "techaust-staging-docs" }],
+      "r2_buckets": [
+        { "binding": "DOCS", "bucket_name": "techaust-staging-docs" },
+        { "binding": "FILES", "bucket_name": "techaust-staging-files" }
+      ],
       "triggers": { "crons": ["0 22 * * *", "30 * * * *"] },
       "services": [
         {
@@ -207,7 +213,8 @@
           "STRIPE_WEBHOOK_SECRET",
           "PAYPAL_WEBHOOK_ID",
           "SES_EVENTS_TOKEN",
-          "UNSUBSCRIBE_KEY"
+          "UNSUBSCRIBE_KEY",
+          "ERASURE_HASH_KEY"
         ]
       },
       "d1_databases": [

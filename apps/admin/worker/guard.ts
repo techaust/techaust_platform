@@ -352,6 +352,19 @@ export const ROUTES: readonly RouteDef[] = [
   // handler decides on the record's kind, the UPDATE and the trigger hold it too).
   R("GET", "/client-requests", "requests.read"),
   R("POST", "/client-requests/:id/close", "requests.close", { audit: "client_request.close" }),
+  // M7.4 (ADM-SET-09, ADM-CLI-05, POR-11; run file C.2–C.8): staff log a request that came another way and record its steps; the legal hold (Owner, step-up)
+  // and its history; the erased-address lift (Owner, step-up, L20); the clean-up report and the real-deletion switch (Owner; the switch with step-up, Q1 A);
+  // a lead's export and erase (Owner, step-up) and its consent withdrawal.
+  R("POST", "/client-requests", "requests.log", { audit: "client_request.log" }),
+  R("POST", "/client-requests/:id/step", "requests.log", { audit: "client_request.step" }),
+  R("GET", "/legal-holds", "clients.read"),
+  R("POST", "/legal-holds", "legalHold.manage", { audit: "legal_hold.set" }),
+  R("POST", "/suppressions/lift", "suppressions.lift", { audit: "suppression.lift" }),
+  R("GET", "/retention/report", "retention.read"),
+  R("POST", "/retention/live", "retention.live", { audit: "retention.live" }),
+  R("POST", "/leads/:id/export", "leads.dataExport", { audit: "lead.export" }),
+  R("POST", "/leads/:id/erase", "leads.dataErase", { audit: "lead.erase" }),
+  R("POST", "/leads/:id/consent/withdraw", "leads.write", { audit: "lead.consent_withdraw" }),
   R("GET", "/notifications", "notifications.own"),
   R("POST", "/notifications/read-all", "notifications.own", { audit: "notification.read_all" }),
   R("POST", "/notifications/:id/read", "notifications.own", { audit: "notification.read" }),

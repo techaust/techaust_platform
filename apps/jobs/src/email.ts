@@ -14,6 +14,7 @@ import {
   staffAlertMessage,
 } from "@techaust/core";
 import { jobFailedTitle } from "@techaust/core/copy-zq";
+import { BELL_COPY } from "@techaust/core/copy-zr";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { ATTACHMENT_MAX_BYTES } from "@techaust/core/offers";
 import {
@@ -28,6 +29,7 @@ import {
   type Transport,
   unsubscribeHeaders,
 } from "@techaust/email";
+import { erasureHashOf } from "./erasure.ts";
 import { alertData, leadId } from "./leads.ts";
 import { logEvent } from "./log.ts";
 
@@ -163,6 +165,39 @@ export async function attachmentFor(
   };
 }
 
+/**
+ * L25 (S10): an email skipped as erased while a live record holds the address (a contact neither anonymised nor erased, or an unconverted lead not erased)
+ * rings the active Owners once per record and IST day, by its client code or lead ref, never the address. One read and one write, only on this rare path.
+ */
+export const ERASED_HOLDER_SQL = `SELECT
+    (SELECT json_object('id', c.client_id, 'ref', k.code) FROM contacts c JOIN clients k ON k.id = c.client_id
+      WHERE c.email = ?1 AND c.anonymised_at IS NULL AND c.erased_hash IS NULL LIMIT 1) AS contact,
+    (SELECT json_object('id', l.id, 'ref', l.ref) FROM leads l
+      WHERE lower(l.contact_email) = ?1 AND l.client_id IS NULL AND l.erased_hash IS NULL LIMIT 1) AS lead`;
+export const ERASED_SKIP_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+  SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'email.erased_skip', ?1, ?2, ?3, ?4 FROM staff_users u WHERE u.role = 'owner' AND u.status = 'active'`;
+
+async function bellErasedSkip(env: Env, to: string, now: number): Promise<void> {
+  const row = await env.DB.prepare(ERASED_HOLDER_SQL)
+    .bind(to.trim().toLowerCase())
+    .first<{ contact: string | null; lead: string | null }>();
+  const holder = row?.contact
+    ? { type: "client", ...(JSON.parse(row.contact) as { id: string; ref: string }) }
+    : row?.lead
+      ? { type: "lead", ...(JSON.parse(row.lead) as { id: string; ref: string }) }
+      : null;
+  if (!holder) return;
+  const day = toIsoDate(istDate(now));
+  await env.DB.prepare(ERASED_SKIP_BELL_SQL)
+    .bind(
+      holder.type,
+      `${holder.id}:${day}`,
+      BELL_COPY.erasedSkip(holder.ref),
+      holder.type === "client" ? `/clients/${holder.id}` : `/leads/${holder.id}`,
+    )
+    .run();
+}
+
 async function sendClaimed(
   env: Env,
   m: EmailMessage,
@@ -184,15 +219,25 @@ async function sendClaimed(
   // One read: the suppression list, and (M7.2, the M3.3 follow-up) whether a sign-in link's token row still exists. A link whose row is gone (the contact was
   // erased, or the token cleaned up) is never sent.
   const magic = m.template === "portal.magic_link" && m.entity.type === "magic_link" ? m.entity.id : null;
+  // M7.4 (D.9, T7 F3; Settled by the lead on the safest reading, 2026-11-06 (08-C RB-46)): an erased address is stopped by its keyed hash (`h:` + HMAC), in the
+  // same read (+0 reads).
+  const erasedKey = `h:${await erasureHashOf(env, to)}`;
   const check = await env.DB.prepare(
     `SELECT EXISTS (SELECT 1 FROM email_suppressions WHERE email = ?1) AS suppressed,
-       CASE WHEN ?2 IS NULL THEN 1 ELSE EXISTS (SELECT 1 FROM magic_link_tokens WHERE token_hash = ?2) END AS live`,
+       CASE WHEN ?2 IS NULL THEN 1 ELSE EXISTS (SELECT 1 FROM magic_link_tokens WHERE token_hash = ?2) END AS live,
+       EXISTS (SELECT 1 FROM email_suppressions WHERE email = ?3) AS erased`,
   )
-    .bind(to, magic)
-    .first<{ suppressed: number; live: number }>();
+    .bind(to, magic, erasedKey)
+    .first<{ suppressed: number; live: number; erased: number }>();
   if (check?.live === 0) {
     await setStatus(env.DB, id, "skipped", { error: "token_gone" }, now);
     logEvent("email.skipped", { template: m.template, why: "token_gone" });
+    return "skipped";
+  }
+  if (check?.erased === 1) {
+    await setStatus(env.DB, id, "skipped", { error: "erased" }, now);
+    logEvent("email.skipped", { template: m.template, why: "erased" });
+    await bellErasedSkip(env, to, now);
     return "skipped";
   }
   if (check?.suppressed === 1) {

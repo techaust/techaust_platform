@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   addDays,
+  addMonths,
   daysBetween,
   financialYear,
   formatDate,
@@ -18,6 +19,7 @@ import {
   toIsoDate,
   toIst,
 } from "../src/dates.ts";
+import { addMonthsClamped } from "../src/gst/period.ts";
 
 const utc = (iso: string) => Date.parse(iso);
 
@@ -139,6 +141,38 @@ describe("financial year (1 April – 31 March)", () => {
         expect(t >= fy.startMs && t < fy.endMs).toBe(true);
       }),
       { numRuns: 2_000 },
+    );
+  });
+});
+
+describe("addMonths (M7.4: the Worker-side twin of the SPA-only gst addMonthsClamped)", () => {
+  it("clamps the day to the end of the target month, both ways", () => {
+    expect(addMonths({ year: 2027, month: 1, day: 31 }, 1)).toEqual({ year: 2027, month: 2, day: 28 });
+    expect(addMonths({ year: 2028, month: 1, day: 30 }, 1)).toEqual({ year: 2028, month: 2, day: 29 });
+    expect(addMonths({ year: 2028, month: 2, day: 29 }, 12)).toEqual({ year: 2029, month: 2, day: 28 });
+    expect(addMonths({ year: 2100, month: 1, day: 31 }, 1)).toEqual({ year: 2100, month: 2, day: 28 });
+    expect(addMonths({ year: 2000, month: 3, day: 31 }, -1)).toEqual({ year: 2000, month: 2, day: 29 });
+    expect(addMonths({ year: 2027, month: 3, day: 15 }, -15)).toEqual({ year: 2025, month: 12, day: 15 });
+    expect(addMonths({ year: 2026, month: 11, day: 6 }, 0)).toEqual({ year: 2026, month: 11, day: 6 });
+  });
+  it("refuses a fractional month, an invalid date, and a result out of range", () => {
+    expect(() => addMonths({ year: 2026, month: 1, day: 1 }, 1.5)).toThrow(RangeError);
+    expect(() => addMonths({ year: 2026, month: 2, day: 30 }, 1)).toThrow(RangeError);
+    expect(() => addMonths({ year: 9999, month: 12, day: 1 }, 1)).toThrow(RangeError);
+  });
+  it("property: equals the gst core's addMonthsClamped", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1900, max: 2200 }),
+        fc.integer({ min: 1, max: 12 }),
+        fc.integer({ min: 1, max: 31 }),
+        fc.integer({ min: -240, max: 240 }),
+        (year, month, day, n) => {
+          const date = { year, month, day };
+          fc.pre(isValidDate(date));
+          expect(addMonths(date, n)).toEqual(addMonthsClamped(date, n));
+        },
+      ),
     );
   });
 });

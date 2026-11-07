@@ -609,8 +609,10 @@ describe("the refund email (Q4 A; C.2 recipient rule)", () => {
     expect(
       await processRefundNotify(env(), { kind: "refund.notify", refundId: cb.refundId }, IN_WINDOW),
     ).toBe("none");
-    const anon = await refundOf("outside", { anonymised: true });
+    // M7.4 (0079): an anonymised client takes no new contact, so the contact is made first and the client anonymised after.
+    const anon = await refundOf("outside");
     await mkContact(anon.clientId);
+    await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", anon.clientId);
     expect(
       await processRefundNotify(env(), { kind: "refund.notify", refundId: anon.refundId }, IN_WINDOW),
     ).toBe("none");

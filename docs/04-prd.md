@@ -491,6 +491,12 @@ Every service page uses one template, with sections in this order ([03 §3A.3](0
 | Dismiss a client's "I've paid" notice (`payments.notices`; M7.1, L10; recording the payment from a notice is `payments.record`, the list is `payments.read`) | ✅ | ✅ | — | — |
 | Clients' requests sent from the portal: view (`requests.read`; M7.1, L8) | ✅ | ✅ | — | — |
 | Close a client's request (`requests.close`; M7.1, L8): Staff only a contact change or a grievance; the data-rights kinds (access, correction, erasure, and from M7.4 consent withdrawal and nomination) are the Owner's | ✅ | ✅ contact change, grievance | — | — |
+| Log a request that came by email, post, phone or in person (`requests.log`; M7.4 C.2; its close is `requests.close`) | ✅ | ✅ | — | — |
+| Set or clear a legal hold on a client, contact or lead, with a reason (`legalHold.manage`; M7.4 L3, L6) | ✅ (step-up) | — | — | — |
+| Data retention: the trial report (`retention.read`; M7.4 C.7) | ✅ | — | — | — |
+| Data retention: turn real deletion on or off (`retention.live`; M7.4 Q1 A; on only after a trial report from the last 7 days) | ✅ (step-up) | — | — | — |
+| Export or erase a lead's personal data (`leads.dataExport`, `leads.dataErase`; M7.4 C.8; withdrawing a lead's consent is `leads.write`) | ✅ (step-up) | — | — | — |
+| Allow emails again to an erased address (`suppressions.lift`; M7.4 L20; audited with the keyed hash only) | ✅ (step-up) | — | — | — |
 | Email log: the list and one email with its delivery events (`emails.read`; M7.2, L12) | ✅ | ✅ | — | — |
 | Allow emails to a stopped address again (`emails.unsuppress`; M7.2, L12; audited, no step-up) | ✅ | — | — | — |
 | Own notification emails and the weekly digest switch (`notifications.own`; M7.2, L11; the digest goes to owners only) | ✅ | ✅ | ✅ | ✅ |

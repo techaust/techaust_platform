@@ -15,6 +15,8 @@ const APPS = {
   portal: ["PORTAL_KEY_PEPPER"],
   web: ["FORMS_IP_PEPPER"],
 };
+/** M7.4 (L23): the erased-address hash key, the SAME local value in admin and jobs (both must reach the same hash; never a real one). */
+const ERASURE_HASH_KEY = "local-erasure-hash-key-not-real-0000000000";
 /** Fixed local values written next to the random ones. */
 const FIXED = {
   // M6.2 (L16): the finance Worker's Razorpay pair is FAKE locally: GATEWAY_TRANSPORT "stub" answers with the simulator and never calls Razorpay.
@@ -27,6 +29,7 @@ const FIXED = {
     // M6.4: FAKE PayPal sandbox client id and secret; the stub never calls PayPal.
     PAYPAL_CLIENT_ID: "local-paypal-client-id-not-real",
     PAYPAL_CLIENT_SECRET: "local-paypal-client-secret-not-real",
+    ERASURE_HASH_KEY,
   },
   portal: { TURNSTILE_SECRET: TURNSTILE_TEST_SECRET },
   web: { TURNSTILE_SECRET: TURNSTILE_TEST_SECRET },
@@ -44,6 +47,7 @@ const FIXED = {
     SES_EVENTS_TOKEN: "local-ses-events-token-not-real",
     // M7.2 (C.5): a FAKE HMAC key for the digest's one-click unsubscribe links (never a real one).
     UNSUBSCRIBE_KEY: "local-unsubscribe-key-not-real",
+    ERASURE_HASH_KEY,
   },
 };
 

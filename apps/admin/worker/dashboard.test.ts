@@ -213,7 +213,8 @@ describe("what an activity row is about (final sweep A13)", () => {
     const o = await sessionFor("owner");
     const staff = await sessionFor("staff");
     const client = await mkClient();
-    const gone = await mkClient({ type: "individual", anonymised_at: Date.now() - 1000 });
+    // M7.4 (0079): an anonymised client takes no new document, so it is anonymised after its draft exists (below).
+    const gone = await mkClient({ type: "individual" });
     const draft = crypto.randomUUID();
     const goneDraft = crypto.randomUUID();
     const sent = crypto.randomUUID();
@@ -237,6 +238,9 @@ describe("what an activity row is about (final sweep A13)", () => {
         title,
         number_display: number,
       });
+    await env.DB.prepare("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1")
+      .bind(gone, Date.now() - 1000)
+      .run();
     const approval = crypto.randomUUID();
     await insert("approvals", {
       id: approval,

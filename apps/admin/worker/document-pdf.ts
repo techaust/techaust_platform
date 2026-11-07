@@ -6,7 +6,7 @@ import { contentDisposition } from "@techaust/core/file-types";
 import { fyLabelOfToken, hasSupplierCopy, supplierPdfKey } from "@techaust/core/pdf-jobs";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
-import { clientGoneSql } from "./anonymised.ts";
+import { clientGoneSql, storedPdfRefusal } from "./anonymised.ts";
 import { type ApiError, type AppEnv, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
 import { enqueuePdf, enqueueSupplierPdfOnce } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
@@ -65,6 +65,9 @@ function pdfRoutes(types: string, retryAction: string) {
         const { id } = c.req.valid("param");
         const row = await c.env.DB.prepare(PDF_ROW).bind(id).first<PdfRow>();
         if (notSent(row) || !row) return err(c, NOT_FOUND, 404);
+        // M7.4 (Q4 A): an anonymised client's stored PDF is the Owner's and the Accountant's only.
+        const refused = storedPdfRefusal(c, row.gone);
+        if (refused) return refused;
         // T7: deleted with the personal details (410: it existed and is gone for good).
         if (row.redacted_at !== null) return err(c, PDF_ERASED, 410);
         if (row.pdf_sha256 === null || row.pdf_r2_key === null) return err(c, PDF_PENDING, 409);
@@ -143,6 +146,9 @@ export const invoiceSupplierPdf = new Hono<AppEnv>().get("/:id/pdf/supplier", pa
   const label = row?.fy ? fyLabelOfToken(row.fy) : null;
   if (!row || row.frozen_at === null || !hasSupplierCopy(row.type) || !row.number || !label)
     return err(c, NOT_FOUND, 404);
+  // M7.4 (Q4 A): the route is the Owner's and the Accountant's already (`invoices.supplierCopy`); the same check as every stored PDF, so a later matrix change can't open it.
+  const refused = storedPdfRefusal(c, row.gone);
+  if (refused) return refused;
   const obj = await c.env.DOCS.get(
     supplierPdfKey({ type: row.type, fy: label, number: row.number, version: 1 }),
   );

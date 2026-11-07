@@ -44,3 +44,18 @@ export async function clientGone(c: Ctx, clientId: string): Promise<boolean> {
 }
 
 export const refuseAnonymised = (c: Ctx) => err(c, CLIENT_ANONYMISED, 409);
+
+/**
+ * M7.4 (Q4 A, owner 2026-11-01; L43): an anonymised client's STORED PDFs (invoices, notes, receipts, accepted offers, signed deeds) are downloaded only by the
+ * Owner and the Accountant (tax records: Researched 2026-10-28, s.36 CGST Act (08-C RA-25)); Staff and Sales are refused (403), and nothing new is made.
+ */
+export const STORED_PDF_GONE: ApiError = {
+  code: "client_anonymised_pdf",
+  message:
+    "This client's personal details were removed. Only the Owner or the Accountant can download its documents",
+};
+const STORED_PDF_ROLES = new Set(["owner", "accountant"]);
+
+/** The refusal, or null when this member may download the stored PDF (`gone` is the client's anonymised state as read with the row). */
+export const storedPdfRefusal = (c: Ctx, gone: boolean | number | null | undefined) =>
+  gone && !STORED_PDF_ROLES.has(c.var.user?.role ?? "") ? err(c, STORED_PDF_GONE, 403) : null;

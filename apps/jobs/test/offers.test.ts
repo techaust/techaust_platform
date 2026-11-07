@@ -30,6 +30,8 @@ const makeEnv = (over: Record<string, unknown> = {}) =>
   ({
     DB: realEnv.DB,
     ENVIRONMENT: "local",
+    // M7.4 (L23): the erased-address hash key (the email consumer's `h:` check and the purge need it).
+    ERASURE_HASH_KEY: (realEnv as unknown as { ERASURE_HASH_KEY: string }).ERASURE_HASH_KEY,
     ADMIN_URL: "https://admin.example/",
     PORTAL_URL: PORTAL,
     EMAIL_ALLOWED_RECIPIENTS: "",
@@ -955,6 +957,13 @@ describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §
   it("an anonymised client is never named in an email; an event that does not match the state sends nothing", async () => {
     const w = await world();
     const a = await issueRequest(w);
+    // (its own number: two invoices never print the same one, the index of 0049). M7.4 (0079): made before the client is anonymised, which takes no new
+    // document.
+    const done = await issueRequest(w, {
+      status: "approved",
+      invoiceStatus: "issued",
+      number: "TH/INV/2627/0008",
+    });
     await run("UPDATE clients SET anonymised_at = ?2 WHERE id = ?1", w.clientId, NOW);
     expect(
       await processApprovalNotify(makeEnv(), {
@@ -963,12 +972,6 @@ describe("approval.notify for an issue request [ADM-APR-01, ADM-MAIL-01; 07-R §
         event: "requested",
       }),
     ).toBe("none");
-    // (its own number: two invoices never print the same one, the index of 0049)
-    const done = await issueRequest(w, {
-      status: "approved",
-      invoiceStatus: "issued",
-      number: "TH/INV/2627/0008",
-    });
     expect(
       await processApprovalNotify(makeEnv(), {
         kind: "approval.notify",

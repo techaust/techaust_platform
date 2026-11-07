@@ -334,7 +334,7 @@ describe("GET /leads: the list [ADM-LEAD-02]", () => {
     expect(res.leads.every((l: J) => l.scheduledForDeletion && !l.legalHold && l.clientId === null)).toBe(
       true,
     );
-    // The test config's LEAD_PURGE_MODE is the wrangler.jsonc dry_run: the view says nothing is deleted yet (owner, 2026-10-24).
+    // M7.4 (C.7): no switch row is real deletion off: the view says nothing is deleted yet (owner, 2026-10-24).
     expect(res.purgeMode).toBe("dry_run");
     expect((await json(await get("/leads", s.cookie))).purgeMode).toBeUndefined();
     const plan = (
