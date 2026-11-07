@@ -182,3 +182,4 @@ Builder P7-A (Opus 5.5, high), branch `fix/p7-a-config` from `origin/feat/p7-pro
 
   Portal, hooks and web stay public.
 - **DNS list:** the owner said yes (2026-11-07); the records are added at the step each belongs to.
+- **Production secrets** (owner, `scripts/set-prod-secrets.ps1`, two runs, 2026-11-07): all 24 stored. Names checked by the lead: web 2, admin front 5, admin API 1, finance 5, portal 2, jobs 9; the three webhook secrets are random placeholders until launch day. `CF_API_TOKEN_PROD` is stored in the GitHub environment `production`.
