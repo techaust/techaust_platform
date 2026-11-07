@@ -12,9 +12,9 @@ import { requestDueAtSql } from "@techaust/core/dsr";
 import { addressHash } from "@techaust/core/hmac";
 import { RETENTION_FAMILIES } from "@techaust/core/retention";
 import type { Transport } from "@techaust/email";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { processEmail } from "../src/email.ts";
-import { processPortalAlert } from "../src/portal-alerts.ts";
+import { processPortalAlert, requestCopyGate } from "../src/portal-alerts.ts";
 import { purgeLead } from "../src/purge.ts";
 import { handleQueue } from "../src/queue.ts";
 import { nightlyDpMessages, processDp, runIdOf, warmDp } from "../src/retention.ts";
@@ -477,7 +477,7 @@ describe("the email consumer's erased stop (D.9, L25) and the purge (round 3, ro
 });
 
 describe("the portal acknowledgement (D.8, L32) and dead letters", () => {
-  it(`locally the request.received email is queued and acknowledged_at set; outside local nothing while 07-ZR isn't approved (now: ${APPROVED_07ZR})`, async () => {
+  it("locally the request.received email is queued and acknowledged_at set; outside local it is sent while 07-ZR is approved and held while the gate is off", async () => {
     await mkDpOwner();
     const client = uuidv7();
     const contact = uuidv7();
@@ -532,11 +532,24 @@ describe("the portal acknowledgement (D.8, L32) and dead letters", () => {
       kind: "portal.alert",
       auditId: staging.auditId,
     });
-    const sent = fakes.email.some((s) => (s.body as EmailMessage).template === "request.received");
-    expect(sent).toBe(APPROVED_07ZR);
-    expect(
-      await one("SELECT acknowledged_at IS NOT NULL AS acked FROM client_requests WHERE id = ?1", staging.id),
-    ).toEqual({ acked: APPROVED_07ZR ? 1 : 0 });
+    const sentOf = () => fakes.email.some((s) => (s.body as EmailMessage).template === "request.received");
+    const ackedOf = (id: string) =>
+      one("SELECT acknowledged_at IS NOT NULL AS acked FROM client_requests WHERE id = ?1", id);
+    // 07-ZR approved by the owner, 2026-11-07: sent and acknowledged on staging.
+    expect(APPROVED_07ZR).toBe(true);
+    expect(sentOf()).toBe(true);
+    expect(await ackedOf(staging.id)).toEqual({ acked: 1 });
+    // The gate off (a later unapproved line): nothing queued, nothing acknowledged.
+    fakes.email.length = 0;
+    const gate = vi.spyOn(requestCopyGate, "approved").mockReturnValue(false);
+    const held = await portalRequest("data_erasure");
+    await processPortalAlert(makeEnv({ ENVIRONMENT: "staging" }), {
+      kind: "portal.alert",
+      auditId: held.auditId,
+    });
+    expect(sentOf()).toBe(false);
+    expect(await ackedOf(held.id)).toEqual({ acked: 0 });
+    gate.mockRestore();
   });
 
   it("a dead-lettered message of the family is acknowledged and only logged", async () => {

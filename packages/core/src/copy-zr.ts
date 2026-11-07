@@ -1,8 +1,8 @@
 // M7.4's words (data-protection tooling; run file docs/runs/m7.4-data-protection.md H, L25, L31, L32), in ONE place for the jobs Worker, the email template, the
 // admin and the portal; the next free 07 appendix letter is ZR (07-ZQ is M7.2's). Two kinds of line:
-//   - the CLIENT lines C1 to C7 and the Rule 9 contact block are the owner's: until the owner approves them word for word they show the "[Placeholder] " mark,
-//     and the jobs Worker queues no `request.received` email outside "local" while `APPROVED_07ZR` is false (the M6.5 receipt gate's pattern,
-//     `requestCopyGate` in apps/jobs/src/requests.ts), so no portal request is marked acknowledged by an email that wasn't sent;
+//   - the CLIENT lines C1 to C7 and the Rule 9 contact block are the owner's, approved word for word on 2026-11-07 (`APPROVED_07ZR` true); with the switch
+//     off they would show the "[Placeholder] " mark and the jobs Worker would queue no `request.received` email outside "local" (the M6.5 receipt gate's
+//     pattern, `requestCopyGate` in apps/jobs/src/portal-alerts.ts), so no portal request is marked acknowledged by an email that wasn't sent;
 //   - the STAFF lines S1 to S10 the brief gives word for word, approved by the lead under the owner's delegation, are plain; the two bell kind words for the
 //     new kinds (S3's list) are the builder's drafts for the lead, plain like M7.1's.
 // No line is legal wording invented here: the Rule 9 block is 07-A §8's Grievance Officer block word for word (the brief says "§7": §8 is the block itself);
