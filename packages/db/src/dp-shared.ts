@@ -32,13 +32,13 @@ export const HELD_EMAIL_SQL = (email: string) =>
     OR EXISTS (SELECT 1 FROM leads hl WHERE lower(hl.contact_email) = lower(${email}) AND hl.legal_hold = 1))`;
 
 /**
- * Full audit M6–M7 AU26: the audit row (`action`, a placeholder or expression) a done consent withdrawal names, on request `r` (a column prefix: `NEW.` in the
+ * Full audit M6–M7 AU26: the audit row (`auditId`, a placeholder or expression) a done consent withdrawal names, on request `r` (a column prefix: `NEW.` in the
  * trigger, `client_requests.` in the route's WHERE): the `lead.consent_withdraw` of its lead, or the `contact.update` of its contact whose `changed` list holds
  * `marketingConsent`, backed by a `withdraw` receipt of that contact; both at or after the request arrived. The trigger set `audit_af2_triggers` (0082) holds
  * its frozen twin (`CONSENT_ACTION_AF2`, a db test holds them equal).
  */
-export const CONSENT_WITHDRAW_ACTION_SQL = (r: string, action: string) =>
-  `EXISTS (SELECT 1 FROM audit_log a WHERE a.id = ${action} AND a.at >= ${r}received_at
+export const CONSENT_WITHDRAW_ACTION_SQL = (r: string, auditId: string) =>
+  `EXISTS (SELECT 1 FROM audit_log a WHERE a.id = ${auditId} AND a.at >= ${r}received_at
       AND ((${r}lead_ref IS NOT NULL AND a.action = 'lead.consent_withdraw' AND a.entity_type = 'lead' AND a.entity_id = ${r}lead_ref)
         OR (${r}contact_ref IS NOT NULL AND a.action = 'contact.update' AND json_valid(a.summary) AND json_extract(a.summary, '$.contactId') = ${r}contact_ref
           AND EXISTS (SELECT 1 FROM json_each(a.summary, '$.changed') ch WHERE ch.value = 'marketingConsent')
