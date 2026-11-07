@@ -14,6 +14,7 @@ import type { GuardSql } from "./log.ts";
 import { femaDueSql, settingsBinds } from "./realisation.ts";
 import {
   checkoutCapturingSql,
+  istDayEndMsSql,
   LEDGER_STATUSES_SQL,
   ledgerStatusCaseSql,
   livePaidSql,
@@ -27,6 +28,8 @@ import {
   paymentPendingForSql,
   paymentRecordedSql,
   paymentRefundedSql,
+  refundOutAtSql,
+  refundsOutSql,
   SQL_CURRENCIES,
 } from "./sql-rules.ts";
 
@@ -647,11 +650,14 @@ export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = /* @__PURE__ */ (() =>
 /**
  * M6.5 (L9): the refunds "Collected" subtracts: SUCCEEDED refunds of confirmed money-received rows, by the IST day they succeeded (`settled_on`), read through
  * `payment_refunds_settled`. A pending payment refunded in full (L33) ends `rejected`: it was never collected, so its refund is not subtracted either.
+ * M6–M7 audit AU37 (Settled by the lead on the safest reading, 2026-11-07 (08-C RA-41)): a refund that came back after the range's last day still counts as gone
+ * out (`refundsOutSql`); with `asOf: null` every reversed refund of the range is read and the caller filters each period (`refundOutAtSql`).
  */
 const settledRefundsFrom = (
   from: string,
-) => `FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id
-         WHERE f.status = 'succeeded' AND f.settled_on >= ${from} AND f.settled_on <= ?2 AND fp.status = 'confirmed' AND fp.kind = 'payment'`;
+  asOf: string | null = istDayEndMsSql("?2"),
+) => `FROM (${refundsOutSql(from, "?2", asOf)}) f JOIN payments fp ON fp.id = f.payment_id
+         WHERE fp.status = 'confirmed' AND fp.kind = 'payment'`;
 const SETTLED_REFUNDS_FROM = settledRefundsFrom("?1");
 
 /**
@@ -700,13 +706,18 @@ export const COLLECTED_TILE_SQL = /* @__PURE__ */ (() => {
       `count(CASE WHEN ${pm} THEN 1 END) AS pmn_${c}`,
     ];
   }).join(", ");
+  // M6–M7 audit AU37: each period counts a refund that came back only after its own last day (`refundOutAtSql`): the FY to `?2`, the month to `?4`, the
+  // month before to the day before `?3`.
+  const outFy = refundOutAtSql("f", istDayEndMsSql("?2"));
+  const outM = refundOutAtSql("f", istDayEndMsSql("?4"));
+  const outPm = refundOutAtSql("f", istDayEndMsSql("date(?3, '-1 day')"));
   const refundCols = COLLECTED_CURRENCIES.flatMap((c) => {
-    const fy = `f.currency = '${c}' AND f.settled_on >= ?1`;
-    const pm = `f.currency = '${c}' AND f.settled_on >= ${prev} AND f.settled_on < ?3`;
+    const fy = `f.currency = '${c}' AND f.settled_on >= ?1 AND ${outFy}`;
+    const pm = `f.currency = '${c}' AND f.settled_on >= ${prev} AND f.settled_on < ?3 AND ${outPm}`;
     return [
       `coalesce(sum(CASE WHEN ${fy} THEN f.amount_minor END), 0) AS fy_${c}`,
       `count(CASE WHEN ${fy} THEN 1 END) AS fyn_${c}`,
-      `coalesce(sum(CASE WHEN f.currency = '${c}' AND f.settled_on >= ?3 AND f.settled_on <= ?4 THEN f.amount_minor END), 0) AS m_${c}`,
+      `coalesce(sum(CASE WHEN f.currency = '${c}' AND f.settled_on >= ?3 AND f.settled_on <= ?4 AND ${outM} THEN f.amount_minor END), 0) AS m_${c}`,
       `coalesce(sum(CASE WHEN ${pm} THEN f.amount_minor END), 0) AS pm_${c}`,
       `count(CASE WHEN ${pm} THEN 1 END) AS pmn_${c}`,
     ];
@@ -720,7 +731,7 @@ export const COLLECTED_TILE_SQL = /* @__PURE__ */ (() => {
    FROM (SELECT ${cols}
          FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ${from} AND p.received_on <= ?2) t
    JOIN (SELECT ${refundCols}
-         ${settledRefundsFrom(from)}) r
+         ${settledRefundsFrom(from, null)}) r
    JOIN (${COLLECTED_CURRENCIES.map((c) => `SELECT '${c}' AS currency`).join(" UNION ALL ")}) c
    WHERE ${collectedPick("fyn")} > 0 OR ${collectedPick("fyn", "r")} > 0 OR ${collectedPick("pmn")} > 0 OR ${collectedPick("pmn", "r")} > 0 ORDER BY c.currency`;
 })();

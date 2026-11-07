@@ -77,9 +77,18 @@ const T = 1_700_000_000_000;
 
 const plan = async (sql: string, ...binds: unknown[]): Promise<string> =>
   (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...binds)).map((r) => r.detail).join("\n");
-/** A table scan (a SEARCH is fine): any of the tables these statements read, by name or alias. */
-const scansTable = (p: string) =>
-  /SCAN (documents|payments|payment_refunds|leads|clients|care_plans|d|p|f|l|c|n)\b(?! USING)/.test(p);
+/**
+ * A table scan (a SEARCH is fine): any of the tables these statements read, by name or alias. M6–M7 audit AU37: the walk of a CO-ROUTINE (a FROM subquery
+ * whose own reads are listed above it, e.g. `refundsOutSql`'s two index SEARCHes) is no table scan, so a `SCAN <name>` of a co-routine of the plan is left out.
+ */
+const scansTable = (p: string) => {
+  const coroutines = new Set([...p.matchAll(/CO-ROUTINE (\w+)/g)].map((m) => m[1]));
+  return p.split("\n").some((line) => {
+    const m =
+      /SCAN (documents|payments|payment_refunds|leads|clients|care_plans|d|p|f|l|c|n)\b(?! USING)/.exec(line);
+    return m !== null && !coroutines.has(m[1]);
+  });
+};
 const rowsRead = async (sql: string, ...binds: unknown[]) =>
   (
     await env.DB.prepare(sql)
