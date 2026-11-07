@@ -157,7 +157,7 @@ export async function attachmentFor(
   if (!docs) return skip("no_binding");
   if (attempts > 1) return skip("redelivery");
   if (!hasNativeBase64()) return skip("no_native_base64");
-  const served = await servedObject(env.DB, docs, a.key);
+  const served = await servedObject<R2ObjectBody>(env.DB, docs, a.key);
   if (served.fellBack) logEvent("email.attachment_rebuilt_missing", {});
   const object = served.object;
   if (!object) return skip("missing");

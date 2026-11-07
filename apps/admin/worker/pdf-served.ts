@@ -11,8 +11,12 @@ type ServedEnv = { DB: D1Database; DOCS: R2Bucket };
  * The served object (null: missing), with its key and, when a rebuilt file is served, its SHA-256 (the ETag; null: the original, whose hash is the row's).
  * A recorded rebuild whose object is gone is logged (`rebuilt pdf object missing`, the request id only) and the original is served.
  */
-export async function servedPdf(env: ServedEnv, originalKey: string, rid: string): Promise<ServedObject> {
-  const served = await servedObject(env.DB, env.DOCS, originalKey);
+export async function servedPdf(
+  env: ServedEnv,
+  originalKey: string,
+  rid: string,
+): Promise<ServedObject<R2ObjectBody>> {
+  const served = await servedObject<R2ObjectBody>(env.DB, env.DOCS, originalKey);
   if (served.fellBack)
     console.error(JSON.stringify({ level: "error", message: "rebuilt pdf object missing", rid }));
   return served;

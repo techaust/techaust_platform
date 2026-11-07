@@ -1,5 +1,5 @@
 // Rebuild PDF (JOB-PDF-02; run file docs/runs/rebuild-pdf.md, L3): the stored PDF every reader serves, resolved at the R2 read by the key its row records.
-// Import-free on purpose (only the Workers runtime's global types), so the portal and the jobs email consumer take it without the rest of `pdf-repairs.ts`
+// Import-free on purpose (not even the Workers runtime's global types), so the portal and the jobs email consumer take it without the rest of `pdf-repairs.ts`
 // (core's invoice and PDF-job lists); `@techaust/db/pdf-repairs` re-exports `SERVED_PDF_SQL` and `ServedRow` from here, so there is one copy.
 //
 // The rule (one copy for the admin downloads, the portal's `streamPdf` and the jobs email attachment): the newest rebuilt object of the original key, read by
@@ -17,19 +17,26 @@ export type ServedRow = { new_key: string; new_sha256: string; completed_at: num
  * row's), `object` (null: missing) and `fellBack` (a rebuild is recorded but its object is gone, so the original was read; the caller logs it, with its
  * request id only).
  */
-export type ServedObject = {
+export type ServedObject<O> = {
   key: string;
   sha256: string | null;
-  object: R2ObjectBody | null;
+  object: O | null;
   fellBack: boolean;
 };
 
+/**
+ * The two bindings, structurally (a `D1Database` and an `R2Bucket` fit; `O` is then `R2ObjectBody`): no Workers global is named, because this module also
+ * reaches the package's Node typecheck through `pdf-repairs.ts` and the trigger generator.
+ */
+type ServedDb = { prepare(sql: string): { bind(...values: unknown[]): { first<T>(): Promise<T | null> } } };
+type ServedBucket<O> = { get(key: string): Promise<O | null> };
+
 /** One indexed D1 read, then one R2 read (two when a recorded rebuild's object is gone and the original is read instead). */
-export async function servedObject(
-  db: D1Database,
-  docs: R2Bucket,
+export async function servedObject<O>(
+  db: ServedDb,
+  docs: ServedBucket<O>,
   originalKey: string,
-): Promise<ServedObject> {
+): Promise<ServedObject<O>> {
   const row = await db.prepare(SERVED_PDF_SQL).bind(originalKey).first<ServedRow>();
   if (row) {
     const object = await docs.get(row.new_key);

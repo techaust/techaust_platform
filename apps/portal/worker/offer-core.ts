@@ -265,7 +265,7 @@ export async function streamPdf(
 ): Promise<Response> {
   let object: R2ObjectBody | null;
   if (opts.rebuildable) {
-    const served = await servedObject(c.env.DB, c.env.DOCS, key);
+    const served = await servedObject<R2ObjectBody>(c.env.DB, c.env.DOCS, key);
     if (served.fellBack)
       console.error(
         JSON.stringify({ level: "error", message: "rebuilt pdf object missing", rid: c.var.rid }),
