@@ -143,8 +143,9 @@ export const receiptSend = new Hono<AppEnv>().post("/:id/send", param(idParam), 
     amount: r.amount_minor !== null && r.currency ? formatMoney(money(r.amount_minor, r.currency)) : "",
     date: day ? formatDate(day) : (r.received_on ?? ""),
     attached: attach ? "1" : "0",
-    // finance's own var (wrangler.finance.jsonc; the generated Env is the front's, which has no PORTAL_URL)
-    url: `${String(Reflect.get(c.env, "PORTAL_URL") ?? "").replace(/\/+$/, "")}/invoices`,
+    // finance's own var (wrangler.finance.jsonc; the generated Env is the front's, which has no PORTAL_URL). M6–M7 audit AU13 (B3 L1): the portal's own
+    // receipts page (M7.1 `/receipts`), as the first send from jobs (`apps/jobs/src/receipts.ts`), never the invoices list.
+    url: `${String(Reflect.get(c.env, "PORTAL_URL") ?? "").replace(/\/+$/, "")}/receipts`,
   };
   for (const s of written) {
     const message: EmailMessage = {

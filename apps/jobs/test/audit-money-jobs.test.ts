@@ -25,7 +25,11 @@ const emailsOf = (template: string) =>
   fakes.email.map((s) => s.body as EmailMessage).filter((b) => b?.template === template);
 
 /** A Razorpay payment for an issued invoice and an outside refund of it that succeeded; `reversed`: then came back failed (0082). */
-async function refundOf(o: { reversed?: boolean } = {}) {
+/**
+ * A Razorpay payment of ₹500 refunded in full outside the admin. AU33: the payment is confirmed (`payment: "confirmed"`, the default) or, as L33's pending source,
+ * rejected by the system once the refund succeeded (`"rejected"`, through the 0070 trigger's one allowed move).
+ */
+async function refundOf(o: { reversed?: boolean; payment?: "confirmed" | "rejected" } = {}) {
   const now = Date.now();
   const owner = await staff("owner");
   const clientId = await mkClient();
@@ -53,6 +57,14 @@ async function refundOf(o: { reversed?: boolean } = {}) {
     `pay_AF1${uuidv7().slice(-10)}`,
     checkoutId,
   );
+  const confirmed = (o.payment ?? "confirmed") === "confirmed";
+  if (confirmed)
+    await run(
+      "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = ?3 WHERE id = ?1",
+      paymentId,
+      owner.id,
+      now - 30_000,
+    );
   const refundId = uuidv7();
   await run(
     `INSERT INTO payment_refunds (id, payment_id, client_id, provider, origin, status, paid_to, reason_code, currency, amount_minor, provider_refund_id,
@@ -65,6 +77,13 @@ async function refundOf(o: { reversed?: boolean } = {}) {
     owner.id,
     now,
   );
+  if (!confirmed)
+    await run(
+      `UPDATE payments SET status = 'rejected', verified_at = ?2
+       WHERE id = ?1 AND status = 'pending_verification' AND provider <> 'manual'`,
+      paymentId,
+      now - 30_000,
+    );
   if (o.reversed)
     await run(
       "UPDATE payment_refunds SET status = 'failed', failure_code = 'razorpay_failed', reversed_at = ?2, updated_at = ?2 WHERE id = ?1",
@@ -256,8 +275,19 @@ describe("AU1: the email about a refund that came back (`refund.reversed`, 07-ZT
     gate.mockRestore();
   });
 
-  it("the row read holds the reversal rule in SQL (failed with reversed_at), not the succeeded one", () => {
-    expect(REFUND_REVERSED_ROW_SQL).toContain("r.status = 'failed' AND r.reversed_at IS NOT NULL");
+  it("the row read holds the reversal rule in SQL (failed with reversed_at, the payment confirmed), not the succeeded one", () => {
+    expect(REFUND_REVERSED_ROW_SQL).toContain(
+      "r.status = 'failed' AND r.reversed_at IS NOT NULL AND p.status = 'confirmed'",
+    );
     expect(REFUND_REVERSED_ROW_SQL).not.toContain("r.status = 'succeeded'");
+  });
+
+  it("AU33 (M1): a reversed refund whose payment was rejected (L33's pending source) emails nobody: it is no credit of the client's", async () => {
+    const r = await refundOf({ reversed: true, payment: "rejected" });
+    await mkContact(r.clientId);
+    expect(
+      await processRefundReversed(env(), { kind: "refund.reversed", refundId: r.refundId }, IN_WINDOW),
+    ).toBe("none");
+    expect(emailsOf("refund.reversed")).toHaveLength(0);
   });
 });

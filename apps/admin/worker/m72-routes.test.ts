@@ -332,6 +332,8 @@ describe("Send receipt again (C.2; Tier A scoping) and the refund email's route 
         entity: expect.objectContaining({ type: "document_send" }),
       }),
     ]);
+    // M6–M7 audit AU13 (B3 L1): the button opens the portal's receipts page, never the invoices list
+    expect((q.sent[0] as { data: { url: string } }).data.url).toMatch(/^https?:\/\/[^/]+\/receipts$/);
     expect(await one("SELECT kind, contact_id FROM document_sends WHERE document_id = ?1", rid)).toEqual({
       kind: "resend",
       contact_id: ok.id,

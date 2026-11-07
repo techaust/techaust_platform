@@ -39,22 +39,26 @@ export type GatewayRefund = {
   readonly ourId: string | null;
   readonly failureCode: string | null;
   /**
-   * M6–M7 audit AU1: Stripe's `requires_action` (read as `pending`). On a refund that had already succeeded it means the money came back and the customer must
-   * act, so it reverses our refund (`reversalOf`). Absent on every other answer.
+   * M6–M7 audit AU1: Stripe's `requires_action` (read as `pending`). AU36 (Settled by the lead on the safest reading, 2026-11-07): on a refund that had already
+   * succeeded the money can still reach the customer once they act, so it never reverses our refund (`reversalOf`); the caller opens a `refund_reversed` item at
+   * stage `requires_action` for the Owner instead (`awaitsAction`). Absent on every other answer.
    */
   readonly requiresAction?: true;
 };
 
 /**
  * M6–M7 audit AU1 (B0 1; Researched 2026-11-07, docs.stripe.com/refunds "Failed refunds": a refund can fail after `succeeded`, up to 30 days later, when the
- * bank returns the funds): a refund we hold as `succeeded` that the gateway now shows `failed` (or, on Stripe, `requires_action` after success) is reversed with
- * this failure code; null: it still stands. Razorpay and PayPal take the same path if their answer ever says failed after success.
+ * bank returns the funds): a refund we hold as `succeeded` that the gateway now shows failed (Stripe `failed` or `canceled`) is reversed with this failure code;
+ * null: it still stands. Razorpay and PayPal take the same path if their answer ever says failed after success. AU36 (Settled by the lead on the safest reading,
+ * 2026-11-07): Stripe's `requires_action` after success never reverses it.
  */
 export function reversalOf(g: GatewayRefund): string | null {
   if (g.state === "failed") return g.failureCode ?? "gateway_failed";
-  if (g.requiresAction === true) return "stripe_requires_action";
   return null;
 }
+
+/** AU36: a refund we hold as `succeeded` that Stripe now shows `requires_action`: no reversal, one item for the Owner (once per refund). */
+export const awaitsAction = (g: GatewayRefund): boolean => g.requiresAction === true && g.state !== "failed";
 
 /** Razorpay's refund entity (`POST /v1/payments/{id}/refund`, `GET /v1/refunds/{id}`, an item of `GET /v1/payments/{id}/refunds`), else null. */
 export function readRazorpayRefund(v: unknown): GatewayRefund | null {

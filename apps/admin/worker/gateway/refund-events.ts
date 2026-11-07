@@ -8,6 +8,7 @@
 //   - not ours (another business on the shared Stripe account, M6.3 L5; a payment we never recorded): `ignored`, nothing else written.
 import type { ProcessEventResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
+import { awaitsAction } from "@techaust/core/refund-gateways";
 import { reviewBellStatement, reviewItemStatement, webhookEventMoveStatement } from "@techaust/db/gateway";
 import { REFUND_BY_PROVIDER_REF_SQL, refundItemOnceGuard } from "@techaust/db/refunds";
 import {
@@ -121,9 +122,28 @@ export async function processRefundEvent(
         "processed",
         ours.status === "failed" || ours.status === "succeeded" ? "refund_settled" : "refund_not_found",
       );
-    else if (ours.status === "succeeded") {
-      // AU1: the gateway's own answer decides: still made → settled; failed (or Stripe's `requires_action` after success) → reversed, once, with the
-      // `refund_reversed` item and the owners' bell, and the client's email (held behind its copy gate) queued by the jobs Worker.
+    else if (ours.status === "succeeded" && awaitsAction(g)) {
+      // AU36 (L1; Settled by the lead on the safest reading, 2026-11-07): Stripe's `requires_action` after success: the money can still go out once the customer
+      // acts, so nothing is reversed; one `refund_reversed` item at stage `requires_action` and the owners' bell, once per refund; a second answer only logs.
+      const opened = await openRefundItem(env, ours, "refund_reversed", now, {
+        actor: "webhook",
+        webhookEventId: row.id,
+        facts: { stage: "requires_action" },
+        summary: { gatewayState: "requires_action", eventId: row.id },
+        after: (gs) => [
+          webhookEventMoveStatement(
+            db,
+            { id: row.id, status: "needs_review", outcome: "refund_requires_action", now },
+            gs,
+          ),
+        ],
+      });
+      if (opened) return { result: "needs_review" };
+      console.log(JSON.stringify({ ev: "refund", m: "requires_action_known" }));
+      return quiet("processed", "refund_requires_action_known");
+    } else if (ours.status === "succeeded") {
+      // AU1: the gateway's own answer decides: still made → settled; failed → reversed, once, with the `refund_reversed` item and the owners' bell, and the
+      // client's email (held behind its copy gate) queued by the jobs Worker; AU33: no email when the refund's payment was rejected (L33: it is no credit).
       const reversed = await reverseIfFailed(env, ours, g, now, {
         actor: "webhook",
         webhookEventId: row.id,
@@ -135,7 +155,10 @@ export async function processRefundEvent(
           ),
         ],
       });
-      if (reversed === "reversed") return { result: "needs_review", refundReversed: ours.id };
+      if (reversed === "reversed")
+        return ours.payment_status === undefined || ours.payment_status === "confirmed"
+          ? { result: "needs_review", refundReversed: ours.id }
+          : { result: "needs_review" };
       return quiet("processed", reversed === "stands" ? "refund_settled" : "refund_reversed_known");
     } else if (ours.status !== "failed") {
       const status = await applyGatewayRefund(env, ours, g, now, "webhook");

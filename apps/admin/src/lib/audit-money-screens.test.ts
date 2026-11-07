@@ -86,4 +86,43 @@ describe("AU6: the refunded_outside line of a payment first seen partly refunded
       }),
     ).toMatch(/refunded in Stripe, outside the admin/);
   });
+
+  it("AU34: line 2 gives the order the database accepts (confirm with only what was kept on the invoice, then the refund from credit)", () => {
+    expect(
+      itemReason({
+        kind: "refunded_outside",
+        facts: { refundedMinor: 10_000 },
+        amount_minor: 118_000,
+        provider: "razorpay",
+        currency: "INR",
+      }),
+    ).toBe(
+      "Razorpay had already refunded ₹100.00 of this payment of ₹1,180.00 when it reached us, so it waits here. Confirm it, putting only what was kept on the invoice, then record the ₹100.00 refund from credit with Razorpay's refund id.",
+    );
+    expect(
+      itemReason({
+        kind: "refunded_outside",
+        facts: { reason: "partly_refunded" },
+        amount_minor: 5_000,
+        provider: "paypal",
+        currency: "USD",
+      }),
+    ).toBe(
+      "PayPal had already refunded part of this payment of $50.00 when it reached us, so it waits here. Confirm it, putting only what was kept on the invoice, then record the refund from credit with PayPal's refund id.",
+    );
+  });
+});
+
+describe("AU33 and AU36: the refund_reversed lines", () => {
+  const item = (facts: Record<string, unknown>) =>
+    itemReason({ kind: "refund_reversed", facts, amount_minor: 5_000, provider: "stripe", currency: "USD" });
+  it("credit again (default); a rejected payment's money isn't counted; requires_action reverses nothing", () => {
+    expect(item({ refundId: "r1" })).toMatch(/the money is the client's credit again/);
+    expect(item({ refundId: "r1", reason: "payment_rejected" })).toBe(
+      "Stripe's refund of $50.00 came back after it was made. The payment was rejected when this refund was made, so the money isn't counted here. Record it as a payment.",
+    );
+    expect(item({ refundId: "r1", stage: "requires_action" })).toMatch(
+      /^Stripe needs the client to act before the refund of \$50\.00 can reach them.*It still counts as made here/,
+    );
+  });
 });

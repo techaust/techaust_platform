@@ -129,7 +129,9 @@ type RefundItemKind = "refund_failed" | "refund_stuck" | "refund_after_failed" |
 
 /**
  * A refund review item (`refund_failed`, `refund_stuck`, `refund_after_failed`) and its owners' bell: the item once per refund and kind
- * (`refundItemOnceGuard`), the bell only when the item was written. Guarded on the batch's guard when `g` is given.
+ * (`refundItemOnceGuard`), the bell only when the item was written. Guarded on the batch's guard when `g` is given. M6–M7 audit AU33, AU36: `facts.reason`
+ * (`payment_rejected`: the refund's payment was rejected, L33) and `facts.stage` (`requires_action`: Stripe asks the customer to act, no reversal) pick the
+ * `refund_reversed` line; a `refund_reversed` item is once per refund AND stage.
  */
 export function refundReview(
   db: D1Database,
@@ -138,9 +140,15 @@ export function refundReview(
   reviewId: string,
   now: number,
   g?: GuardSql,
-  extra: { webhookEventId?: string | null; source?: "refresh" | "webhook" | "dlq" } = {},
+  extra: {
+    webhookEventId?: string | null;
+    source?: "refresh" | "webhook" | "dlq";
+    facts?: { reason?: "payment_rejected"; stage?: "requires_action" };
+  } = {},
 ): D1PreparedStatement[] {
   const provider = providerOf(row.provider);
+  const reason = extra.facts?.reason;
+  const stage = extra.facts?.stage;
   return [
     reviewItemStatement(
       db,
@@ -155,17 +163,36 @@ export function refundReview(
         clientId: row.client_id,
         amountMinor: row.amount_minor,
         currency: row.currency,
-        facts: { linkId: "", refundId: row.id },
+        facts: {
+          linkId: "",
+          refundId: row.id,
+          ...(reason ? { reason } : {}),
+          ...(stage ? { stage } : {}),
+        },
         now,
       },
-      refundItemOnceGuard({ paymentId: row.payment_id, refundId: row.id, kind }, g),
+      refundItemOnceGuard(
+        {
+          paymentId: row.payment_id,
+          refundId: row.id,
+          kind,
+          ...(kind === "refund_reversed" ? { stage: stage ?? null } : {}),
+        },
+        g,
+      ),
     ),
     reviewBellStatement(
       db,
       {
         reviewId,
         title: bellNeedsReview(
-          reviewReason(kind, { provider, currency: row.currency, paidMinor: row.amount_minor }),
+          reviewReason(kind, {
+            provider,
+            currency: row.currency,
+            paidMinor: row.amount_minor,
+            reason: reason ?? null,
+            stage: stage ?? null,
+          }),
         ),
         link: REVIEW_LINK,
       },
@@ -190,6 +217,7 @@ export async function openRefundItem(
     actor?: "system" | "webhook";
     webhookEventId?: string | null;
     summary?: Record<string, unknown>;
+    facts?: { reason?: "payment_rejected"; stage?: "requires_action" };
   } = {},
 ): Promise<boolean> {
   const db = env.DB;
@@ -197,6 +225,7 @@ export async function openRefundItem(
   const [item, bell] = refundReview(db, row, kind, reviewId, now, undefined, {
     webhookEventId: o.webhookEventId ?? null,
     source: o.actor === "webhook" ? "webhook" : "refresh",
+    ...(o.facts ? { facts: o.facts } : {}),
   }) as [D1PreparedStatement, D1PreparedStatement];
   return mutateSystem(env, {
     actorType: o.actor ?? "system",
@@ -313,7 +342,7 @@ export const isOurs = (
 
 /**
  * M6–M7 audit AU1 (B0 1): a refund of ours that `succeeded`, re-fetched from its gateway (`g`, already proved ours by the caller) because an event named it. When
- * the gateway now shows it failed (core `reversalOf`: `failed`, or Stripe's `requires_action` after success), ONE batch: the reversal (`refundReverseStatement`:
+ * the gateway now shows it failed (core `reversalOf`: `failed`; AU36: never Stripe's `requires_action`), ONE batch: the reversal (`refundReverseStatement`:
  * `failed`, the code, `reversed_at`, once), the audit row by the system or the webhook (`refund.status`, `reversed: true`), then guarded on it the `refund_reversed`
  * review item and the owners' bell (once per refund) and `after` (the event's own move). No ledger row moves: every reader counts refunds that succeeded or are
  * not failed, so the money is the client's credit again. Answers `reversed` (this batch moved it: the caller queues the client's email), `stands` (the gateway
@@ -336,13 +365,16 @@ export async function reverseIfFailed(
     return "already";
   const db = env.DB;
   const reviewId = uuidv7();
+  // AU33 (M1): a refund of a pending gateway payment refunded in full (L33) left that payment `rejected`: the money that came back is no credit of the
+  // client's, so the item says so (the Owner records it as a payment; AU30) and the client gets no email (jobs `REFUND_REVERSED_ROW_SQL`).
+  const rejected = row.payment_status === "rejected";
   const moved = await mutateSystem(env, {
     actorType: o.actor ?? "system",
     main: refundReverseStatement(db, {
       refundId: row.id,
       providerRefundId: row.provider_refund_id,
       failureCode: code.slice(0, 64),
-      providerStatus: g.requiresAction ? "requires_action" : g.state,
+      providerStatus: g.state,
       now,
     }),
     action: "refund.status",
@@ -359,6 +391,7 @@ export async function reverseIfFailed(
       ...refundReview(db, row, "refund_reversed", reviewId, now, gs, {
         webhookEventId: o.webhookEventId ?? null,
         source: o.actor === "webhook" ? "webhook" : "refresh",
+        ...(rejected ? { facts: { reason: "payment_rejected" as const } } : {}),
       }),
       ...(o.after?.(gs) ?? []),
     ],
