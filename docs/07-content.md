@@ -466,7 +466,11 @@ _Card labels, each page's problems, tools and FAQs, and the hub's closing line: 
 - **Meta:** "About TecHaust Technologies | Senior software studio, India" · "A small senior software and AI automation studio in Balurghat, West Bengal, working with clients across India and abroad."
 - **H1:** "A small senior team, by design"
 - **Story (draft, 🟧 OWNER reviews):** "TecHaust Technologies is a software and AI automation studio in Balurghat, West Bengal. We've delivered 20+ projects (business web apps, SaaS products, automations and mobile apps) for clients in India and abroad. We stay deliberately small: a few senior people who build carefully, explain clearly, and look after what they ship."
-- **Founder:** headshot ✅ (2026-11-04) · "**Rupak Sarkar**, Founder" · bio ✅ (approved 2026-11-07; text in `apps/web/src/config/site.ts`) · LinkedIn link ✅ (2026-10-23)
+- **Founder:** headshot ✅ (2026-11-04) · "**Rupak Sarkar**, Founder" · bio ✅ (approved 2026-11-07; `site.founderBio`) · LinkedIn link ✅ (2026-10-23)
+  - **Bio (approved word for word by the owner, 2026-11-07; first person, two paragraphs):**
+    > I started TecHaust Technologies in Balurghat, West Bengal, on 29 June 2019, a year after finishing my BCA at MAKAUT. I’ve built software for a living ever since, and I still lead every client project myself, from the first scoping call to the day it goes live, with our senior team alongside.
+    >
+    > The work covers custom web applications and SaaS products, Android and iOS apps, AI features and automation, and the integrations that make a business’s systems work together, for clients in India and abroad. Every project starts with a written proposal you can hold us to, and once it’s paid for, the code is yours.
 - **The team:** "Alongside the founder, a small team of senior engineers and designers, each with 10+ years' experience across web, mobile, AI and automation. We bring in trusted specialists, such as security testers and legal partners, when a project needs them." (No names or photos until each person agrees.)
 - **What we value:** "Say what we'll do, then do it" · "Fixed prices, written scope" · "Senior people on every project" · "Honest numbers" · "Look after what we build"
 - **Where we are:** "Balurghat, West Bengal, India. We work remotely with clients everywhere, and visit in India when it helps."

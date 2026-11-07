@@ -40,9 +40,9 @@ const at = (needle: string) => {
 const expr = (inner: string) => ["$", "{{ ", inner, " }}"].join("");
 
 describe("backup.yml: triggers, permissions, environment [JOB-BKP-01]", () => {
-  it("runs nightly at 21:30 UTC (03:00 IST, before jobs' 22:00 UTC cron) and by hand; never on a push or a pull request", () => {
+  it("runs nightly at 21:10 UTC (02:40 IST, clear of jobs' :30 tick and 22:00 UTC run) and by hand; never on a push or a pull request", () => {
     const on = text.slice(text.indexOf("\non:\n"), text.indexOf("\npermissions:"));
-    expect(on).toMatch(/\n {2}schedule:\n(?: {4}#.*\n)* {4}- cron: "30 21 \* \* \*"\n/);
+    expect(on).toMatch(/\n {2}schedule:\n(?: {4}#.*\n)* {4}- cron: "10 21 \* \* \*"\n/);
     expect(on).toContain("\n  workflow_dispatch:");
     expect(on).not.toMatch(/push|pull_request|workflow_run|repository_dispatch/);
   });

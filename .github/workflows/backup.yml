@@ -14,8 +14,9 @@ name: Backup D1 to S3
 # No plaintext, key or archive ever goes into an artifact, a cache or the log.
 on:
   schedule:
-    # 21:30 UTC = 03:00 IST, before the jobs Worker's 22:00 UTC cron: a remote export makes the database unavailable while it runs.
-    - cron: "30 21 * * *"
+    # 21:10 UTC = 02:40 IST: clear of the jobs Worker's :30 hourly tick and its 22:00 UTC run (P7 re-check L1), even when GitHub starts a
+    # scheduled run late, because a remote export makes the database unavailable while it runs.
+    - cron: "10 21 * * *"
   workflow_dispatch:
 
 permissions:

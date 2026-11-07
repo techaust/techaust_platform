@@ -81,7 +81,7 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
 _P7-N, 2026-11-07 (owner: "Nightly backups before launch"; the lead's decisions in [runs/p7-launch](../runs/p7-launch.md) P7-N)._ The workflow is `.github/workflows/backup.yml`; the envelope is `scripts/backup-encrypt.sh`; the owner opens a backup with `scripts/backup-decrypt.ps1`.
 
 ### 3.1 Backups: what runs and where they are
-- **When:** every night at 21:30 UTC (03:00 IST), before the jobs Worker's 22:00 UTC cron, because a remote export makes the database unavailable while it runs. The owner can also start it by hand (GitHub › Actions › "Backup D1 to S3" › Run workflow); only the owner (`techaust`) may start or re-run it.
+- **When:** every night at 21:10 UTC (02:40 IST), clear of the jobs Worker's :30 hourly tick and its 22:00 UTC run, because a remote export makes the database unavailable while it runs. The owner can also start it by hand (GitHub › Actions › "Backup D1 to S3" › Run workflow); only the owner (`techaust`) may start or re-run it.
 - **What:** `wrangler d1 export DB --remote --env production` (the whole production D1: schema, rows, triggers, indexes and `d1_migrations`), then the OpenSSL envelope:
   - a fresh random key for each backup (32 random bytes, kept as 64 hex characters) encrypts the dump with `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -md sha256`;
   - that key is wrapped with the owner's RSA-4096 public key (`openssl pkeyutl -encrypt`, RSA-OAEP with SHA-256), the repo variable `BACKUP_PUBLIC_KEY_PEM`;
@@ -105,7 +105,7 @@ What the workflow needs (the lead's hosted setup, each with the owner's yes; the
 The role, as the workflow expects it:
 - trust: the GitHub OIDC provider `token.actions.githubusercontent.com`, audience `sts.amazonaws.com`, subject exactly `repo:techaust/techaust_platform:environment:backup`;
 - permissions: `s3:PutObject` on `arn:aws:s3:::<bucket>/daily/*`, and `s3:ListBucket` on `arn:aws:s3:::<bucket>` with the condition `s3:prefix` like `daily/*`; nothing else (no GetObject, no DeleteObject);
-- the bucket: Block Public Access on, default encryption on, the 90-day lifecycle rule on `daily/`.
+- the bucket: Block Public Access on, default encryption on, **versioning on** (P7 re-check M1, 08 §6: an overwrite by the put-only role keeps the earlier version, and the role has no DeleteObjectVersion), the 90-day lifecycle rule on `daily/` for current versions plus "permanently delete noncurrent versions" after 90 days.
 
 ### 3.2 Download a backup (AWS console)
 1. Sign in to the AWS console (the TecHaust account) and switch the region to **Asia Pacific (Mumbai) ap-south-1**.
@@ -168,7 +168,7 @@ Pointing the bindings means the `database_id` in `apps/admin/wrangler.jsonc`, `w
 
 ### 3.6 Known points and what is not built
 - **Not built yet:** the monthly finance-only copy kept 10 years (owner 2026-10-07; PRD JOB-BKP-01; T7 F1 `BACKUP_SCOPE`: it leaves out proposals and estimates). A table-filtered export carries no triggers and no indexes (the local export code keeps an index or trigger only if its own name is in `--table`), so that copy must be restored onto a schema built from the migrations. Object Lock and versioning on the bucket are the lead's hosted choice, not something the workflow needs.
-- **A remote export blocks the database while it runs** (wrangler's prompt; D1 docs): hence 03:00 IST.
+- **A remote export blocks the database while it runs** (wrangler's prompt; D1 docs): hence 02:40 IST, away from the jobs crons.
 - D1's import rules (Cloudflare import and export page): no `BEGIN TRANSACTION`/`COMMIT` and no `_cf_KV` table; one file ≤ 5 GiB; "Statement too long" means splitting an `INSERT`. There are no virtual tables in our migrations (checked 0000–0079), so export works.
 - Scheduled workflows of a public repository are switched off by GitHub after 60 days without repository activity; the run history (Actions) shows a missing night.
 
