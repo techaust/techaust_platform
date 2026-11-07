@@ -1531,9 +1531,9 @@
   margin-top: 0;
 }
 
-/* M6–M7 audit AU16: why Withdraw isn't offered, at the start of the dialog's actions row (the buttons stay at its end); on a narrow screen it takes its own line */
+/* M6–M7 audit AU16: why Withdraw isn't offered, on its own line at the top of the dialog's actions (the buttons keep their one row under it, at its end) */
 .pay-entry__why {
-  flex: 1 1 16rem;
+  flex: 1 1 100%;
   align-self: center;
   margin: 0;
   color: var(--color-text-muted);
