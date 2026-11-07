@@ -8,6 +8,7 @@ _Draft by analyst R, 2026-11-07._ Targets: RPO ≤ minutes within the Time Trave
 | A wrong change to a few rows or one table, inside the window | **Time Travel, "look back and copy"** (§2.2): the database is put back only for minutes |
 | The whole database is damaged, inside the window | **Time Travel, full restore** (§2.3), then the reconciliation in §4 |
 | Older than the window, or the database or account is lost | **S3 copy** (§3: the nightly encrypted backup, P7-N) |
+| A finance or tax record older than the 90 days of the nightly copies (an assessment, an audit, a GST notice) | **The monthly finance-only copy** (§3.6, kept 10 years): read it, never restore production from it |
 | A frozen PDF or file is missing from R2 | §5 |
 | Bad code | §6 (code rollback never needs a database restore) |
 
@@ -88,7 +89,8 @@ _P7-N, 2026-11-07 (owner: "Nightly backups before launch"; the lead's decisions 
   - one `.tar` holds exactly `dump.sql.enc`, `key.bin.enc` and `manifest.json` (format `techaust-d1-backup/1`, the UTC time, byte sizes, the SHA-256 of the plaintext dump and of the public key).
   The plaintext dump is deleted on the runner straight after the encryption, also when a step failed. Nothing but the encrypted archive leaves the runner; nothing goes into an artifact, a cache or the log.
 - **Where:** the private S3 bucket named by the repo variable `BACKUP_BUCKET`, region **ap-south-1 (Mumbai)**, under `daily/`, one object per night: `daily/techaust-prod-YYYYMMDDTHHMMSSZ.tar` (UTC). The run's summary (Actions › the run › Summary) shows the object name, its size and the manifest.
-- **How long:** **90 days**, by the bucket's lifecycle rule (expire objects under `daily/` after 90 days). The workflow can't delete or read objects: its role may only put objects under `daily/` and list `daily/`.
+- **How long:** **90 days**, by the bucket's lifecycle rule (expire objects under `daily/` after 90 days). The workflow can't delete or read objects: its role may only put objects under `daily/` and `monthly/` and list those two prefixes.
+- **Once a month** the same run also makes the finance-only copy kept 10 years, under `monthly/` (§3.6).
 - **The private key** is `backup-private.pem`, made once by `scripts/make-backup-key.ps1` into `D:\Business\1. Parent Project\TecHaust Technologies\Backup-Keys\` (outside the repository), with an offline copy. **Without it no backup can be opened.** Never put it in the repository, in chat or in a cloud folder.
 - **Why the export's output is never printed:** wrangler 4.156.2 prints a one-hour signed download link of the **plaintext** export, and the Actions logs of this public repository are public. The workflow writes wrangler's output to a private file and prints it only on failure, with links removed.
 
@@ -104,8 +106,8 @@ What the workflow needs (the lead's hosted setup, each with the owner's yes; the
 
 The role, as the workflow expects it:
 - trust: the GitHub OIDC provider `token.actions.githubusercontent.com`, audience `sts.amazonaws.com`, subject exactly `repo:techaust/techaust_platform:environment:backup`;
-- permissions: `s3:PutObject` on `arn:aws:s3:::<bucket>/daily/*`, and `s3:ListBucket` on `arn:aws:s3:::<bucket>` with the condition `s3:prefix` like `daily/*`; nothing else (no GetObject, no DeleteObject);
-- the bucket: Block Public Access on, default encryption on, **versioning on** (P7 re-check M1, 08 §6: an overwrite by the put-only role keeps the earlier version, and the role has no DeleteObjectVersion), the 90-day lifecycle rule on `daily/` for current versions plus "permanently delete noncurrent versions" after 90 days.
+- permissions: `s3:PutObject` on `arn:aws:s3:::<bucket>/daily/*` and `arn:aws:s3:::<bucket>/monthly/*`, and `s3:ListBucket` on `arn:aws:s3:::<bucket>` with the condition `s3:prefix` like `daily/*` or `monthly/*`; nothing else (no GetObject, no DeleteObject). The exact policy is in §3.6.4;
+- the bucket: Block Public Access on, default encryption on, **versioning on** (P7 re-check M1, 08 §6: an overwrite by the put-only role keeps the earlier version, and the role has no DeleteObjectVersion), the 90-day lifecycle rule on `daily/` for current versions plus "permanently delete noncurrent versions" after 90 days, and the 10-year rule on `monthly/` (§3.6.4).
 
 ### 3.2 Download a backup (AWS console)
 1. Sign in to the AWS console (the TecHaust account) and switch the region to **Asia Pacific (Mumbai) ap-south-1**.
@@ -166,8 +168,75 @@ Steps 1–4 of §3.4 on the chosen night's backup, with the scratch D1 named for
 
 Pointing the bindings means the `database_id` in `apps/admin/wrangler.jsonc`, `wrangler.api.jsonc`, `wrangler.finance.jsonc`, `wrangler.invoices.jsonc`, `apps/portal/wrangler.jsonc` and `apps/jobs/wrangler.jsonc` (each `env.production`), then an approved deploy.
 
-### 3.6 Known points and what is not built
-- **Not built yet:** the monthly finance-only copy kept 10 years (owner 2026-10-07; PRD JOB-BKP-01; T7 F1 `BACKUP_SCOPE`: it leaves out proposals and estimates). A table-filtered export carries no triggers and no indexes (the local export code keeps an index or trigger only if its own name is in `--table`), so that copy must be restored onto a schema built from the migrations. Object Lock and versioning on the bucket are the lead's hosted choice, not something the workflow needs.
+### 3.6 The monthly finance-only copy (kept 10 years)
+_P7 ops, 2026-11-07 ([runs/p7-ops](../runs/p7-ops.md); PRD JOB-BKP-01; 08 §6.1; owner 2026-10-07; T7 F1)._ GST and income-tax records must outlive the 90 days of the nightly copies, but erased personal data must not. So once a month a second, smaller copy is kept for **10 years**, holding only what `packages/db/src/backup-scope.ts` marks `finance_monthly`.
+
+#### 3.6.1 What it holds
+- The tables and rows `monthlyExportSql` keeps: the invoice family (proformas, tax and export invoices, credit and debit notes, receipts and vouchers) with their lines, sections and schedules; accepted proposals and estimates (the version accepted), their acceptances and certificates; `doc_counters`; payments, allocations, refunds, the realisation tables, settlements, bank matches; `care_invoices`, `fx_rates`; the numbered deeds; the terms versions and blocks that a sent document or an acceptance pins; the care plans' terms and status history; and the **finance** rows of `audit_log` **without** the IP address and the browser.
+- Never: leads, contacts, clients, never-accepted proposals and estimates, emails, files, sessions, or any table `backup-scope.ts` marks `rolling_only`.
+- Each monthly table's definition as production holds it (`CREATE TABLE IF NOT EXISTS`), but **no index, no trigger and no view**: the copy is a record to read, not a database to run the system on.
+
+#### 3.6.2 How it is made
+- **When:** in the nightly run (`.github/workflows/backup.yml`) whose UTC day is the 1st of the month (02:40 IST on the 2nd), and in any run the owner starts by hand with **monthly** ticked (Actions › "Backup D1 to S3" › Run workflow › tick "monthly"). The first copy is due on 2026-12-01.
+- **How:** after the night's export is encrypted, `scripts/backup-monthly.mjs build` reads the plaintext export on the runner into an in-memory SQLite (no database file on disk; triggers never created), checks that every table of the export is classified by `BACKUP_SCOPE` and that every monthly table is there (otherwise it writes nothing and the run fails), and writes the finance-only SQL. That file is encrypted with the same envelope (§3.1), and both plaintexts are deleted at once, on every path.
+- **Where:** `monthly/techaust-prod-finance-YYYY-MM.tar` in the same bucket (the month is the run's UTC month), checked by listing as the nightly copy is. The run's summary shows it under "Monthly finance-only copy". A second run in the same month replaces the object; versioning keeps the earlier one (§3.6.4).
+- **If it fails:** the night's daily copy is still uploaded, then the run fails with "The monthly finance-only copy failed". Fix the cause, then start the workflow by hand with **monthly** ticked.
+- **The scope file:** the runner has no workspace packages installed, so the script reads `scripts/backup-monthly-scope.json`. It is generated from `backup-scope.ts`, and `apps/web/test/backup-monthly.test.ts` fails if the two differ. After changing `backup-scope.ts`, regenerate it (from the repository folder) and commit it:
+```
+$env:UPDATE_BACKUP_SCOPE = "1"; pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\apps\web" exec vitest run --project node test/backup-monthly.test.ts; Remove-Item Env:UPDATE_BACKUP_SCOPE
+```
+
+#### 3.6.3 How to open and read it
+1. **Download** it as in §3.2, from the folder **monthly/** (`techaust-prod-finance-<YYYY-MM>.tar`), into `.logs\drill\`.
+2. **Decrypt** it with `scripts/backup-decrypt.ps1` exactly as in §3.3 (same envelope, same private key). It writes `techaust-prod-finance-<YYYY-MM>.sql` next to the `.tar`.
+3. **Read it into a new SQLite file** (Node 24 only; nothing to install):
+```
+node "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\scripts\backup-monthly.mjs" restore "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\techaust-prod-finance-<YYYY-MM>.sql" "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\finance-<YYYY-MM>.db"
+```
+   It prints each table's row count (compare them with the `-- Rows:` line at the top of the `.sql`) and never writes over an existing file. Foreign keys are off in that file, because the copy leaves out the clients and contacts they point at.
+4. **Read the records** with any SQLite tool, or through Node (`node:sqlite`); the lead can help. Never load the copy into a production or staging D1: Cloudflare's D1 enforces foreign keys, and the copy deliberately lacks the tables they point at.
+5. **Onto a schema built from the migrations** (only when a later tool needs today's columns): build a scratch SQLite from `packages/db/migrations` in order, drop every trigger in it, run `PRAGMA foreign_keys=OFF`, then run the `.sql`. `CREATE TABLE IF NOT EXISTS` keeps the migrated tables, and every `INSERT` names its columns, so columns added later stay empty. `apps/web/test/backup-monthly.test.ts` proves this path on today's migrations.
+6. **Clean up:** delete the `.tar`, the `.sql` and the `.db` from `.logs\drill\` when done. They hold invoices and payments.
+
+#### 3.6.4 The AWS changes the owner makes before 2026-12-01 (lead gives the clicks)
+**a. The role's inline policy** (IAM › Roles › the backup role, the one named by `AWS_BACKUP_ROLE_ARN` › Permissions › its inline policy › Edit › JSON). Replace `<bucket>` with the bucket name. The whole policy, with `monthly/` added beside `daily/`:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PutBackups",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": [
+        "arn:aws:s3:::<bucket>/daily/*",
+        "arn:aws:s3:::<bucket>/monthly/*"
+      ]
+    },
+    {
+      "Sid": "ListBackupPrefixes",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::<bucket>",
+      "Condition": {
+        "StringLike": { "s3:prefix": ["daily/*", "monthly/*"] }
+      }
+    }
+  ]
+}
+```
+Nothing else changes: no GetObject, no DeleteObject, no DeleteObjectVersion; the trust policy stays as in §3.1. If the policy in AWS holds anything this one doesn't, stop and tell the lead before saving. The workflow lists with the object's full key as the prefix (`monthly/techaust-prod-finance-YYYY-MM.tar`), which `monthly/*` matches.
+
+**b. The lifecycle rule** (S3 › the bucket › Management › Create lifecycle rule):
+- name `monthly-10-years`; scope "Limit the scope of this rule using one or more filters", prefix `monthly/`;
+- actions: "Expire current versions of objects" after **3653** days (10 years, with the leap days), and "Permanently delete noncurrent versions of objects" after **3653** days.
+- Why noncurrent also 3653: a noncurrent version exists only when a month's copy was replaced (a second run that month, or the put-only role misused). Keeping it as long as the copy keeps the record either way. Its contents are the same kind of record as the current version (the scope decides both), so a longer life adds no new kind of data, only storage (each copy is small).
+- Leave the existing `daily/` rule (90 days, noncurrent 90 days) as it is.
+
+**c. Check:** after the next run by hand with **monthly** ticked, the run's summary shows "Monthly finance-only copy" and the object appears under `monthly/`.
+
+### 3.7 Known points
+- **The monthly copy's restore** is a read, not a production restore (§3.6.3). Object Lock on the bucket is the lead's hosted choice, not something the workflows need.
 - **A remote export blocks the database while it runs** (wrangler's prompt; D1 docs): hence 02:40 IST, away from the jobs crons.
 - D1's import rules (Cloudflare import and export page): no `BEGIN TRANSACTION`/`COMMIT` and no `_cf_KV` table; one file ≤ 5 GiB; "Statement too long" means splitting an `INSERT`. There are no virtual tables in our migrations (checked 0000–0079), so export works.
 - Scheduled workflows of a public repository are switched off by GitHub after 60 days without repository activity; the run history (Actions) shows a missing night.

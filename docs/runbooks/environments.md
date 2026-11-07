@@ -1,6 +1,6 @@
 # Runbook: environments and Cloudflare resources
 
-Cloudflare account: **Techaust Technologies** (`153cd8b23edd2bc9dec570ffaf467c2f`), owner `admin@techaust.com`. _Last updated 2026-11-07 (M7.5 audit B6 L7: the FILES bindings, the cron messages, the health-check order, jobs' required secrets, the unused events queue); 2026-11-03 (the fourth admin Worker, `techaust-platform-admin-invoices`: its row and bindings, the seven-step deploy order, the four-Worker health check and the staging rollback order; before that 2026-10-30, audit workflow changes: the explicit deploy order, the build apart from the token, the health checks, Workers Traces on staging; FX-1, 2026-10-29: R2, Browser Run, the jobs crons, `ADMIN_JOBS`, five Workers). Taken from the committed `wrangler*.jsonc` files, the workflows and the record, not read from the dashboard._
+Cloudflare account: **Techaust Technologies** (`153cd8b23edd2bc9dec570ffaf467c2f`), owner `admin@techaust.com`. _Last updated 2026-11-07 (P7 ops: the production section, its deploy workflow, rollback, backups and catalogue snapshot); 2026-11-07 (M7.5 audit B6 L7: the FILES bindings, the cron messages, the health-check order, jobs' required secrets, the unused events queue); 2026-11-03 (the fourth admin Worker, `techaust-platform-admin-invoices`: its row and bindings, the seven-step deploy order, the four-Worker health check and the staging rollback order; before that 2026-10-30, audit workflow changes: the explicit deploy order, the build apart from the token, the health checks, Workers Traces on staging; FX-1, 2026-10-29: R2, Browser Run, the jobs crons, `ADMIN_JOBS`, five Workers). Taken from the committed `wrangler*.jsonc` files, the workflows and the record, not read from the dashboard._
 The live site is the old Worker **`techaust-web`**. **Never deploy to, rename or delete it** until Phase 7 L8, where it is deleted (with the owner's go-ahead at the time) just before techaust.com is attached to the new `web` Worker (owner, 2026-11-03: no fallback kept).
 
 ## Staging (created 2026-10-06, P5.6, approved by the owner)
@@ -91,13 +91,56 @@ Locally, `pnpm dev:secrets` writes one fixed, made-up value into both `apps/admi
 **Losing or changing the key.** The key can't be read back from Cloudflare, and it can't be rebuilt: every stop already written is the hash under the old key, and the addresses it was made from are gone. With a new key (a second run of the script, a rotation, a new Worker without the old value) those stops no longer match, so **people erased before could be emailed again**, and their consent receipts no longer link to a returning person. So: run the script once per environment, never "to be safe"; if a Worker ever loses the secret (a deploy fails with it missing), stop and ask the lead before setting anything. A planned change of key needs its own task (both keys held for a while, every stored hash moved over in a job), never a plain re-run. Production gets its own key at Phase 7 (owner's yes then).
 
 ## Production
-Nothing is created until Phase 7 (L3), with owner approval per resource. The production blocks of the `wrangler*.jsonc` files hold no D1, queues, R2, Browser Run, service bindings or secrets, and the jobs Worker states an empty cron list (`triggers` would otherwise be inherited from the top level). The one exception is the admin front, whose production block already names its three service bindings (`ADMIN_API`, `ADMIN_FINANCE`, `ADMIN_INVOICES`). M7.4 (L23): the admin API's production block names its one required secret, `ERASURE_HASH_KEY` (the guard holds it in every scope); production's own key is made at Phase 7 (see "ERASURE_HASH_KEY" above).
+_P7 ops, 2026-11-07 ([runs/p7-ops](../runs/p7-ops.md); the resources and hosted steps from [runs/p7-launch](../runs/p7-launch.md)). Every production change is a production action: the owner's yes for that action (CLAUDE.md rule 4)._
 
-**Phase 7, the order Workers are created in:** a Worker whose service binding names a Worker that does not exist yet fails to deploy (Cloudflare's service-bindings docs, "Deployment"). So production creates **`techaust-platform-admin-invoices` before the admin front, the admin finance Worker and jobs**, which bind it (`ADMIN_INVOICES`; `ADMIN_ADVANCE`; `ADMIN_JOBS` and `ADMIN_ADVANCE`), and the admin API and the admin finance Worker before the front and jobs that bind them. `scripts/check-prod-readiness.mjs` requires a production twin for every staging service binding (same binding name and entrypoint, naming the production Worker).
+### Resources (created by the lead, 2026-11-07)
+| Resource | Name | ID / note |
+|---|---|---|
+| D1 | `techaust-prod` | `d16029d2-373e-4b66-beb0-d77158d6dfc2` (APAC); bound as `DB` in every production scope that has one (admin front, API, invoices, finance, portal, jobs; never the website) |
+| R2 | `techaust-prod-docs`, `techaust-prod-files` | private; `DOCS` and `FILES` |
+| Queues | `techaust-prod-leads`, `techaust-prod-pdf`, `techaust-prod-email`, each with its `-dlq` | jobs consumes them with staging's settings |
+| Workers | `techaust-platform-{web,admin,admin-api,admin-invoices,admin-finance,portal,jobs}` | `workers_dev: false`, `preview_urls: false`; no traces and no invocation logs in production |
+| Hosts | web `https://techaust.com/`, admin `https://admin.techaust.com/`, portal `https://portal.techaust.com/`, jobs `https://hooks.techaust.com/` | **No config holds a `routes` or custom-domain entry** (`scripts/check-worker-config.mjs`): the lead attaches each domain by hand, so a deploy never takes a host |
+| Access | `techaust-platform-admin (production)` on `admin.techaust.com`; "admin production health" bypass on `admin.techaust.com/api/v1/health` only | portal, hooks and the website are public |
+
+Every production scope mirrors staging binding for binding (the guard `scripts/check-worker-config.mjs` and `scripts/check-prod-readiness.mjs` refuse any difference other than values); `PAYMENTS_LIVE_ALLOWED` is `"false"` in every scope; there is no `EMAIL_ALLOWED_RECIPIENTS` (the allow-list is staging's alone, so production emails real recipients). Secrets are set with `wrangler secret put … --env production` (names only in the configs' `secrets.required`). **Creation order:** a Worker whose service binding names a Worker that does not exist yet fails to deploy (Cloudflare's service-bindings docs, "Deployment"), so the deploy order below creates the admin API, the admin invoices Worker and the admin finance Worker before the front, the portal and jobs that bind them.
+
+### GitHub environments
+| Environment | Holds | Protection |
+|---|---|---|
+| `production` | `CF_API_TOKEN_PROD` (no zone or DNS permission) | required reviewer `techaust`; deployment refs branch `main` and tags `v*` |
+| `backup` | `CF_API_TOKEN_BACKUP` (D1 only; D1 edit, because `d1 export` is a POST) | deployment branch `main` only; no reviewer |
+
+Repository: the secret `CLOUDFLARE_ACCOUNT_ID`; the variables `PRODUCTION_ENABLED` (must be `true` for any production deploy), `AWS_BACKUP_ROLE_ARN`, `BACKUP_BUCKET`, `BACKUP_PUBLIC_KEY_PEM`.
+
+### The production deploy (`.github/workflows/deploy-prod.yml`)
+Run by the owner only: GitHub › Actions › **Deploy production** › Run workflow, **"Use workflow from: main"**, with:
+- `tag`: `main` (default) or a `v*` release tag on main;
+- `confirm`: exactly `deploy techaust.com <tag>`;
+- `stage`: `full` (default) or `database`;
+- `check_web`: `true` (default); `false` until techaust.com is attached to the website Worker.
+
+The jobs, in order:
+1. **guard:** the owner (`techaust`, both the starter and any re-runner), `PRODUCTION_ENABLED` = `true`, the typed confirmation, and `main` or a `v*` tag. Anything else stops the run before anything is built.
+2. **snapshot** (stage `full` only; P7 ops): in the `backup` environment, wrangler alone, it **reads** the newest published catalogue snapshot from the production D1 (`scripts/fetch-catalogue-snapshot.mjs --env production`). A published list goes to the build as an artifact; none published (the first deploys) means the website is built from the seed. A snapshot that exists but can't be read, or whose SHA-256 doesn't match, fails the run: production never falls back to the seed silently. It needs the `site_snapshots` table, so run stage `database` once before the first `full` run on a new database (the launch order does).
+3. **build** (no environment, no secret): the snapshot into `apps/web`, then the seed SQL, the production builds of the admin, the portal and the website (the web build validates the snapshot with the core zod schema), the pre-bundled jobs and website Workers, the `.dev.vars` check, and on stage `full` the pre-production readiness check (`scripts/check-prod-readiness.mjs`). The commit it built is recorded and must be on `main`.
+4. **deploy** (the `production` environment: **the owner approves here**, once): wrangler alone; the build placed by `scripts/place-build-artifact.mjs` and checked as a production build; the D1 Time Travel bookmark written into the job summary (the restore point); the migrations; the seed (insert-only). Stage `database` stops here. Stage `full` then deploys one Worker per step: **admin API, admin invoices, admin finance, admin front, portal, jobs, website**, with a health check (`scripts/prod-health.mjs`) after the admin front (`/api/v1/health` through the Access bypass), the portal (`/api/v1/health`), jobs (`/healthz` and the webhook paths' own refusals) and the website (`/api/health`, only when `check_web` is true). Each answer must be the Worker's own JSON with `env: "production"`; the check retries for about two minutes (a new custom domain may take a minute). A failed step stops the job, so nothing deploys after a failed Worker.
+
+**After publishing prices in the production admin** (Catalogue › Publish), the website still shows the old prices until the next production deploy: run **Deploy production** with `stage: full` (same `tag`, `confirm` and approval as any deploy). Production never takes the 30-minute staging publisher (`publish-catalogue.yml` is staging only; owner's rule in its header).
+
+### Rollback (08 §6.3; [incident.md](incident.md) §2.8)
+- **Code:** `wrangler rollback --name techaust-platform-<app> --env production`, or Workers & Pages › the Worker › Deployments › the previous version › Rollback. Roll back only the Workers a release changed, callers first: website, jobs, portal, admin front, admin finance, admin invoices, admin API (the reverse of the deploy order). Migrations are backward-compatible (05 §5.5), so a code rollback never needs a database rollback. Then re-run `node scripts/prod-health.mjs <app>` for each app rolled back.
+- **Data:** never rolled back by a code rollback. A bad migration or a damaged database: D1 Time Travel from the bookmark in the deploy's job summary ([restore.md](restore.md) §2), the owner's yes first.
+- **The old site:** `techaust-web` was deleted on 2026-11-07 (owner); there is no fallback to it. A website problem is fixed forward or the new `web` Worker is rolled back.
+
+### Backups ([restore.md](restore.md) §3)
+- **Nightly:** `.github/workflows/backup.yml` at 21:10 UTC (02:40 IST) exports the production D1, encrypts it for the owner's RSA key and uploads it to `s3://<BACKUP_BUCKET>/daily/` (ap-south-1), kept 90 days by the bucket's lifecycle rule. The export's signed download link never reaches the public log.
+- **Monthly, kept 10 years:** the run on the 1st of each month (UTC), or a run by hand with **monthly** ticked, also uploads the finance-only copy to `monthly/` ([restore.md](restore.md) §3.6; the AWS policy and lifecycle changes are in §3.6.4).
+- **Restore drill:** [restore.md](restore.md) §3.4; `scripts/backup-verified.json` records it, and the readiness check blocks stage `full` until it does.
 
 ## Access methods
 - Local: `wrangler login` (OAuth, the owner's machine). Scopes include Workers/D1/Queues write and zone **read** only.
-- CI: `CF_API_TOKEN_STAGING` (repo secret, created by the owner with the scoped permissions in [05 §12.3](../05-architecture.md)), plus `CLOUDFLARE_ACCOUNT_ID`.
+- CI: `CF_API_TOKEN_STAGING` (repo secret, created by the owner with the scoped permissions in [05 §12.3](../05-architecture.md)), plus `CLOUDFLARE_ACCOUNT_ID`. Production: `CF_API_TOKEN_PROD` (environment `production`) and `CF_API_TOKEN_BACKUP` (environment `backup`; the backups and the production deploy's catalogue snapshot read), see "Production" above.
 - Cloudflare MCP (plugin, authorised): read-only use (logs, listing).
 
 ## GitHub
