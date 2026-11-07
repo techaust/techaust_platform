@@ -1,7 +1,8 @@
 {
   // admin.techaust.com (docs/05-architecture.md §4). SPA assets + Hono API under /api/*.
   // The assets directory is filled in by @cloudflare/vite-plugin at build time.
-  // D1 is bound from M1.3; R2 and queues follow with their milestones. Custom domains only in Phase 7, with owner approval.
+  // D1 is bound from M1.3; R2 and queues follow with their milestones. No routes or custom domain in any scope: the lead attaches
+  // admin.techaust.com by hand (P7).
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-admin",
   "main": "worker/index.ts",
@@ -46,7 +47,7 @@
     { "name": "RL_INVITE", "namespace_id": "5103", "simple": { "limit": 10, "period": 60 } }
   ],
   // Email queue (producer, M2.4b): the staff security alerts go to the jobs Worker as an audit-row ID only (no address
-  // leaves this Worker). The jobs Worker consumes it. Production has no queue until Phase 7 (owner approval).
+  // leaves this Worker). The jobs Worker consumes it.
   "queues": {
     "producers": [
       { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
@@ -73,7 +74,7 @@
     { "binding": "ADMIN_INVOICES", "service": "techaust-platform-admin-invoices" }
   ],
   // Private file vault (M3.4, ADM-PRJ-04): uploads and downloads go through this Worker only (no public bucket, no signed
-  // URLs). Local dev and tests use Miniflare's R2. Production has no bucket until Phase 7 (owner approval).
+  // URLs). Local dev and tests use Miniflare's R2.
   "r2_buckets": [
     { "binding": "FILES", "bucket_name": "techaust-local-files" },
     // The sent documents bucket (M4.4): staff download a PDF through this Worker (GET /api/v1/documents/:id/pdf), which only reads it, and the
@@ -141,9 +142,12 @@
     },
     "production": {
       "name": "techaust-platform-admin",
+      // No workers.dev and no routes or custom domain (P7, launch 2026-11-08): the lead attaches admin.techaust.com by hand, behind Cloudflare Access
+      // (a bypass for /api/health only). P7-A (docs/runs/p7-launch.md): every binding of env.staging, naming the production resources
+      // (scripts/check-worker-config.mjs). TURNSTILE_SITE_KEY stays empty until the lead sets the production widget's public key (the readiness
+      // check refuses an empty one).
       "workers_dev": false,
       "preview_urls": false,
-      // Production gets no queue and no widget until Phase 7 (owner approval): TURNSTILE_SITE_KEY stays empty.
       "vars": {
         "ENVIRONMENT": "production",
         "PAYMENTS_LIVE_ALLOWED": "false",
@@ -164,7 +168,24 @@
         { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance" },
         { "binding": "ADMIN_INVOICES", "service": "techaust-platform-admin-invoices" }
       ],
-      // No R2 bucket (FILES) in production until Phase 7.
+      "queues": {
+        "producers": [
+          { "binding": "EMAIL_QUEUE", "queue": "techaust-prod-email" },
+          { "binding": "PDF_QUEUE", "queue": "techaust-prod-pdf" }
+        ]
+      },
+      "r2_buckets": [
+        { "binding": "FILES", "bucket_name": "techaust-prod-files" },
+        { "binding": "DOCS", "bucket_name": "techaust-prod-docs" }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "techaust-prod",
+          "database_id": "d16029d2-373e-4b66-beb0-d77158d6dfc2",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ],
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every staff
       // request, which the append-only access log already holds for security). Console logs stay on.
       "observability": {

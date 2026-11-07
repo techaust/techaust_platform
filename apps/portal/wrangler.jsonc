@@ -1,7 +1,8 @@
 {
   // portal.techaust.com (docs/05-architecture.md §4). SPA assets + Hono API under /api/*.
   // The assets directory is filled in by @cloudflare/vite-plugin at build time.
-  // D1 is bound from M1.3; R2 and queues follow with their milestones. Custom domains only in Phase 7, with owner approval.
+  // D1 is bound from M1.3; R2 and queues follow with their milestones. No routes or custom domain in any scope: the lead attaches
+  // portal.techaust.com by hand (P7).
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-portal",
   "main": "worker/index.ts",
@@ -44,14 +45,13 @@
     { "name": "RL_SIGNOUT", "namespace_id": "6104", "simple": { "limit": 60, "period": 60 } }
   ],
   // M6.2 (POR-06, L1): Pay now asks the admin finance Worker's `PortalPayments` entrypoint for a Razorpay link over RPC; the portal holds no gateway key.
-  // Not inherited; production has none until Phase 7.
+  // Not inherited: every scope lists it.
   "services": [
     { "binding": "ADMIN_PAY", "service": "techaust-platform-admin-finance", "entrypoint": "PortalPayments" }
   ],
-  // Email queue (producer, M2.4b): sign-in links go to the jobs Worker's email consumer. Production has no queue until
-  // Phase 7 (owner approval).
+  // Email queue (producer, M2.4b): sign-in links go to the jobs Worker's email consumer.
   // M4.5: PDF_QUEUE asks the jobs Worker for the acceptance certificate. DOCS (R2, read only here) serves the frozen proposal
-  // snapshot, the PDF and the certificate; the portal never writes to it. Production has neither until Phase 7.
+  // snapshot, the PDF and the certificate; the portal never writes to it.
   "queues": {
     "producers": [
       { "binding": "EMAIL_QUEUE", "queue": "techaust-local-email" },
@@ -59,7 +59,7 @@
     ]
   },
   // M7.1 (Q2 A, owner 2026-11-01): FILES, the file vault, read-only here: the shared files a client downloads (streamed through the session check, L5).
-  // Local and staging only; production has no R2 bucket until Phase 7 (scripts/check-worker-config.mjs).
+  // Every scope its own bucket (scripts/check-worker-config.mjs).
   "r2_buckets": [
     { "binding": "DOCS", "bucket_name": "techaust-local-docs" },
     { "binding": "FILES", "bucket_name": "techaust-local-files" }
@@ -135,9 +135,11 @@
     },
     "production": {
       "name": "techaust-platform-portal",
+      // No workers.dev and no routes or custom domain (P7, launch 2026-11-08): the lead attaches portal.techaust.com by hand. P7-A
+      // (docs/runs/p7-launch.md): every binding of env.staging, naming the production resources (scripts/check-worker-config.mjs).
+      // TURNSTILE_SITE_KEY stays empty until the lead sets the production widget's public key (the readiness check refuses an empty one).
       "workers_dev": false,
       "preview_urls": false,
-      // Production gets no queue and no widget until Phase 7 (owner approval): TURNSTILE_SITE_KEY stays empty.
       "vars": {
         "ENVIRONMENT": "production",
         "PAYMENTS_LIVE_ALLOWED": "false",
@@ -151,6 +153,31 @@
         { "name": "RL_SIGNIN", "namespace_id": "6302", "simple": { "limit": 10, "period": 60 } },
         { "name": "RL_LINKS", "namespace_id": "6303", "simple": { "limit": 30, "period": 60 } },
         { "name": "RL_SIGNOUT", "namespace_id": "6304", "simple": { "limit": 60, "period": 60 } }
+      ],
+      "services": [
+        {
+          "binding": "ADMIN_PAY",
+          "service": "techaust-platform-admin-finance",
+          "entrypoint": "PortalPayments"
+        }
+      ],
+      "queues": {
+        "producers": [
+          { "binding": "EMAIL_QUEUE", "queue": "techaust-prod-email" },
+          { "binding": "PDF_QUEUE", "queue": "techaust-prod-pdf" }
+        ]
+      },
+      "r2_buckets": [
+        { "binding": "DOCS", "bucket_name": "techaust-prod-docs" },
+        { "binding": "FILES", "bucket_name": "techaust-prod-files" }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "techaust-prod",
+          "database_id": "d16029d2-373e-4b66-beb0-d77158d6dfc2",
+          "migrations_dir": "../../packages/db/migrations"
+        }
       ],
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every
       // request, which the append-only access log already holds for security). Console logs stay on.

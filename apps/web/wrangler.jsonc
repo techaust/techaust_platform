@@ -1,8 +1,8 @@
 {
   // techaust.com public website (docs/05-architecture.md §4).
   // RULE: no D1/R2/KV bindings here, ever (CI guard: scripts/check-web-bindings.mjs). Since M2.4 the Worker has a Queues
-  // producer (LEADS_QUEUE), a Rate Limiting binding (RL_FORMS) and Turnstile secrets, all allowed. Custom domain only in
-  // Phase 7, with owner approval.
+  // producer (LEADS_QUEUE), a Rate Limiting binding (RL_FORMS) and Turnstile secrets, all allowed. No routes or custom
+  // domain in any scope: the lead moves techaust.com by hand (P7).
   // NOTE: the live site runs as the old Worker "techaust-web"; these names deliberately differ.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-web",
@@ -34,7 +34,7 @@
   // Leads queue (producer): the jobs Worker consumes it. 2 submissions per 60 s per address is the first rate-limit layer
   // (the exact 5 per 10 min and 50 per day are enforced by the consumer, docs/13 2026-10-23).
   "queues": { "producers": [{ "binding": "LEADS_QUEUE", "queue": "techaust-local-leads" }] },
-  // M7.5 (L22, the lead's B2 note): each scope its own namespace id (local 4101, staging 4201; production 4301 at Phase 7 L3), as the admin and portal
+  // M7.5 (L22, the lead's B2 note): each scope its own namespace id (local 4101, staging 4201, production 4301), as the admin and portal
   // limiters are numbered (scripts/check-worker-config.mjs keeps the website's ids apart from theirs).
   "ratelimits": [{ "name": "RL_FORMS", "namespace_id": "4101", "simple": { "limit": 2, "period": 60 } }],
   "env": {
@@ -69,6 +69,8 @@
     },
     "production": {
       "name": "techaust-platform-web",
+      // No workers.dev and NO routes or custom domain (P7, launch 2026-11-08): techaust.com still belongs to the old Worker
+      // "techaust-web" until the lead moves it by hand, so a deploy must never take the hostname (scripts/check-worker-config.mjs).
       "workers_dev": false,
       "preview_urls": false,
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every
@@ -78,14 +80,17 @@
         "redact_query_string": true,
         "logs": { "enabled": true, "invocation_logs": false }
       },
-      // Production gets no queue, rate limiter or Turnstile secrets until Phase 7 (owner approval): the form endpoints
-      // answer 503 here. TURNSTILE_SITE_KEY stays empty for the same reason.
+      // P7-A (docs/runs/p7-launch.md): staging's queue, rate limiter and secrets, naming the production resources. TURNSTILE_SITE_KEY stays empty
+      // until the lead sets the production widget's public key (the readiness check refuses an empty one).
       "vars": {
         "ENVIRONMENT": "production",
         "TURNSTILE_SITE_KEY": "",
         "TURNSTILE_HOSTNAMES": "techaust.com",
         "FORMS_ALLOWED_ORIGINS": "https://techaust.com"
-      }
+      },
+      "secrets": { "required": ["TURNSTILE_SECRET", "FORMS_IP_PEPPER"] },
+      "queues": { "producers": [{ "binding": "LEADS_QUEUE", "queue": "techaust-prod-leads" }] },
+      "ratelimits": [{ "name": "RL_FORMS", "namespace_id": "4301", "simple": { "limit": 2, "period": 60 } }]
     }
   }
 }
