@@ -118,8 +118,12 @@ export type SettleArgs = {
   now: number;
 };
 
-/** A failure of a Razorpay call: retry (network, 5xx, keys not set yet) or the Owner reviews it. */
-const isTransient = (code: RzpFailure) => code === "network" || code === "unconfigured";
+/**
+ * A failure of a Razorpay call: retry (network, 5xx, keys not set yet, or (M6–M7 audit AU7 L7) a live key while live payments are switched off, which the
+ * Owner's settings or the flag will change, as PayPal's path already retries it) or the Owner reviews it.
+ */
+const isTransient = (code: RzpFailure) =>
+  code === "network" || code === "unconfigured" || code === "live_not_allowed";
 
 /** The whitelisted facts of a payment for the rows (L8; 08-C RB-40). */
 const factsOf = (linkId: string, p: PaymentStatusReport | null, paymentRef: string | null): GatewayFacts => ({

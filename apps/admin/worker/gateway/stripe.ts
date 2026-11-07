@@ -23,6 +23,7 @@ import type {
   WebhookInput,
 } from "@techaust/core/payments";
 import { type GatewayRefund, readStripeRefund } from "@techaust/core/refund-gateways";
+import { isRedirect, readJsonCapped } from "./answer.ts";
 import {
   type FormPairs,
   formBody,
@@ -147,9 +148,15 @@ export function stripeApi(cfg: StripeConfig): StripeApi {
         },
         ...(body === undefined ? {} : { body }),
         signal: AbortSignal.timeout(STRIPE_TIMEOUT_MS),
+        // M6–M7 audit AU7 L2: never follow a redirect with our key.
+        redirect: "manual",
       });
     } catch {
       return { ok: false, code: "network" };
+    }
+    if (isRedirect(res)) {
+      await res.body?.cancel();
+      return { ok: false, code: "bad_answer", status: res.status };
     }
     if (res.status >= 500 || res.status === 429) {
       await res.body?.cancel();
@@ -163,11 +170,9 @@ export function stripeApi(cfg: StripeConfig): StripeApi {
       await res.body?.cancel();
       return { ok: false, code: "refused", status: res.status };
     }
-    try {
-      return { ok: true, value: await res.json() };
-    } catch {
-      return { ok: false, code: "bad_answer", status: res.status };
-    }
+    // AU7 L3: read through a byte cap.
+    const read = await readJsonCapped(res);
+    return read.ok ? { ok: true, value: read.value } : { ok: false, code: "bad_answer", status: res.status };
   }
   return {
     mode,

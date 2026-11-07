@@ -19,7 +19,10 @@ import {
   PAYPAL_CLAIM_STALE_MS,
   PAYPAL_HELD_CAPTURES_SQL,
   PAYPAL_STALE_CLAIMS_SQL,
-  paypalExpireUnclaimedStatement,
+  paypalExpireUnclaimedStatements,
+  RAZORPAY_REFRESH_EVERY_MS,
+  RAZORPAY_STALE_AFTER_MS,
+  RAZORPAY_STALE_LINKS_SQL,
   STALE_LIVE_AFTER_MS,
   STALE_LIVE_CHECKOUTS_SQL,
   STUCK_ADVANCES_SQL,
@@ -29,6 +32,7 @@ import {
 import { adminAdvance, adminGateway } from "./gateway-rpc.ts";
 import { logEvent } from "./log.ts";
 import { sendRefundNotify, sendRefundReversed } from "./refund-notify.ts";
+import { sendChunked } from "./send-batch.ts";
 import { notifyRecentBells, RECENT_MARGIN_MS } from "./staff-notify.ts";
 
 /** The bell of a dead-lettered gateway message (07-ZI S20 and S22: "A payment needs review: {reason}."; staff words, lead under the owner's delegation). */
@@ -115,13 +119,16 @@ export async function processGateway(
       // M6.4 (run file D, L5): PayPal's three parts: up to 20 unclaimed orders past `expires_at` + 30 minutes expire in SQL (nobody captured them; PayPal's
       // own 3 hours have passed); up to 20 whose capture claim went stale (its answer never came back: refreshed, so PayPal's order decides, and a row past its
       // grace ends only after PayPal shows no capture); up to 20 captures PayPal has held for 30 minutes (re-fetched). Each refresh is its own message.
-      const [events, advances, stale, , claimed, held] = await env.DB.batch([
+      // M6–M7 audit AU7 L5: and up to 10 live Razorpay links an hour old or more, not refreshed in 6 hours (a lost `payment_link.paid` no longer leaves one
+      // live for ever). L6: PayPal's expiry in SQL writes its own guarded audit rows (`paypalExpireUnclaimedStatements`).
+      const [events, advances, stale, , , claimed, held, rzp] = await env.DB.batch([
         env.DB.prepare(STUCK_EVENTS_SQL).bind(now - SWEEP_AFTER_MS),
         env.DB.prepare(STUCK_ADVANCES_SQL).bind(now - SWEEP_AFTER_MS),
         env.DB.prepare(STALE_LIVE_CHECKOUTS_SQL).bind(now - STALE_LIVE_AFTER_MS),
-        paypalExpireUnclaimedStatement(env.DB, now),
+        ...paypalExpireUnclaimedStatements(env.DB, now),
         env.DB.prepare(PAYPAL_STALE_CLAIMS_SQL).bind(now - PAYPAL_CLAIM_STALE_MS, now - STALE_LIVE_AFTER_MS),
         env.DB.prepare(PAYPAL_HELD_CAPTURES_SQL).bind(now - PAYPAL_HELD_AFTER_MS),
+        env.DB.prepare(RAZORPAY_STALE_LINKS_SQL).bind(now - RAZORPAY_STALE_AFTER_MS, now - RAZORPAY_REFRESH_EVERY_MS),
       ]);
       const ev = (events?.results ?? []) as { id: string }[];
       const adv = (advances?.results ?? []) as { id: string }[];
@@ -129,13 +136,15 @@ export async function processGateway(
         ...((stale?.results ?? []) as { id: string }[]),
         ...((claimed?.results ?? []) as { id: string }[]),
         ...((held?.results ?? []) as { id: string }[]),
+        ...((rzp?.results ?? []) as { id: string }[]),
       ];
       const out = [
-        ...ev.map((r) => ({ body: { kind: "gateway.event", eventId: r.id } })),
-        ...adv.map((r) => ({ body: { kind: "gateway.advance", paymentId: r.id } })),
-        ...old.map((r) => ({ body: { kind: "gateway.refresh", checkoutId: r.id } })),
+        ...ev.map((r) => ({ kind: "gateway.event", eventId: r.id })),
+        ...adv.map((r) => ({ kind: "gateway.advance", paymentId: r.id })),
+        ...old.map((r) => ({ kind: "gateway.refresh", checkoutId: r.id })),
       ];
-      if (out.length > 0) await env.LEADS_QUEUE.sendBatch(out);
+      // AU7 L8 (B1 L8): in chunks of at most 100 messages (the Queues limit per `sendBatch`), never one call that could pass it.
+      if (out.length > 0) await sendChunked(env.LEADS_QUEUE, out);
       logEvent("gateway.sweep", { count: ev.length, advances: adv.length, refreshes: old.length });
       return "ack";
     }

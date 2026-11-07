@@ -33,6 +33,7 @@ import {
   verifyRazorpaySignature,
 } from "@techaust/core/razorpay";
 import { type ReconSettlement, readRazorpaySettlement } from "@techaust/core/recon";
+import { isRedirect, readJsonCapped } from "./answer.ts";
 import { type GatewayRefund, readRazorpayRefund } from "@techaust/core/refund-gateways";
 
 export const RAZORPAY_TIMEOUT_MS = 8_000;
@@ -119,9 +120,15 @@ export function razorpayApi(cfg: RazorpayConfig): RazorpayApi {
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         signal: AbortSignal.timeout(RAZORPAY_TIMEOUT_MS),
+        // M6–M7 audit AU7 L2: never follow a redirect with our credentials.
+        redirect: "manual",
       });
     } catch {
       return { ok: false, code: "network" };
+    }
+    if (isRedirect(res)) {
+      await res.body?.cancel();
+      return { ok: false, code: "bad_answer", status: res.status };
     }
     // A 5xx or a 429 (Razorpay's rate limit; early check 2, finding 11) is transient: tried again later, never a review item.
     if (res.status >= 500 || res.status === 429) {
@@ -132,14 +139,11 @@ export function razorpayApi(cfg: RazorpayConfig): RazorpayApi {
       await res.body?.cancel();
       return { ok: false, code: "not_found", status: 404 };
     }
-    let json: unknown;
-    try {
-      json = await res.json();
-    } catch {
-      return { ok: false, code: "bad_answer", status: res.status };
-    }
+    // AU7 L3: read through a byte cap.
+    const read = await readJsonCapped(res);
+    if (!read.ok) return { ok: false, code: "bad_answer", status: res.status };
     if (res.status >= 400) return { ok: false, code: "refused", status: res.status };
-    return { ok: true, value: json };
+    return { ok: true, value: read.value };
   }
   const asLink = (r: RzpResult<unknown>): RzpResult<RazorpayLink> => {
     if (!r.ok) return r;

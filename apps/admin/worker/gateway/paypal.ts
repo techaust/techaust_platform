@@ -42,6 +42,7 @@ import {
   usdMinorToValue,
 } from "@techaust/core/paypal";
 import { type GatewayRefund, readPayPalRefund } from "@techaust/core/refund-gateways";
+import { isRedirect, readJsonCapped } from "./answer.ts";
 import { dropPayPalToken, payPalToken } from "./paypal-token.ts";
 
 export const PAYPAL_TIMEOUT_MS = 8_000;
@@ -138,21 +139,27 @@ export function payPalApi(cfg: PayPalConfig): PayPalApi {
           },
           ...(o.body === undefined ? {} : { body: o.body }),
           ...(cfg.timeouts === false ? {} : { signal: AbortSignal.timeout(PAYPAL_TIMEOUT_MS) }),
+          // M6–M7 audit AU7 L2: never follow a redirect with our token (a 3xx reads as `bad_answer` below: no body).
+          redirect: "manual",
         });
       } catch {
         return { status: 0, body: null };
+      }
+      if (isRedirect(res)) {
+        await res.body?.cancel();
+        return { status: res.status, body: null };
       }
       if (res.status === 401 && attempt === 0) {
         await res.body?.cancel();
         dropPayPalToken();
         continue;
       }
+      // Bodies are small JSON objects (an order, a capture, an error); one that isn't JSON, or is over the cap (AU7 L3), reads as null.
       let body: unknown = null;
-      try {
-        // Bodies are small JSON objects (an order, a capture, an error); one that isn't JSON reads as null.
-        body = res.status === 204 ? null : await res.json();
-      } catch {
-        body = null;
+      if (res.status === 204) await res.body?.cancel();
+      else {
+        const read = await readJsonCapped(res);
+        body = read.ok ? read.value : null;
       }
       return { status: res.status, body };
     }

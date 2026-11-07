@@ -494,7 +494,8 @@ function fetchFailed(
   code: StripeFailure,
 ): Promise<ProcessEventResult> | ProcessEventResult {
   const c = a.checkout;
-  if (code === "network" || code === "unconfigured") return { result: "retry" };
+  // M6–M7 audit AU7 L7: `live_not_allowed` is retried like `unconfigured` (as PayPal's path), never a permanent review.
+  if (code === "network" || code === "unconfigured" || code === "live_not_allowed") return { result: "retry" };
   const where = { documentId: c.document_id, clientId: c.client_id, amountMinor: null };
   const link = { cause: a.cause, now: a.now, linkId: c.provider_link_id };
   if (code === "forbidden")
