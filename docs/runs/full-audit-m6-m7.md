@@ -513,3 +513,8 @@ Analyst claude-opus-5-5/high; skill `cloudflare:workers-best-practices`. Read-on
 - **AU55 (L1):** logout is limited per session (`RL_SESSION`, keyed by the cookie hash), and a 429 on logout still clears the cookie. Test.
 - **AU56 (L3):** relabel the invoice test as the route's rule when the key is present, and add an offer first-send test with the address stopped between the pre-check and the batch.
 - **AU57:** AF1 re-check AU47 and AU48 go to the same builder. L2 (the AU23 e2e step) goes to the designer.
+
+### Lead's answers to AF3 (2026-11-07)
+- **AU58:** the neutral title of a scrubbed marker bell is approved by the lead: "An alert from over a year ago. Its details were removed after 12 months."
+- **AU59:** settled on the safest reading (RA-25: a hold for legal claims outweighs erasure). **Any** held holder of the address (contact, client or lead, at any client) stops an erase or anonymise with 409 `legal_hold`, not only a held lead the erase would mark. The erase's `h:` stop would otherwise suppress a held person's emails.
+- **AU60:** sign-out keeps a generous per-address limit as well (60 a minute, its own namespace id per scope, required by `check-worker-config.mjs`), checked before D1. A 429 from either limiter still clears the cookie.
