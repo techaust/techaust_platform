@@ -10,7 +10,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { refuseProductionArgs } from "./cli-target.mjs";
 import { inboxContact, normaliseEmail, SAMPLE, sampleStatements } from "./portal-sql.mjs";
+
+// No production mode, ever (P7-C): a production-looking argument is refused with the reason before anything else runs.
+const productionRefused = refuseProductionArgs(process.argv.slice(2), "pnpm portal:sample");
+if (productionRefused) {
+  console.error(productionRefused);
+  process.exit(1);
+}
 
 const { values } = parseArgs({
   options: { staging: { type: "boolean", default: false }, email: { type: "string" } },
