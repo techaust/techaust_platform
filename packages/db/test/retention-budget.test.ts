@@ -1,6 +1,7 @@
-// Full audit M6–M7 AU9 and AU10 [ADM-SET-09, NFR-9, JOB-CRON-01; run file docs/runs/full-audit-m6-m7.md]: a live family stops after `LIVE_PAGES_PER_RUN`
-// pages a night (done, "more tomorrow"); a dry-run count that reached its cap says so (`capped`); the once-only marker bells are never cleaned up. Its own
-// file: it needs 10,000 rows of one table. Invented data.
+// Full audit M6–M7 AU9 and AU10 [ADM-SET-09, NFR-9, JOB-CRON-01; run file docs/runs/full-audit-m6-m7.md]: a live run stops after `RUN_PAGE_CAP` pages a
+// night across all its families (AU40: the page that reaches the cap ends its family with "more tomorrow"; a family after the cap does nothing, `capped`);
+// a dry-run count that reached its cap says so (`capped`); the once-only marker bells are never cleaned up. Its own file: it needs 10,000 rows of one table.
+// Invented data.
 import { uuidv7 } from "@techaust/core";
 import { cutoffsOf } from "@techaust/core/retention";
 import { describe, expect, it } from "vitest";
@@ -8,7 +9,7 @@ import {
   BELL_MARKER_KINDS,
   DRY_RUN_COUNT_CAP,
   LIVE_PAGE_ROWS,
-  LIVE_PAGES_PER_RUN,
+  RUN_PAGE_CAP,
   retentionStatements,
 } from "../src/retention.ts";
 import { mkMember } from "./billing-helpers.ts";
@@ -63,33 +64,58 @@ describe("AU9: the nightly page budget and the capped trial count", () => {
     await run("DELETE FROM stats_daily WHERE dimension GLOB 'cap-*'");
   });
 
-  it("a live family stops at its page budget with rows still due: done, more tomorrow; the next night's run carries on", async () => {
+  it("AU40: the page that reaches the run's cap ends its family with more tomorrow; a family after the cap does nothing; the next night carries on", async () => {
     await switchRetention(true);
     const asOf = Date.now();
-    const cut = cutoffsOf(figures, asOf).stats;
+    const cut = cutoffsOf(figures, asOf);
     const night1 = await openRun("live");
-    // the family already ran all but one of its pages tonight (as if 19 pages had gone)
+    // the run already spent all but one of its pages tonight, on another family
     await run(
-      "INSERT INTO retention_run_counts (run_id, family, due, done, pages) VALUES (?1, 'stats', ?2, 0, ?3)",
+      "INSERT INTO retention_run_counts (run_id, family, due, done, pages) VALUES (?1, 'email_log', ?2, 1, ?3)",
       night1,
-      (LIVE_PAGES_PER_RUN - 1) * LIVE_PAGE_ROWS,
-      LIVE_PAGES_PER_RUN - 1,
+      (RUN_PAGE_CAP - 1) * LIVE_PAGE_ROWS,
+      RUN_PAGE_CAP - 1,
     );
     await oldStats(LIVE_PAGE_ROWS + 7, "bud-");
-    await db().batch(retentionStatements(db(), "stats", "live", cut, asOf, night1));
+    await db().batch(retentionStatements(db(), "stats", "live", cut.stats, asOf, night1));
     expect(await countsOf(night1, "stats")).toEqual({
-      due: LIVE_PAGES_PER_RUN * LIVE_PAGE_ROWS,
+      due: LIVE_PAGE_ROWS,
       done: 1,
-      pages: LIVE_PAGES_PER_RUN,
+      pages: 1,
       capped: 0,
       more_tomorrow: 1,
     });
     const left = async () =>
       (await first<{ n: number }>("SELECT count(*) AS n FROM stats_daily WHERE dimension GLOB 'bud-*'"))?.n;
     expect(await left()).toBe(7);
+    // a family whose page comes after the cap: nothing counted or deleted, done, capped, and more tomorrow (an old run is due)
+    const oldRun = uuidv7();
+    await run(
+      "INSERT INTO retention_runs (id, as_of, mode, started_at, families) VALUES (?1, 1, 'dry_run', ?2, 11)",
+      oldRun,
+      Date.now() - 500 * DAY,
+    );
+    await db().batch(retentionStatements(db(), "runs", "live", cut.runs, asOf, night1));
+    expect(await countsOf(night1, "runs")).toEqual({
+      due: 0,
+      done: 1,
+      pages: 0,
+      capped: 1,
+      more_tomorrow: 1,
+    });
+    expect(await first("SELECT id FROM retention_runs WHERE id = ?1", oldRun)).toEqual({ id: oldRun });
+    expect(
+      (
+        await first<{ n: number }>(
+          "SELECT sum(pages) AS n FROM retention_run_counts WHERE run_id = ?1",
+          night1,
+        )
+      )?.n,
+    ).toBe(RUN_PAGE_CAP);
+    await run("DELETE FROM retention_runs WHERE id = ?1", oldRun);
     // the next night: a fresh run takes the rest and is done without more tomorrow
     const night2 = await openRun("live");
-    await db().batch(retentionStatements(db(), "stats", "live", cut, asOf + DAY, night2));
+    await db().batch(retentionStatements(db(), "stats", "live", cut.stats, asOf + DAY, night2));
     expect(await countsOf(night2, "stats")).toEqual({
       due: 7,
       done: 1,
@@ -101,7 +127,7 @@ describe("AU9: the nightly page budget and the capped trial count", () => {
     await switchRetention(false);
   });
 
-  it("a family that ends below the budget is done with no more tomorrow; a stopped page (switch off) never marks it", async () => {
+  it("a family that ends below the cap is done with no more tomorrow; a stopped page (switch off) never marks it", async () => {
     await switchRetention(true);
     const asOf = Date.now();
     const cut = cutoffsOf(figures, asOf).stats;
@@ -109,17 +135,17 @@ describe("AU9: the nightly page budget and the capped trial count", () => {
     await oldStats(3, "small-");
     await db().batch(retentionStatements(db(), "stats", "live", cut, asOf, r1));
     expect(await countsOf(r1, "stats")).toEqual({ due: 3, done: 1, pages: 1, capped: 0, more_tomorrow: 0 });
-    // budget reached on a page the switch stopped: done, nothing deleted, not "more tomorrow"
+    // the cap reached on a page the switch stopped: done, nothing deleted, neither capped nor "more tomorrow"
     const r2 = await openRun("live");
     await run(
-      "INSERT INTO retention_run_counts (run_id, family, due, done, pages) VALUES (?1, 'stats', 0, 0, ?2)",
+      "INSERT INTO retention_run_counts (run_id, family, due, done, pages) VALUES (?1, 'email_log', 0, 1, ?2)",
       r2,
-      LIVE_PAGES_PER_RUN - 1,
+      RUN_PAGE_CAP - 1,
     );
     await oldStats(2, "stop-");
     await switchRetention(false);
     await db().batch(retentionStatements(db(), "stats", "live", cut, asOf, r2));
-    expect(await countsOf(r2, "stats")).toMatchObject({ done: 1, more_tomorrow: 0 });
+    expect(await countsOf(r2, "stats")).toMatchObject({ done: 1, pages: 0, capped: 0, more_tomorrow: 0 });
     expect(
       (await first<{ n: number }>("SELECT count(*) AS n FROM stats_daily WHERE dimension GLOB 'stop-*'"))?.n,
     ).toBe(2);

@@ -1,5 +1,5 @@
 // The full audit of M6–M7, fix round AF2, in the database [run file docs/runs/full-audit-m6-m7.md AU9, AU10, AU20, AU25, AU26; ADM-SET-09, ADM-CLI-05,
-// FRM-05, JOB-PDF-01, ADM-MAIL-03]: 0081 only adds columns; 0082 regenerates byte for byte; every rule of `audit_af2_triggers` accepts and refuses. Raw SQL on
+// FRM-05, JOB-PDF-01, ADM-MAIL-03]: 0083 only adds columns; 0084 regenerates byte for byte; every rule of `audit_af2_triggers` accepts and refuses. Raw SQL on
 // purpose: the triggers are the subject. Every name, address and id is invented test data. Times are relative to now.
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
@@ -44,19 +44,19 @@ async function mkLead(email: string): Promise<string> {
   return id;
 }
 
-describe("0081 and 0082", () => {
-  it("0081 only adds columns (no table rebuilt, nothing dropped)", () => {
-    const qs = statementsOf("0081_audit_af2.sql");
+describe("0083 and 0084", () => {
+  it("0083 only adds columns (no table rebuilt, nothing dropped)", () => {
+    const qs = statementsOf("0083_audit_af2.sql");
     expect(qs.length).toBe(4);
     for (const q of qs) expect(q).toMatch(/^ALTER TABLE `[a-z_]+` ADD `[a-z_]+` integer/);
   });
-  it("0082 regenerates from the generator", () => {
+  it("0084 regenerates from the generator", () => {
     const generated = triggerMigrationSql("audit_af2_triggers")
       .split("\n--> statement-breakpoint\n")
       .map((q) => q.replace(/^--[^\n]*\n?/gm, "").trim())
       .filter((q) => q !== "");
     const norm = (xs: string[]) => xs.map((q) => q.replace(/\s+/g, " ").trim().replace(/;$/, ""));
-    expect(norm(statementsOf("0082_audit_af2_triggers.sql"))).toEqual(norm(generated));
+    expect(norm(statementsOf("0084_audit_af2_triggers.sql"))).toEqual(norm(generated));
   });
   it("the frozen held-address rule equals the runtime one (the clean-up's and the lead erase's)", () => {
     expect(HELD_EMAIL_AF2("x.e")).toBe(HELD_EMAIL_SQL("x.e"));

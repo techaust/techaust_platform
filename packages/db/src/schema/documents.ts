@@ -442,7 +442,7 @@ export const pdfFailures = sqliteTable(
     lastAttemptAt: integer("last_attempt_at"),
     /**
      * Full audit M6–M7 AU10 (B6 L1): when the PDF was refused (a tampered envelope or signature, or `SWEEP_MAX_FAILED_NIGHTS` failed nights), set once. The
-     * sweep reads this, not the `pdf.refused` bell, so the clean-up of old bells never makes a refused document ring again. Added by ALTER TABLE (0081).
+     * sweep reads this, not the `pdf.refused` bell, so the clean-up of old bells never makes a refused document ring again. Added by ALTER TABLE (0083).
      */
     refusedAt: integer("refused_at"),
   },

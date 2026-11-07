@@ -69,7 +69,8 @@ export type RefundInsertArgs = {
  * The main statement of a refund (C step 2): one `INSERT ... SELECT` whose WHERE holds every guard: the id is new; the session is a live Owner's with a fresh
  * step-up (`refunds.issue`); the client is live; no refund of the payment is open (L8); and the source, as `payment_refunds_bounds` holds it: from `credit`,
  * confirmed money received with at least the amount free (`paymentFreeSql`); from `document`, at most the document's excess and what this payment holds on it (the
- * document issued, live, payable and the client's, the credit note one of its own; a lost dispute, origin `chargeback`, needs no excess: L40); from `pending`
+ * document issued, live, payable and the client's, the credit note one of its own, issued on or after the day the payment arrived and covering the refund (RA-40;
+ * M6–M7 audit B0 4: the route's rule, held here and in trigger `payment_refunds_bounds` of 0082); a lost dispute, origin `chargeback`, needs no excess: L40); from `pending`
  * (L33), a pending gateway payment's whole amount through its own gateway, while none of its refunds stands (early check 1, finding 1). Zero rows: the route re-reads and answers 409 (`exceeds_refundable`, `exceeds_holding`, `refund_in_progress`, `client_gone`, `payment_not_confirmed`).
  * Binds `?1`..`?16` (`?15` for a gateway refund, which is not settled yet).
  */
@@ -86,7 +87,8 @@ export function refundInsertStatement(db: D1Database, a: RefundInsertArgs): D1Pr
         ? `p.status = 'confirmed' AND p.kind = 'payment' AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?3 AND d.client_id = p.client_id AND d.currency = p.currency
              AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.type IN ${PAYABLE_TYPES_SQL}
              AND (?5 <= ${livePaidSql("d.id")} + d.credited_minor + ${liveTdsSql("d.id")} - d.total_minor OR ?6 = 'chargeback') AND ?5 <= ${paymentNetSql("p.id", "d.id")})
-           AND (?4 IS NULL OR EXISTS (SELECT 1 FROM documents cn WHERE cn.id = ?4 AND cn.type = 'credit_note' AND cn.parent_id = ?3 AND cn.frozen_at IS NOT NULL))`
+           AND (?4 IS NULL OR EXISTS (SELECT 1 FROM documents cn WHERE cn.id = ?4 AND cn.type = 'credit_note' AND cn.parent_id = ?3 AND cn.frozen_at IS NOT NULL
+             AND cn.issue_date >= p.received_on AND cn.total_minor >= ?5))`
         : `p.status = 'pending_verification' AND p.kind = 'payment' AND p.provider <> 'manual' AND ?3 IS NULL AND ?4 IS NULL AND ?5 = p.amount_minor
            AND NOT EXISTS (SELECT 1 FROM payment_refunds pr INDEXED BY payment_refunds_payment WHERE pr.payment_id = p.id AND pr.status <> 'failed')${w.kind === "manual" ? " AND 1 = 0" : ""}`;
   const provider = w.kind === "manual" ? "'manual'" : "p.provider";
@@ -223,6 +225,30 @@ export function refundMoveStatement(
 }
 
 /**
+ * M6–M7 audit AU1 (B0 1): a GATEWAY refund that `succeeded` came back failed (Stripe: the bank returned it, up to 30 days later; `failed`, or `requires_action`
+ * after success), as a re-fetch from the gateway just confirmed: `failed` with the gateway's code and `reversed_at` = now, once. Only our own or an outside refund
+ * (never a lost dispute, never a manual one), only the one the gateway named (`?5`, its id). The settled time and day stay (trigger `payment_refunds_status_flow`
+ * of 0082). No ledger row moves: every reader counts refunds that succeeded or are not failed, so the money is the client's credit again (a refund from an
+ * invoice's excess keeps its release, so the money is credit, not back on the invoice). Zero rows: already reversed, or not in that state. Binds `?1`..`?5`.
+ */
+export const refundReverseStatement = (
+  db: D1Database,
+  a: {
+    refundId: string;
+    providerRefundId: string;
+    failureCode: string;
+    providerStatus: string | null;
+    now: number;
+  },
+): D1PreparedStatement =>
+  db
+    .prepare(
+      `UPDATE payment_refunds SET status = 'failed', failure_code = ?2, provider_status = coalesce(?3, provider_status), reversed_at = ?4, updated_at = max(?4, updated_at)
+       WHERE id = ?1 AND status = 'succeeded' AND provider <> 'manual' AND origin <> 'chargeback' AND provider_refund_id = ?5 AND reversed_at IS NULL`,
+    )
+    .bind(a.refundId, a.failureCode, a.providerStatus, a.now, a.providerRefundId);
+
+/**
  * A refund's review item of `kind` opens once per refund (early check 2, findings 1c, 2 and 1d: the tenth check, every later one, the dead-letter queue and L42's
  * PayPal cut-off all reach `refund_stuck`; an event seen twice reaches `refund_after_failed` twice): no item of that kind for that refund, open or resolved, exists
  * yet. One seek of `review_items_payment` (the refund's payment). Added to `g` (the batch's own guard), when given.
@@ -356,7 +382,7 @@ export const refundInrStatement = (
  * (a page of 50 and whether there is more), through `payments_confirmed`. `held_since_at`: the instant of the last allocation or release before the period's end
  * (null: the money was never put on an invoice, so it is held from the day it arrived).
  */
-export const CREDIT_HELD_SQL = `SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
+export const CREDIT_HELD_SQL_UNBOUNDED = `SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
      s.held_since_at, s.confirmed_after
    FROM (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1", { p: "p", day: "?2" })} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
          (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at,
@@ -368,6 +394,62 @@ export const CREDIT_HELD_SQL = `SELECT s.id, s.client_id, k.code AS client_code,
        ORDER BY p.received_on, p.id LIMIT 51) s
    JOIN clients k ON k.id = s.client_id
    ORDER BY s.received_on, s.id`;
+
+/** M6–M7 audit AU2 (B0 2): the most confirmed payments one page of `CREDIT_HELD_SQL` looks at (so a page reads well under 9,000 rows at any table size). */
+export const CREDIT_HELD_SCAN = 1_000;
+
+/**
+ * `CREDIT_HELD_SQL_UNBOUNDED`'s answer, one bounded window at a time (M6–M7 audit AU2, B0 2: at 5,000 confirmed payments the unbounded page read about 15,000
+ * rows, since it walks every payment received up to the period's end to find a few that hold credit). The window `w` is the next `CREDIT_HELD_SCAN` confirmed
+ * payments after the keyset (one range of `payments_confirmed`); the page is the matches in that window (at most 51, the same columns and order); every row also
+ * carries the window's last key (`scan_on`, `scan_id`) and size (`scanned`), and when nothing in the window matched, ONE row of only those (its `id` NULL). The
+ * route goes on from the 51st match, else from the window's end while the window was full (`scanned` = `CREDIT_HELD_SCAN`), else it is done: the pages together
+ * hold exactly the unbounded answer (a db test pages both).
+ */
+export const creditHeldSql = (
+  scan: number,
+): string => `WITH w AS (SELECT p.id, p.received_on FROM payments p INDEXED BY payments_confirmed
+       WHERE p.status = 'confirmed' AND p.received_on <= ?2 AND (p.received_on > ?3 OR (p.received_on = ?3 AND p.id > ?4))
+       ORDER BY p.received_on, p.id LIMIT ${scan}),
+     e AS (SELECT received_on AS scan_on, id AS scan_id, (SELECT count(*) FROM w) AS scanned FROM w ORDER BY received_on DESC, id DESC LIMIT 1)
+   SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
+     s.held_since_at, s.confirmed_after, e.scan_on, e.scan_id, e.scanned
+   FROM e LEFT JOIN (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1", { p: "p", day: "?2" })} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
+         (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at,
+         p.verified_at > ?1 AS confirmed_after
+       FROM w CROSS JOIN payments p ON p.id = w.id
+       WHERE p.kind = 'payment' AND ${overpaymentAdvanceAtSql("p", "?1", "?2", "?5")}
+       ORDER BY p.received_on, p.id LIMIT 51) s ON 1
+   LEFT JOIN clients k ON k.id = s.client_id
+   ORDER BY s.received_on, s.id`;
+
+export const CREDIT_HELD_SQL = creditHeldSql(CREDIT_HELD_SCAN);
+
+/** A row of `creditHeldSql`: a match (its `id` set) or the window's one empty row (its `id` NULL), each with the window's end and size. */
+export type CreditHeldScanRow = {
+  id: string | null;
+  received_on: string | null;
+  scan_on: string;
+  scan_id: string;
+  scanned: number;
+};
+
+/**
+ * One page of `creditHeldSql(scan)`'s rows (AU2): the matches (at most 50), and where the next page starts: after the 50th match when there was a 51st, else after
+ * the window's last payment while the window was full, else nowhere (the list is done). A page may hold fewer than 50 matches (or none) and still go on.
+ */
+export function creditHeldPage<T extends CreditHeldScanRow>(
+  rows: readonly T[],
+  scan: number = CREDIT_HELD_SCAN,
+): { items: (T & { id: string; received_on: string })[]; next: { k: string; id: string } | null } {
+  const matches = rows.filter((r): r is T & { id: string; received_on: string } => r.id !== null);
+  const items = matches.slice(0, 50);
+  const last = items.at(-1);
+  if (matches.length > 50 && last) return { items, next: { k: last.received_on, id: last.id } };
+  const w = rows[0];
+  if (w && w.scanned >= scan) return { items, next: { k: w.scan_on, id: w.scan_id } };
+  return { items, next: null };
+}
 
 // ---- the withdraw's receipt (L10) -------------------------------------------------------------------------------------------------------------------------
 
@@ -394,7 +476,7 @@ export function receiptVoidStatement(
 
 const REFUND_COLS = `r.id, r.payment_id, r.client_id, r.document_id, r.credit_note_id, r.provider, r.origin, r.status, r.mode, r.paid_to, r.reason_code, r.currency,
        r.amount_minor, r.inr_refunded_minor, r.reference_norm, r.paid_on, r.provider_refund_id, r.provider_status, r.failure_code, r.requested_by, r.requested_at,
-       r.attempts, r.last_attempt_at, r.settled_at, r.settled_on, r.updated_at`;
+       r.attempts, r.last_attempt_at, r.settled_at, r.settled_on, r.updated_at, r.reversed_at`;
 
 /** One refund by id (`?1`), with its payment's gateway reference and status (what `checkRefund` and the routes read). */
 export const REFUND_READ_SQL = `SELECT ${REFUND_COLS}, p.provider_payment_id, p.status AS payment_status, p.amount_minor AS payment_amount_minor
@@ -603,10 +685,14 @@ export function bankMatchStatement(
     .prepare(
       `INSERT INTO bank_matches (id, target_kind, payment_id, settlement_id, refund_id, statement_on, statement_ref, matched_by, matched_at)
        SELECT ?1, ?2, CASE ?2 WHEN 'payment' THEN ?3 END, CASE ?2 WHEN 'settlement' THEN ?3 END, CASE ?2 WHEN 'refund' THEN ?3 END, ?4, ?5, ${sessionUser("?6")}, ?7
-       WHERE ${target} AND ${ownerSessionSql("?6", "?7", false)}`,
+       WHERE NOT EXISTS (SELECT 1 FROM bank_matches xm WHERE xm.id = ?1) AND ${target} AND ${ownerSessionSql("?6", "?7", false)}`,
     )
     .bind(a.id, a.kind, a.targetId, a.statementOn, a.statementRef, a.sessionId, a.now);
 }
+
+/** M6–M7 audit AU3 (B0 6): a bank match by its id (`?1`), to tell a repeat of the same request (200) from a refusal (409) after a write of zero rows. */
+export const BANK_MATCH_BY_ID_SQL =
+  "SELECT id, target_kind, payment_id, settlement_id, refund_id, statement_on, statement_ref FROM bank_matches WHERE id = ?1";
 
 /** The undo of a match, once, by the Owner, with a reason. Binds `?1` match, `?2` reason, `?3` session, `?4` now. */
 export const bankMatchRemoveStatement = (
@@ -649,7 +735,8 @@ export function realisationReductionStatement(
     .prepare(
       `INSERT INTO realisation_reductions (id, document_id, currency, amount_minor, approved_on, bank_ref, declaration, note, recorded_by, created_at)
        SELECT ?1, d.id, d.currency, ?3, ?4, ?5, ?6, ?7, ${sessionUser("?8")}, ?9 FROM documents d JOIN clients k ON k.id = d.client_id
-       WHERE d.id = ?2 AND d.type = 'export_invoice' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL AND k.anonymised_at IS NULL
+       WHERE d.id = ?2 AND NOT EXISTS (SELECT 1 FROM realisation_reductions xr WHERE xr.id = ?1)
+         AND d.type = 'export_invoice' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL AND k.anonymised_at IS NULL
          AND ?3 + (SELECT coalesce(sum(x.amount_minor), 0) FROM realisation_reductions x WHERE x.document_id = d.id) <= d.total_minor
          AND (?6 = 0 OR coalesce(CASE WHEN d.currency = 'INR' THEN ${declared}
                WHEN d.fx_rate_micros > 0 THEN ((${declared}) * d.fx_rate_micros + 999999) / 1000000 END <= ?10, 0))
@@ -669,14 +756,26 @@ export function realisationReductionStatement(
     );
 }
 
-/** The bank's letter of a reduction, set once (DOCS key `reductions/<id>/letter-<sha256>`, written first, write-once), by the Owner. */
+/**
+ * M6–M7 audit AU3 (B0 6): a reduction by its id (`?1`) as the POST stored it, to tell a repeat of the same request (200) from a refusal (409) after a write of
+ * zero rows.
+ */
+export const REDUCTION_BY_ID_SQL =
+  "SELECT id, document_id, amount_minor, approved_on, bank_ref, declaration FROM realisation_reductions WHERE id = ?1";
+
+/**
+ * The bank's letter of a reduction, set once (DOCS key `reductions/<id>/letter-<sha256>`, written first, write-once), by the Owner. M6–M7 audit AU3 (B0 5): never
+ * for a reduction of an anonymised client's invoice (the route refuses it first with 409 `client_gone`).
+ */
 export const reductionLetterStatement = (
   db: D1Database,
   a: { id: string; r2Key: string; sha256: string; mime: string; sessionId: string; now: number },
 ): D1PreparedStatement =>
   db
     .prepare(
-      `UPDATE realisation_reductions SET letter_r2_key = ?2, letter_sha256 = ?3, letter_mime = ?4 WHERE id = ?1 AND letter_r2_key IS NULL AND ${ownerSessionSql("?5", "?6", false)}`,
+      `UPDATE realisation_reductions SET letter_r2_key = ?2, letter_sha256 = ?3, letter_mime = ?4 WHERE id = ?1 AND letter_r2_key IS NULL
+         AND NOT EXISTS (SELECT 1 FROM documents ld JOIN clients lk ON lk.id = ld.client_id WHERE ld.id = realisation_reductions.document_id AND lk.anonymised_at IS NOT NULL)
+         AND ${ownerSessionSql("?5", "?6", false)}`,
     )
     .bind(a.id, a.r2Key, a.sha256, a.mime, a.sessionId, a.now);
 

@@ -8,6 +8,7 @@
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { realisationReductionBody } from "@techaust/core/payment-schemas";
 import {
+  REDUCTION_BY_ID_SQL,
   REDUCTIONS_OF_DOCUMENT_SQL,
   realisationReductionStatement,
   reductionLetterStatement,
@@ -30,11 +31,20 @@ const DECLARATION_TOO_LARGE = E(
   "Above ₹10 lakh, the bank's own approval is needed, not a declaration",
 );
 const DAY_INVALID = E("day_invalid", "Pick a day that isn't in the future");
+// M6–M7 audit AU3 (B0 6; staff line, the builder's draft for the lead, 07-ZT line 6): the id of a reduction already recorded with other details.
+const REDUCTION_EXISTS = E("reduction_exists", "This reduction was already recorded with other details");
 
 const DOC_SQL = `SELECT d.id, d.type, d.currency, d.total_minor, d.fx_rate_micros, d.frozen_at, d.status, ${clientGoneSql("d.client_id")} AS gone,
      (SELECT coalesce(sum(r.amount_minor), 0) FROM realisation_reductions r WHERE r.document_id = d.id) AS reduced,
      (SELECT coalesce(sum(r.amount_minor), 0) FROM realisation_reductions r WHERE r.document_id = d.id AND r.declaration = 1) AS declared
    FROM documents d WHERE d.id = ?1`;
+
+/** Does the reduction's row name this DOCS key already (a twin request's letter)? */
+const pointsAt = async (db: D1Database, rid: string, key: string): Promise<boolean> =>
+  (await db
+    .prepare("SELECT 1 AS ok FROM realisation_reductions WHERE id = ?1 AND letter_r2_key = ?2")
+    .bind(rid, key)
+    .first()) !== null;
 
 /** The INR value of `amountMinor` at `rateMicros` (bigint, rounded up: the safe side), or null without a rate. */
 const inrOf = (amountMinor: number, currency: string, rateMicros: number | null): bigint | null =>
@@ -100,7 +110,26 @@ export const reductions = new Hono<AppEnv>()
         declaration: f.declaration,
       },
     });
-    if (!done) return err(c, REDUCTION_REFUSED, 409, { reducedMinor: d.reduced, totalMinor: d.total_minor });
+    if (!done) {
+      // M6–M7 audit AU3 (B0 6): a repeat of the same request (a double submit, a retry after a lost answer) finds its own row: 200 as the first time; the same
+      // id with anything else is 409.
+      const same = await db.prepare(REDUCTION_BY_ID_SQL).bind(f.id).first<{
+        document_id: string;
+        amount_minor: number;
+        approved_on: string;
+        bank_ref: string;
+        declaration: number;
+      }>();
+      if (same)
+        return same.document_id === id &&
+          same.amount_minor === f.amountMinor &&
+          same.approved_on === f.approvedOn &&
+          same.bank_ref === f.bankRef &&
+          same.declaration === (f.declaration ? 1 : 0)
+          ? c.json({ ok: true, id: f.id })
+          : err(c, REDUCTION_EXISTS, 409);
+      return err(c, REDUCTION_REFUSED, 409, { reducedMinor: d.reduced, totalMinor: d.total_minor });
+    }
     return c.json({ ok: true, id: f.id });
   })
   .put(
@@ -118,10 +147,15 @@ export const reductions = new Hono<AppEnv>()
       if (head instanceof Response) return head;
       const db = c.env.DB;
       const x = await db
-        .prepare("SELECT id, letter_r2_key FROM realisation_reductions WHERE id = ?1 AND document_id = ?2")
+        .prepare(
+          `SELECT r.id, r.letter_r2_key, ${clientGoneSql("d.client_id")} AS gone FROM realisation_reductions r JOIN documents d ON d.id = r.document_id
+           WHERE r.id = ?1 AND r.document_id = ?2`,
+        )
         .bind(rid, id)
-        .first<{ id: string; letter_r2_key: string | null }>();
+        .first<{ id: string; letter_r2_key: string | null; gone: number }>();
       if (!x) return err(c, NOT_FOUND, 404);
+      // M6–M7 audit AU3 (B0 5): no letter is stored for an anonymised client's invoice (the UPDATE's WHERE holds it again).
+      if (x.gone === 1) return err(c, CLIENT_GONE, 409);
       if (x.letter_r2_key !== null) return err(c, LETTER_ALREADY_SET, 409);
       const stored = await streamToDocs(c, head, `reductions/${rid}/letter`);
       if (stored instanceof Response) return stored;
@@ -142,11 +176,22 @@ export const reductions = new Hono<AppEnv>()
           summary: { documentId: id, reductionId: rid, letter: true, size: head.len, mime: stored.mime },
         });
       } catch (e) {
-        if (stored.created) await dropDoc(c.env, stored.key, "row not written");
+        if (stored.created && !(await pointsAt(db, rid, stored.key)))
+          await dropDoc(c.env, stored.key, "row not written");
         throw e;
       }
       if (!done) {
-        if (stored.created) await dropDoc(c.env, stored.key, "row not written");
+        // M6–M7 audit AU3 (B0 5): the object is dropped only when the row does not name this very key (a twin request that won with the same letter bytes
+        // wrote the same key: dropping it would leave the row pointing at nothing).
+        const winner = await db
+          .prepare(
+            `SELECT r.letter_r2_key, ${clientGoneSql("d.client_id")} AS gone FROM realisation_reductions r JOIN documents d ON d.id = r.document_id WHERE r.id = ?1`,
+          )
+          .bind(rid)
+          .first<{ letter_r2_key: string | null; gone: number }>();
+        if (stored.created && winner?.letter_r2_key !== stored.key)
+          await dropDoc(c.env, stored.key, "row not written");
+        if (winner?.gone === 1) return err(c, CLIENT_GONE, 409);
         return err(c, LETTER_ALREADY_SET, 409);
       }
       return c.json({ ok: true });

@@ -6,6 +6,7 @@
 
 import { M72_TEMPLATE_NAMES, PREF_GROUP_LABELS } from "@techaust/core/copy-zq";
 import { M74_TEMPLATE_NAMES } from "@techaust/core/copy-zr";
+import { AUDIT_TEMPLATE_NAMES } from "@techaust/core/copy-zt";
 import type { EmailTemplate } from "@techaust/core/email-templates";
 import { firstNameOf } from "@techaust/core/offers";
 
@@ -46,6 +47,8 @@ export const TEMPLATE_NAMES: Record<EmailTemplate, string> = {
   ...M72_TEMPLATE_NAMES,
   // M7.4: the builder's draft (07-ZR)
   ...M74_TEMPLATE_NAMES,
+  // M6–M7 audit AU1: the lead's staff label (07-ZT)
+  ...AUDIT_TEMPLATE_NAMES,
 };
 
 const SAMPLE = "https://example.test/sample";
@@ -271,6 +274,8 @@ Regards, ${who.name}, TecHaust Technologies`,
         credit_note_number: "TH/CN/2627/0001",
         url: SAMPLE,
       };
+    case "refund.reversed":
+      return { first_name, amount: "₹11,800.00", document_number: "TH/INV/2627/0001", url: SAMPLE };
     case "staff.signin_unfinished":
       return { first_name, time };
     case "request.received":

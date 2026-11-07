@@ -90,11 +90,12 @@ const bellTitle = {
     reasons.includes("usd_needs_fx")
       ? `Care invoice draft for ${client} needs the exchange rate before it can be issued.`
       : `Care invoice draft for ${client} (${periodWords(period)}) is ready to check.`,
-  // "Care invoice {number} for {client} was issued and emailed." (the number is put between the two parts by SQL, so it is right in the batch that issued the invoice)
+  // "Care invoice {number} for {client} was issued and emailed." (the number is put between the two parts by SQL, so it is right in the batch that issued the invoice);
+  // not emailed: the lead's line of the full audit (AU43), which names every reason a billing contact can't receive it (AU19).
   issuedHead: `Care invoice `,
   issuedTail: (client: string, notEmailed: boolean) =>
     notEmailed
-      ? ` for ${client} was issued, but no billing contact has portal access, so it wasn't emailed.`
+      ? ` for ${client} was issued, but no billing contact can receive it (they need portal access, finance access and an address that isn't stopped).`
       : ` for ${client} was issued and emailed.`,
   // "{client}'s care plan has an unbilled period ({period}). Invoice it by hand." (Q51)
   missedPeriod: (client: string, period: Period) =>
@@ -148,7 +149,7 @@ const PLAN_FACTS_SQL = `SELECT p.id, p.client_id, p.last_billed_period, k.care_a
 const TERMS_AUTHORS_SQL =
   "SELECT t.id, u.role AS author_role FROM care_plan_terms t JOIN staff_users u ON u.id = t.created_by WHERE t.care_plan_id = ?1";
 // Full audit M6–M7 AU19 (B4 M1): `stopped` 1 when emails to the address are stopped (a bounce, a spam report, by hand); the erased form (`h:` + keyed hash)
-// needs the erasure key, which this Worker doesn't hold, so the email pipeline stays its guard (it skips and rings the owners).
+// needs the erasure key, which this Worker never holds (the lead's decision, full audit AU41), so the email consumer stays its guard (it skips and rings).
 const CONTACTS_COLS = `id, name, email, anonymised_at, updated_at, is_billing, is_primary, portal_access, can_see_finance,
   NOT ${NOT_STOPPED_SQL("contacts.email", "NULL")} AS stopped FROM contacts`;
 const CONTACTS_ORDER = "anonymised_at IS NULL ORDER BY is_billing DESC, is_primary DESC, name, id LIMIT 10";

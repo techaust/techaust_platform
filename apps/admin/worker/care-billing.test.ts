@@ -598,7 +598,7 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
       "SELECT title FROM notifications WHERE kind = 'care.issued' AND entity_id = ?",
       d.documentId,
     );
-    expect(bell?.title).toContain("wasn't emailed");
+    expect(bell?.title).toContain("no billing contact can receive it");
     expect(bell?.title).not.toContain("issued and emailed");
   });
 
@@ -623,7 +623,7 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
           d.documentId,
         )
       )?.title,
-    ).toContain("wasn't emailed");
+    ).toContain("no billing contact can receive it");
   });
 
   it("with nobody to email it is still issued (the money is owed) and says notEmailed; no sends, no reminders", async () => {
@@ -642,7 +642,9 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
           d.documentId,
         )
       )?.title,
-    ).toMatch(/was issued, but no billing contact has portal access, so it wasn't emailed\.$/);
+    ).toMatch(
+      /was issued, but no billing contact can receive it \(they need portal access, finance access and an address that isn't stopped\)\.$/,
+    );
   });
 
   const refusals: [string, (w: World, documentId: string) => Promise<void>, string[]][] = [

@@ -46,7 +46,7 @@ const migration = (name: string) => env.TEST_MIGRATIONS.find((m) => m.name === n
 const statementsOf = (name: string) =>
   (migration(name)?.queries ?? []).map((q) => q.replace(/^--[^\n]*\n?/gm, "").trim()).filter((q) => q !== "");
 
-/** Runs `fn` with trigger `name` dropped, then re-creates its newest definition (the audit fix set 0082 re-created the switches' two, else 0074's). */
+/** Runs `fn` with trigger `name` dropped, then re-creates its newest definition (the audit fix set 0084 re-created the switches' two, else 0074's). */
 async function withoutTrigger(name: string, fn: () => Promise<unknown>): Promise<void> {
   const create = [...auditAf2TriggerStatements(), ...emailEventTriggerStatements()].find((s) =>
     s.startsWith(`CREATE TRIGGER \`${name}\``),

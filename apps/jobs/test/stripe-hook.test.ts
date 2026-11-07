@@ -238,7 +238,7 @@ describe("POST /stripe [JOB-HOOK-01..03, L5]", () => {
     expect(await rowsOf(e.eventId)).toHaveLength(0);
   });
 
-  it("the previous secret is accepted during a rotation; an unreadable signed body is 400 invalid_event, not counted", async () => {
+  it("the previous secret is accepted during a rotation; an unreadable signed body is 200 (AU7 L4: Stripe must not retry it), logged invalid_event, not counted", async () => {
     const before = await failures();
     const e = eventBody();
     const res = await signed(e.body, {
@@ -246,10 +246,38 @@ describe("POST /stripe [JOB-HOOK-01..03, L5]", () => {
       e: makeEnv({ STRIPE_WEBHOOK_SECRET: SECRET, STRIPE_WEBHOOK_SECRET_PREVIOUS: OTHER }),
     });
     expect(res.status).toBe(200);
-    const bad = await signed('{"id":"evt_x"}');
-    expect(bad.status).toBe(400);
-    expect(((await bad.json()) as { error: { code: string } }).error.code).toBe("invalid_event");
+    const leadsBefore = fakes.leads.length;
+    // ids that can be read: an `ignored` row to trace it, no queue message
+    const bad = await signed('{"id":"evt_unreadable1","type":"checkout.session.completed"}');
+    expect(bad.status).toBe(200);
+    expect(logs.join("\n")).toContain('"o":"invalid_event"');
+    expect(await rowsOf("evt_unreadable1")).toEqual([
+      expect.objectContaining({ status: "ignored", event_type: "checkout.session.completed" }),
+    ]);
+    // not JSON at all, or no readable id: 200 and nothing written
+    const n = await eventCount();
+    expect((await signed("not json")).status).toBe(200);
+    expect((await signed('{"id":"evt_x"}')).status).toBe(200);
+    expect(await eventCount()).toBe(n);
+    expect(fakes.leads).toHaveLength(leadsBefore);
     expect(await failures()).toBe(before);
+  });
+
+  it("AU7 L1: while PAYMENTS_LIVE_ALLOWED is true both modes are kept with `livemode` (the finance judge decides); while it is false a live event is dropped", async () => {
+    const live = eventBody({ livemode: true });
+    const res = await signed(live.body, {
+      e: makeEnv({ STRIPE_WEBHOOK_SECRET: SECRET, PAYMENTS_LIVE_ALLOWED: "true" }),
+    });
+    expect(res.status).toBe(200);
+    const rows = await rowsOf(live.eventId);
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]?.facts ?? "{}")).toMatchObject({ livemode: 1 });
+    const test = eventBody({ livemode: false });
+    await signed(test.body, { e: makeEnv({ STRIPE_WEBHOOK_SECRET: SECRET, PAYMENTS_LIVE_ALLOWED: "true" }) });
+    expect(JSON.parse((await rowsOf(test.eventId))[0]?.facts ?? "{}")).toMatchObject({ livemode: 0 });
+    const dropped = eventBody({ livemode: true });
+    await signed(dropped.body);
+    expect(await rowsOf(dropped.eventId)).toHaveLength(0);
   });
 
   it("a queue failure: 500 with the row kept", async () => {

@@ -48,6 +48,7 @@ import {
   showingFirstLine,
   todayIst,
   WAITS_REFUND_LINE,
+  withdrawBlockedLine,
 } from "../lib/payments.ts";
 import { bpToPercent } from "../lib/settings-form.ts";
 import { withCode } from "../lib/step-up.ts";
@@ -768,12 +769,16 @@ function EntryView(props: {
     p.tds?.certificateAwaited === true &&
     !p.clientGone &&
     (p.status === "pending_verification" || p.status === "confirmed");
-  const canWithdraw =
+  const withdrawable =
     !online &&
     allowed(props.role, "payments.withdraw") &&
     p.status === "confirmed" &&
     !p.advanceReceiptId &&
     !p.clientGone;
+  // M6–M7 audit AU16 (B2 4) and AU4 (B0 9): a refund that hasn't failed, a bank tick or an advice link refuses the withdraw on the server; Withdraw is hidden
+  // and the reason is said beside the actions instead.
+  const withdrawBlocked = withdrawable ? withdrawBlockedLine(props.data) : null;
+  const canWithdraw = withdrawable && withdrawBlocked === null;
   // M6.5 (G1, L33): "Refund" for the Owner: a confirmed payment that still holds credit (the client's credit sources say how much), or a gateway payment still
   // waiting for its check (refunded whole through its gateway). Never for a TDS entry, a withdrawn or rejected one, or an erased client.
   const refundRole = allowed(props.role, "refunds.issue") && p.kind === "payment" && !p.clientGone;
@@ -996,6 +1001,7 @@ function EntryView(props: {
           onChanged={props.onChanged}
           onSendReceipt={props.onSendReceipt}
         />
+        {withdrawBlocked !== null && <p className="hint">{withdrawBlocked}</p>}
       </div>
       <div className="dialog__actions">
         <button type="button" className="btn btn--secondary" onClick={props.onClose}>

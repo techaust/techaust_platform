@@ -31,7 +31,7 @@ export const PURGE_CRON = "0 22 * * *";
 
 /** The conditions of a due lead (`?1` is the lead id, `?2` the time). */
 // Full audit M6–M7 AU25 L1 (B5 L1): never a lead whose ADDRESS is held (a held contact or client with it, or a held lead with it), as the triggers
-// `leads_held_no_delete` / `leads_held_no_erase` (0082) hold too.
+// `leads_held_no_delete` / `leads_held_no_erase` (0084) hold too.
 const DUE = `delete_after IS NOT NULL AND delete_after <= ?2 AND ${LEAD_DELETABLE_SQL} AND ${LEAD_NO_OPEN_REQUEST_SQL("leads.id")} AND NOT ${HELD_EMAIL_SQL("leads.contact_email")}`;
 
 /** The scan, exported so a test can EXPLAIN it (it must use the partial index `leads_delete_due`). */

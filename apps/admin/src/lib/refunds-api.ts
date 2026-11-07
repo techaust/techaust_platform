@@ -42,6 +42,8 @@ export type RefundView = {
   attempts: number;
   settledOn: string | null;
   updatedAt: number;
+  /** M6–M7 audit AU1: set when a gateway refund that succeeded came back failed (`status` is then "failed"). */
+  reversedAt?: number | null;
   /** The Refunds tab's rows only. */
   clientCode?: string;
   clientName?: string;

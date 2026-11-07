@@ -408,6 +408,10 @@ describe("readRazorpayLink and readRazorpayPayment (whitelisted fields)", () => 
     expect(readRazorpayPayment({ ...base, status: "failed" })?.state).toBe("failed");
     expect(readRazorpayPayment({ ...base, status: "refunded" })?.state).toBe("refunded");
     expect(readRazorpayPayment({ ...base, fee: -1 })?.feeMinor).toBeNull();
+    // M6–M7 audit AU6: `amount_refunded` is read when above 0 (Razorpay keeps `captured` while part of it went back), absent otherwise
+    expect(readRazorpayPayment({ ...base, amount_refunded: 18_000 })?.refundedMinor).toBe(18_000);
+    expect(readRazorpayPayment({ ...base, amount_refunded: 0 })).not.toHaveProperty("refundedMinor");
+    expect(readRazorpayPayment({ ...base, amount_refunded: -5 })).not.toHaveProperty("refundedMinor");
     expect(readRazorpayPayment({ ...base, created_at: undefined })).toBeNull();
     expect(readRazorpayPayment({ ...base, id: "pay bad" })).toBeNull();
   });
@@ -462,6 +466,9 @@ describe("judgeRazorpayPayment [ADM-PAY-02, ADR 0008]", () => {
     ["partial_payment", { link: { state: "partially_paid" } }],
     ["amount_mismatch", { payment: { amountMinor: 117_999 } }],
     ["amount_mismatch", { link: { amountMinor: 200_000 } }],
+    // M6–M7 audit AU6 (B1 M1): captured with part already refunded at Razorpay; named before an amount difference
+    ["partly_refunded", { payment: { refundedMinor: 18_000 } }],
+    ["partly_refunded", { payment: { refundedMinor: 1, amountMinor: 117_999 } }],
   ] as const)("%s", (verdict, o) => {
     const l = { ...link, ...("link" in o ? o.link : {}) } as CheckoutStatusReport;
     const p = { ...payment, ...("payment" in o ? o.payment : {}) } as PaymentStatusReport;
@@ -497,6 +504,8 @@ describe("judgeRazorpayPayment [ADM-PAY-02, ADR 0008]", () => {
         "payment_pending",
         "order_mismatch",
         "partial_payment",
+        // M6–M7 audit AU6
+        "partly_refunded",
         "payment_not_on_link",
         "reference_mismatch",
       ].sort(),

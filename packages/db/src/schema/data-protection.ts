@@ -151,14 +151,17 @@ export const retentionRunCounts = sqliteTable(
     oldestAt: integer("oldest_at"),
     done: flag("done"),
     /**
-     * Full audit M6–M7 AU9 (B6 M1): live pages run for this family in this run. A live family stops after `LIVE_PAGES_PER_RUN` pages (done, with
-     * `moreTomorrow`), so one night never spends the account's daily D1 writes on a backlog. Added by ALTER TABLE (0081): no CHECK here; the trigger set
+     * Full audit M6–M7 AU9 (B6 M1; AU40): live pages run for this family in this run. A live run stops after `RUN_PAGE_CAP` pages across all its families
+     * (`more_tomorrow`), so one night never spends the account's daily D1 writes on a backlog. Added by ALTER TABLE (0083): no CHECK here; the trigger set
      * `audit_af2_triggers` holds the values.
      */
     pages: integer("pages").notNull().default(0),
-    /** AU9: a dry run counted at least one table up to its cap (`DRY_RUN_COUNT_CAP`), so `due` is a floor ("10,000 or more"). */
+    /**
+     * AU9: a dry run counted at least one table up to its cap (`DRY_RUN_COUNT_CAP`), so `due` is a floor ("10,000 or more"); a live family whose page came
+     * after the run's page cap (AU40), so it did nothing tonight.
+     */
     capped: flag("capped"),
-    /** AU9: a live family stopped at its page budget with rows still due: the next night's run carries on ("more tomorrow"). */
+    /** AU9: a live family stopped by the run's page cap with rows still due: the next night's run carries on ("more tomorrow"). */
     moreTomorrow: flag("more_tomorrow"),
   },
   (t) => [

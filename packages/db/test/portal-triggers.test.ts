@@ -43,7 +43,7 @@ const statementsOf = (name: string) =>
 
 /** Runs `fn` with trigger `name` dropped, then re-creates it exactly as 0072 does. */
 async function withoutTrigger(name: string, fn: () => Promise<unknown>): Promise<void> {
-  // The newest definition: the audit fix set (0082) and M7.4 (0079) re-created some of 0072's triggers.
+  // The newest definition: the audit fix set (0084) and M7.4 (0079) re-created some of 0072's triggers.
   const create = [
     ...auditAf2TriggerStatements(),
     ...dataProtectionTriggerStatements(),

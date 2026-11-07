@@ -119,7 +119,7 @@ export const emailEvents = sqliteTable(
 
 /**
  * M7.2: how a member's weekly digest was switched off (trigger `staff_notification_prefs_values`). Full audit M6–M7 AU20: `complaint`, a spam report on the
- * digest itself (the SES hook switches the member's digest off instead of stopping every email to the address; triggers `audit_af2_triggers`, 0082).
+ * digest itself (the SES hook switches the member's digest off instead of stopping every email to the address; triggers `audit_af2_triggers`, 0084).
  */
 export const DIGEST_OFF_VIA = ["settings", "one_click", "complaint"] as const;
 

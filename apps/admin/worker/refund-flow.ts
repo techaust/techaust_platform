@@ -21,7 +21,7 @@ import {
   REFUND_SWEEP_IDLE_MS,
 } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
-import type { GatewayRefund } from "@techaust/core/refund-gateways";
+import { type GatewayRefund, reversalOf } from "@techaust/core/refund-gateways";
 import { reviewBellStatement, reviewItemStatement } from "@techaust/db/gateway";
 import {
   type GuardSql,
@@ -32,6 +32,7 @@ import {
   refundItemOnceGuard,
   refundMoveStatement,
   refundRepostClaimStatement,
+  refundReverseStatement,
 } from "@techaust/db/refunds";
 import { REVIEW_LINK } from "./gateway/consts.ts";
 import { bellNeedsReview, reviewReason } from "./gateway/messages.ts";
@@ -93,6 +94,8 @@ export type RefundRow = {
   settled_at: number | null;
   settled_on: string | null;
   updated_at: number;
+  /** M6–M7 audit AU1: set once when a gateway refund that succeeded came back failed. */
+  reversed_at: number | null;
   provider_payment_id?: string | null;
   payment_status?: string;
   payment_amount_minor?: number;
@@ -122,7 +125,7 @@ type ReviewRow = Pick<
   RefundRow,
   "id" | "payment_id" | "client_id" | "document_id" | "provider" | "amount_minor" | "currency"
 >;
-type RefundItemKind = "refund_failed" | "refund_stuck" | "refund_after_failed";
+type RefundItemKind = "refund_failed" | "refund_stuck" | "refund_after_failed" | "refund_reversed";
 
 /**
  * A refund review item (`refund_failed`, `refund_stuck`, `refund_after_failed`) and its owners' bell: the item once per refund and kind
@@ -295,9 +298,73 @@ async function stuckNow(env: { DB: D1Database }, row: RefundRow, now: number): P
   return { result: "stuck" };
 }
 
-/** The gateway's refund is this one: the same amount, and our id when the gateway echoes one. */
-const isOurs = (row: RefundRow, g: GatewayRefund) =>
-  g.amountMinor === row.amount_minor && (g.ourId === null || g.ourId === row.id);
+/**
+ * The gateway's refund is this one: the same amount and currency, our id when the gateway echoes one, and (M6–M7 audit AU3, B0 8) the gateway's id when we hold
+ * one already.
+ */
+export const isOurs = (
+  row: Pick<RefundRow, "id" | "amount_minor" | "currency" | "provider_refund_id">,
+  g: GatewayRefund,
+) =>
+  g.amountMinor === row.amount_minor &&
+  g.currency === row.currency &&
+  (g.ourId === null || g.ourId === row.id) &&
+  (row.provider_refund_id === null || g.refundRef === "" || g.refundRef === row.provider_refund_id);
+
+/**
+ * M6–M7 audit AU1 (B0 1): a refund of ours that `succeeded`, re-fetched from its gateway (`g`, already proved ours by the caller) because an event named it. When
+ * the gateway now shows it failed (core `reversalOf`: `failed`, or Stripe's `requires_action` after success), ONE batch: the reversal (`refundReverseStatement`:
+ * `failed`, the code, `reversed_at`, once), the audit row by the system or the webhook (`refund.status`, `reversed: true`), then guarded on it the `refund_reversed`
+ * review item and the owners' bell (once per refund) and `after` (the event's own move). No ledger row moves: every reader counts refunds that succeeded or are
+ * not failed, so the money is the client's credit again. Answers `reversed` (this batch moved it: the caller queues the client's email), `stands` (the gateway
+ * still shows it made) or `already` (reversed before, or no longer `succeeded`).
+ */
+export async function reverseIfFailed(
+  env: { DB: D1Database },
+  row: RefundRow,
+  g: GatewayRefund,
+  now: number,
+  o: {
+    actor?: "system" | "webhook";
+    webhookEventId?: string | null;
+    after?: (gs: GuardSql) => D1PreparedStatement[];
+  } = {},
+): Promise<"reversed" | "stands" | "already"> {
+  const code = reversalOf(g);
+  if (code === null) return "stands";
+  if (row.status !== "succeeded" || row.reversed_at !== null || row.provider_refund_id === null)
+    return "already";
+  const db = env.DB;
+  const reviewId = uuidv7();
+  const moved = await mutateSystem(env, {
+    actorType: o.actor ?? "system",
+    main: refundReverseStatement(db, {
+      refundId: row.id,
+      providerRefundId: row.provider_refund_id,
+      failureCode: code.slice(0, 64),
+      providerStatus: g.requiresAction ? "requires_action" : g.state,
+      now,
+    }),
+    action: "refund.status",
+    entityType: "refund",
+    entityId: row.id,
+    summary: {
+      refundId: row.id,
+      paymentId: row.payment_id,
+      status: "failed",
+      reversed: true,
+      code: code.slice(0, 64),
+    },
+    side: (gs) => [
+      ...refundReview(db, row, "refund_reversed", reviewId, now, gs, {
+        webhookEventId: o.webhookEventId ?? null,
+        source: o.actor === "webhook" ? "webhook" : "refresh",
+      }),
+      ...(o.after?.(gs) ?? []),
+    ],
+  });
+  return moved ? "reversed" : "already";
+}
 
 /**
  * `checkRefund` (C; L37): the refund as the gateway holds it, by its id or by ours; found → our row follows it (`applyGatewayRefund`); still as it was → one more

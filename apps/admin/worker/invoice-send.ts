@@ -142,7 +142,8 @@ export const invoiceSend = new Hono<AppEnv>()
     if (d.status === "void") return err(c, INVOICE_VOID, 409);
     if (d.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
     // Full audit AU21: a recipient whose emails are stopped is refused like one without finance or portal access (the erased form only where this Worker
-    // holds the erasure key; the invoices Worker has none, so `hashes` is null there and the email pipeline stays the guard for that form).
+    // holds the erasure key). Decided by the lead (full audit AU41, 2026-11-07): the invoices Worker gets no ERASURE_HASH_KEY, so `hashes` is null here and
+    // the email consumer (`apps/jobs/src/email.ts`, which skips an erased address and rings the owners) stays the guard for that form.
     const hashes = await recipientHashes(c.env, db, d.client_id, shape.ids);
     const invalid = await invalidRecipients(db, d.client_id, shape.ids, VALID_INVOICE_RECIPIENTS_SQL, hashes);
     if (invalid.length > 0) return recipientRefusal(c, RECIPIENT_INVALID, 409, invalid);

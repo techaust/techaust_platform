@@ -582,6 +582,8 @@ export const STRIPE_JUDGE_VERDICTS = [
   "not_paid",
   "not_captured",
   "not_export_receipt",
+  // M6–M7 audit AU6: captured, part of it refunded at Stripe before we first settled it.
+  "partly_refunded",
   "currency_mismatch",
   "amount_mismatch",
 ] as const;
@@ -617,13 +619,14 @@ const marksMatch = (m: TechaustMarks | null, row: StripeCheckoutRow): boolean =>
  *   3. `checkout_expired`, `checkout_open`: Stripe's word on the session's state (L6: only Stripe's word ends a row);
  *   4. `not_paid`: complete but `unpaid` (an asynchronous payment still on its way; nothing is recorded);
  *   5. `not_captured`: no payment intent, the intent not `succeeded`, or its latest charge not succeeded and captured (or `no_payment_required`), or the charge
- *      refunded in full or in part, or disputed (early check 1, F1: a refund or a dispute keeps `succeeded` and `captured`, and a re-fetch after one, through a
+ *      refunded in full, or disputed (refunded in part: `partly_refunded`, after step 6) (early check 1, F1: a refund or a dispute keeps `succeeded` and `captured`, and a re-fetch after one, through a
  *      retried webhook, the dead-letter retry or the sweep, must never record returned money as confirmed). The money's state comes before any amount (M6.2 review
  *      finding 7: an unsettled payment is never a confirmable row, whatever else differs);
  *   6. `not_export_receipt`: a card issued in India, or a card whose country Stripe did not give (the safe side), or no card at all (lead, 2026-11-02, early check 1
  *      decision 1): such a payment is not an inflow of foreign exchange, so it is never confirmed or allocated by the system and never gets LUT treatment (Settled by
  *      the lead on the safest reading, 2026-11-02 (08-C RA-38)). Named before any currency or amount difference (early check 2, finding 4): the tax consequence is
  *      what the Owner must see first, whatever else differs (the finance Worker still records no row for money that isn't in USD);
+ *   6a. `partly_refunded` (M6–M7 audit AU6): the charge refunded in part (recorded pending with a `refunded_outside` item that carries the refunded amount);
  *   7. `currency_mismatch`: the session or the intent not in `usd`, or the row not USD;
  *   8. `amount_mismatch`: `amount_total` ≠ the row's amount, or the intent's `amount_received` ≠ `amount_total`.
  * Nothing here moves money; the finance Worker records a mismatch pending with a review item (run file C.9).
@@ -653,12 +656,14 @@ export function judgeStripeSession(
     s.charge.status !== "succeeded" ||
     !s.charge.captured ||
     s.charge.refunded ||
-    s.charge.amountRefunded > 0 ||
     s.charge.disputed
   )
     return no("not_captured");
   if (s.charge.methodType !== "card" || s.charge.cardCountry === null || s.charge.cardCountry === "IN")
     return no("not_export_receipt");
+  // M6–M7 audit AU6 (B1 M1): part of the charge was already refunded at Stripe (not all of it, not disputed): the money we kept is recorded pending with a
+  // `refunded_outside` item carrying the refunded amount, never confirmed in full and never dropped. After RA-38's test, whose tax consequence comes first.
+  if (s.charge.amountRefunded > 0) return no("partly_refunded");
   if (!stripeSessionInUsd(row, s)) return no("currency_mismatch");
   if (s.amountTotal !== row.amountMinor || s.pi.amountReceived !== s.amountTotal)
     return no("amount_mismatch");

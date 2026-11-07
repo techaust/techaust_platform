@@ -344,16 +344,36 @@ export function paypalAbandonStatements(
  * `expired`, in SQL (an order nobody captured; PayPal's own 3 hours have passed by then). A claimed one is never touched here: the sweep refreshes it
  * (`PAYPAL_STALE_CLAIMS_SQL`), and only the refresh ends it, after PayPal showed no capture. Through `checkout_sessions_paypal_open` only.
  */
+const PAYPAL_EXPIRING_SQL = `SELECT c.id FROM checkout_sessions c INDEXED BY checkout_sessions_paypal_open
+           WHERE c.provider = 'paypal' AND c.status IN ('live', 'stale') AND c.expires_at < ?1 - ${PAYPAL_CAPTURE_GRACE_MS} AND c.capture_started_at IS NULL
+           ORDER BY c.expires_at, c.id LIMIT ${PAYPAL_SWEEP_LIMIT}`;
+
 export function paypalExpireUnclaimedStatement(db: D1Database, now: number): D1PreparedStatement {
   return db
     .prepare(
       `UPDATE checkout_sessions SET status = 'expired', updated_at = max(?1, updated_at + 1)
-       WHERE id IN (SELECT c.id FROM checkout_sessions c INDEXED BY checkout_sessions_paypal_open
-           WHERE c.provider = 'paypal' AND c.status IN ('live', 'stale') AND c.expires_at < ?1 - ${PAYPAL_CAPTURE_GRACE_MS} AND c.capture_started_at IS NULL
-           ORDER BY c.expires_at, c.id LIMIT ${PAYPAL_SWEEP_LIMIT})
+       WHERE id IN (${PAYPAL_EXPIRING_SQL})
          AND status IN ('live', 'stale') AND capture_started_at IS NULL`,
     )
     .bind(now);
+}
+
+/**
+ * M6–M7 audit AU7 L6 (B1 L6): the sweep's PayPal expiry with its audit rows: first one `payment.link_end` row by the system per checkout the expiry is about to
+ * end (the same read, so the same rows: a batch runs its statements one after another with nothing in between), then the expiry itself. Two statements.
+ */
+export function paypalExpireUnclaimedStatements(db: D1Database, now: number): D1PreparedStatement[] {
+  return [
+    db
+      .prepare(
+        `INSERT INTO audit_log (id, at, actor_type, actor_id, role, action, entity_type, entity_id, summary)
+         SELECT 'a_' || lower(hex(randomblob(16))), ?1, 'system', NULL, NULL, 'payment.link_end', 'checkout_session', x.id,
+           json_object('checkoutId', x.id, 'documentId', x.document_id, 'status', 'expired', 'why', 'paypal_unclaimed')
+         FROM checkout_sessions x WHERE x.id IN (${PAYPAL_EXPIRING_SQL})`,
+      )
+      .bind(now),
+    paypalExpireUnclaimedStatement(db, now),
+  ];
 }
 
 /**
@@ -427,6 +447,20 @@ export const STALE_LIVE_AFTER_MS = 15 * 60_000;
 export const STALE_LIVE_CHECKOUTS_SQL = `SELECT c.id, c.provider FROM checkout_sessions c INDEXED BY checkout_sessions_open
    WHERE c.status IN ('creating', 'live') AND c.status = 'live' AND c.provider = 'stripe' AND c.expires_at < ?1 AND (c.last_refresh_at IS NULL OR c.last_refresh_at < ?1)
    ORDER BY c.expires_at, c.id LIMIT ${STALE_LIVE_LIMIT}`;
+
+/** M6–M7 audit AU7 L5 (B1 L5): a Razorpay link is refreshed by the sweep once it has been live this long, and again only this long after its last refresh. */
+export const RAZORPAY_STALE_AFTER_MS = 60 * 60_000;
+export const RAZORPAY_REFRESH_EVERY_MS = 6 * 60 * 60_000;
+
+/**
+ * M6–M7 audit AU7 L5 (B1 L5): the sweep's Razorpay read. A Razorpay link ends by its own events, but a lost `payment_link.paid` (or `.expired`) left the row live
+ * for ever; so live Razorpay links made at least an hour ago (`?1` = now − 1 hour) and not refreshed in 6 hours (`?2` = now − 6 hours) are re-fetched, least
+ * recently refreshed first, at most `STALE_LIVE_LIMIT` (10) an hour, each by its own `gateway.refresh` (`refreshCheckout` claims the row first). Through the
+ * partial index `checkout_sessions_open` (only open rows).
+ */
+export const RAZORPAY_STALE_LINKS_SQL = `SELECT c.id, c.provider FROM checkout_sessions c INDEXED BY checkout_sessions_open
+   WHERE c.status IN ('creating', 'live') AND c.status = 'live' AND c.provider = 'razorpay' AND c.created_at < ?1 AND (c.last_refresh_at IS NULL OR c.last_refresh_at < ?2)
+   ORDER BY coalesce(c.last_refresh_at, 0), c.created_at, c.id LIMIT ${STALE_LIVE_LIMIT}`;
 
 // ---- a gateway payment (the webhook or a status refresh, after the re-fetch) ---------------------------------------------------------------------------
 

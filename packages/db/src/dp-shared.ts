@@ -25,7 +25,7 @@ export const LEAD_WITH_ADDRESS_SQL = (l: string) =>
 /**
  * An address held by a contact (itself or its client) or a lead under a legal hold (`email` any expression; compared lower-cased). The clean-up's email
  * family reads it (`retention.ts`), and since the full audit (AU25 L1) the lead erase's first row, the lead purge's due rule and the leads-due list too; the
- * triggers `leads_held_no_delete` / `leads_held_no_erase` (0082) hold its frozen twin (`HELD_EMAIL_AF2`, a db test holds them equal).
+ * triggers `leads_held_no_delete` / `leads_held_no_erase` (0084) hold its frozen twin (`HELD_EMAIL_AF2`, a db test holds them equal).
  */
 export const HELD_EMAIL_SQL = (email: string) =>
   `(EXISTS (SELECT 1 FROM contacts hc JOIN clients hk ON hk.id = hc.client_id WHERE hc.email = lower(${email}) AND (hc.legal_hold = 1 OR hk.legal_hold = 1))
@@ -34,7 +34,7 @@ export const HELD_EMAIL_SQL = (email: string) =>
 /**
  * Full audit M6–M7 AU26: the audit row (`auditId`, a placeholder or expression) a done consent withdrawal names, on request `r` (a column prefix: `NEW.` in the
  * trigger, `client_requests.` in the route's WHERE): the `lead.consent_withdraw` of its lead, or the `contact.update` of its contact whose `changed` list holds
- * `marketingConsent`, backed by a `withdraw` receipt of that contact; both at or after the request arrived. The trigger set `audit_af2_triggers` (0082) holds
+ * `marketingConsent`, backed by a `withdraw` receipt of that contact; both at or after the request arrived. The trigger set `audit_af2_triggers` (0084) holds
  * its frozen twin (`CONSENT_ACTION_AF2`, a db test holds them equal).
  */
 export const CONSENT_WITHDRAW_ACTION_SQL = (r: string, auditId: string) =>

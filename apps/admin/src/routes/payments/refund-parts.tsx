@@ -287,6 +287,8 @@ export function RefundRows(props: {
 export function ReceiptCell(props: { receipt: PanelReceipt | undefined; role: Role; status?: string }) {
   const toast = useToast();
   const [asked, setAsked] = useState(false);
+  // M6–M7 audit AU16 (B2 7): busy from the press, before the request, so a second press sends nothing.
+  const [busy, setBusy] = useState(false);
   const r = props.receipt;
   if (props.status && props.status !== "confirmed")
     return <span className="pay-lines__meta pay-lines__nowrap">{"–"}</span>;
@@ -317,13 +319,19 @@ export function ReceiptCell(props: { receipt: PanelReceipt | undefined; role: Ro
         <button
           type="button"
           className="btn btn--text"
+          disabled={busy}
+          aria-busy={busy}
           onClick={async () => {
+            if (busy) return;
+            setBusy(true);
             try {
               await refundsApi.receiptRemake(id);
               setAsked(true);
               toast("success", ZO_UI.receiptRemakeAsked);
             } catch (e) {
               toast("error", payErrorText(e));
+            } finally {
+              setBusy(false);
             }
           }}
         >

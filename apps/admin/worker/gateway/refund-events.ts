@@ -10,7 +10,14 @@ import type { ProcessEventResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
 import { reviewBellStatement, reviewItemStatement, webhookEventMoveStatement } from "@techaust/db/gateway";
 import { REFUND_BY_PROVIDER_REF_SQL, refundItemOnceGuard } from "@techaust/db/refunds";
-import { applyGatewayRefund, openRefundItem, type RefundRow, readRefund } from "../refund-flow.ts";
+import {
+  applyGatewayRefund,
+  isOurs,
+  openRefundItem,
+  type RefundRow,
+  readRefund,
+  reverseIfFailed,
+} from "../refund-flow.ts";
 import { mutateSystem } from "../system.ts";
 import { REVIEW_LINK } from "./consts.ts";
 import { bellNeedsReview, reviewReason } from "./messages.ts";
@@ -88,7 +95,16 @@ export async function processRefundEvent(
       candidate = ours !== null;
     }
   }
-  if (ours?.status === "succeeded") return quiet("processed", "refund_settled");
+  // M6–M7 audit AU1 (B0 1): a refund that succeeded is re-fetched like any other before anything is said, since it can still fail afterwards (Stripe: the bank
+  // returns it up to 30 days later). A manual refund, a lost dispute or one already reversed has nothing to re-fetch.
+  if (
+    ours?.status === "succeeded" &&
+    (ours.provider === "manual" ||
+      ours.origin === "chargeback" ||
+      ours.reversed_at !== null ||
+      ours.provider_refund_id === null)
+  )
+    return quiet("processed", "refund_settled");
   if (ours) {
     const gw = await refundGwOf(env, provider);
     if (!gw || gw.blocked) return { result: "retry" };
@@ -100,9 +116,28 @@ export async function processRefundEvent(
     if (!found.ok) return { result: "retry" };
     const g = found.value === null || found.value === "unknown" ? null : found.value;
     if (candidate && g?.ourId !== ours.id) ours = null;
-    else if (g === null || g.amountMinor !== ours.amount_minor || (g.ourId !== null && g.ourId !== ours.id))
-      return quiet("processed", ours.status === "failed" ? "refund_settled" : "refund_not_found");
-    else if (ours.status !== "failed") {
+    else if (g === null || !isOurs(ours, g))
+      return quiet(
+        "processed",
+        ours.status === "failed" || ours.status === "succeeded" ? "refund_settled" : "refund_not_found",
+      );
+    else if (ours.status === "succeeded") {
+      // AU1: the gateway's own answer decides: still made → settled; failed (or Stripe's `requires_action` after success) → reversed, once, with the
+      // `refund_reversed` item and the owners' bell, and the client's email (held behind its copy gate) queued by the jobs Worker.
+      const reversed = await reverseIfFailed(env, ours, g, now, {
+        actor: "webhook",
+        webhookEventId: row.id,
+        after: (gs) => [
+          webhookEventMoveStatement(
+            db,
+            { id: row.id, status: "needs_review", outcome: "refund_reversed", now },
+            gs,
+          ),
+        ],
+      });
+      if (reversed === "reversed") return { result: "needs_review", refundReversed: ours.id };
+      return quiet("processed", reversed === "stands" ? "refund_settled" : "refund_reversed_known");
+    } else if (ours.status !== "failed") {
       const status = await applyGatewayRefund(env, ours, g, now, "webhook");
       const answer = await quiet("processed", "refund_moved");
       // M7.2 (Q4 A, run file D "Refund email" producer 3): our refund now succeeded: the jobs Worker queues the client's email (its consumer re-checks every rule

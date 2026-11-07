@@ -568,6 +568,34 @@
       "when": 1793999733534,
       "tag": "0080_fk_child_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1794016989366,
+      "tag": "0081_audit_money",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1794016992219,
+      "tag": "0082_audit_money_triggers",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "6",
+      "when": 1794022226408,
+      "tag": "0083_audit_af2",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "6",
+      "when": 1794022228671,
+      "tag": "0084_audit_af2_triggers",
+      "breakpoints": true
     }
   ]
 }

@@ -112,6 +112,11 @@ export type PaymentStatusReport = {
   readonly createdAt: number;
   /** M6.2: the provider's order the payment belongs to, or null. */
   readonly orderRef: string | null;
+  /**
+   * M6–M7 audit AU6 (B1 M1): how much of it the provider says was already refunded (Razorpay's `amount_refunded`), when it reports more than 0. A payment partly
+   * refunded before we first settle it is never confirmed in full (the judge's `partly_refunded`).
+   */
+  readonly refundedMinor?: number;
 };
 
 export type CheckoutState = "created" | "partially_paid" | "paid" | "expired" | "cancelled";

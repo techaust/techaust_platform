@@ -383,10 +383,12 @@ export const DRY_RUN_COUNT_CAP = 10_000;
 /** A live page removes at most this many rows of each table of the family. */
 export const LIVE_PAGE_ROWS = 500;
 /**
- * Full audit M6–M7 AU9 (B6 M1): a live family runs at most this many pages a night, then stops as done with `more_tomorrow` (the next night carries on), so
- * a backlog after months of dry runs never spends the account's daily D1 writes in one night. The run still finishes and rings as before.
+ * Full audit M6–M7 AU9 (B6 M1; the lead's answer AU40): a live run takes at most this many pages a night across ALL its families (about 15,000 rows), so a
+ * backlog after months of dry runs never spends the account's daily D1 writes in one night. The page that reaches the cap with rows still due ends its family
+ * with `more_tomorrow`; a family whose page comes after the cap deletes nothing and is done with `capped` (and `more_tomorrow` when it has rows due). The next
+ * night's run carries on; this run still finishes and rings as before.
  */
-export const LIVE_PAGES_PER_RUN = 20;
+export const RUN_PAGE_CAP = 30;
 
 /** The single predicate of a table (L5): old enough and not held. Both the dry-run count and the live page select with it. */
 export const dueWhere = (t: FamilyTable): string => (t.held ? `(${t.age}) AND NOT ${t.held}` : `(${t.age})`);
@@ -468,19 +470,29 @@ export function livePageSql(family: RetentionFamily): string[] {
   const onFirst = (x: string, otherwise: string) =>
     `CASE WHEN NOT EXISTS (SELECT 1 FROM retention_run_counts WHERE run_id = ?3 AND family = ?4) THEN ${x} ELSE ${otherwise} END`;
   const ifLive = (x: string, off: string) => `CASE WHEN ${SWITCH_LIVE_SQL} THEN ${x} ELSE ${off} END`;
-  // AU9: `pages` counts this run's live pages of the family; the page that reaches `LIVE_PAGES_PER_RUN` with rows still due ends the family for tonight
-  // (`done` 1, `more_tomorrow` 1). A stopped page (the switch went off) is done as before and never marks more tomorrow.
-  const budget = `retention_run_counts.pages + 1 >= ${LIVE_PAGES_PER_RUN}`;
-  const upsert = `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done, pages)
-    VALUES (?3, ?4, ${ifLive(sum(tables.map(page)), "0")}, ${helds.length ? ifLive(onFirst(sum(helds), "0"), "0") : "0"}, ${ifLive(onFirst(minOf(tables.map(oldestOf)), "NULL"), "NULL")}, ${ifLive(`(${done})`, "1")}, 1)
-    ON CONFLICT(run_id, family) DO UPDATE SET due = retention_run_counts.due + excluded.due, pages = retention_run_counts.pages + 1,
-      done = CASE WHEN excluded.done = 1 OR ${budget} THEN 1 ELSE 0 END,
-      more_tomorrow = CASE WHEN excluded.done = 0 AND ${budget} THEN 1 ELSE retention_run_counts.more_tomorrow END`;
+  // AU9 (AU40): `pages` counts the run's live pages, family by family; `spent` is the run's total BEFORE this page (the VALUES and the DO UPDATE read the same
+  // rows: one batch, one transaction). A page within the cap counts and acts; the page that reaches the cap with rows still due ends its family with
+  // `more_tomorrow`. A page after the cap counts nothing, acts on nothing (`capped` 1, which the deletes read), and ends its family, with `more_tomorrow`
+  // when rows are due. A stopped page (the switch went off) is done as before and never marks either.
+  const spent = "(SELECT coalesce(sum(rs.pages), 0) FROM retention_run_counts rs WHERE rs.run_id = ?3)";
+  const within = `${spent} < ${RUN_PAGE_CAP}`;
+  const reachesCap = `${spent} + 1 >= ${RUN_PAGE_CAP}`;
+  const anyDue = tables.map((t) => `EXISTS (SELECT 1 FROM ${t.table} WHERE ${dueWhere(t)})`).join(" OR ");
+  const upsert = `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done, pages, capped, more_tomorrow)
+    VALUES (?3, ?4, ${ifLive(`CASE WHEN ${within} THEN ${sum(tables.map(page))} ELSE 0 END`, "0")}, ${helds.length ? ifLive(onFirst(sum(helds), "0"), "0") : "0"}, ${ifLive(onFirst(minOf(tables.map(oldestOf)), "NULL"), "NULL")},
+      ${ifLive(`CASE WHEN ${within} THEN ((${done}) OR ${reachesCap}) ELSE 1 END`, "1")}, ${ifLive(`CASE WHEN ${within} THEN 1 ELSE 0 END`, "0")},
+      ${ifLive(`CASE WHEN ${within} THEN 0 ELSE 1 END`, "0")}, ${ifLive(`CASE WHEN ${within} THEN (NOT (${done}) AND ${reachesCap}) ELSE (${anyDue}) END`, "0")})
+    ON CONFLICT(run_id, family) DO UPDATE SET due = retention_run_counts.due + excluded.due, pages = retention_run_counts.pages + excluded.pages,
+      done = excluded.done, capped = max(retention_run_counts.capped, excluded.capped),
+      more_tomorrow = max(retention_run_counts.more_tomorrow, excluded.more_tomorrow)`;
+  // AU40: a page after the run's cap acts on nothing (its family's row says `capped`, written by the upsert above in the same batch).
+  const notCapped =
+    "NOT EXISTS (SELECT 1 FROM retention_run_counts cr WHERE cr.run_id = ?3 AND cr.family = ?4 AND cr.capped = 1)";
   const act = tables.map((t) => {
     const ids = `SELECT rowid FROM ${t.table} WHERE ${dueWhere(t)} ORDER BY ${t.order} LIMIT ${LIVE_PAGE_ROWS}`;
     return t.scrub
-      ? `UPDATE ${t.table} SET ${t.scrub} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL}`
-      : `DELETE FROM ${t.table} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL}`;
+      ? `UPDATE ${t.table} SET ${t.scrub} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL} AND ${notCapped}`
+      : `DELETE FROM ${t.table} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL} AND ${notCapped}`;
   });
   return [upsert, ...act];
 }

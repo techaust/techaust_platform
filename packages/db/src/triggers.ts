@@ -1805,6 +1805,8 @@ export const REVIEW_KINDS_0070 = [
   // Early check 2, finding 1c (L43; 0070 was unapplied anywhere when it was added): a refund marked failed that the gateway shows as made or pending.
   "refund_after_failed",
 ] as const;
+/** M6–M7 audit AU1: 0070's review kinds and `refund_reversed` (a gateway refund that succeeded came back failed), pinned for 0082. */
+export const REVIEW_KINDS_0082 = [...REVIEW_KINDS_0070, "refund_reversed"] as const;
 /** M6.5: the refund table's lists as 0070 holds them (pinned; a db test compares them with the schema's). */
 export const REFUND_PROVIDERS_0070 = ["manual", "razorpay", "stripe", "paypal"] as const;
 export const REFUND_ORIGINS_0070 = ["owner", "outside", "chargeback"] as const;
@@ -1918,6 +1920,51 @@ export const paymentBlocksVoidTriggerSql = (doc: string, client: string): string
  */
 export function refundTriggerStatements(): string[] {
   const p = gatewayTriggerParts("0070");
+  const { created, ledger } = refundTriggerParts("0070");
+  return [
+    ...REFUND_RECREATED_GATEWAY_0070.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, p[name]]),
+    ...REFUND_RECREATED_LEDGER_0070.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, ledger[name]]),
+    ...REFUND_NEW_0070.flatMap((name) =>
+      name === "refund_result_check"
+        ? ["CREATE VIEW `refund_result` AS SELECT NULL AS refund_ids;", created[name]]
+        : [created[name]],
+    ),
+  ];
+}
+
+/** The triggers 0082 drops and creates again: from `gatewayTriggerParts("0082")` (the review kinds), then from `refundTriggerParts("0082")`. */
+export const AUDIT_MONEY_RECREATED_GATEWAY_0082 = [
+  "review_items_values_insert",
+  "review_items_values_update",
+] as const;
+export const AUDIT_MONEY_RECREATED_REFUND_0082 = [
+  "payment_refunds_bounds",
+  "payment_refunds_status_flow",
+] as const;
+
+/**
+ * M6–M7 audit of the money core (run file docs/runs/full-audit-m6-m7.md B0, lead's triage AU1 and AU3; the trigger set `audit_money_triggers`, 0082). No table is
+ * rebuilt; the columns came by ADD COLUMN in 0081. Each trigger is dropped and created again:
+ *   1. `review_items_values_*` accept the review kind `refund_reversed` (`REVIEW_KINDS_0082`);
+ *   2. `payment_refunds_bounds` holds RA-40's credit-note link as the route and `refundInsertStatement` hold it (B0 4): a refund of an invoice's excess may name
+ *      only an issued credit note of that invoice, issued on or after the day the payment arrived and covering the refund (Settled by the lead on the safest
+ *      reading, 2026-11-03 (08-C RA-40));
+ *   3. `payment_refunds_status_flow` lets a GATEWAY refund (not manual, not a lost dispute) that `succeeded` move once to `failed` (B0 1, AU1): with its failure
+ *      code and `reversed_at` set in the same move, its gateway id kept, and its settled time and day kept as history; `reversed_at` is set only by that move and
+ *      never changes. Every reader counts refunds that `succeeded` or are not `failed`, so the money is the client's credit again.
+ */
+export function auditMoneyTriggerStatements(): string[] {
+  const p = gatewayTriggerParts("0082");
+  const { created } = refundTriggerParts("0082");
+  return [
+    ...AUDIT_MONEY_RECREATED_GATEWAY_0082.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, p[name]]),
+    ...AUDIT_MONEY_RECREATED_REFUND_0082.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, created[name]]),
+  ];
+}
+
+/** The refund set's triggers by name: as 0070 created them, or (`0082`) with RA-40 in the bounds and the reversal of a gateway refund in the status flow. */
+function refundTriggerParts(v: "0070" | "0082") {
+  const v82 = v === "0082";
   const named = (name: string, message: string) => abort(`${name}: ${message}`);
   const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
   const changed = (cols: readonly string[]) =>
@@ -1966,14 +2013,22 @@ export function refundTriggerStatements(): string[] {
   const fromDocument = `bp.status = 'confirmed' AND bp.kind = 'payment' AND NEW.document_id IS NOT NULL
       AND EXISTS (SELECT 1 FROM documents d WHERE d.id = NEW.document_id AND d.client_id = bp.client_id AND d.currency = bp.currency AND d.frozen_at IS NOT NULL AND d.status <> 'void'
         AND d.type IN ${PAYABLE_TYPES_SQL} AND (NEW.amount_minor <= ${docExcess} OR NEW.origin = 'chargeback') AND NEW.amount_minor <= ${paymentNetSql("bp.id", "d.id")})
-      AND (NEW.credit_note_id IS NULL OR EXISTS (SELECT 1 FROM documents cn WHERE cn.id = NEW.credit_note_id AND cn.type = 'credit_note' AND cn.parent_id = NEW.document_id AND cn.frozen_at IS NOT NULL))`;
+      AND (NEW.credit_note_id IS NULL OR EXISTS (SELECT 1 FROM documents cn WHERE cn.id = NEW.credit_note_id AND cn.type = 'credit_note' AND cn.parent_id = NEW.document_id AND cn.frozen_at IS NOT NULL${v82 ? " AND cn.issue_date >= bp.received_on AND cn.total_minor >= NEW.amount_minor" : ""}))`;
   const fromPending = `bp.status = 'pending_verification' AND bp.kind = 'payment' AND bp.provider <> 'manual' AND NEW.provider = bp.provider AND NEW.document_id IS NULL
       AND NEW.credit_note_id IS NULL AND NEW.amount_minor = bp.amount_minor AND NOT EXISTS (SELECT 1 FROM payment_refunds bx WHERE bx.payment_id = bp.id AND bx.status <> 'failed')`;
   const refundBoundBad = `NOT EXISTS (SELECT 1 FROM payments bp JOIN clients bk ON bk.id = bp.client_id WHERE bp.id = NEW.payment_id AND bp.client_id = NEW.client_id AND bp.currency = NEW.currency
       AND bk.anonymised_at IS NULL AND ((${fromCredit}) OR (${fromDocument}) OR (${fromPending})))`;
   const refundMove = (from: string, to: readonly string[]) =>
     `(OLD.status = '${from}' AND NEW.status IN (${q(to)}))`;
-  const refundFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${refundMove("requested", ["processing", "succeeded", "failed"])} OR ${refundMove("processing", ["succeeded", "failed"])}))
+  // 0082 (AU1): a gateway refund that succeeded comes back failed, once, with its code and `reversed_at`; its gateway id and settled fields stay as they were.
+  const reversal = `(OLD.status = 'succeeded' AND NEW.status = 'failed' AND OLD.provider <> 'manual' AND OLD.origin <> 'chargeback' AND OLD.provider_refund_id IS NOT NULL
+      AND OLD.reversed_at IS NULL AND NEW.reversed_at IS NOT NULL AND NEW.failure_code IS NOT NULL AND NEW.settled_at IS OLD.settled_at AND NEW.settled_on IS OLD.settled_on)`;
+  const refundFlowBad = v82
+    ? `(NEW.status IS NOT OLD.status AND NOT (${refundMove("requested", ["processing", "succeeded", "failed"])} OR ${refundMove("processing", ["succeeded", "failed"])} OR ${reversal}))
+    OR (NEW.status = 'succeeded' AND (NEW.settled_at IS NULL OR NEW.settled_on IS NULL))
+    OR (NEW.status <> 'succeeded' AND NEW.reversed_at IS NULL AND (NEW.settled_at IS NOT NULL OR NEW.settled_on IS NOT NULL))
+    OR (NEW.reversed_at IS NOT OLD.reversed_at AND NOT ${reversal})`
+    : `(NEW.status IS NOT OLD.status AND NOT (${refundMove("requested", ["processing", "succeeded", "failed"])} OR ${refundMove("processing", ["succeeded", "failed"])}))
     OR (NEW.status = 'succeeded' AND (NEW.settled_at IS NULL OR NEW.settled_on IS NULL))
     OR (NEW.status <> 'succeeded' AND (NEW.settled_at IS NOT NULL OR NEW.settled_on IS NOT NULL))`;
   const releaseOk = `EXISTS (SELECT 1 FROM payment_allocations ra WHERE ra.id = NEW.release_allocation_id AND ra.kind = 'release' AND ra.payment_id = OLD.payment_id AND ra.document_id = OLD.document_id
@@ -2031,8 +2086,8 @@ export function refundTriggerStatements(): string[] {
     payment_refunds_values_insert: `CREATE TRIGGER \`payment_refunds_values_insert\` BEFORE INSERT ON \`payment_refunds\` WHEN ${refundValuesBad} BEGIN ${named("payment_refunds_values_insert", refundValuesMsg)} END;`,
     payment_refunds_values_update: `CREATE TRIGGER \`payment_refunds_values_update\` BEFORE UPDATE OF provider, origin, status, mode, paid_to, reason_code ON \`payment_refunds\` WHEN ${refundValuesBad} BEGIN ${named("payment_refunds_values_update", refundValuesMsg)} END;`,
     payment_refunds_insert_state: `CREATE TRIGGER \`payment_refunds_insert_state\` BEFORE INSERT ON \`payment_refunds\` WHEN ${refundInsertBad} BEGIN ${named("payment_refunds_insert_state", "an active Owner records a manual refund as succeeded with its bank mode, reference, day and recipient; starts a gateway refund as requested through the gateway of the payment; or records a refund made outside or a lost dispute as succeeded with the id from the gateway")} END;`,
-    payment_refunds_bounds: `CREATE TRIGGER \`payment_refunds_bounds\` BEFORE INSERT ON \`payment_refunds\` WHEN ${refundBoundBad} BEGIN ${named("payment_refunds_bounds", "a refund comes from a payment of a live client in its currency: from credit, at most its free money; from the excess of an invoice, at most that excess and what the payment holds on the invoice; from a pending gateway payment, its whole amount")} END;`,
-    payment_refunds_status_flow: `CREATE TRIGGER \`payment_refunds_status_flow\` BEFORE UPDATE ON \`payment_refunds\` WHEN ${refundFlowBad} BEGIN ${named("payment_refunds_status_flow", "a refund goes requested to processing, succeeded or failed, and processing to succeeded or failed; a succeeded refund has its settled time and day, and no other")} END;`,
+    payment_refunds_bounds: `CREATE TRIGGER \`payment_refunds_bounds\` BEFORE INSERT ON \`payment_refunds\` WHEN ${refundBoundBad} BEGIN ${named("payment_refunds_bounds", `a refund comes from a payment of a live client in its currency: from credit, at most its free money; from the excess of an invoice, at most that excess and what the payment holds on the invoice${v82 ? ", naming only a credit note of that invoice issued since the payment arrived that covers the refund" : ""}; from a pending gateway payment, its whole amount`)} END;`,
+    payment_refunds_status_flow: `CREATE TRIGGER \`payment_refunds_status_flow\` BEFORE UPDATE ON \`payment_refunds\` WHEN ${refundFlowBad} BEGIN ${named("payment_refunds_status_flow", `a refund goes requested to processing, succeeded or failed, and processing to succeeded or failed; a succeeded refund has its settled time and day, and no other${v82 ? "; a gateway refund that succeeded comes back failed once, with its code and the time, keeping its settled fields" : ""}`)} END;`,
     payment_refunds_fixed: `CREATE TRIGGER \`payment_refunds_fixed\` BEFORE UPDATE ON \`payment_refunds\` WHEN ${refundFixedBad} BEGIN ${named("payment_refunds_fixed", "a refund keeps its payment, document, amount and recipient; its gateway id, release, settled fields and INR amount are set once, the release a release row of the same payment, document and amount; its note is cleared only once the client is anonymised")} END;`,
     payment_refunds_no_delete: `CREATE TRIGGER \`payment_refunds_no_delete\` BEFORE DELETE ON \`payment_refunds\` BEGIN ${named("payment_refunds_no_delete", "a refund is never deleted")} END;`,
     payment_refunds_erase_note:
@@ -2062,19 +2117,11 @@ export function refundTriggerStatements(): string[] {
     ledger_result_check: `CREATE TRIGGER \`ledger_result_check\` INSTEAD OF INSERT ON \`ledger_result\` WHEN ${resultPaymentBad} OR ${resultDocBad} BEGIN ${named("ledger_result_check", "the ledger does not add up after this change")} END;`,
     documents_void_no_payment: `CREATE TRIGGER \`documents_void_no_payment\` BEFORE UPDATE OF status ON \`documents\` WHEN ${voidBad} BEGIN ${named("documents_void_no_payment", "a document with a payment on it, a payment waiting for it, a capture in flight or TDS is never voided; a credit note corrects it")} END;`,
   };
-  return [
-    ...REFUND_RECREATED_GATEWAY_0070.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, p[name]]),
-    ...REFUND_RECREATED_LEDGER_0070.flatMap((name) => [`DROP TRIGGER \`${name}\`;`, ledger[name]]),
-    ...REFUND_NEW_0070.flatMap((name) =>
-      name === "refund_result_check"
-        ? ["CREATE VIEW `refund_result` AS SELECT NULL AS refund_ids;", created[name]]
-        : [created[name]],
-    ),
-  ];
+  return { created, ledger };
 }
 
 /** The gateway triggers as one migration of the `gateway_triggers` family creates them (0064 Razorpay, 0066 Stripe, 0068 PayPal), by name. */
-function gatewayTriggerParts(v: "0064" | "0066" | "0068" | "0070") {
+function gatewayTriggerParts(v: "0064" | "0066" | "0068" | "0070" | "0082") {
   const named = (name: string, message: string) => abort(`${name}: ${message}`);
   const q = (xs: readonly string[]) => xs.map((x) => `'${x}'`).join(", ");
   const changed = (cols: readonly string[]) =>
@@ -2086,19 +2133,23 @@ function gatewayTriggerParts(v: "0064" | "0066" | "0068" | "0070") {
   // 0066 and every later variant carry M6.3's rules; 0068 adds PayPal's; 0070 (M6.5) keeps them and adds the refund of a pending gateway payment (L33) and the
   // review kinds of refunds and disputes.
   const v66 = v !== "0064";
-  const v68 = v === "0068" || v === "0070";
-  const v70 = v === "0070";
+  const v68 = v === "0068" || v === "0070" || v === "0082";
+  const v70 = v === "0070" || v === "0082";
+  // M6–M7 audit AU1 (0082): 0070's rules with one more review kind, `refund_reversed`.
+  const v82 = v === "0082";
   const gatewayProviders: readonly string[] = {
     "0064": GATEWAY_PROVIDERS_0064,
     "0066": GATEWAY_PROVIDERS_0066,
     "0068": GATEWAY_PROVIDERS_0068,
     "0070": GATEWAY_PROVIDERS_0068,
+    "0082": GATEWAY_PROVIDERS_0068,
   }[v];
   const paymentProviders: readonly string[] = {
     "0064": PAYMENT_PROVIDERS_0064,
     "0066": PAYMENT_PROVIDERS_0066,
     "0068": PAYMENT_PROVIDERS_0068,
     "0070": PAYMENT_PROVIDERS_0068,
+    "0082": PAYMENT_PROVIDERS_0068,
   }[v];
   // A gateway payment, by its provider (never "not manual": an unknown provider must fall through to `payments_values_insert`'s message).
   const gateway = (row: "NEW" | "OLD") => `${row}.provider IN (${q(gatewayProviders)})`;
@@ -2199,7 +2250,7 @@ function gatewayTriggerParts(v: "0064" | "0066" | "0068" | "0070") {
   const eventValuesBad = `NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.status NOT IN (${q(WEBHOOK_EVENT_STATUSES_0064)})`;
   const eventFlowBad = `(NEW.status IS NOT OLD.status AND NOT ((OLD.status = 'received' AND NEW.status IN ('processed', 'ignored', 'needs_review', 'failed')) OR (OLD.status = 'failed' AND NEW.status = 'received'))) OR NEW.attempts < OLD.attempts`;
   // 8. review_items
-  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.kind NOT IN (${q(v70 ? REVIEW_KINDS_0070 : v68 ? REVIEW_KINDS_0068 : v66 ? REVIEW_KINDS_0066 : REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
+  const reviewValuesBad = `NEW.source NOT IN (${q(REVIEW_SOURCES_0064)}) OR NEW.provider NOT IN (${q(gatewayProviders)}) OR NEW.kind NOT IN (${q(v82 ? REVIEW_KINDS_0082 : v70 ? REVIEW_KINDS_0070 : v68 ? REVIEW_KINDS_0068 : v66 ? REVIEW_KINDS_0066 : REVIEW_KINDS_0064)}) OR NEW.status NOT IN ('open', 'resolved') OR (NEW.resolution IS NOT NULL AND NEW.resolution NOT IN (${q(REVIEW_RESOLUTIONS_0064)}))`;
   const reviewValuesMsg = "a review item has a known source, provider, kind, status and resolution";
   const resolving = "OLD.status = 'open' AND NEW.status = 'resolved'";
   const reviewFlowBad = `(NEW.status IS NOT OLD.status AND NOT (${resolving}))
@@ -2565,6 +2616,10 @@ export const TRIGGER_SETS = {
   data_protection_triggers: {
     what: "M7.4 data-protection tooling: the clock of existing requests and one consent receipt per lead back-filled, 366-day floors, legal hold, the anonymised lock, the R2 outbox, the erasure stop with the hash and end of the receipts, the request kinds, clock, steps and close, consent receipts, clean-up runs and the audit scrub",
     statements: dataProtectionTriggerStatements,
+  },
+  audit_money_triggers: {
+    what: "M6–M7 audit of the money core: the review kind refund_reversed, RA-40's credit-note link in the refund bounds, and a gateway refund that succeeded may come back failed once",
+    statements: auditMoneyTriggerStatements,
   },
   audit_af2_triggers: {
     what: "Full audit M6–M7 fix round AF2: the PDF refusal kept outside the bells (back-filled, set once), the clean-up's page budget columns, a lead held by its address, the redaction hold on every redaction, the export date and the consent withdrawal's proof at a request's close, the digest switched off by a spam report, and the staff close notes cleared with a contact",
