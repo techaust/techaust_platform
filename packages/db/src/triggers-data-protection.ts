@@ -189,7 +189,7 @@ export const ERASURE_ACTION_0079 = `EXISTS (SELECT 1 FROM audit_log a WHERE a.id
         OR (NEW.lead_ref IS NOT NULL AND a.action = 'lead.erase' AND a.entity_type = 'lead' AND a.entity_id = NEW.lead_ref)))`;
 /**
  * The close rules of 0079 (`client_requests_close_rules`), exported unchanged for the audit fix set, which adds its own rules after them. AU61 (review L3): the
- * indentation is 0079's own, byte for byte (`test/trigger-text.test.ts` compares the generated text exactly).
+ * indentation is 0079's own, byte for byte (`test/triggers.test.ts and test/data-protection-triggers.test.ts` compares the generated text exactly).
  */
 export const CLOSE_BAD_0079 = `OLD.status = 'open' AND NEW.status = 'closed' AND (
        (NEW.outcome = 'declined' AND (NEW.decline_reason IS NULL OR NEW.decline_reason NOT IN (${q(DECLINE_REASONS_0079)}) OR NEW.action_audit_id IS NOT NULL OR NEW.export_sent_at IS NOT NULL))

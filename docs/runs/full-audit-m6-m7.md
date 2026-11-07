@@ -1,4 +1,4 @@
-Status: all seven areas audited (2026-11-07); fix round running (AF1 money and gateways; AF2 jobs, portal, notifications, data protection: early check ready on `fix/audit-af2`; then the designer)
+Status: fixes reviewed (APPROVE) and re-checked (APPROVE), lead final checks green (2026-11-07); PR held until #187 (M7.4) and #189 (M7.5) merge
 Tier: A (it covers money, gateways, refunds, client scoping, staff auth and deletion)
 Usage:
 
@@ -699,3 +699,15 @@ At 5fa703d7, one package at a time (a re-check reviewer ran beside it, so the st
   All are under their ceilings and the 200 ms gate.
 - **Migrations:** 0080–0086 pass `check-migrations` (87 in all).
 - **Earlier finding, fixed:** a full parallel run timed out on two web tests under load; one package at a time is green. The `rate-limit-config` core test missed `RL_SIGNOUT` and was fixed by the lead (55126b45).
+
+## Re-check of the review fixes (reviewer, 2026-11-07): APPROVE
+Copied by the lead. Reviewer claude-opus-5-5/high; skills `cloudflare:workers-best-practices`, `frontend-design`. At 5fa703d7, diff `f42bc7f6..5fa703d7`.
+- **L1–L7:** each fixed completely, with a test that fails without it.
+- **0084:** changed in whitespace only (`git diff -w` empty); 0079 untouched.
+- **Shared reader:** each caller keeps its cap and its error mapping; the auth to core link has no cycle and adds 76 bytes per bundle.
+- **Warm fixtures:** made-up data only.
+- **L5 in the browser:** at 390 px in both themes every tabbed link clears the fade (smallest gap 40 px); at 768 px the index wraps.
+- **Ran:** core 9/9, db 112/112, jobs 42/42, auth 11/11, email 3/3, admin 131/131.
+- **One new low:** a comment named a test file that doesn't exist (`triggers-data-protection.ts:192`). Fixed by the lead (it names `test/triggers.test.ts` and `test/data-protection-triggers.test.ts`).
+
+**Status of the fix round:** reviewed (APPROVE) and re-checked (APPROVE); the lead's final checks are green. The PR is held until #187 and #189 merge.
