@@ -139,6 +139,8 @@
 
 ## Phase 7: Launch (each step separately approved by you)
 
+**Owner, 2026-11-07 ([13](13-decisions.md)):** techaust.com switches at the first production deploy (L4 and L8 together, no workers.dev-only period; the old Worker is deleted on the owner's explicit go at the time); the owner tests everything end to end on production; the lead creates production resources and, after the owner's yes to the listed records, the DNS records through the Cloudflare connector. Payments stay on test keys until L9.
+
 | # | Step | Detail | Approval |
 |---|---|---|---|
 | L1 | **Staging full test pass** | A scripted checklist: every PRD "M" item; E2E payments for Razorpay/Stripe/PayPal (sandbox) + bank transfer; PDFs for every document type; emails; portal; a11y and Lighthouse; restore drill #1 on a staging backup | Review the report |
