@@ -255,7 +255,7 @@ describe("through the gateway [C step 3, L8, L37, ADM-PAY-11]", () => {
     });
   });
 
-  it("live mode in Settings with the flag false: 503 live_not_allowed, zero fetches, nothing written (review fix 3)", async () => {
+  it("live mode in Settings with the flag false: the refund runs in test mode with the test key (P7 A2.3, was 503 live_not_allowed), and the owners hear it", async () => {
     const o = await owner();
     const clientId = await mkReportClient("INR");
     const p = await rzpPayment(clientId, o.id);
@@ -273,10 +273,17 @@ describe("through the gateway [C step 3, L8, L37, ADM-PAY-11]", () => {
       calls.length = 0;
       const body = gateway(1_000);
       const res = await call(`/payments/${p.id}/refunds`, { cookie: o.cookie, body });
-      expect(res.status).toBe(503);
-      expect(((await json(res)) as J).error.code).toBe("live_not_allowed");
-      expect(calls).toHaveLength(0);
-      expect(await refundRow(body.id)).toBeNull();
+      // P7 A2.3: a gateway left in live mode falls back to test while the go-live flag is off: the test key calls the simulator (rule 7 still holds: a live
+      // key or a live host is never used while the flag is off; gateway.test.ts keeps the live-key refusal).
+      expect(res.status).not.toBe(503);
+      expect(calls.length).toBeGreaterThan(0);
+      expect(await refundRow(body.id)).not.toBeNull();
+      expect(
+        await one<{ n: number }>(
+          "SELECT count(*) AS n FROM notifications WHERE kind = 'payment.live_reverted' AND user_id = ?1",
+          o.id,
+        ),
+      ).toEqual({ n: 1 });
     } finally {
       if (before)
         await env.DB.prepare("UPDATE settings SET value = ?1, version = ?2 WHERE key = 'gateways'")

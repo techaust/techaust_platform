@@ -220,8 +220,7 @@ export function payPalOf(env: object, settingsMode: "test" | "live"): PayPalApi 
   return payPalApi({
     clientId: envText(env, "PAYPAL_CLIENT_ID"),
     clientSecret: envText(env, "PAYPAL_CLIENT_SECRET"),
-    // P7 A2.3: a live mode while the flag is off runs as test (its sandbox host), never refused into a retry loop.
-    settingsMode: effectiveMode(settingsMode, envText(env, "PAYMENTS_LIVE_ALLOWED")),
+    settingsMode,
     liveFlag: envText(env, "PAYMENTS_LIVE_ALLOWED"),
     fetch:
       transport === "warm"
@@ -240,8 +239,7 @@ export function stripeOf(env: object, settingsMode: "test" | "live"): StripeApi 
   if (transport === "unset") return null;
   return stripeApi({
     key: envText(env, "STRIPE_SECRET_KEY"),
-    // P7 A2.3: a live mode while the flag is off runs as test.
-    settingsMode: effectiveMode(settingsMode, envText(env, "PAYMENTS_LIVE_ALLOWED")),
+    settingsMode,
     liveFlag: envText(env, "PAYMENTS_LIVE_ALLOWED"),
     fetch: transport === "stub" ? (i, o) => stubTransport(i, o) : (i, o) => fetch(i, o),
   });
@@ -254,8 +252,7 @@ export function razorpayOf(env: object, settingsMode: "test" | "live"): Razorpay
   return razorpayApi({
     keyId: envText(env, "RAZORPAY_KEY_ID"),
     keySecret: envText(env, "RAZORPAY_KEY_SECRET"),
-    // P7 A2.3: a live mode while the flag is off runs as test.
-    settingsMode: effectiveMode(settingsMode, envText(env, "PAYMENTS_LIVE_ALLOWED")),
+    settingsMode,
     liveFlag: envText(env, "PAYMENTS_LIVE_ALLOWED"),
     fetch: transport === "stub" ? (i, o) => stubTransport(i, o) : (i, o) => fetch(i, o),
   });
