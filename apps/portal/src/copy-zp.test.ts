@@ -30,6 +30,9 @@ describe("07-ZP, owner-approved [POR-04, POR-06 to POR-11]", () => {
     // re-check 6: the owner's new G12 words (a refusal is a pasted control character; the box stops more than 300)
     expect(GAP.noteRefused).toBe("We couldn't save this note. Remove any unusual characters and try again.");
   });
+  it("carries the owner's Requests empty line (audit AU14, 2026-11-07), unmarked", () => {
+    expect(GAP.requestsEmpty).toBe("You haven't sent any requests yet.");
+  });
   it("pass the banned-phrase list (07 §1.3), say 'and', never '&', and name no card or bank field to fill in", () => {
     for (const line of zpAllText()) {
       expect(findBannedPhrases(line), line).toEqual([]);

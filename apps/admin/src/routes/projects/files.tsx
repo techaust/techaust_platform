@@ -53,6 +53,8 @@ export function FilesPanel(props: {
   emptyText?: string;
   /** The client is an anonymised individual: no upload, share or delete (client_anonymised). */
   readOnly?: boolean;
+  /** Full audit AU23: the client is under a legal hold: no file can be deleted (the server answers 409 `legal_hold`), so Delete is not offered. */
+  held?: boolean;
 }) {
   const user = useUser();
   const toast = useToast();
@@ -303,7 +305,7 @@ export function FilesPanel(props: {
                 ) : (
                   <VisibilityPill shared={f.shared} />
                 )}
-                {canWrite && (
+                {canWrite && props.held !== true && (
                   <button
                     type="button"
                     className="btn btn--text btn--danger-text"

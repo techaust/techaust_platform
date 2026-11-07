@@ -169,6 +169,8 @@ export const GAP = {
    * more than 300 characters, so a refusal means a pasted control character. Never the reference's G8.
    */
   noteRefused: "We couldn't save this note. Remove any unusual characters and try again.",
+  /** G13 (audit AU14 / B3 M6; the owner's words, 2026-11-07): Profile › Requests with no request yet. */
+  requestsEmpty: "You haven't sent any requests yet.",
 } as const;
 
 /** Every line as text, for the tests (banned words, no "&"). */

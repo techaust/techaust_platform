@@ -1,6 +1,6 @@
 // Profile (M7.1; POR-09, POR-10, POR-11; run file G.6, Q1 A, L8, L15): the contact's own details (name and phone saved here, Q1 A; the email is how they
-// sign in, so a change of it is a request), the organisation's people with portal access (names and titles only; OPEN (08-C RB-45): is a colleague's title
-// needed for the purpose, or is the name enough under DPDP s.8(7) data minimisation?), and the contact's own requests with a "New request" dialog (the
+// sign in, so a change of it is a request), the organisation's people with portal access (names and titles only; Settled by the lead on the safest reading,
+// 2026-11-05 (08-C RB-45): name and title serve the purpose, never an email, phone or id), and the contact's own requests with a "New request" dialog (the
 // five kinds, one channel per DPDP s.11 to s.13 right; Researched 2026-10-29, 08-C RB-36; RB-13 for the reply within a month). A stale save says so (C17)
 // and offers to reload. Words: copy-zp.ts C16 to C24 (marked until approved), G2 to G5.
 import { NEW_KIND_LABELS, PORTAL_REQUEST_COPY } from "@techaust/core/copy-zr";
@@ -24,6 +24,7 @@ import {
 } from "../../lib/m71.ts";
 import { useMe } from "../../session.tsx";
 import { MoreButton, ScreenSkeleton } from "../home.tsx";
+import { EmptyLine } from "./shared.tsx";
 import "./m71.css";
 
 // M7.4 (E, L9): the two kinds 07-A §6 promises, after M7.1's five; their labels are 07-ZR C5 and C6 (the owner's, "[Placeholder]" until approved)
@@ -284,7 +285,9 @@ function Requests(props: { first: RequestItem[]; next: string | null }) {
           <Notice tone="success">{ZP.requestSent}</Notice>
         </div>
       )}
-      {items.length > 0 && (
+      {items.length === 0 ? (
+        <EmptyLine icon={<MessageSquare size={24} />}>{GAP.requestsEmpty}</EmptyLine>
+      ) : (
         <ul className="m71-reqs">
           {items.map((r) => (
             <RequestRow key={r.id} r={r} />

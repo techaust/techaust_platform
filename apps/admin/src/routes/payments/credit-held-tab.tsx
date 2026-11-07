@@ -11,9 +11,11 @@ import { type Column, DataTable } from "../../components/data-table.tsx";
 import { EmptyState } from "../../components/display.tsx";
 import { FormField } from "../../components/form.tsx";
 import { Wallet } from "../../components/icons.tsx";
+import { KeysetFoot } from "../../components/keyset-foot.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { periodText, ZO_UI } from "../../lib/copy-zo.ts";
+import { keysetFootLine, readPastEmptyPages, showsEmpty, stalledAt } from "../../lib/keyset-pages.ts";
 import { amountText, payErrorText } from "../../lib/payments.ts";
 import { type CreditHeldRow, periodsFrom, refundsApi } from "../../lib/refunds-api.ts";
 import { day } from "./parts.tsx";
@@ -21,13 +23,32 @@ import { day } from "./parts.tsx";
 export function CreditHeldTab(_props: { role: Role }) {
   const toast = useToast();
   const [period, setPeriod] = useState<string | undefined>(undefined);
-  const list = useLoad(() => refundsApi.creditHeld(period ? { period } : {}), period ?? "");
+  // M6–M7 audit AU32: a page of the bounded scan can hold no row and still name a next one: read on by itself (with the line), never stop there.
+  const [checking, setChecking] = useState(false);
+  const list = useLoad(async () => {
+    try {
+      const first = await refundsApi.creditHeld(period ? { period } : {});
+      return await readPastEmptyPages(
+        (c) =>
+          c === undefined
+            ? Promise.resolve(first)
+            : refundsApi.creditHeld({ period: first.period, cursor: c }),
+        undefined,
+        { onEmpty: () => setChecking(true) },
+      );
+    } finally {
+      setChecking(false);
+    }
+  }, period ?? "");
   const [more, setMore] = useState<CreditHeldRow[]>([]);
   const [next, setNext] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
+  // AU50: the last "Show more" stopped at the page limit with nothing found (null: no "Show more" yet, the first read decides)
+  const [moreStalled, setMoreStalled] = useState<boolean | null>(null);
   const rows = [...(list.data?.items ?? []), ...more];
   const cursor = next === undefined ? (list.data?.next ?? null) : next;
   const shown = list.data?.period;
+  const stalled = moreStalled ?? stalledAt(list.data);
   // the picker's periods start from the latest ended one the server named first (picking an older one keeps them all)
   const [base, setBase] = useState<{ period: string; frequency: "monthly" | "quarterly" } | null>(null);
   useEffect(() => {
@@ -39,13 +60,22 @@ export function CreditHeldTab(_props: { role: Role }) {
     if (!cursor || !shown) return;
     setLoading(true);
     try {
-      const r = await refundsApi.creditHeld({ period: shown, cursor });
+      const r = await readPastEmptyPages(
+        (c) => refundsApi.creditHeld({ period: shown, cursor: c as string }),
+        cursor,
+        {
+          onEmpty: () => setChecking(true),
+        },
+      );
       setMore((m) => [...m, ...r.items.filter((x) => !m.some((y) => y.paymentId === x.paymentId))]);
-      setNext(r.items.length > 0 ? r.next : null);
+      // AU32: the server's `next` whatever the page held (an empty page is not the end)
+      setNext(r.next);
+      setMoreStalled(stalledAt(r));
     } catch (e) {
       toast("error", payErrorText(e));
     } finally {
       setLoading(false);
+      setChecking(false);
     }
   }
 
@@ -104,6 +134,7 @@ export function CreditHeldTab(_props: { role: Role }) {
                 onChange={(e) => {
                   setMore([]);
                   setNext(undefined);
+                  setMoreStalled(null);
                   setPeriod(e.target.value);
                 }}
               >
@@ -119,7 +150,7 @@ export function CreditHeldTab(_props: { role: Role }) {
       )}
       {list.state === "failed" ? (
         <LoadFailed error={list.error} onRetry={() => list.reload()} />
-      ) : (
+      ) : rows.length === 0 && stalled && list.state === "ready" ? null : (
         <div className="clients-table pay-table rf-tab__table">
           <DataTable
             caption={ZO_UI.creditHeldTab}
@@ -129,24 +160,24 @@ export function CreditHeldTab(_props: { role: Role }) {
             loading={list.state === "loading"}
             skeletonRows={4}
             empty={
-              <EmptyState icon={<Wallet />} title={ZO_UI.creditHeldEmpty.replace(/\.$/, "")}>
-                {null}
-              </EmptyState>
+              // AU32: only when no next page is left; otherwise the table stays with "Show more" below
+              showsEmpty(rows.length, cursor) ? (
+                <EmptyState icon={<Wallet />} title={ZO_UI.creditHeldEmpty.replace(/\.$/, "")}>
+                  {null}
+                </EmptyState>
+              ) : undefined
             }
           />
         </div>
       )}
-      {cursor && (
-        <button
-          type="button"
-          className="btn btn--secondary notes__more"
-          onClick={() => void showMore()}
-          disabled={loading}
-          aria-busy={loading || undefined}
-        >
-          {loading ? "Loading…" : ZO_UI.loadMore}
-        </button>
-      )}
+      {/* AU32, AU50: "Show more" with its live line; with nothing found and pages left, the line stands where the list would be */}
+      <KeysetFoot
+        cursor={cursor}
+        loading={loading}
+        line={keysetFootLine(checking, stalled)}
+        moreLabel={ZO_UI.loadMore}
+        onMore={() => void showMore()}
+      />
     </div>
   );
 }

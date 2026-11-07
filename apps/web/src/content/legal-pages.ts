@@ -203,6 +203,11 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
           },
         },
         {
+          // Owner, 2026-11-07 (audit B3 M4): what colleagues see in the portal: name and title (08-C RB-45), and an accepted offer's record and certificate
+          // (`ACCEPTANCE_SQL`, `CERT_KEY_SQL`, client-scoped; 08-C RB-19).
+          p: "Other people at your organisation who have client portal access can see your name and job title. If you accept a proposal or estimate, they can also see its acceptance record, which shows your name, email address, IP address and browser.",
+        },
+        {
           p: "We may also disclose information when the law requires it, or to protect our rights in a legal dispute.",
         },
       ],
@@ -247,6 +252,10 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
         {
           p: "If the law requires us to keep something longer (for example, during a dispute), we keep it only for that purpose.",
         },
+        {
+          // 07-ZR C7 (owner, 2026-11-07; L31): the keyed form kept after an erasure (`PRIVACY_KEYED_FORM_LINE` in @techaust/core/copy-zr, same words).
+          p: "If you ask us to erase your data, we keep only a scrambled form of your email address for 3 years, so that we don’t email you and can show what you agreed to.",
+        },
       ],
     },
     {
@@ -284,7 +293,7 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
           ],
         },
         {
-          p: `Email **${PRIVACY}**, or use “Request my data” in the client portal. We may need to confirm your identity. We acknowledge requests within 48 hours and respond within 30 days.`,
+          p: `Email **${PRIVACY}**, or, if you use the client portal, go to Profile, then Requests, and choose “New request”. We may need to confirm your identity. We acknowledge requests within 48 hours and respond within 30 days.`,
         },
       ],
     },
@@ -451,7 +460,7 @@ const terms: LegalDoc = {
           // T6, 07-ZE line 13 (owner, 2026-10-31) after "…a fingerprint of the document).": Researched 2026-10-31, Contract Act s.7(2) (08-C
           // RB-35); its last sentence answers OPEN (08-C RB-35(a)) by naming IST; "the earlier ones can no longer be accepted": Researched
           // 2026-10-29, Contract Act s.6 (08-C RB-35); OPEN (08-C RB-35(b)): s.5 not read.
-          p: "Access is for authorised contacts of our clients. Keep sign-in links private and don’t forward them. You’re responsible for files you upload: you confirm you have the right to share them and that they contain no malware. **Accepting a proposal in the portal (typing your name and clicking Accept) forms a binding agreement** on the terms of that proposal, and we keep a record of it (name, email, time, IP address, browser and a fingerprint of the document). Accept in the portal is the only way to accept a proposal or estimate; a reply by email isn’t an acceptance. When we send a newer version, the earlier ones can no longer be accepted. Validity dates end at midnight India Standard Time (IST).",
+          p: "Access is for authorised contacts of our clients. Keep sign-in links private and don’t forward them. **Accepting a proposal in the portal (typing your name and clicking Accept) forms a binding agreement** on the terms of that proposal, and we keep a record of it (name, email, time, IP address, browser and a fingerprint of the document). Accept in the portal is the only way to accept a proposal or estimate; a reply by email isn’t an acceptance. When we send a newer version, the earlier ones can no longer be accepted. Validity dates end at midnight India Standard Time (IST).",
         },
       ],
     },

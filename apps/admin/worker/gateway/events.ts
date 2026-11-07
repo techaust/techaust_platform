@@ -152,7 +152,7 @@ export async function processEvent(
   if (type === "payment_link.expired" || type === "payment_link.cancelled") {
     const linkR = await api.fetchLink(linkId);
     if (!linkR.ok)
-      return linkR.code === "network" || linkR.code === "unconfigured"
+      return linkR.code === "network" || linkR.code === "unconfigured" || linkR.code === "live_not_allowed"
         ? { result: "retry" }
         : endCheckout(env, { cause, checkout: null, status: "expired", now });
     const want = type === "payment_link.expired" ? "expired" : "cancelled";

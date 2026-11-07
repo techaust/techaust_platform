@@ -365,17 +365,8 @@ function RefundForm(props: RefundDialogProps & { payment: ResolvedPayment; onBus
           setNeedNote({ advance: d.noteReason === "service_not_delivered" });
           return;
         }
-        const limit =
-          typeof d.refundableMinor === "number"
-            ? d.refundableMinor
-            : typeof d.holdingMinor === "number"
-              ? d.holdingMinor
-              : null;
-        if (limit !== null) {
-          setFailure(`${payErrorText(err)} ${ZO_UI.amountMost(amountText(limit, cur))}`);
-          refusal.show();
-          return;
-        }
+        // M6–M7 audit AU16 (B2 3): the gateway's refusal code now reaches `details` (`PAYMENT_DETAIL_KEYS` in api.ts); the old limit branch read keys that the
+        // details never carried, so it is gone.
         if (err.code === "gateway_refused" && typeof d.code === "string") {
           setFailure(`${payErrorText(err)} ${ZO_UI.failureCode(d.code)}`);
           refusal.show();

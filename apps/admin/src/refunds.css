@@ -441,3 +441,26 @@
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
+
+/* The foot of a list read past empty pages (components/keyset-foot.tsx; AU32, AU50): "Show more" first, its live line beside it (under it on a phone).
+   Nothing to show (the list ended, no line): no space taken. */
+.keyset-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.keyset-foot:not(:has(.btn)):has(.keyset-foot__line:empty) {
+  margin-top: 0;
+}
+
+.keyset-foot__line {
+  flex: 1 1 18rem;
+  max-width: var(--container-lede);
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}

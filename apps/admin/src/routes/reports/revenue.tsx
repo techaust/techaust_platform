@@ -284,7 +284,7 @@ function MonthsView({ data, currency, fy }: { data: RevenueByMonth; currency: Cu
           minStep={100}
         />
       </ChartFrame>
-      <div className="m73-table">
+      <div className="m73-table m73-table--cards">
         <DataTable caption={title} columns={columns} rows={rows} rowKey={(r) => r.key} totals={[total]} />
       </div>
       <InrLines data={data} currency={currency} />
@@ -446,7 +446,7 @@ function CategoryView({ data, currency, fy }: { data: RevenueByKey; currency: Cu
           }))}
         />
       </ChartFrame>
-      <div className="m73-table">
+      <div className="m73-table m73-table--cards">
         <DataTable
           caption={title}
           columns={keyColumns(R.category, R.lines, currency)}
@@ -500,7 +500,7 @@ function KindView({ data, currency, fy }: { data: RevenueByKey; currency: Curren
           />
         )}
       </ChartFrame>
-      <div className="m73-table">
+      <div className="m73-table m73-table--cards">
         <DataTable
           caption={title}
           columns={keyColumns(R.kind, R.documents, currency)}
@@ -639,7 +639,7 @@ function ClientsBlock({ fy, currency }: { fy: string; currency: Currency }) {
       {first.state === "failed" ? (
         <LoadFailed error={first.error} onRetry={() => first.reload()} headingLevel={3} />
       ) : (
-        <div className="m73-table">
+        <div className="m73-table m73-table--cards">
           <DataTable
             caption={caption}
             columns={columns}

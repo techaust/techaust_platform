@@ -34,6 +34,7 @@ import {
   previousMonth,
   REALISATION_COPY,
   rangeOk,
+  revealScrollLeft,
   STAGE_LABELS,
   STAGE_ORDER,
   STAGE_PILLS,
@@ -1006,6 +1007,23 @@ describe("the report index on a narrow screen (review 7)", () => {
     expect(nearestScrollLeft(0, 300, 420, 160)).toBe(280);
     expect(nearestScrollLeft(280, 300, 10, 120)).toBe(10);
     expect(nearestScrollLeft(50, 300, -5, 120)).toBe(0);
+  });
+
+  it("AU61 (review L5): a link reached by Tab clears the 40 px fades; one already clear stays; a link wider than the row loses the margin", () => {
+    // 390 px row at 0: a link from 330 to 410 is cut by the edge (and its fade): it moves so its right edge sits 40 px inside
+    expect(revealScrollLeft(0, 390, 330, 80, 40)).toBe(60);
+    // the same link fully inside but under the right fade (300..380 at scroll 0): it moves too, where nearestScrollLeft alone would leave it
+    expect(nearestScrollLeft(0, 390, 300, 80)).toBe(0);
+    expect(revealScrollLeft(0, 390, 300, 80, 40)).toBe(30);
+    // under the left fade (scrolled to 200, link at 210..290): back so its left edge sits 40 px in
+    expect(revealScrollLeft(200, 390, 210, 80, 40)).toBe(170);
+    // already clear of both fades: no move
+    expect(revealScrollLeft(100, 390, 200, 80, 40)).toBe(100);
+    // the first link never asks for a negative position
+    expect(revealScrollLeft(50, 390, 0, 80, 40)).toBe(0);
+    // a link nearly as wide as the row keeps what margin fits; wider than the row, none
+    expect(revealScrollLeft(0, 390, 400, 370, 40)).toBe(400 - 10 + (370 + 2 * 10) - 390);
+    expect(revealScrollLeft(0, 390, 400, 500, 40)).toBe(400 + 500 - 390);
   });
 });
 

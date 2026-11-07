@@ -183,7 +183,7 @@ export async function processStatementPdf(
 
   const [before, lines, totals] = await env.DB.batch([
     env.DB.prepare(STATEMENT_BALANCE_BEFORE_SQL(false)).bind(
-      ...statementBalanceBeforeBinds(row.client_id, row.currency, row.from_date),
+      ...statementBalanceBeforeBinds(row.client_id, row.currency, row.from_date, row.to_date),
     ),
     env.DB.prepare(STATEMENT_ENTRIES_SQL(STATEMENT_PDF_MAX_ENTRIES + 1)).bind(
       ...statementTotalsBinds(row.client_id, row.currency, row.from_date, row.to_date),

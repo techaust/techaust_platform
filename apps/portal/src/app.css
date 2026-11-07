@@ -93,8 +93,20 @@ a:hover {
   outline-offset: 2px;
 }
 
-/* Headings take focus only programmatically (a step change), to move the screen reader; no ring for those. */
-[tabindex="-1"]:focus {
+/* Headings, dialog titles and notices take focus only programmatically (a step change), to move the screen reader; no ring for
+   those. A control with tabindex="-1" in a roving group (tabs, menu items) is reached by the arrow keys and keeps the ring
+   (audit AU15, WCAG 2.4.7; the same rule as the admin). */
+[tabindex="-1"]:not(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"]
+):focus {
   outline: none;
 }
 

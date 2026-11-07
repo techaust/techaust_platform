@@ -151,8 +151,9 @@ export const ZQ_ERRORS: Record<string, string> = {
   receipt_void: "This receipt was voided, so it can't be sent.",
   // review 1, finding 5 (S-line, designer D2 under the lead's delegation): the payment's money has all gone back
   receipt_refunded: "This payment was refunded in full, so its receipt can't be sent again.",
+  // M6–M7 audit AU29 (the lead's line, 2026-11-07): the server also refuses a stopped address (AU21), so the line names all three conditions
   recipient_invalid:
-    "Some contacts can't get this receipt: they need portal access and Can see finance. They're marked below.",
+    "Some recipients can't get this receipt: they need portal access and finance access, and an address that isn't stopped.",
   forbidden: "You don't have access to do this.",
   not_found: "This isn't there any more. Reload to see the latest.",
 };

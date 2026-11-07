@@ -487,7 +487,9 @@ body:has(.savebar) .toasts {
   box-shadow: inset 0 -2px 0 var(--color-text-accent);
 }
 
+/* Every tab shows the ring when the arrow keys reach it, selected or not (AU15); inside the box, as the row clips overflow. */
 .tabs__tab:focus-visible {
+  outline: 2px solid var(--color-focus);
   outline-offset: -3px;
 }
 

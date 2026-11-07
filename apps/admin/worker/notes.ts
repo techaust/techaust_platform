@@ -6,7 +6,17 @@ import { uuidv7 } from "@techaust/core/ids";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientLiveSql, refuseAnonymised } from "./anonymised.ts";
-import { type AppEnv, actor, BAD_REQUEST, type Ctx, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
+import {
+  type ApiError,
+  type AppEnv,
+  actor,
+  BAD_REQUEST,
+  type Ctx,
+  err,
+  FORBIDDEN,
+  mutate,
+  NOT_FOUND,
+} from "./context.ts";
 import { body, idParam, limitOf, param, STALE_VERSION, text } from "./http.ts";
 import { type Direction, decodeCursor, keysetSql, pageOf } from "./keyset.ts";
 
@@ -127,6 +137,29 @@ const noteRow = (c: Ctx, id: string) =>
       updated_at: number;
     }>();
 
+/**
+ * Full audit M6–M7 AU23 (B5 M1): the client of a note or file row (`t`, the table name: its own `client_id`, else its project's) is under a legal hold. The
+ * DELETE holds it in its WHERE (the triggers `notes_held_no_delete` / `files_held_no_delete` stay the last guard), so a held row answers 409 `legal_hold`,
+ * never a 500 from the trigger.
+ */
+export const HELD_ROW_SQL = (t: string) =>
+  `EXISTS (SELECT 1 FROM clients hc WHERE hc.id = coalesce(${t}.client_id, (SELECT hp.client_id FROM projects hp WHERE hp.id = ${t}.project_id)) AND hc.legal_hold = 1)`;
+
+/** AU23: the refusal of a delete under a legal hold, in the approved S1 words (07-ZR, lead's delegation; core `STAFF_COPY.legalHoldOn`). */
+export const LEGAL_HOLD: ApiError = {
+  code: "legal_hold",
+  message:
+    "Legal hold is on. Nothing about this record can be erased, anonymised or deleted until the hold is lifted.",
+};
+
+/** AU23: whether the note or file `id` is held now (`t` the table), for the answer of a delete that wrote nothing. */
+export async function heldNow(c: Ctx, t: "notes" | "files", id: string): Promise<boolean> {
+  const row = await c.env.DB.prepare(`SELECT ${HELD_ROW_SQL(t)} AS held FROM ${t} WHERE id = ?1`)
+    .bind(id)
+    .first<{ held: number }>();
+  return row?.held === 1;
+}
+
 /** The author may change or delete a note, and so may the owner; nobody else. */
 const MAY_TOUCH = "(author_id = ?AT OR ?ROLE = 'owner')";
 const mayTouch = (at: number) => MAY_TOUCH.replace("?AT", `?${at}`).replace("?ROLE", `?${at + 1}`);
@@ -182,11 +215,9 @@ export const notes = new Hono<AppEnv>()
     if (!row) return err(c, NOT_FOUND, 404);
     if (row.author_id !== user.id && user.role !== "owner") return err(c, FORBIDDEN, 403);
     const done = await mutate(c, {
-      main: c.env.DB.prepare(`DELETE FROM notes WHERE id = ?1 AND ${mayTouch(2)}`).bind(
-        id,
-        user.id,
-        user.role,
-      ),
+      main: c.env.DB.prepare(
+        `DELETE FROM notes WHERE id = ?1 AND ${mayTouch(2)} AND NOT ${HELD_ROW_SQL("notes")}`,
+      ).bind(id, user.id, user.role),
       action: "note.delete",
       entityType: "note",
       entityId: id,
@@ -196,5 +227,7 @@ export const notes = new Hono<AppEnv>()
         visibility: row.visibility,
       },
     });
-    return done ? c.json({ ok: true }) : err(c, NOT_FOUND, 404);
+    if (done) return c.json({ ok: true });
+    // AU23: a legal hold on the client refused it (the row is still there); otherwise the note was gone or not this member's to touch.
+    return (await heldNow(c, "notes", id)) ? err(c, LEGAL_HOLD, 409) : err(c, NOT_FOUND, 404);
   });

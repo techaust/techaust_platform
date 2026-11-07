@@ -127,6 +127,18 @@ export const payments = sqliteTable(
      * `payments_receipt_link`, 0070). Not a GST document (Researched 2026-11-03, s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-39)).
      */
     receiptDocumentId: text("receipt_document_id").references((): AnySQLiteColumn => documents.id),
+    // M6–M7 audit AU3 (B0 7, B6 L4; ADD COLUMN only, 0081, no CHECK: `payments` is referenced, so a table-level CHECK would make drizzle-kit rebuild it). The
+    // receipt sweep's bookkeeping, written only by `receiptFailureStatement` (`@techaust/db/receipts`) when an issue was refused: the sweep tries the least recently
+    // tried first and leaves a payment out after `RECEIPT_ISSUE_MAX_FAILURES` failures under the same numbering settings (one owners' bell then); a change of the
+    // numbering settings (a full series given a wider format) lets it be tried again.
+    /** Refused receipt issues in a row under `receipt_fail_version`. */
+    receiptFailures: integer("receipt_failures").notNull().default(0),
+    /** The last refused try (UTC ms). */
+    receiptTriedAt: integer("receipt_tried_at"),
+    /** Why the last try was refused (`series_full`, `changed`, a receipt header code). */
+    receiptFailReason: text("receipt_fail_reason"),
+    /** The `numbering` settings row's version at the last refused try. */
+    receiptFailVersion: integer("receipt_fail_version"),
   },
   (t) => [
     // M6.5 (L4): one receipt per payment (the receipt's own primary key `rct_` + payment id already makes it one per payment; this keeps the link unique too).
@@ -161,6 +173,11 @@ export const payments = sqliteTable(
     index("payments_confirmed").on(t.receivedOn, t.id).where(sql`${t.status} = 'confirmed'`),
     // M7.3 (C8, ADM-PAY-01; CREATE INDEX only): "All payments" (every status) by the day the money arrived, newest first (keyset `(received_on, id)`).
     index("payments_received").on(t.receivedOn, t.id),
+    // M6–M7 audit AU2 (B0 3; CREATE INDEX only, 0081): the rejected and withdrawn lists by the day the money arrived, newest first (keyset `(received_on, id)`).
+    // Partial, so no other query's plan can pick it (only a query stating its WHERE as a literal may use it).
+    index("payments_status_received")
+      .on(t.status, t.receivedOn, t.id)
+      .where(sql`${t.status} in ('rejected', 'withdrawn')`),
     // The duplicate-reference check (L12).
     index("payments_reference").on(t.referenceNorm).where(sql`${t.referenceNorm} is not null`),
     uniqueIndex("payments_advance_receipt")
@@ -307,6 +324,8 @@ export const REVIEW_KINDS = [
   "dispute_closed",
   // Early check 2, finding 1c (L43): a refund we marked failed that the gateway shows as made or pending.
   "refund_after_failed",
+  // M6–M7 audit AU1 (0082 `review_items_values_*`): a gateway refund that succeeded came back failed.
+  "refund_reversed",
 ] as const;
 /**
  * Provider references are generic (lead, 2026-11-01, M6.3/M6.4 briefs session): up to 255 characters, so a Stripe Checkout Session id (66 in Stripe's fixture, 5000
@@ -664,6 +683,12 @@ export const paymentRefunds = sqliteTable(
     /** The IST day the refund succeeded (set with `succeeded`): "Collected" subtracts it by this day (L9). */
     settledOn: text("settled_on"),
     updatedAt: integer("updated_at").notNull(),
+    /**
+     * M6–M7 audit AU1 (B0 1; ADD COLUMN only, 0081): when a gateway refund that had `succeeded` came back as failed (Stripe: the bank returned it, up to 30 days
+     * later), set once by the system after a re-fetch confirmed it (`refundReverseStatement`; trigger `payment_refunds_status_flow` of 0082). The row keeps its
+     * settled time and day (history); every reader counts only `succeeded` or not `failed`, so the money is the client's credit again.
+     */
+    reversedAt: integer("reversed_at"),
   },
   (t) => [
     // L8: one open refund per payment (two at once: the second INSERT fails, 409 `refund_in_progress`).

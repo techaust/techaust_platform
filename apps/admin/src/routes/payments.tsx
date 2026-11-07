@@ -13,7 +13,7 @@ import { DateField } from "../components/date-field.tsx";
 import { Modal, useRefusalFocus } from "../components/dialog.tsx";
 import { EmptyState, PageHeader, When } from "../components/display.tsx";
 import { FormField } from "../components/form.tsx";
-import { Alert, FileText, Plus, Search, Wallet } from "../components/icons.tsx";
+import { Alert, FileText, Info, Plus, Search, Wallet } from "../components/icons.tsx";
 import { LoadFailed, NoAccess, useLoad } from "../components/states.tsx";
 import { Tabs } from "../components/tabs.tsx";
 import { useToast } from "../components/toast.tsx";
@@ -35,6 +35,7 @@ import {
   blockingRefusals,
   earlierMonthLine,
   earlierMonthOf,
+  keptOnPaymentLine,
   leftoverLine,
   MODE_LABELS,
   PAY_COPY,
@@ -48,6 +49,7 @@ import {
   showingFirstLine,
   todayIst,
   WAITS_REFUND_LINE,
+  withdrawBlockedLine,
 } from "../lib/payments.ts";
 import { bpToPercent } from "../lib/settings-form.ts";
 import { withCode } from "../lib/step-up.ts";
@@ -768,12 +770,16 @@ function EntryView(props: {
     p.tds?.certificateAwaited === true &&
     !p.clientGone &&
     (p.status === "pending_verification" || p.status === "confirmed");
-  const canWithdraw =
+  const withdrawable =
     !online &&
     allowed(props.role, "payments.withdraw") &&
     p.status === "confirmed" &&
     !p.advanceReceiptId &&
     !p.clientGone;
+  // M6–M7 audit AU16 (B2 4) and AU4 (B0 9): a refund that hasn't failed, a bank tick or an advice link refuses the withdraw on the server; Withdraw is hidden
+  // and the reason is said beside the actions instead.
+  const withdrawBlocked = withdrawable ? withdrawBlockedLine(props.data) : null;
+  const canWithdraw = withdrawable && withdrawBlocked === null;
   // M6.5 (G1, L33): "Refund" for the Owner: a confirmed payment that still holds credit (the client's credit sources say how much), or a gateway payment still
   // waiting for its check (refunded whole through its gateway). Never for a TDS entry, a withdrawn or rejected one, or an erased client.
   const refundRole = allowed(props.role, "refunds.issue") && p.kind === "payment" && !p.clientGone;
@@ -987,6 +993,7 @@ function EntryView(props: {
               : allocs
           }
           currency={cur}
+          kept={keptOnPaymentLine(p, allocs, props.data.hasLiveRefund, p.clientName)}
         />
         <PaymentReceiptAndRefunds
           paymentId={p.id}
@@ -998,6 +1005,13 @@ function EntryView(props: {
         />
       </div>
       <div className="dialog__actions">
+        {/* AU16 placement: why Withdraw isn't offered, in the actions row where the button would be (the row stays in view while the body scrolls) */}
+        {withdrawBlocked !== null && (
+          <p className="pay-line pay-entry__why">
+            <Info size={16} />
+            <span>{withdrawBlocked}</span>
+          </p>
+        )}
         <button type="button" className="btn btn--secondary" onClick={props.onClose}>
           {PAY_UI.close}
         </button>
@@ -1058,23 +1072,33 @@ function PutOn(props: {
     kind: "allocate" | "release";
   }[];
   currency: PaymentView["currency"];
+  /** M6–M7 audit AU17 (B2 5): a confirmed payment's part kept as the client's credit (line 47), under the list; null: none. */
+  kept?: string | null;
 }) {
-  if (props.rows.length === 0) return null;
+  if (props.rows.length === 0 && !props.kept) return null;
   return (
     <div className="pay-puton">
-      <h3 className="pay-sub">{props.heading}</h3>
-      <ul className="pay-puton__list">
-        {props.rows.map((r, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: an allocation and a later release of the same invoice share the document id
-          <li key={`${r.documentId}-${i}`}>
-            <Link to={`/invoices/${encodeURIComponent(r.documentId)}`} className="docno">
-              {r.number ?? (r.type ? typeLabel(r.type as never) : "…")}
-            </Link>
-            <span className="pay-lines__meta">{r.kind === "release" ? PAY_UI.movedToCredit : ""}</span>
-            <span className="tnum">{amountText(r.amountMinor, props.currency)}</span>
-          </li>
-        ))}
-      </ul>
+      {props.rows.length > 0 && <h3 className="pay-sub">{props.heading}</h3>}
+      {props.rows.length > 0 && (
+        <ul className="pay-puton__list">
+          {props.rows.map((r, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: an allocation and a later release of the same invoice share the document id
+            <li key={`${r.documentId}-${i}`}>
+              <Link to={`/invoices/${encodeURIComponent(r.documentId)}`} className="docno">
+                {r.number ?? (r.type ? typeLabel(r.type as never) : "…")}
+              </Link>
+              <span className="pay-lines__meta">{r.kind === "release" ? PAY_UI.movedToCredit : ""}</span>
+              <span className="tnum">{amountText(r.amountMinor, props.currency)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {props.kept && (
+        <p className="pay-line pay-puton__kept">
+          <Info size={16} />
+          <span>{props.kept}</span>
+        </p>
+      )}
     </div>
   );
 }

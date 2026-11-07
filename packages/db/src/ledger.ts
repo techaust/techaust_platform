@@ -14,6 +14,7 @@ import type { GuardSql } from "./log.ts";
 import { femaDueSql, settingsBinds } from "./realisation.ts";
 import {
   checkoutCapturingSql,
+  istDayEndMsSql,
   LEDGER_STATUSES_SQL,
   ledgerStatusCaseSql,
   livePaidSql,
@@ -27,6 +28,8 @@ import {
   paymentPendingForSql,
   paymentRecordedSql,
   paymentRefundedSql,
+  refundOutAtSql,
+  refundsOutSql,
   SQL_CURRENCIES,
 } from "./sql-rules.ts";
 
@@ -350,6 +353,13 @@ export const NO_LIVE_REFUND_SQL =
   "NOT EXISTS (SELECT 1 FROM payment_refunds wr INDEXED BY payment_refunds_payment WHERE wr.payment_id = ?1 AND wr.status <> 'failed')";
 
 /**
+ * M6–M7 audit AU4 (B0 9): the payment `?1` has no active "seen in the bank statement" tick and no active remittance advice link; a withdraw is refused (409
+ * `payment_linked`) until the Owner removes them, so no tick or advice is left naming money that no longer counts.
+ */
+export const NO_ACTIVE_LINK_SQL =
+  "NOT EXISTS (SELECT 1 FROM bank_matches wm INDEXED BY bank_matches_payment WHERE wm.payment_id = ?1 AND wm.removed_at IS NULL) AND NOT EXISTS (SELECT 1 FROM realisation_advice_payments wl INDEXED BY realisation_advice_payments_active WHERE wl.payment_id = ?1 AND wl.removed_at IS NULL)";
+
+/**
  * The main statement of a withdraw: a CONFIRMED payment of a live client, by an Owner with a fresh step-up, with a reason, and (M6.5) with no refund that is not failed. A payment that stands for an M5.2
  * advance receipt is never withdrawn here (`advance_receipt_id IS NULL`): its tax invoice was issued because the money arrived, so a credit note is the
  * correction (lead's safe side; listed for the early check). Follow it with `recomputeStatement(db, {paymentIds: [paymentId]}, now, g)` (every document the payment
@@ -363,7 +373,7 @@ export function withdrawPaymentStatement(
     .prepare(
       `UPDATE payments SET status = 'withdrawn', withdrawn_by = ${sessionUser("?3")}, withdrawn_at = ?2, withdraw_reason = ?4
        WHERE id = ?1 AND status = 'confirmed' AND advance_receipt_id IS NULL AND ${clientLive("payments")} AND ${sessionSql("?3", "?2", ["owner"], true)}
-         AND ${NO_LIVE_REFUND_SQL}`,
+         AND ${NO_LIVE_REFUND_SQL} AND ${NO_ACTIVE_LINK_SQL}`,
     )
     .bind(a.paymentId, a.now, a.sessionId, a.reason);
 }
@@ -640,11 +650,15 @@ export const PAYMENT_ASKS_FOR_DOCUMENT_SQL = /* @__PURE__ */ (() =>
 /**
  * M6.5 (L9): the refunds "Collected" subtracts: SUCCEEDED refunds of confirmed money-received rows, by the IST day they succeeded (`settled_on`), read through
  * `payment_refunds_settled`. A pending payment refunded in full (L33) ends `rejected`: it was never collected, so its refund is not subtracted either.
+ * M6–M7 audit AU37 (Settled by the lead on the safest reading, 2026-11-07 (08-C RA-41)): a refund that came back after the range's last day still counts as gone
+ * out (`refundsOutSql`); with `asOf: null` every reversed refund of the range is read and the caller filters each period (`refundOutAtSql`).
+ * Full audit AU48: the source is aliased `fo` (no other table of these statements is), so the plan tests skip exactly its co-routine's walk (`SCAN fo`).
  */
 const settledRefundsFrom = (
   from: string,
-) => `FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id
-         WHERE f.status = 'succeeded' AND f.settled_on >= ${from} AND f.settled_on <= ?2 AND fp.status = 'confirmed' AND fp.kind = 'payment'`;
+  asOf: string | null = istDayEndMsSql("?2"),
+) => `FROM (${refundsOutSql(from, "?2", asOf)}) fo JOIN payments fp ON fp.id = fo.payment_id
+         WHERE fp.status = 'confirmed' AND fp.kind = 'payment'`;
 const SETTLED_REFUNDS_FROM = settledRefundsFrom("?1");
 
 /**
@@ -655,7 +669,7 @@ export const COLLECTED_SQL = `SELECT x.currency, sum(x.amount) AS collected, sum
      SELECT p.currency, p.amount_minor AS amount, 1 AS n
        FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ?1 AND p.received_on <= ?2
      UNION ALL
-     SELECT f.currency, -f.amount_minor, 0
+     SELECT fo.currency, -fo.amount_minor, 0
        ${SETTLED_REFUNDS_FROM}) x
    GROUP BY x.currency ORDER BY x.currency`;
 
@@ -693,14 +707,19 @@ export const COLLECTED_TILE_SQL = /* @__PURE__ */ (() => {
       `count(CASE WHEN ${pm} THEN 1 END) AS pmn_${c}`,
     ];
   }).join(", ");
+  // M6–M7 audit AU37: each period counts a refund that came back only after its own last day (`refundOutAtSql`): the FY to `?2`, the month to `?4`, the
+  // month before to the day before `?3`.
+  const outFy = refundOutAtSql("fo", istDayEndMsSql("?2"));
+  const outM = refundOutAtSql("fo", istDayEndMsSql("?4"));
+  const outPm = refundOutAtSql("fo", istDayEndMsSql("date(?3, '-1 day')"));
   const refundCols = COLLECTED_CURRENCIES.flatMap((c) => {
-    const fy = `f.currency = '${c}' AND f.settled_on >= ?1`;
-    const pm = `f.currency = '${c}' AND f.settled_on >= ${prev} AND f.settled_on < ?3`;
+    const fy = `fo.currency = '${c}' AND fo.settled_on >= ?1 AND ${outFy}`;
+    const pm = `fo.currency = '${c}' AND fo.settled_on >= ${prev} AND fo.settled_on < ?3 AND ${outPm}`;
     return [
-      `coalesce(sum(CASE WHEN ${fy} THEN f.amount_minor END), 0) AS fy_${c}`,
+      `coalesce(sum(CASE WHEN ${fy} THEN fo.amount_minor END), 0) AS fy_${c}`,
       `count(CASE WHEN ${fy} THEN 1 END) AS fyn_${c}`,
-      `coalesce(sum(CASE WHEN f.currency = '${c}' AND f.settled_on >= ?3 AND f.settled_on <= ?4 THEN f.amount_minor END), 0) AS m_${c}`,
-      `coalesce(sum(CASE WHEN ${pm} THEN f.amount_minor END), 0) AS pm_${c}`,
+      `coalesce(sum(CASE WHEN fo.currency = '${c}' AND fo.settled_on >= ?3 AND fo.settled_on <= ?4 AND ${outM} THEN fo.amount_minor END), 0) AS m_${c}`,
+      `coalesce(sum(CASE WHEN ${pm} THEN fo.amount_minor END), 0) AS pm_${c}`,
       `count(CASE WHEN ${pm} THEN 1 END) AS pmn_${c}`,
     ];
   }).join(", ");
@@ -713,7 +732,7 @@ export const COLLECTED_TILE_SQL = /* @__PURE__ */ (() => {
    FROM (SELECT ${cols}
          FROM payments p INDEXED BY payments_confirmed WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on >= ${from} AND p.received_on <= ?2) t
    JOIN (SELECT ${refundCols}
-         ${settledRefundsFrom(from)}) r
+         ${settledRefundsFrom(from, null)}) r
    JOIN (${COLLECTED_CURRENCIES.map((c) => `SELECT '${c}' AS currency`).join(" UNION ALL ")}) c
    WHERE ${collectedPick("fyn")} > 0 OR ${collectedPick("fyn", "r")} > 0 OR ${collectedPick("pmn")} > 0 OR ${collectedPick("pmn", "r")} > 0 ORDER BY c.currency`;
 })();

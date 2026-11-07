@@ -354,7 +354,7 @@ describe("legal holds [ADM-CLI-05, RA-25; C.5]", () => {
 });
 
 describe("the erased-address lift (L20) [C.6]", () => {
-  it("the Owner with a fresh code removes the h: row of an address; the audit row holds the hash, never the address; none is 409", async () => {
+  it("the Owner with a fresh code removes the h: row of an address; the audit row holds neither the address nor its hash (full audit AU25 L6); none is 409", async () => {
     const o = await owner();
     const email = `back-${uuidv7()}@example.test`;
     const hash = await hashOf(email);
@@ -368,7 +368,8 @@ describe("the erased-address lift (L20) [C.6]", () => {
       "SELECT summary FROM audit_log WHERE action = 'suppression.lift' AND actor_id = ?",
       o.id,
     );
-    expect(JSON.parse(audit?.summary ?? "{}")).toEqual({ hash });
+    expect(JSON.parse(audit?.summary ?? "{}")).toEqual({ reason: "erased" });
+    expect(audit?.summary).not.toContain(hash);
     expect(audit?.summary).not.toContain("example.test");
     expect(await code(await lift(o.cookie))).toBe("not_suppressed");
   });
@@ -550,7 +551,8 @@ describe("a lead's erase, export and consent withdrawal [ADM-CLI-05, FRM-05; C.8
     const summary = (await bodyOf(
       await call(`/leads/${lead}/export`, { cookie: o.cookie, body: {} }),
     )) as Record<string, unknown>;
-    expect(summary.manifest).toEqual(["lead_activities", "email_log", "consent_receipts"]);
+    // full audit AU24: the lead's own requests are a part too
+    expect(summary.manifest).toEqual(["lead_activities", "email_log", "consent_receipts", "client_requests"]);
     expect(summary.keyedFormMonths).toBe(36);
     expect(summary.lead).not.toHaveProperty("erased_hash");
     const part = (await bodyOf(

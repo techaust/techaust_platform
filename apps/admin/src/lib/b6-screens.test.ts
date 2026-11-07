@@ -44,7 +44,9 @@ describe("second review screen wiring", () => {
       reconciliation.indexOf("function ItemLines"),
     );
     expect(dialog).toContain("usePages<SettlementItemRow>((c) => refundsApi.settlement(r.id, c), r.id)");
-    expect(dialog).toContain("<ShowMore cursor={pages.cursor}");
+    // audit AU50: "Show more" with its live line, through the list foot (KeysetFoot)
+    expect(dialog).toContain("<Foot pages={pages} />");
+    expect(reconciliation).toContain("<KeysetFoot");
   });
 
   it('L6: "Paid by" starts from defaultRefundMode (SWIFT for US dollars abroad)', () => {

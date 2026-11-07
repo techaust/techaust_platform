@@ -7,9 +7,9 @@ import type { WarmFixture } from "../warm-routes.ts";
 
 export const FINANCE_WARM: WarmFixture = {
   calls: [
-    { method: "GET", path: "/invoices/01a1adbc-a8fb-7ced-8c47-301a43b2b1f8/payments" },
+    { method: "GET", path: "/invoices/01a1b4e4-a2e3-7113-9eb3-48ef97b1e87e/payments" },
     { method: "GET", path: "/payments/review" },
-    { method: "POST", path: "/payments/review/9fcd63ee-9ca9-4049-8637-0c18e60115f3/retry", body: {} },
+    { method: "POST", path: "/payments/review/eb94f320-c537-4e7e-afc6-fa45d02e8f0e/retry", body: {} },
     { method: "GET", path: "/payments" },
   ],
   rows: {
@@ -17,14 +17,14 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            last_seen_at: 1793916191176,
+            last_seen_at: 1794036252545,
             idle_expires_at: 4102444800000,
             abs_expires_at: 4102444800000,
             revoked_at: null,
             step_up_until: 4102444800000,
-            id: "01a1adbc-a754-7b96-a195-cd9910b73989",
+            id: "01a1b4e4-a12d-769f-9f05-f08b2b01fd83",
             name: "Probe Owner (sample)",
-            email: "probe-mw43dmow@example.test",
+            email: "probe-mw62uxvc@example.test",
             role: "owner",
           },
         ],
@@ -35,21 +35,21 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "01a1adbc-a8fb-7ced-8c47-301a43b2b1f8",
+            id: "01a1b4e4-a2e3-7113-9eb3-48ef97b1e87e",
             type: "tax_invoice",
             status: "partially_credited",
-            client_id: "0af77526-02af-421a-a70e-acbfb7640ea5",
+            client_id: "3f3f9611-4284-4213-9069-679be642d4eb",
             currency: "INR",
-            frozen_at: 1793916184850,
+            frozen_at: 1794036245245,
             voided_at: null,
-            issue_date: "2026-11-06",
+            issue_date: "2026-11-07",
             number_display: "TH/INV/2627/0001",
             total_minor: 10620000,
             paid_minor: 0,
             credited_minor: 590000,
             tds_minor: 0,
             balance_minor: 10030000,
-            updated_at: 1793916184893,
+            updated_at: 1794036245293,
             supply_type: "intra",
             fx_rate_micros: null,
             fx_date: null,
@@ -99,19 +99,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "9fcd63ee-9ca9-4049-8637-0c18e60115f3",
+            id: "eb94f320-c537-4e7e-afc6-fa45d02e8f0e",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a1adbc-ac5b-72b3-a9b8-189210f61426",
-            client_id: "0037d131-9259-42a0-852e-13d700c57682",
+            document_id: "01a1b4e4-a7d0-7c3a-a95c-92a5ab86da6e",
+            client_id: "7adac8b1-9ae9-4718-9fac-dcfee0739e79",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793916185765,
+            created_at: 1794036246568,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
@@ -129,19 +129,19 @@ export const FINANCE_WARM: WarmFixture = {
       {
         r: [
           {
-            id: "9fcd63ee-9ca9-4049-8637-0c18e60115f3",
+            id: "eb94f320-c537-4e7e-afc6-fa45d02e8f0e",
             source: "dlq",
             provider: "razorpay",
             kind: "dead_letter",
             status: "open",
             webhook_event_id: null,
             payment_id: "rzp_pay_warm0001",
-            document_id: "01a1adbc-ac5b-72b3-a9b8-189210f61426",
-            client_id: "0037d131-9259-42a0-852e-13d700c57682",
+            document_id: "01a1b4e4-a7d0-7c3a-a95c-92a5ab86da6e",
+            client_id: "7adac8b1-9ae9-4718-9fac-dcfee0739e79",
             amount_minor: 10620000,
             currency: "INR",
             facts: null,
-            created_at: 1793916185765,
+            created_at: 1794036246568,
             resolved_by: null,
             resolved_at: null,
             resolution: null,
@@ -151,12 +151,12 @@ export const FINANCE_WARM: WarmFixture = {
         c: 0,
       },
     ],
-    "2a6ff684": [
+    bf44d6ba: [
       {
         r: [
           {
             id: "rzp_pay_warm0002",
-            client_id: "bf521e1e-a7fd-4f25-97d0-56e7bb6fc6e9",
+            client_id: "5fdfd715-d1f1-4a6b-a2d6-8a2eb510e0f0",
             client_code: "C-PROBEADV5",
             client_name: "Riverside Traders (sample)",
             client_gone: 0,
@@ -166,12 +166,12 @@ export const FINANCE_WARM: WarmFixture = {
             currency: "INR",
             amount_minor: 10620000,
             charges_minor: 0,
-            received_on: "2026-11-06",
+            received_on: "2026-11-07",
             mode: "upi",
-            reference_norm: "PAY-A10620000R01A1ADBCADE87445904F92A9D5929A64",
+            reference_norm: "PAY-A10620000R01A1B4E4A9A47C3FB84B9CEAA527B4D3",
             inr_received_minor: null,
             requested_allocations:
-              '[{"documentId":"01a1adbc-adcf-70b7-bcad-106496f2cb24","amountMinor":10620000}]',
+              '[{"documentId":"01a1b4e4-a984-7acf-80c7-8f4a89dd9189","amountMinor":10620000}]',
             tds_section: null,
             tds_rate_bp: null,
             tds_certificate_no: null,
@@ -185,7 +185,7 @@ export const FINANCE_WARM: WarmFixture = {
             note: null,
             recorded_by: null,
             recorded_by_name: null,
-            recorded_at: 1793916186111,
+            recorded_at: 1794036246978,
             verified_by: null,
             verified_by_name: null,
             verified_at: null,
@@ -194,9 +194,8 @@ export const FINANCE_WARM: WarmFixture = {
             withdrawn_at: null,
             withdraw_reason: null,
             provider_payment_id: "pay_warm0002",
-            proforma_id: "01a1adbc-adcf-70b7-bcad-106496f2cb24",
+            proforma_id: "01a1b4e4-a984-7acf-80c7-8f4a89dd9189",
             waits_refund: 0,
-            rid: 5,
           },
         ],
         c: 0,

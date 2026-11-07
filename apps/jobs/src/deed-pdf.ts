@@ -19,6 +19,7 @@
 // words are 07-ZJ lines 8 to 11.
 // No personal data in a log line or a bell title: ids, numbers, codes.
 import { type DeedSignedMessage, deedSignedMessage, type EmailMessage } from "@techaust/core";
+import { istDate, toIsoDate } from "@techaust/core/dates";
 import { deedText, deedUnsignedKey, parseDeedSnapshot } from "@techaust/core/deeds";
 import { sha256Hex } from "@techaust/core/hash";
 import { firstNameOf } from "@techaust/core/offers";
@@ -68,6 +69,37 @@ const skip = (why: string): "skipped" => {
   logEvent("pdf.deed_skipped", { why });
   return "skipped";
 };
+
+/** Full audit M6–M7 AU11 (B6 L6): the owners' bell when a deed's PDF ran out of tries (builder's draft for the lead; the deed's number only). */
+export const DEED_FAILED_BELL = (number: string) =>
+  `The PDF of deed ${number} couldn't be made. Open the deed and make it again.`;
+
+/**
+ * AU11 L6: one owners' bell for a dead-lettered `pdf.deed` (`?1` the deed, `?2` the title, `?3` the link), once per deed and IST day (the entity carries the
+ * day, so a later failure rings again and a redelivery doesn't), only for a final or signed deed that still has no PDF and whose client is not anonymised.
+ */
+export const DEED_FAILED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+  SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.failed', 'deed', ?4, ?2, ?3 FROM staff_users u
+  WHERE u.status = 'active' AND u.role = 'owner'
+    AND EXISTS (SELECT 1 FROM deeds d WHERE d.id = ?1 AND d.status IN ('final', 'signed') AND d.unsigned_r2_key IS NULL
+      AND NOT EXISTS (SELECT 1 FROM clients c WHERE c.id = d.client_id AND c.anonymised_at IS NOT NULL))`;
+
+/** AU11 L6: a `pdf.deed` that ran out of tries rings the owners once (ids and the number only); a deed that is gone or done rings nothing. Throws on D1 errors. */
+export async function processDeedDeadLetter(env: Env, msg: PdfDeedMessage, now = Date.now()): Promise<void> {
+  const row = await env.DB.prepare("SELECT number_display, project_id FROM deeds WHERE id = ?1")
+    .bind(msg.deedId)
+    .first<{ number_display: string | null; project_id: string }>();
+  logEvent("pdf.deed_dead_letter", { found: row !== null });
+  if (!row) return;
+  await env.DB.prepare(DEED_FAILED_BELL_SQL)
+    .bind(
+      msg.deedId,
+      DEED_FAILED_BELL(row.number_display ?? "Untitled"),
+      `/projects/${row.project_id}?tab=deed`,
+      `${msg.deedId}:${toIsoDate(istDate(now))}`,
+    )
+    .run();
+}
 
 /** Handles one `pdf.deed` message. `clock` is the pacer's (a test passes a fake). Throws for anything a retry can fix. */
 export async function processDeedPdf(

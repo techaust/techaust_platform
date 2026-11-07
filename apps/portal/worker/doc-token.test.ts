@@ -793,6 +793,65 @@ describe("the PDF behind the link [POR-06, M4.5 headers]", () => {
     ]);
     expect(await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip))).toBeNull();
   });
+  it("full audit AU12: the summary of a tax invoice voided after the link was checked is the 404; no view, no audit row, one 404 access row, not counted", async () => {
+    const f = await fixtures();
+    const doc = await frozenDoc(f.a.id, "tax_invoice");
+    const token = await link(f.a.finance, doc);
+    const ip = "192.0.2.85";
+    const voidIt = () =>
+      env.DB.prepare(
+        "UPDATE documents SET status = 'void', voided_at = ?1, void_reason = 'test' WHERE id = ?2",
+      )
+        .bind(Date.now(), doc)
+        .run();
+    const res = await call(
+      "/t/document",
+      { body: { token }, ip, headers: { "cf-ray": "ray-doc-au12" } },
+      withDb(beforeBatch(env.DB, 2, voidIt)),
+    );
+    expect(res.status).toBe(404);
+    expect(await bodyOf(res)).toEqual(NOT_FOUND);
+    expect(
+      (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", doc))?.v ?? null,
+    ).toBeNull();
+    expect(
+      await rows("SELECT 1 FROM audit_log WHERE action = 'doc_token.use' AND entity_id = ?", doc),
+    ).toEqual([]);
+    expect(await rows("SELECT status FROM access_log WHERE request_id = 'ray-doc-au12'")).toEqual([
+      { status: 404 },
+    ]);
+    expect(await attemptsRow(await portalFailKey(env.PORTAL_KEY_PEPPER, ip))).toBeNull();
+  });
+  it("full audit AU12: the link revoked after it was checked is the 404 too; nothing changes in the gap serves the page from the re-read, with the view", async () => {
+    const f = await fixtures();
+    const doc = await frozenDoc(f.a.id, "tax_invoice");
+    const token = await link(f.a.finance, doc);
+    const revoke = () =>
+      env.DB.prepare("UPDATE doc_access_tokens SET revoked_at = ?1 WHERE document_id = ?2")
+        .bind(Date.now(), doc)
+        .run();
+    const gone = await call(
+      "/t/document",
+      { body: { token }, ip: "192.0.2.86" },
+      withDb(beforeBatch(env.DB, 2, revoke)),
+    );
+    expect(gone.status).toBe(404);
+    const doc2 = await frozenDoc(f.a.id, "tax_invoice");
+    const token2 = await link(f.a.finance, doc2);
+    const ok = await call(
+      "/t/document",
+      { body: { token: token2 }, ip: "192.0.2.87", headers: { "cf-ray": "ray-doc-au12-ok" } },
+      withDb(beforeBatch(env.DB, 2, async () => {})),
+    );
+    expect(ok.status).toBe(200);
+    expect(((await bodyOf(ok)).document as { id: string }).id).toBe(doc2);
+    expect(
+      (await one<{ v: number | null }>("SELECT viewed_at AS v FROM documents WHERE id = ?", doc2))?.v,
+    ).not.toBeNull();
+    expect(await rows("SELECT status FROM access_log WHERE request_id = 'ray-doc-au12-ok'")).toEqual([
+      { status: 200 },
+    ]);
+  });
   it("a bad link is the same 404 and counts", async () => {
     const ip = "192.0.2.83";
     const res = await call("/t/document/pdf", { body: { token: "z".repeat(43) }, ip });

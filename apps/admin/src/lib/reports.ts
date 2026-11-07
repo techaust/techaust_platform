@@ -731,6 +731,22 @@ export function nearestScrollLeft(
   return rowScrollLeft;
 }
 
+/**
+ * M6–M7 audit AU61 (review L5): `nearestScrollLeft` for a link that must also clear the row's faded edges (`inset` CSS pixels each side, the row's
+ * `scroll-padding-inline`), so a tab reached by keyboard or opened on a phone never sits partly under the fade. At either end of the row the fade is gone and
+ * the browser clamps the position, so the first and last links still reach their edge.
+ */
+export function revealScrollLeft(
+  rowScrollLeft: number,
+  rowWidth: number,
+  linkLeft: number,
+  linkWidth: number,
+  inset: number,
+): number {
+  const pad = Math.max(0, Math.min(inset, (rowWidth - linkWidth) / 2));
+  return nearestScrollLeft(rowScrollLeft, rowWidth, linkLeft - pad, linkWidth + 2 * pad);
+}
+
 /** The CSV's debit-note words (FX-4, A5 7): 07-Y's line with core's `{number}` slot (marked while 07-Y is pending), or 07-V's "Debit note" when a debit note in the file lacks its invoice number. */
 export function statementCsvDebitNoteLabel(
   entries: readonly { kind: StatementKind; againstNumber?: string | null }[],

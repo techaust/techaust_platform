@@ -283,6 +283,49 @@ describe("the erasure a done erasure request links (round 4, round 6)", () => {
       ).map((x) => x.id),
     ).toEqual(["x"]);
   });
+  it("full audit AU26: a consent withdrawal links its contact's marketing-consent change or its lead's withdrawal; one naming only an address can only be declined", () => {
+    const r = req({ kind: "consent_withdrawal" });
+    expect(closeOptions(r)).toMatchObject({ done: "ok", needsAction: true });
+    expect(erasureActionsOf(r)).toEqual(["contact.update"]);
+    const list = [
+      a({
+        id: "consent",
+        action: "contact.update",
+        summary: { contactId: "p1", changed: ["marketingConsent"] },
+      }),
+      a({ id: "name", action: "contact.update", summary: { contactId: "p1", changed: ["name"] } }),
+      a({
+        id: "other",
+        action: "contact.update",
+        summary: { contactId: "p2", changed: ["marketingConsent"] },
+      }),
+      a({ id: "erase", action: "contact.erase" }),
+      a({
+        id: "old",
+        action: "contact.update",
+        at: T0 - DAY,
+        summary: { contactId: "p1", changed: ["marketingConsent"] },
+      }),
+    ];
+    expect(erasureMatches(list, r).map((x) => x.id)).toEqual(["consent"]);
+    const lead = req({
+      kind: "consent_withdrawal",
+      client: null,
+      contact: null,
+      contactRef: null,
+      leadId: "l1",
+      lead: { id: "l1", ref: "L-1", gone: false },
+    });
+    expect(erasureActionsOf(lead)).toEqual(["lead.consent_withdraw"]);
+    expect(
+      erasureMatches(
+        [a({ id: "w", action: "lead.consent_withdraw", entityType: "lead", entityId: "l1" })],
+        lead,
+      ).map((x) => x.id),
+    ).toEqual(["w"]);
+    const unmatched = req({ kind: "consent_withdrawal", client: null, contact: null, contactRef: null });
+    expect(closeOptions(unmatched)).toMatchObject({ done: "unmatched_withdrawal", needsAction: false });
+  });
 });
 
 describe("Export sent (Q2 A): the day emailed, never in the future", () => {

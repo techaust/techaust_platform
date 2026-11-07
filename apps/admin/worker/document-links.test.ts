@@ -135,6 +135,21 @@ describe("POST /documents/:id/resend [ADM-PROP-07]", () => {
         409,
         "recipient_invalid",
       ],
+      [
+        // full audit AU21: emails to the address are stopped (a bounce), so the send would never go
+        "a contact whose emails are stopped",
+        async (c) => {
+          const k = await mkContact(c.made.clientId, { portal_access: 1 });
+          await env.DB.prepare(
+            "INSERT INTO email_suppressions (email, reason, at) SELECT lower(email), 'hard_bounce', 1 FROM contacts WHERE id = ?1",
+          )
+            .bind(k.id)
+            .run();
+          return [c.a.id, k.id];
+        },
+        409,
+        "recipient_invalid",
+      ],
     ];
   for (const [name, ids, status, code] of bad)
     it(`${status} ${code}: ${name}; nothing is written`, async () => {

@@ -185,7 +185,7 @@ function ToPay(props: { items: NonNullable<HomeData["toPay"]>; now?: number | un
         {ZP.toPayTitle}
       </h2>
       {props.items.length === 0 ? (
-        <p className="muted m71-money__empty">{ZP.toPayEmpty}</p>
+        <EmptyLine icon={<Receipt size={24} />}>{ZP.toPayEmpty}</EmptyLine>
       ) : (
         <ul className="m71-rows">
           {props.items.map((d) => {
@@ -234,7 +234,7 @@ function RecentReceipts(props: { items: HomeReceipt[]; downloads: Downloads }) {
         {ZP.receiptsTitle}
       </h2>
       {props.items.length === 0 ? (
-        <p className="muted m71-money__empty">{ZP.receiptsEmpty}</p>
+        <EmptyLine icon={<FileCheck size={24} />}>{ZP.receiptsEmpty}</EmptyLine>
       ) : (
         <ul className="m71-rows">
           {props.items.map((r) => (

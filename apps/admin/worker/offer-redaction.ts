@@ -24,6 +24,7 @@ import {
   redactor,
 } from "@techaust/core/redaction";
 import { HELD_LEAD_SQL } from "@techaust/db/contact-access";
+import { HELD_EMAIL_SQL } from "@techaust/db/dp-shared";
 import type { RecipientSnapshot } from "@techaust/db/issue";
 import type { GuardSql } from "@techaust/db/log";
 import { LAST_LIVE_SQL, MAX_REDACTED_OFFERS, REDACTABLE_OFFER_SQL } from "@techaust/db/offer-redaction";
@@ -55,6 +56,20 @@ export const MATCHED_LEAD_EMAILS_SQL = (c: string) =>
   `(SELECT json_group_array(DISTINCT lower(l.contact_email)) FROM leads l
      WHERE (l.contact_id = ${c}.id OR (lower(l.contact_email) = lower(${c}.email) AND (l.client_id IS NULL OR l.client_id = ${c}.client_id)))
        AND l.erased_hash IS NULL AND lower(l.contact_email) NOT GLOB 'anonymised+*@invalid')`;
+/**
+ * Full audit M6–M7 AU52 (early check of AF2, M2): a lead an erase or anonymise of contact `c` (an alias) would mark (the leads of `MATCHED_LEADS` in
+ * `clients.ts`: made from the contact, or with its address at its client or at none) has an address held elsewhere: a contact with it (itself or its
+ * client under a legal hold, at any client) or a lead with it under a hold. The triggers `leads_held_no_erase` / `leads_held_no_delete` (0084) refuse
+ * such a lead, so the erase, the anonymise and its offer parts are refused up front with 409 `legal_hold`: in this read's `held`, in each first row's guard
+ * and in the read that explains a refusal.
+ * AU59 (the lead's answer; Settled by the lead on the safest reading, 2026-11-07, RA-25: a hold kept for legal claims outweighs erasure): ANY held holder of
+ * the contact's own address stops it too: a contact with that address (at any client, itself or its client under a hold) or a held lead with it, whether
+ * or not a lead of this person carries it.
+ */
+export const ADDRESS_HELD_SQL = (c: string) =>
+  `(${HELD_EMAIL_SQL(`${c}.email`)}
+    OR EXISTS (SELECT 1 FROM leads ml WHERE (ml.contact_id = ${c}.id OR (lower(ml.contact_email) = lower(${c}.email) AND (ml.client_id IS NULL OR ml.client_id = ${c}.client_id)))
+     AND ${HELD_EMAIL_SQL("ml.contact_email")}))`;
 const FROM_CONTACT = "FROM contacts c JOIN clients cl ON cl.id = c.client_id";
 /** The ids of the eligible offers of contact `?1` (at most one more than the cap, so the cap can be told apart). */
 const OFFER_IDS = `SELECT d.id ${FROM_CONTACT} JOIN documents d ON ${ELIGIBLE} WHERE c.id = ?1 ORDER BY d.id LIMIT ${MAX_REDACTED_OFFERS + 1}`;
@@ -66,7 +81,7 @@ const OFFER_IDS = `SELECT d.id ${FROM_CONTACT} JOIN documents d ON ${ELIGIBLE} W
  * - `children`: the text of every section, line and schedule row of those offers, one list (`k` = `s`, `l` or `p`; `a`, `b` its two text columns).
  */
 export const REDACTION_READ_SQL = {
-  offers: `SELECT c.id, c.name, c.email, c.phone, c.updated_at AS contact_updated_at, c.anonymised_at, cl.type AS client_type, cl.legal_name, cl.display_name, cl.gstin, cl.updated_at AS client_updated_at, (cl.type = 'individual' AND ${LAST_LIVE_SQL("c")}) AS last_live, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${MATCHED_LEAD_EMAILS_SQL("c")} AS lead_emails,
+  offers: `SELECT c.id, c.name, c.email, c.phone, c.updated_at AS contact_updated_at, c.anonymised_at, cl.type AS client_type, cl.legal_name, cl.display_name, cl.gstin, cl.updated_at AS client_updated_at, (cl.type = 'individual' AND ${LAST_LIVE_SQL("c")}) AS last_live, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL} OR ${ADDRESS_HELD_SQL("c")}) AS held, ${MATCHED_LEAD_EMAILS_SQL("c")} AS lead_emails,
      d.id AS d_id, d.type AS d_type, d.fy AS d_fy, d.number AS d_number, d.version AS d_version, d.recipient AS d_recipient, d.title AS d_title, d.decision_note AS d_decision_note, d.contact_id AS d_contact_id, d.snapshot_r2_key AS d_snapshot_r2_key, d.pdf_r2_key AS d_pdf_r2_key, d.redacted_at AS d_redacted_at
      ${FROM_CONTACT} LEFT JOIN documents d ON ${ELIGIBLE} WHERE c.id = ?1 ORDER BY d.id LIMIT ${MAX_REDACTED_OFFERS + 1}`,
   children: `SELECT 's' AS k, id, document_id, title AS a, body_md AS b FROM document_sections WHERE document_id IN (${OFFER_IDS})

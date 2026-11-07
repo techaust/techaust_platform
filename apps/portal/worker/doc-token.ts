@@ -118,6 +118,30 @@ type PdfState = {
 /** The PDF's first view through a link (?1 client, ?2 document, ?3 now, ?4 token hash): only while the link is still live (L13), and only a delivered PDF. */
 export const LINK_VIEW_PDF_SQL = `${VIEW_PDF_SQL} AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND ${linkLiveSql("?4", "?3")})`;
 
+/**
+ * Full audit M6–M7 AU12 (B3 M1; 08-C RA-10): the summary's first view through a link (?1 client, ?2 document, ?3 now, ?4 token hash), written FIRST in the
+ * batch that serves the page and only while the link is still live, so a void (or a revoke, an expiry, a lost access) that landed after `open()` writes no
+ * view and is never served.
+ */
+export const LINK_VIEW_SQL = `${VIEW_SQL} AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?2 AND d.client_id = ?1 AND ${linkLiveSql("?4", "?3")})`;
+
+/**
+ * AU12: the summary read again in the same batch, after the view (?1 client, ?2 document, ?3 token hash, ?4 now): the document as it is NOW, only while the
+ * link is still live and the document still one the client may open (a withdrawn proforma included). The answer is served only from this row.
+ */
+export const DOC_REREAD_SQL = `SELECT ${SUMMARY_COLS} FROM documents d ${SUMMARY_PARENT_JOIN}
+  WHERE d.client_id = ?1 AND d.id = ?2 AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL}) AND ${linkLiveSql("?3", "?4")}`;
+
+/**
+ * AU12: a log row's guard: the document is still one the client may open and the link is still live for it, the re-read's own rule (`n` the first
+ * placeholder; document, client, token hash, now).
+ */
+const linkLiveGuard = (documentId: string, clientId: string, hash: string, now: number) => ({
+  sql: (n: number) =>
+    `EXISTS (SELECT 1 FROM documents d WHERE d.id = ?${n} AND d.client_id = ?${n + 1} AND d.frozen_at IS NOT NULL AND ${openOrWithdrawnSql("d")} AND d.type IN (${TYPES_SQL}) AND ${linkLiveSql(`?${n + 2}`, `?${n + 3}`)})`,
+  params: [documentId, clientId, hash, now],
+});
+
 export type Found = SummaryRow & { link_contact_id: string; link_client_id: string; view_pay_live: number };
 export type Opened = { doc: Found; failKey: string; hash: string };
 
@@ -161,13 +185,19 @@ export const docToken = new Hono<AppEnv>()
     const { token } = c.req.valid("json");
     const o = await open(c, token);
     if (o instanceof Response) return o;
-    const { doc } = o;
+    const { doc, hash } = o;
     const db = c.env.DB;
     const t = Date.now();
     c.set("accessDone", true);
-    // One batch: the frozen lines (read first), the audit row of the use, the first view (`VIEW_SQL`: set once, only on a document the client may still
-    // open, so never on a void one; FX-5, 08-C RA-10), and the access row.
-    const [lines, credits, online] = await db.batch([
+    // Full audit AU12 (B3 M1; FX-5, 08-C RA-10): ONE batch, the first view FIRST and only while the link is still live (`LINK_VIEW_SQL`: set once, never on
+    // a void document), then the summary read again (`DOC_REREAD_SQL`), the frozen lines, the credit notes, the Pay now block, the audit row of the use and
+    // the access row (both written only while the link is still live). The answer is served only from the re-read: a void, a revoke or a lost access
+    // between `open()` and this batch answers the 404 (the link was valid when checked, so no `p:fail:` count) with one 404 access row.
+    const throttle = auditThrottle(doc.id, doc.link_contact_id, t);
+    const live = linkLiveGuard(doc.id, doc.link_client_id, hash, t);
+    const [, again, lines, credits, online] = await db.batch([
+      db.prepare(LINK_VIEW_SQL).bind(doc.link_client_id, doc.id, t, hash),
+      db.prepare(DOC_REREAD_SQL).bind(doc.link_client_id, doc.id, hash, t),
       db.prepare(LINES_SQL).bind(doc.link_client_id, doc.id),
       db.prepare(CREDIT_NOTES_SQL).bind(doc.link_client_id, doc.id),
       // M6.2: the Pay now block, bound to the link's client.
@@ -183,14 +213,21 @@ export const docToken = new Hono<AppEnv>()
           entityType: "document",
           entityId: doc.id,
         },
-        auditThrottle(doc.id, doc.link_contact_id, t),
+        {
+          sql: (n) => `${throttle.sql(n)} AND ${live.sql(n + throttle.params.length)}`,
+          params: [...throttle.params, ...live.params],
+        },
       ),
-      db.prepare(VIEW_SQL).bind(doc.link_client_id, doc.id, t),
-      accessStmt(db, accessEntry(c, 200, doc.link_contact_id)),
+      accessStmt(db, accessEntry(c, 200, doc.link_contact_id), live),
     ]);
+    const now = again?.results[0] as SummaryRow | undefined;
+    if (!now) {
+      await db.batch([accessStmt(db, accessEntry(c, 404, doc.link_contact_id))]);
+      return err(c, NOT_FOUND, 404);
+    }
     return c.json({
       document: {
-        ...summaryOf(doc, (lines?.results ?? []) as LineRow[], (credits?.results ?? []) as CreditNoteRow[]),
+        ...summaryOf(now, (lines?.results ?? []) as LineRow[], (credits?.results ?? []) as CreditNoteRow[]),
         ...onlineOf(online?.results[0] as OnlineRow | undefined),
       },
     });

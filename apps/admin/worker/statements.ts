@@ -88,14 +88,14 @@ export const statements = new Hono<AppEnv>().get(
         .bind(...statementPageBinds(id, currency, q.from, q.to, cursor)),
       db
         .prepare(STATEMENT_BALANCE_BEFORE_SQL(cursor !== undefined))
-        .bind(...statementBalanceBeforeBinds(id, currency, q.from, cursor)),
+        .bind(...statementBalanceBeforeBinds(id, currency, q.from, q.to, cursor)),
       db.prepare(STATEMENT_TOTALS_SQL).bind(...statementTotalsBinds(id, currency, q.from, q.to)),
       // the range's opening balance: only a later page needs its own query (the first page's balance before IS the opening)
       ...(cursor
         ? [
             db
               .prepare(STATEMENT_BALANCE_BEFORE_SQL(false))
-              .bind(...statementBalanceBeforeBinds(id, currency, q.from)),
+              .bind(...statementBalanceBeforeBinds(id, currency, q.from, q.to)),
           ]
         : []),
     ];

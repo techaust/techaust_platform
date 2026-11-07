@@ -638,10 +638,12 @@ describe("judgeStripeSession [ADR 0008, L5, L6; every verdict]", () => {
     ["not_captured", fetched({}, {}, { captured: false }), row],
     // Early check 1, F1: money returned or contested after the charge succeeded is never confirmed (status and captured stay as they were).
     ["not_captured", fetched({}, {}, { refunded: true, amount_refunded: 500_00 }), row],
-    ["not_captured", fetched({}, {}, { amount_refunded: 1_00 }), row],
     ["not_captured", fetched({}, {}, { disputed: true }), row],
-    // A refund also wins over a later amount check.
-    ["not_captured", fetched({ amount_total: 499_99 }, {}, { amount_refunded: 1 }), row],
+    ["not_captured", fetched({}, {}, { disputed: true, amount_refunded: 1_00 }), row],
+    // M6–M7 audit AU6 (B1 M1): refunded in part before we first settled it: `partly_refunded` (recorded pending with a `refunded_outside` item), and it wins over
+    // a later amount check.
+    ["partly_refunded", fetched({}, {}, { amount_refunded: 1_00 }), row],
+    ["partly_refunded", fetched({ amount_total: 499_99 }, {}, { amount_refunded: 1 }), row],
     ["currency_mismatch", fetched({ currency: "eur" }), row],
     ["currency_mismatch", fetched({}, { currency: "inr" }), row],
     ["currency_mismatch", fetched(), { ...row, currency: "INR" }],
@@ -678,9 +680,22 @@ describe("judgeStripeSession [ADR 0008, L5, L6; every verdict]", () => {
       row,
     ],
     ["not_export_receipt", fetched({}, { currency: "inr" }, { payment_method_details: null }), row],
-    // ...but never before the money's own state: a refunded India-card payment is `not_captured`.
+    // ...but never before the money's own state: a fully refunded India-card payment is `not_captured`; one refunded in part keeps RA-38 first (AU6).
     [
       "not_captured",
+      fetched(
+        {},
+        {},
+        {
+          refunded: true,
+          amount_refunded: 500_00,
+          payment_method_details: { type: "card", card: { country: "IN" } },
+        },
+      ),
+      row,
+    ],
+    [
+      "not_export_receipt",
       fetched(
         {},
         {},

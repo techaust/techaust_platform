@@ -276,6 +276,42 @@ test("care plan hours: the month's periods with the used meter and the billed st
     await expect(table.getByRole("columnheader", { name: col })).toBeVisible();
 });
 
+test("care plan hours at 390 and 768 px: each date stays whole, the period may break only at 'to', and no cell's text overflows (audit AU22, B4 M2)", async ({
+  page,
+}) => {
+  for (const width of [390, 768] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/reports/care-hours");
+    await expect(page.getByRole("heading", { name: "Care plan hours", level: 1 })).toBeVisible();
+    await expect(page.locator("[aria-busy='true']")).toHaveCount(0);
+    const periods = page.locator(".m73-period").filter({ visible: true });
+    await expect(periods.first()).toBeVisible();
+    const found = await periods.evaluateAll((els) =>
+      els.map((el) => ({
+        // a date drawn on more than one line box is a broken date
+        brokenDates: [...el.querySelectorAll(".m73-nowrap-dates")].filter(
+          (d) => d.getClientRects().length > 1,
+        ).length,
+        // the cell (a table cell, or a card's fact) holds its text
+        overflow: (() => {
+          const cell = el.closest("td, th, dd");
+          return cell ? cell.scrollWidth - cell.clientWidth : 0;
+        })(),
+      })),
+    );
+    for (const f of found) {
+      expect(f.brokenDates, `a date broken at ${width} px`).toBe(0);
+      expect(f.overflow, `a period overflows its cell at ${width} px`).toBeLessThanOrEqual(1);
+    }
+    // every other cell of the list too: no text runs past its cell's edge
+    const cellsOver = await page
+      .locator(".dtable td, .dtable th, .dcard dd")
+      .filter({ visible: true })
+      .evaluateAll((els) => els.filter((c) => c.scrollWidth > c.clientWidth + 1).length);
+    expect(cellsOver, `cells overflowing at ${width} px`).toBe(0);
+  }
+});
+
 test("care plan hours: a period that has not begun says when it starts, in place of its usage and billed state (a mocked answer)", async ({
   page,
 }) => {

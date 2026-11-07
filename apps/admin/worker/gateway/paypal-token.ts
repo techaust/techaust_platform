@@ -3,6 +3,7 @@
 // token PayPal gave this Worker's own keys, and it is dropped whenever the origin or the keys change (the SHA-256 of both, never the keys themselves) or a call
 // answers 401. Kept until `expires_in` minus 300 s. The token, the id and the secret are never logged.
 import { sha256Hex } from "@techaust/core/hash";
+import { readJsonCapped } from "./answer.ts";
 
 /** Renew this long before PayPal's `expires_in` runs out. */
 export const TOKEN_MARGIN_MS = 300_000;
@@ -57,6 +58,8 @@ export async function payPalToken(
       },
       body: "grant_type=client_credentials",
       ...(timeouts ? { signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS) } : {}),
+      // M6–M7 audit AU7 L2: never follow a redirect with our client secret (a 3xx is not 200: `bad_answer` below).
+      redirect: "manual",
     });
   } catch {
     return { ok: false, code: "network" };
@@ -69,12 +72,10 @@ export async function payPalToken(
     await res.body?.cancel();
     return { ok: false, code: res.status === 401 || res.status === 403 ? "forbidden" : "bad_answer" };
   }
-  let body: unknown;
-  try {
-    body = await res.json();
-  } catch {
-    return { ok: false, code: "bad_answer" };
-  }
+  // AU7 L3: read through a byte cap.
+  const read = await readJsonCapped(res);
+  if (!read.ok) return { ok: false, code: "bad_answer" };
+  const body = read.value;
   const t = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
   const token =
     typeof t.access_token === "string" && /^[\x21-\x7e]{1,4096}$/.test(t.access_token)

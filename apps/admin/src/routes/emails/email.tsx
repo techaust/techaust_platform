@@ -12,7 +12,7 @@ import { LoadFailed, NoAccess, NotFound, useLoad } from "../../components/states
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { ZQ_UI } from "../../lib/copy-zq.ts";
-import { emailRecordHref, logCrumbs } from "../../lib/emails.ts";
+import { emailRecordHref, logCrumbs, sentShown } from "../../lib/emails.ts";
 import { type EmailEvent, m72Api } from "../../lib/m72-api.ts";
 import { useUser } from "../../session.tsx";
 import { EmailStatus, templateName } from "../emails.tsx";
@@ -97,7 +97,8 @@ function EmailDetail() {
             <dd className="break">{m.to}</dd>
           </div>
           <div>
-            <dt>{ZQ_UI.factQueued}</dt>
+            {/* AU22 (B4 L3): the list's "Sent" column and this fact name the same time the same way: "Sent" once the email left, "Queued" before */}
+            <dt>{sentShown(m.status) === "time" ? ZQ_UI.colWhen : ZQ_UI.factQueued}</dt>
             <dd>
               <When ms={m.createdAt} />
             </dd>

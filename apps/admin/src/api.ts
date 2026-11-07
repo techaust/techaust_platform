@@ -620,6 +620,8 @@ export type ProjectPage = {
   milestones: MilestoneView[];
   /** The client is an anonymised individual: the screens are read-only. */
   clientAnonymised: boolean;
+  /** Full audit AU23: the client is under a legal hold (no note or file can be deleted). Optional: an older API answer lacks it. */
+  clientLegalHold?: boolean;
   milestoneTotals: { totalMinor: number; mismatch: boolean };
   recentNotes: NoteView[];
   recentFiles: FileView[];
@@ -1313,6 +1315,8 @@ const PAYMENT_DETAIL_KEYS = [
   "reason",
   "noteReason",
   "retryAfterS",
+  // M6–M7 audit AU16 (B2 3): the gateway's refusal code (`gateway_refused`'s `refused_<status>`), which the refund dialog shows.
+  "code",
 ] as const;
 /** M7.4 review low 11: the `error.details` keys that hold a list of strings (`too_many_leads` names its `refs`). Only a list whose every item is a
  * string is copied, at most `MAX_DETAIL_LIST` items; any other value under these keys (and any list under the keys above) is dropped as before. */
@@ -2347,6 +2351,10 @@ export const paymentsApi = {
       advice?: PaymentAdviceRef | null;
       /** M7.1 review M5: the client's "I've paid" notice this entry was recorded from (null: none); absent from an older API. */
       fromNotice?: { id: string; via: string; createdAt: number } | null;
+      /** M6–M7 audit AU16 (B2 4): a refund of it that has not failed (a withdraw is refused, `refunds_exist`); absent from an older API. */
+      hasLiveRefund?: boolean;
+      /** M6–M7 audit AU4 (B0 9): an active "seen in the bank statement" tick (a withdraw is refused, `payment_linked`); absent from an older API. */
+      bankTicked?: boolean;
     }>(`/payments/${pid(id)}`),
   /**
    * Record (07-ZH line 2). The Owner's entry is confirmed now (fresh code); a Staff member's waits for the Owner (line 3). Codes: `already_recorded`,

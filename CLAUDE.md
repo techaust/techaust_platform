@@ -325,6 +325,30 @@ pnpm portal:link --email … [--client CODE] [--staging]       # 15-minute sign-
     - migration 0080 (indexes only);
     - runbooks `incident.md`, `restore.md`, `drill-log.md` and `budget-audit.md`;
     - secret scripts `tools/set-random-secret.ps1`, `scripts/set-ses-keys.ps1` and `scripts/set-cf-analytics-token.ps1`.
+- **M6–M7 audit fixes (#190; [run file](docs/runs/full-audit-m6-m7.md), decisions AU1–AU64):**
+  - **Refunds that come back:**
+    - a gateway refund can move `succeeded → failed` once, with `failure_code` and a set-once `reversed_at` (trigger 0082);
+    - only Stripe `failed` or `canceled` reverses, and Stripe `requires_action` opens an item only;
+    - a succeeded refund is re-fetched only for events that can mean a reversal (`mayReverseRefund`).
+  - **Period readers count a refund that came back as out until `reversed_at`** (`refundOutAtSql`, `refundsOutSql` aliased `fo`, `istDayEndMsSql`; 08-C RA-41 note), so filed periods never move. Current-state readers count it as gone.
+  - **Partly refunded payments:** a payment first seen partly refunded is recorded pending, with a `refunded_outside` item.
+  - **Bounded reads:**
+    - the credit-held and reconciliation lists page by bounded windows (`boundedWindowSql`), so a page can be empty with `next` set;
+    - screens read through `lib/keyset-pages.ts` and `components/keyset-foot.tsx`, and show the empty state only when `next` is null.
+  - **Receipts:** the sweep counts failures per payment and per FY, leaves a payment out after 3, rings one bell, and records a `series_full` reason.
+  - **Data protection:**
+    - **Retention budget:** retention stops at 40,000 rows written a night, measured from `meta.rows_written` into `retention_run_counts.written`.
+    - **Legal hold:** any held holder of an address stops an erase or anonymise (`ADDRESS_HELD_SQL`), and a held note or file delete answers 409.
+    - **Consent withdrawal:** a request closes `done` only with proof.
+    - **Bells:** marker bells are recorded outside `notifications` (`pdf_failures.refused_at`), and their titles are scrubbed after 12 months.
+  - **Portal and auth:**
+    - **Document links:** `/t/document` writes the view first, guarded on the link, then serves from a re-read.
+    - **Sign-out:** limited per address (`RL_SIGNOUT`) and per session; a 429 still clears the cookie.
+    - **Suppression:** a stopped address is left out of every send and of the care auto-issue.
+    - **Digest complaints:** a complaint about the digest turns only the digest off.
+  - **Credentialed fetches** (gateways, SES, Turnstile) use `redirect: "manual"` and the shared capped reader `@techaust/core/body`.
+  - **Migrations:** 0081–0086 (ADD COLUMN, partial indexes and trigger sets only). Trigger-text drift tests compare exact text.
+  - **Copy:** 07-ZT staff lines are the lead's; client lines C1–C3 are gated off until the owner approves.
 - **Work of 2026-11-01 (PRs #137–#149; [run file](docs/runs/cloud-parallel-2026-11-01.md)):**
   - **Deed of assignment (T11, #148):** `deeds` (migrations 0061–0062, `deed_triggers`; one open deed per project by a partial unique index, frozen once final, delete only an anonymised client's draft or cancelled deeds). A draft is prepared by `deedDraftStatements` (`packages/db/src/deeds.ts`) appended after the recompute, guarded on the audit row, in every batch that can make a project eligible (completion, payments, credit use, advance, credit-note issue, void): the accepted total minus credit notes reached with Σ settled > 0, counted once (core `@techaust/core/deeds` and its SQL twin); `packages/core/test/deed-hooks.test.ts` fails any `recomputeStatement(` call site neither hooked nor allow-listed. Only "Check again" (Owner) redrafts after a cancel. Finalise (Owner, step-up) numbers `TH/DA/{FY}/{N}` and seals the 07-ZE text; jobs `pdf.deed` renders write-once; the signed upload goes write-once to `DOCS`; the portal shows signed deeds and `deed.signed` emails only contacts with portal access **and** "can see finance". Copy 07-ZJ.
   - **Style guard (#140):** `scripts/css-collisions.mjs` (in `pnpm check` and CI) fails a class that is the subject of a base rule in two stylesheets of one app; route stylesheets stay loaded for the whole SPA session, so a duplicate leaks. The shared switch's chosen half carries a 2 px ink bar.

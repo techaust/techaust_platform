@@ -1076,6 +1076,7 @@ body:has(.shell) {
 }
 
 .menu__item:focus-visible {
+  outline: 2px solid var(--color-focus);
   outline-offset: -2px;
 }
 
@@ -1250,6 +1251,22 @@ body:has(.shell) {
   .page-header__actions {
     flex: none;
     flex-wrap: nowrap;
+  }
+}
+
+/* A header with several actions (PageHeader `wideActions`; the lead page, AU28): up to about 900 px the title takes its own row and the actions wrap under
+   it, start-aligned, so a long name never squeezes into a narrow column beside three buttons. */
+@media (min-width: 48rem) and (max-width: 56.24rem) {
+  .page-header--wide-actions .page-header__row {
+    flex-wrap: wrap;
+  }
+
+  .page-header--wide-actions .page-header__title {
+    flex-basis: 100%;
+  }
+
+  .page-header--wide-actions .page-header__actions {
+    flex-wrap: wrap;
   }
 }
 
@@ -1518,6 +1535,12 @@ body:has(.shell) {
   .filters__foot {
     grid-column: 1 / -1;
   }
+}
+
+/* One chip group and nothing else (FilterBar adds the class; AU17, B2 6): a single column the panel's width at every size, so the chips stay on one row
+   while they fit (the 80rem grid above would hold the group in its 22rem first column). */
+.filters.filters--single {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .field-icon {

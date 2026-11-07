@@ -332,6 +332,8 @@ describe("Send receipt again (C.2; Tier A scoping) and the refund email's route 
         entity: expect.objectContaining({ type: "document_send" }),
       }),
     ]);
+    // M6–M7 audit AU13 (B3 L1): the button opens the portal's receipts page, never the invoices list
+    expect((q.sent[0] as { data: { url: string } }).data.url).toMatch(/^https?:\/\/[^/]+\/receipts$/);
     expect(await one("SELECT kind, contact_id FROM document_sends WHERE document_id = ?1", rid)).toEqual({
       kind: "resend",
       contact_id: ok.id,
@@ -355,6 +357,54 @@ describe("Send receipt again (C.2; Tier A scoping) and the refund email's route 
     expect(gone.status).toBe(409);
     expect((await json(gone)).error?.code).toBe("client_anonymised");
     expect(q.sent).toHaveLength(before);
+  });
+
+  it("M6–M7 audit AU21 and AU16 (B4 L2, B2 2): a suppressed contact is refused, named at the top level as `contactIds`; nothing written or queued", async () => {
+    const o = await ownerSession();
+    const clientId = await mkReportClient("INR");
+    const p = await recorded(o, recordBody(clientId, 2_000));
+    const r = await issueReceipt(env, p.id as string);
+    const rid = (
+      await one<{ id: string }>(
+        "SELECT id FROM documents WHERE type = 'receipt' AND number_display = ?1",
+        r.number,
+      )
+    )?.id as string;
+    const ok = await mkContact(clientId, {
+      email: `fin-${uuidv7().slice(-6)}@example.test`,
+      portal_access: 1,
+      can_see_finance: 1,
+    });
+    const stopped = await mkContact(clientId, {
+      email: `bounced-${uuidv7().slice(-6)}@example.test`,
+      portal_access: 1,
+      can_see_finance: 1,
+    });
+    await env.DB.prepare(
+      "INSERT INTO email_suppressions (email, reason, at) VALUES (lower(?1), 'hard_bounce', 1)",
+    )
+      .bind(stopped.email)
+      .run();
+    const q = captureQueue();
+    const res = await call(
+      `/receipts/${rid}/send`,
+      { cookie: o.cookie, body: { contactIds: [ok.id, stopped.id] } },
+      q.env,
+    );
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body).toMatchObject({ error: { code: "recipient_invalid" }, contactIds: [stopped.id] });
+    expect(q.sent).toHaveLength(0);
+    expect(await one("SELECT count(*) AS n FROM document_sends WHERE document_id = ?1", rid)).toEqual({
+      n: 0,
+    });
+    const good = await call(
+      `/receipts/${rid}/send`,
+      { cookie: o.cookie, body: { contactIds: [ok.id] } },
+      q.env,
+    );
+    expect(good.status).toBe(202);
+    expect(await json(good)).toMatchObject({ queued: 1 });
   });
 
   it("a payment refunded in full: 409 receipt_refunded, nothing written or queued; a partly refunded one still sends (finding 5)", async () => {

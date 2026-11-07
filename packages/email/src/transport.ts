@@ -2,7 +2,8 @@
 // A send ends in one of three ways, so a queue consumer knows what to do:
 //   sent      accepted (SES message id)
 //   permanent a 4xx other than throttling: log `failed` and acknowledge, retrying cannot help
-//   retry     throttling, 5xx or a network error: let the queue redeliver
+//   retry     throttling, 5xx, a network error or (M6–M7 audit AU39) a 3xx, never followed: let the queue redeliver
+import { readTextCapped } from "@techaust/core/body";
 import { AwsClient, AwsV4Signer } from "aws4fetch";
 import { allowedHeaders, emailTags, formatAddress, headerValue } from "./headers.ts";
 
@@ -65,6 +66,15 @@ export type SesConfig = {
   region: string;
   configurationSet?: string;
 };
+
+/** M6–M7 audit AU39: the most bytes of an SES answer we read (its answers are a few hundred bytes). */
+export const SES_ANSWER_MAX_BYTES = 16 * 1024;
+
+/**
+ * M6–M7 audit AU39: a response body as text, read through a byte cap (streamed; a declared or streamed size over `max` cancels the rest and answers null), so
+ * an unexpected answer can't fill the isolate's memory. Never throws for an over-long body. AU61 (review L7): core's one shared reader, re-exported here.
+ */
+export { readTextCapped };
 
 const THROTTLE_CODES = [
   "Throttling",
@@ -151,11 +161,19 @@ export function sesTransport(config: SesConfig): Transport {
           headers: { "Content-Type": "application/json" },
           body,
           signal: AbortSignal.timeout(8_000),
+          // M6–M7 audit AU39 (early check L4): never follow a redirect with our signed request (defence in depth: the SES host is fixed).
+          redirect: "manual",
         });
       } catch {
         return { kind: "retry", error: "network error" };
       }
-      const raw = await res.text().catch(() => "");
+      // A 3xx is never followed: a failure the email consumer already retries (and dead-letters after its attempts).
+      if (res.status >= 300 && res.status < 400) {
+        await res.body?.cancel();
+        return { kind: "retry", error: `${res.status} redirect` };
+      }
+      // AU39: the answer is read only up to `SES_ANSWER_MAX_BYTES` (SES answers a few hundred bytes); a longer one keeps its status only.
+      const raw = (await readTextCapped(res, SES_ANSWER_MAX_BYTES).catch(() => null)) ?? "";
       let parsed: { MessageId?: string; message?: string; Message?: string; __type?: string } = {};
       try {
         parsed = JSON.parse(raw);

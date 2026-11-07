@@ -93,7 +93,7 @@ Sent only for a document that was emailed (Q50), only 09:00–19:00 IST (Q48), a
   - `blockers`: "the invoice has a missing field (see the checklist)"
   - `copy_placeholder`: "a line's wording isn't approved yet"
   - `export_inr_confirm`: "an export invoice in rupees needs your confirmation"
-- **Issued, not emailed** (bell line): "Care invoice {number} for {client} was issued, but no billing contact has portal access, so it wasn't emailed."
+- **Issued, not emailed** (bell line): "Care invoice {number} for {client} was issued, but no billing contact can receive it (they need portal access, finance access and an address that isn't stopped)." (reworded by the lead, audit AU43, 2026-11-07)
 
 ## 7. Bells (staff)
 - Care draft ready: "Care invoice draft for {client} ({period}) is ready to check."

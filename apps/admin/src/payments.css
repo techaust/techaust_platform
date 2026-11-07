@@ -1521,3 +1521,20 @@
 .pay-notice__note {
   white-space: pre-line;
 }
+
+/* M6–M7 audit AU17 (B2 5): a confirmed payment's part kept as credit, under its "Put on" list (or alone when it went on nothing) */
+.pay-puton__kept:not(:first-child) {
+  margin-top: var(--space-2);
+}
+
+.pay-puton__kept:first-child {
+  margin-top: 0;
+}
+
+/* M6–M7 audit AU16: why Withdraw isn't offered, on its own line at the top of the dialog's actions (the buttons keep their one row under it, at its end) */
+.pay-entry__why {
+  flex: 1 1 100%;
+  align-self: center;
+  margin: 0;
+  color: var(--color-text-muted);
+}

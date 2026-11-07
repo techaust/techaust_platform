@@ -4,6 +4,7 @@ import { ANONYMISED_CONTACT } from "@techaust/core/clients";
 import { toIsoDate, toIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { describe, expect, it, vi } from "vitest";
+import { erasureHash } from "./erasure-key.ts";
 import { cancelUnlinkedSendsSql, type SendRow, sendsView } from "./invoice-send.ts";
 import { insert, mkClient, mkContact } from "./test-clients.ts";
 import { call, captureQueue, one, rows, sessionFor } from "./test-helpers.ts";
@@ -111,6 +112,45 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
     expect((await send(s, made.id, { contactIds: ids, extra: 1 })).status).toBe(400); // strict body
     expect(await sendsOf(made.id)).toEqual([]);
     expect(await remindersOf(made.id)).toEqual([]);
+  });
+
+  it("full audit AU21: a recipient whose emails are stopped by its address is refused; nothing is written", async () => {
+    const { s, made, ids } = await issued(1);
+    const stopped = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
+    await env.DB.prepare(
+      "INSERT INTO email_suppressions (email, reason, at) SELECT lower(email), 'complaint', 1 FROM contacts WHERE id = ?1",
+    )
+      .bind(stopped.id)
+      .run();
+    const r = await send(s, made.id, { contactIds: [ids[0], stopped.id] });
+    expect(r.status).toBe(409);
+    expect(await json(r)).toMatchObject({ error: { code: "recipient_invalid" }, contactIds: [stopped.id] });
+    expect(await sendsOf(made.id)).toEqual([]);
+    expect(await remindersOf(made.id)).toEqual([]);
+    expect((await send(s, made.id, { contactIds: ids })).status).toBe(200);
+  });
+
+  // Full audit AU56 (early check of AF2, L3): the erased (`h:`) form is the ROUTE's rule only where the Worker holds `ERASURE_HASH_KEY`. These tests run
+  // every route set in process with the key; the deployed invoices Worker has no key (the lead's decision AU41), so there `recipientHashes` is null, the
+  // send goes through, and the email consumer (which skips an `h:`-stopped address and rings) stays that form's guard: the second half shows it.
+  it("AU21, AU56: where the Worker holds ERASURE_HASH_KEY, a recipient stopped as an erased address (its keyed hash) is refused; without the key the route can't see that form and the send goes", async () => {
+    const { s, made, ids } = await issued(1);
+    // the erased form: the stop row holds only the keyed hash of the address (a contact added again after an erasure)
+    const erased = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
+    const email =
+      (await one<{ email: string }>("SELECT email FROM contacts WHERE id = ?1", erased.id))?.email ?? "";
+    await env.DB.prepare("INSERT INTO email_suppressions (email, reason, at) VALUES (?1, 'erased', 1)")
+      .bind(`h:${await erasureHash(env, email)}`)
+      .run();
+    const r2 = await send(s, made.id, { contactIds: [erased.id] });
+    expect(r2.status).toBe(409);
+    expect(await json(r2)).toMatchObject({ error: { code: "recipient_invalid" }, contactIds: [erased.id] });
+    expect(await sendsOf(made.id)).toEqual([]);
+    expect(await remindersOf(made.id)).toEqual([]);
+    // without the key (the deployed invoices Worker) the route can't hash the address: the send goes, and the email consumer is the guard
+    const noKey = { ...env, ERASURE_HASH_KEY: undefined } as unknown as Env;
+    expect((await send(s, made.id, { contactIds: [ids[0], erased.id] }, noKey)).status).toBe(200);
+    expect((await sendsOf(made.id)).length).toBe(2);
   });
 
   it("Owner and Staff may send (Q42); Sales and the Accountant may not; no session is 401", async () => {

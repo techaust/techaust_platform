@@ -358,6 +358,17 @@ export async function settleStripe(env: GatewayEnv, a: StripeSettleArgs): Promis
   // A payment intent with nothing received cannot be a row (the amount CHECK): the item only.
   if (f.amountMinor <= 0) return reviewOnly(env, link, "amount_mismatch", where, facts, STRIPE);
   const pending = (kind: string, rf: ReasonFacts) => recordPending(env, a, f, kind, rf, facts);
+  // M6–M7 audit AU6 (B1 M1): part of the charge was refunded at Stripe before we first settled it: pending (no ledger move, the checkout marked paid only while
+  // open), with a `refunded_outside` item carrying the refunded amount. Money not in USD still gets no payment row (the 0066 shape): the item only.
+  if (!verdict.ok && verdict.verdict === "partly_refunded") {
+    if (!stripeSessionInUsd(c, s)) return reviewOnly(env, link, "currency_mismatch", where, facts, STRIPE);
+    return pending("refunded_outside", {
+      paidMinor: f.amountMinor,
+      refundedMinor: s.charge?.amountRefunded ?? 0,
+      provider: "stripe",
+      currency: "USD",
+    });
+  }
   if (!verdict.ok)
     return pending(verdict.verdict, { paidMinor: f.amountMinor, expectedMinor: c.amount_minor });
   const payable = payableOnline(
@@ -483,7 +494,9 @@ function fetchFailed(
   code: StripeFailure,
 ): Promise<ProcessEventResult> | ProcessEventResult {
   const c = a.checkout;
-  if (code === "network" || code === "unconfigured") return { result: "retry" };
+  // M6–M7 audit AU7 L7: `live_not_allowed` is retried like `unconfigured` (as PayPal's path), never a permanent review.
+  if (code === "network" || code === "unconfigured" || code === "live_not_allowed")
+    return { result: "retry" };
   const where = { documentId: c.document_id, clientId: c.client_id, amountMinor: null };
   const link = { cause: a.cause, now: a.now, linkId: c.provider_link_id };
   if (code === "forbidden")
