@@ -109,9 +109,9 @@ describe("AU1: the email about a refund that came back (`refund.reversed`, 07-ZT
     const r = await refundOf({ reversed: true });
     const fin = await mkContact(r.clientId, { email: `rev${uuidv7().slice(-8)}@example.test` });
     await mkContact(r.clientId, { finance: false });
-    expect(await processRefundReversed(env(), { kind: "refund.reversed", refundId: r.refundId }, IN_WINDOW)).toBe(
-      "queued",
-    );
+    expect(
+      await processRefundReversed(env(), { kind: "refund.reversed", refundId: r.refundId }, IN_WINDOW),
+    ).toBe("queued");
     const mails = emailsOf("refund.reversed");
     expect(mails.map((m) => m.to)).toEqual([fin.email]);
     expect(mails[0]?.entity).toEqual({ type: "refund_reversal", id: r.refundId });
@@ -125,12 +125,12 @@ describe("AU1: the email about a refund that came back (`refund.reversed`, 07-ZT
   it("a refund that still stands (succeeded), an unknown id or a bad body: nothing", async () => {
     const r = await refundOf();
     await mkContact(r.clientId);
-    expect(await processRefundReversed(env(), { kind: "refund.reversed", refundId: r.refundId }, IN_WINDOW)).toBe(
-      "none",
-    );
-    expect(await processRefundReversed(env(), { kind: "refund.reversed", refundId: uuidv7() }, IN_WINDOW)).toBe(
-      "none",
-    );
+    expect(
+      await processRefundReversed(env(), { kind: "refund.reversed", refundId: r.refundId }, IN_WINDOW),
+    ).toBe("none");
+    expect(
+      await processRefundReversed(env(), { kind: "refund.reversed", refundId: uuidv7() }, IN_WINDOW),
+    ).toBe("none");
     expect(await processRefundReversed(env(), { kind: "refund.reversed", refundId: "" }, IN_WINDOW)).toBe(
       "invalid",
     );

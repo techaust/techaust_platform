@@ -95,7 +95,9 @@ async function everyUnbounded() {
   const ids: string[] = [];
   for (let k = "", id = "", n = 0; n < 200; n++) {
     const r = (
-      await env.DB.prepare(CREDIT_HELD_SQL_UNBOUNDED).bind(AT, DAY, k, id, 100_000).all<{ id: string; received_on: string }>()
+      await env.DB.prepare(CREDIT_HELD_SQL_UNBOUNDED)
+        .bind(AT, DAY, k, id, 100_000)
+        .all<{ id: string; received_on: string }>()
     ).results;
     ids.push(...r.slice(0, 50).map((x) => x.id));
     const last = r[49];
@@ -109,7 +111,9 @@ async function everyUnbounded() {
 describe("CREDIT_HELD_SQL at 2,000 and 5,000 confirmed payments [L19, AU2, RA-41]", () => {
   it("at 2,000: finds exactly the money on no invoice, every page within the 9,000-row target, as the unbounded read", async () => {
     const r = await every(CREDIT_HELD_SQL, CREDIT_HELD_SCAN);
-    console.log(`rows read, CREDIT_HELD_SQL at ${2_000 + LOOSE} confirmed payments: at most ${r.most} a page, ${r.pages} pages`);
+    console.log(
+      `rows read, CREDIT_HELD_SQL at ${2_000 + LOOSE} confirmed payments: at most ${r.most} a page, ${r.pages} pages`,
+    );
     expect(r.ids.sort()).toEqual([...loose].sort());
     expect(r.most).toBeLessThanOrEqual(ROWS_TARGET);
     expect((await everyUnbounded()).sort()).toEqual(r.ids);
@@ -121,7 +125,9 @@ describe("CREDIT_HELD_SQL at 2,000 and 5,000 confirmed payments [L19, AU2, RA-41
       (await all<{ n: number }>("SELECT count(*) AS n FROM payments WHERE client_id = ?1", clientId))[0]?.n,
     ).toBe(5_000 + LOOSE);
     const r = await every(CREDIT_HELD_SQL, CREDIT_HELD_SCAN);
-    console.log(`rows read, CREDIT_HELD_SQL at ${5_000 + LOOSE} confirmed payments: at most ${r.most} a page, ${r.pages} pages`);
+    console.log(
+      `rows read, CREDIT_HELD_SQL at ${5_000 + LOOSE} confirmed payments: at most ${r.most} a page, ${r.pages} pages`,
+    );
     expect(r.ids.sort()).toEqual([...loose].sort());
     expect(r.most).toBeLessThanOrEqual(ROWS_TARGET);
     expect((await everyUnbounded()).sort()).toEqual(r.ids);

@@ -131,14 +131,13 @@ async function handleHook(req: Request, env: HookEnv, now: number, out: { o?: st
     return store(env, e.id, e.name, { ...refundFactsRecord(rf), livemode: e.livemode ? 1 : 0 }, now, out);
   }
   // (6) ours or not: no D1 write for anything that isn't exactly ours.
-  const foreign =
-    !modeKept
-      ? "livemode_mismatch"
-      : !e.techaust
-        ? "not_techaust"
-        : e.techaust.env !== secretOf(env, "ENVIRONMENT")
-          ? "other_env"
-          : null;
+  const foreign = !modeKept
+    ? "livemode_mismatch"
+    : !e.techaust
+      ? "not_techaust"
+      : e.techaust.env !== secretOf(env, "ENVIRONMENT")
+        ? "other_env"
+        : null;
   if (foreign) {
     out.o = foreign;
     return answer(200, { ok: true });

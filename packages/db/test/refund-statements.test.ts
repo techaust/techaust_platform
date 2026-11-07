@@ -75,6 +75,7 @@ import {
   STATEMENT_TOTALS_SQL,
   statementTotalsBinds,
 } from "../src/reports.ts";
+import { REVIEW_KINDS } from "../src/schema/payments.ts";
 import {
   overpaymentAdvanceAtSql,
   overpaymentAdvanceSql,
@@ -82,7 +83,6 @@ import {
   paymentFreeSql,
   paymentNetAtSql,
 } from "../src/sql-rules.ts";
-import { REVIEW_KINDS } from "../src/schema/payments.ts";
 import {
   AUDIT_MONEY_RECREATED_GATEWAY_0082,
   AUDIT_MONEY_RECREATED_REFUND_0082,
@@ -2049,11 +2049,20 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
         "SELECT status, failure_code, reversed_at, settled_on, settled_at IS NOT NULL AS settled FROM payment_refunds WHERE id = ?",
         r.refundId,
       ),
-    ).toEqual({ status: "failed", failure_code: "stripe_failed", reversed_at: at, settled_on: "2026-11-03", settled: 1 });
+    ).toEqual({
+      status: "failed",
+      failure_code: "stripe_failed",
+      reversed_at: at,
+      settled_on: "2026-11-03",
+      settled: 1,
+    });
     // the money is the client's credit again, through the existing readers (refunds not failed)
     expect((await first<{ credit: number }>(CLIENT_CREDIT_SQL, r.clientId))?.credit).toBe(50_000);
     expect(
-      await first<{ free: number }>(`SELECT ${paymentFreeSql("p")} AS free FROM payments p WHERE p.id = ?`, r.p),
+      await first<{ free: number }>(
+        `SELECT ${paymentFreeSql("p")} AS free FROM payments p WHERE p.id = ?`,
+        r.p,
+      ),
     ).toEqual({ free: 50_000 });
   });
 
@@ -2126,7 +2135,10 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
     const ma = args({ paymentId: m, sessionId: sess, amountMinor: 1_000 });
     expect(await refundBatch(ma, owner)).toBe(true);
     await rejects(
-      run("UPDATE payment_refunds SET status = 'failed', failure_code = 'x', reversed_at = 5 WHERE id = ?", ma.id),
+      run(
+        "UPDATE payment_refunds SET status = 'failed', failure_code = 'x', reversed_at = 5 WHERE id = ?",
+        ma.id,
+      ),
       /payment_refunds_status_flow/,
     );
     // a lost dispute neither
@@ -2136,12 +2148,22 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
       sessionId: sess,
       amountMinor: 1_000,
       reasonCode: "chargeback",
-      way: { kind: "outside", origin: "chargeback", providerRefundId: `du_${next()}`, settledOn: "2026-11-03" },
+      way: {
+        kind: "outside",
+        origin: "chargeback",
+        providerRefundId: `du_${next()}`,
+        settledOn: "2026-11-03",
+      },
     });
     expect(await refundBatch(cb, owner)).toBe(true);
-    expect((await reverse(cb.id, (cb.way as { providerRefundId: string }).providerRefundId)).meta.changes).toBe(0);
+    expect(
+      (await reverse(cb.id, (cb.way as { providerRefundId: string }).providerRefundId)).meta.changes,
+    ).toBe(0);
     await rejects(
-      run("UPDATE payment_refunds SET status = 'failed', failure_code = 'x', reversed_at = 5 WHERE id = ?", cb.id),
+      run(
+        "UPDATE payment_refunds SET status = 'failed', failure_code = 'x', reversed_at = 5 WHERE id = ?",
+        cb.id,
+      ),
       /payment_refunds_status_flow/,
     );
   });
@@ -2157,7 +2179,9 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
     expect([...REVIEW_KINDS_0082]).toEqual([...REVIEW_KINDS]);
     const m81 = env.TEST_MIGRATIONS.find((x) => x.name === "0081_audit_money.sql");
     for (const q of (m81?.queries ?? []).map((x) => x.replace(/^(\s|--> statement-breakpoint)+/, "")))
-      expect(q.trim(), q.slice(0, 60)).toMatch(/^(ALTER TABLE `(payments|payment_refunds)` ADD |CREATE INDEX )/);
+      expect(q.trim(), q.slice(0, 60)).toMatch(
+        /^(ALTER TABLE `(payments|payment_refunds)` ADD |CREATE INDEX )/,
+      );
   });
 });
 
@@ -2193,7 +2217,13 @@ describe("AU3 (B0 4): RA-40's credit-note link in the refund's WHERE and in the 
     const early = await note("2026-10-28", 18_000); // issued before the payment arrived
     const late = await note("2026-11-02", 18_000);
     const small = await note("2026-11-03", 5_000); // smaller than the refund
-    const base = { paymentId: p, sessionId: sess, from: "document" as const, documentId: inv, reasonCode: "credit_note" };
+    const base = {
+      paymentId: p,
+      sessionId: sess,
+      from: "document" as const,
+      documentId: inv,
+      reasonCode: "credit_note",
+    };
     expect(await refundBatch(args({ ...base, creditNoteId: early, amountMinor: 18_000 }), owner)).toBe(false);
     expect(await refundBatch(args({ ...base, creditNoteId: small, amountMinor: 18_000 }), owner)).toBe(false);
     // the trigger holds it too, for a row written straight in
@@ -2230,7 +2260,10 @@ describe("AU3 (B0 5, 6): idempotent ticks and reductions, no letter for an anony
     };
     expect((await bankMatchStatement(db(), tick).run()).meta.changes).toBe(1);
     expect((await bankMatchStatement(db(), tick).run()).meta.changes).toBe(0);
-    expect(await first(BANK_MATCH_BY_ID_SQL, tick.id)).toMatchObject({ target_kind: "payment", payment_id: p });
+    expect(await first(BANK_MATCH_BY_ID_SQL, tick.id)).toMatchObject({
+      target_kind: "payment",
+      payment_id: p,
+    });
   });
 
   it("a reduction sent twice with the same id writes one row; its letter is refused once the client is anonymised", async () => {
@@ -2289,9 +2322,19 @@ describe("AU4 (B0 9): a withdraw is refused while a bank tick or an advice link 
       now: Date.now(),
     }).run();
     const withdraw = () =>
-      withdrawPaymentStatement(db(), { paymentId: p, now: Date.now(), sessionId: sess, reason: "entered twice" }).run();
+      withdrawPaymentStatement(db(), {
+        paymentId: p,
+        now: Date.now(),
+        sessionId: sess,
+        reason: "entered twice",
+      }).run();
     expect((await withdraw()).meta.changes).toBe(0);
-    await bankMatchRemoveStatement(db(), { id: tickId, reason: "wrong line", sessionId: sess, now: Date.now() }).run();
+    await bankMatchRemoveStatement(db(), {
+      id: tickId,
+      reason: "wrong line",
+      sessionId: sess,
+      now: Date.now(),
+    }).run();
     expect((await withdraw()).meta.changes).toBe(1);
   });
 });
@@ -2303,9 +2346,12 @@ describe("AU3 (B0 7, B6 L4): the receipt sweep tries the least recently tried fi
     const other = await pay(clientId, owner, { amount: 2_000 });
     // every due payment in the sweep's order (the file's other tests leave many confirmed payments without a receipt; the sweep takes the first 20 of these)
     const due = async () =>
-      (await all<{ id: string }>(RECEIPTS_DUE_SQL.replace("LIMIT 20", "LIMIT 100000"), Number.MAX_SAFE_INTEGER)).map(
-        (r) => r.id,
-      );
+      (
+        await all<{ id: string }>(
+          RECEIPTS_DUE_SQL.replace("LIMIT 20", "LIMIT 100000"),
+          Number.MAX_SAFE_INTEGER,
+        )
+      ).map((r) => r.id);
     expect(RECEIPTS_DUE_SQL).toMatch(/LIMIT 20$/);
     const fail = (now: number, version: number | null) =>
       db().batch(
@@ -2318,7 +2364,9 @@ describe("AU3 (B0 7, B6 L4): the receipt sweep tries the least recently tried fi
           link: "/payments",
         }),
       );
-    const version = (await first<{ version: number }>("SELECT version FROM settings WHERE key = 'numbering'"))?.version ?? null;
+    const version =
+      (await first<{ version: number }>("SELECT version FROM settings WHERE key = 'numbering'"))?.version ??
+      null;
     await fail(10, version);
     // the blocked one was tried; the other never was, so it comes first
     const order = await due();
@@ -2334,10 +2382,14 @@ describe("AU3 (B0 7, B6 L4): the receipt sweep tries the least recently tried fi
     expect(await due()).not.toContain(blocked);
     expect(await due()).toContain(other);
     const owners = (
-      await first<{ n: number }>("SELECT count(*) AS n FROM staff_users WHERE role = 'owner' AND status = 'active'")
+      await first<{ n: number }>(
+        "SELECT count(*) AS n FROM staff_users WHERE role = 'owner' AND status = 'active'",
+      )
     )?.n;
     expect((await bells())?.n).toBe(owners);
-    expect(await first("SELECT receipt_failures, receipt_fail_reason FROM payments WHERE id = ?", blocked)).toEqual({
+    expect(
+      await first("SELECT receipt_failures, receipt_fail_reason FROM payments WHERE id = ?", blocked),
+    ).toEqual({
       receipt_failures: 3,
       receipt_fail_reason: "series_full",
     });
@@ -2349,9 +2401,18 @@ describe("AU3 (B0 7, B6 L4): the receipt sweep tries the least recently tried fi
       "INSERT INTO settings (key, value, version, updated_at) VALUES ('numbering', '{}', 1, 1) ON CONFLICT (key) DO UPDATE SET version = version + 1",
     );
     expect(await due()).toContain(blocked);
-    const v2 = (await first<{ version: number }>("SELECT version FROM settings WHERE key = 'numbering'"))?.version ?? null;
+    const v2 =
+      (await first<{ version: number }>("SELECT version FROM settings WHERE key = 'numbering'"))?.version ??
+      null;
     await fail(14, v2);
-    expect((await first<{ receipt_failures: number }>("SELECT receipt_failures FROM payments WHERE id = ?", blocked))?.receipt_failures).toBe(1);
+    expect(
+      (
+        await first<{ receipt_failures: number }>(
+          "SELECT receipt_failures FROM payments WHERE id = ?",
+          blocked,
+        )
+      )?.receipt_failures,
+    ).toBe(1);
   });
 });
 

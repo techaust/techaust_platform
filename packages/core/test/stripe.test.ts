@@ -686,7 +686,11 @@ describe("judgeStripeSession [ADR 0008, L5, L6; every verdict]", () => {
       fetched(
         {},
         {},
-        { refunded: true, amount_refunded: 500_00, payment_method_details: { type: "card", card: { country: "IN" } } },
+        {
+          refunded: true,
+          amount_refunded: 500_00,
+          payment_method_details: { type: "card", card: { country: "IN" } },
+        },
       ),
       row,
     ],

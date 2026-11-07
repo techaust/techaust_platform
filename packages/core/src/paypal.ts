@@ -556,7 +556,8 @@ export type PayPalReviewVerdict = Exclude<PayPalJudgeVerdict, "capture_refunded"
 /** The judge's answer; `capture_refunded` and `partly_refunded` are their own branches so a caller that has handled them holds a `PayPalReviewVerdict`. */
 export type PayPalJudgement =
   | { readonly ok: true }
-  | { readonly ok: false; readonly verdict: "capture_refunded" | "partly_refunded" }
+  | { readonly ok: false; readonly verdict: "capture_refunded" }
+  | { readonly ok: false; readonly verdict: "partly_refunded" }
   | { readonly ok: false; readonly verdict: PayPalReviewVerdict };
 
 /** Our checkout row, as the judge needs it. */
@@ -608,7 +609,8 @@ export function judgePayPalCapture(
   if (order !== null && !order.captures.some((c) => c.id === capture.id)) return no("order_mismatch");
   if (capture.status === "PENDING") return no("capture_pending");
   if (capture.status === "DECLINED" || capture.status === "FAILED") return no("capture_denied");
-  if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED") return no("capture_refunded");
+  if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED")
+    return no("capture_refunded");
   if (capture.finalCapture === false) return no("not_final");
   if (!payPalExportReceipt(order?.countries ?? [])) return no("not_export_receipt");
   // AU6: after RA-38's test, whose tax consequence comes first.

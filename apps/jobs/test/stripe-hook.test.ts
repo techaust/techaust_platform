@@ -265,7 +265,9 @@ describe("POST /stripe [JOB-HOOK-01..03, L5]", () => {
 
   it("AU7 L1: while PAYMENTS_LIVE_ALLOWED is true both modes are kept with `livemode` (the finance judge decides); while it is false a live event is dropped", async () => {
     const live = eventBody({ livemode: true });
-    const res = await signed(live.body, { e: makeEnv({ STRIPE_WEBHOOK_SECRET: SECRET, PAYMENTS_LIVE_ALLOWED: "true" }) });
+    const res = await signed(live.body, {
+      e: makeEnv({ STRIPE_WEBHOOK_SECRET: SECRET, PAYMENTS_LIVE_ALLOWED: "true" }),
+    });
     expect(res.status).toBe(200);
     const rows = await rowsOf(live.eventId);
     expect(rows).toHaveLength(1);

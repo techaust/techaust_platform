@@ -406,7 +406,9 @@ export const CREDIT_HELD_SCAN = 1_000;
  * route goes on from the 51st match, else from the window's end while the window was full (`scanned` = `CREDIT_HELD_SCAN`), else it is done: the pages together
  * hold exactly the unbounded answer (a db test pages both).
  */
-export const creditHeldSql = (scan: number): string => `WITH w AS (SELECT p.id, p.received_on FROM payments p INDEXED BY payments_confirmed
+export const creditHeldSql = (
+  scan: number,
+): string => `WITH w AS (SELECT p.id, p.received_on FROM payments p INDEXED BY payments_confirmed
        WHERE p.status = 'confirmed' AND p.received_on <= ?2 AND (p.received_on > ?3 OR (p.received_on = ?3 AND p.id > ?4))
        ORDER BY p.received_on, p.id LIMIT ${scan}),
      e AS (SELECT received_on AS scan_on, id AS scan_id, (SELECT count(*) FROM w) AS scanned FROM w ORDER BY received_on DESC, id DESC LIMIT 1)

@@ -16,12 +16,20 @@ export async function readJsonCapped(
   res: Response,
   max: number = GATEWAY_ANSWER_MAX_BYTES,
 ): Promise<{ ok: true; value: unknown } | { ok: false }> {
-  const declared = Number(res.headers.get("content-length") ?? "");
+  const declared = Number(res.headers?.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > max) {
     await res.body?.cancel();
     return { ok: false };
   }
-  if (!res.body) return { ok: false };
+  // No stream to read: the start-up dry run's Response-shaped answers (global scope refuses a Response with a body: warm-rpc.ts) keep their small body in
+  // memory behind `json()`; a real Response with no body fails `json()`, which reads as not JSON.
+  if (!res.body) {
+    try {
+      return { ok: true, value: (await res.json()) as unknown };
+    } catch {
+      return { ok: false };
+    }
+  }
   const reader = res.body.getReader();
   const parts: Uint8Array[] = [];
   let size = 0;

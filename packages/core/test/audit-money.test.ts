@@ -10,7 +10,12 @@ import {
   parseRefundReversed,
   refundReversed,
 } from "../src/notifications.ts";
-import { readPayPalRefund, readRazorpayRefund, readStripeRefund, reversalOf } from "../src/refund-gateways.ts";
+import {
+  readPayPalRefund,
+  readRazorpayRefund,
+  readStripeRefund,
+  reversalOf,
+} from "../src/refund-gateways.ts";
 
 const OUR = "01900000-0000-7000-8000-00000000000a";
 const stripe = (status: string, extra: Record<string, unknown> = {}) =>
@@ -28,11 +33,14 @@ const stripe = (status: string, extra: Record<string, unknown> = {}) =>
 describe("AU1: a refund that succeeded and came back", () => {
   it("Stripe `requires_action` reads pending, marked; every other answer carries no mark", () => {
     expect(stripe("requires_action")).toMatchObject({ state: "pending", requiresAction: true });
-    for (const s of ["succeeded", "pending", "failed", "canceled"]) expect(stripe(s)).not.toHaveProperty("requiresAction");
+    for (const s of ["succeeded", "pending", "failed", "canceled"])
+      expect(stripe(s)).not.toHaveProperty("requiresAction");
   });
 
   it("reversalOf: failed (the gateway's code) or Stripe's requires_action reverse; processed or pending stand", () => {
-    expect(reversalOf(stripe("failed", { failure_reason: "lost_or_stolen_card" }) as never)).toBe("lost_or_stolen_card");
+    expect(reversalOf(stripe("failed", { failure_reason: "lost_or_stolen_card" }) as never)).toBe(
+      "lost_or_stolen_card",
+    );
     expect(reversalOf(stripe("failed") as never)).toBe("stripe_failed");
     expect(reversalOf(stripe("requires_action") as never)).toBe("stripe_requires_action");
     expect(reversalOf(stripe("succeeded") as never)).toBeNull();
@@ -47,7 +55,11 @@ describe("AU1: a refund that succeeded and came back", () => {
       status: "failed",
     });
     expect(reversalOf(rzp as never)).toBe("razorpay_failed");
-    const pp = readPayPalRefund({ id: "AU1REF", status: "FAILED", amount: { value: "1.00", currency_code: "USD" } });
+    const pp = readPayPalRefund({
+      id: "AU1REF",
+      status: "FAILED",
+      amount: { value: "1.00", currency_code: "USD" },
+    });
     expect(reversalOf(pp as never)).toBe("paypal_failed");
     // a gateway that answered nothing it reads as failed has no code of its own: the generic one
     expect(

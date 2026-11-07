@@ -128,7 +128,10 @@ export async function processGateway(
         ...paypalExpireUnclaimedStatements(env.DB, now),
         env.DB.prepare(PAYPAL_STALE_CLAIMS_SQL).bind(now - PAYPAL_CLAIM_STALE_MS, now - STALE_LIVE_AFTER_MS),
         env.DB.prepare(PAYPAL_HELD_CAPTURES_SQL).bind(now - PAYPAL_HELD_AFTER_MS),
-        env.DB.prepare(RAZORPAY_STALE_LINKS_SQL).bind(now - RAZORPAY_STALE_AFTER_MS, now - RAZORPAY_REFRESH_EVERY_MS),
+        env.DB.prepare(RAZORPAY_STALE_LINKS_SQL).bind(
+          now - RAZORPAY_STALE_AFTER_MS,
+          now - RAZORPAY_REFRESH_EVERY_MS,
+        ),
       ]);
       const ev = (events?.results ?? []) as { id: string }[];
       const adv = (advances?.results ?? []) as { id: string }[];

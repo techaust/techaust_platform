@@ -354,12 +354,6 @@ describe("a Stripe event [JOB-HOOK-02, ADR 0008, L5, L6]", () => {
       },
     ],
     [
-      "refunded in part (F1)",
-      (x: J) => {
-        x.payment_intent.latest_charge.amount_refunded = 100;
-      },
-    ],
-    [
       "disputed (F1)",
       (x: J) => {
         x.payment_intent.latest_charge.disputed = true;
@@ -376,6 +370,29 @@ describe("a Stripe event [JOB-HOOK-02, ADR 0008, L5, L6]", () => {
     expect(await processEvent(env, ev)).toEqual({ result: "needs_review" });
     expect(await reviewKinds("webhook_event_id", ev)).toEqual(["not_captured"]);
     expect(await stripePaymentOf(piOf(s.sessionId))).toBeNull();
+    expect(await ledger(s.documentId)).toMatchObject({ balance_minor: 50_000 });
+  });
+
+  it("M6–M7 audit AU6 (B1 M1): a charge refunded in part before we settle it: pending, a refunded_outside item with the refunded amount, no ledger move", async () => {
+    const s = await liveSession();
+    stripeStub((path, method) =>
+      method === "GET" && path === `/v1/checkout/sessions/${s.sessionId}`
+        ? sessionAnswer(s.sessionId, (x) => {
+            x.payment_intent.latest_charge.amount_refunded = 100;
+          })
+        : null,
+    );
+    const ev = await stripeEventRow(s.sessionId, s.checkoutId);
+    expect(await processEvent(env, ev)).toEqual({ result: "needs_review" });
+    expect(await reviewKinds("webhook_event_id", ev)).toEqual(["refunded_outside"]);
+    const p = await stripePaymentOf(piOf(s.sessionId));
+    expect(p?.status).toBe("pending_verification");
+    expect(
+      await one(
+        "SELECT json_extract(facts, '$.refundedMinor') AS refunded FROM review_items WHERE webhook_event_id = ?1",
+        ev,
+      ),
+    ).toEqual({ refunded: 100 });
     expect(await ledger(s.documentId)).toMatchObject({ balance_minor: 50_000 });
   });
 

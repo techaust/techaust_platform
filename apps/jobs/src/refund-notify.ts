@@ -67,12 +67,19 @@ export const REFUND_CONTACTS_SQL = `SELECT lower(c.email) AS email, c.name FROM 
  * too, in one read, so a stopped contact is never queued or counted. Without the key this throws `ErasureKeyMissing` (the message is retried, as the email
  * consumer does): no email goes to an erased address for want of the key.
  */
-export async function withoutErased<T extends { email: string }>(env: object & { DB: D1Database }, contacts: T[]): Promise<T[]> {
+export async function withoutErased<T extends { email: string }>(
+  env: object & { DB: D1Database },
+  contacts: T[],
+): Promise<T[]> {
   if (contacts.length === 0) return contacts;
-  const keyed = await Promise.all(contacts.map(async (c) => ({ c, key: `h:${await erasureHashOf(env, c.email)}` })));
+  const keyed = await Promise.all(
+    contacts.map(async (c) => ({ c, key: `h:${await erasureHashOf(env, c.email)}` })),
+  );
   const stopped = new Set(
     (
-      await env.DB.prepare("SELECT email FROM email_suppressions WHERE email IN (SELECT value FROM json_each(?1))")
+      await env.DB.prepare(
+        "SELECT email FROM email_suppressions WHERE email IN (SELECT value FROM json_each(?1))",
+      )
         .bind(JSON.stringify(keyed.map((k) => k.key)))
         .all<{ email: string }>()
     ).results.map((r) => r.email),
@@ -119,7 +126,10 @@ export async function processRefundNotify(
     logEvent("refund_notify.none", { why: row ? "no_document" : "not_mailable" });
     return "none";
   }
-  const contacts = await withoutErased(env, (contactsRead?.results ?? []) as { email: string; name: string }[]);
+  const contacts = await withoutErased(
+    env,
+    (contactsRead?.results ?? []) as { email: string; name: string }[],
+  );
   if (contacts.length === 0) {
     logEvent("refund_notify.none", { why: "no_contact" });
     return "none";
@@ -212,7 +222,10 @@ export async function processRefundReversed(
     logEvent("refund_reversed.none", { why: row ? "no_document" : "not_mailable" });
     return "none";
   }
-  const contacts = await withoutErased(env, (contactsRead?.results ?? []) as { email: string; name: string }[]);
+  const contacts = await withoutErased(
+    env,
+    (contactsRead?.results ?? []) as { email: string; name: string }[],
+  );
   if (contacts.length === 0) {
     logEvent("refund_reversed.none", { why: "no_contact" });
     return "none";

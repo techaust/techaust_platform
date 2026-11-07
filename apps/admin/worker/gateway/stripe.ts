@@ -23,7 +23,6 @@ import type {
   WebhookInput,
 } from "@techaust/core/payments";
 import { type GatewayRefund, readStripeRefund } from "@techaust/core/refund-gateways";
-import { isRedirect, readJsonCapped } from "./answer.ts";
 import {
   type FormPairs,
   formBody,
@@ -37,6 +36,7 @@ import {
   stripeKeyModeOf,
   verifyStripeSignature,
 } from "@techaust/core/stripe";
+import { isRedirect, readJsonCapped } from "./answer.ts";
 
 export const STRIPE_TIMEOUT_MS = 8_000;
 

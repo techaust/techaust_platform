@@ -363,7 +363,10 @@ describe("Send receipt again (C.2; Tier A scoping) and the refund email's route 
     const p = await recorded(o, recordBody(clientId, 2_000));
     const r = await issueReceipt(env, p.id as string);
     const rid = (
-      await one<{ id: string }>("SELECT id FROM documents WHERE type = 'receipt' AND number_display = ?1", r.number)
+      await one<{ id: string }>(
+        "SELECT id FROM documents WHERE type = 'receipt' AND number_display = ?1",
+        r.number,
+      )
     )?.id as string;
     const ok = await mkContact(clientId, {
       email: `fin-${uuidv7().slice(-6)}@example.test`,
@@ -371,11 +374,13 @@ describe("Send receipt again (C.2; Tier A scoping) and the refund email's route 
       can_see_finance: 1,
     });
     const stopped = await mkContact(clientId, {
-      email: `Bounced-${uuidv7().slice(-6)}@Example.test`,
+      email: `bounced-${uuidv7().slice(-6)}@example.test`,
       portal_access: 1,
       can_see_finance: 1,
     });
-    await env.DB.prepare("INSERT INTO email_suppressions (email, reason, at) VALUES (lower(?1), 'hard_bounce', 1)")
+    await env.DB.prepare(
+      "INSERT INTO email_suppressions (email, reason, at) VALUES (lower(?1), 'hard_bounce', 1)",
+    )
       .bind(stopped.email)
       .run();
     const q = captureQueue();
@@ -388,8 +393,14 @@ describe("Send receipt again (C.2; Tier A scoping) and the refund email's route 
     const body = await json(res);
     expect(body).toMatchObject({ error: { code: "recipient_invalid" }, contactIds: [stopped.id] });
     expect(q.sent).toHaveLength(0);
-    expect(await one("SELECT count(*) AS n FROM document_sends WHERE document_id = ?1", rid)).toEqual({ n: 0 });
-    const good = await call(`/receipts/${rid}/send`, { cookie: o.cookie, body: { contactIds: [ok.id] } }, q.env);
+    expect(await one("SELECT count(*) AS n FROM document_sends WHERE document_id = ?1", rid)).toEqual({
+      n: 0,
+    });
+    const good = await call(
+      `/receipts/${rid}/send`,
+      { cookie: o.cookie, body: { contactIds: [ok.id] } },
+      q.env,
+    );
     expect(good.status).toBe(202);
     expect(await json(good)).toMatchObject({ queued: 1 });
   });

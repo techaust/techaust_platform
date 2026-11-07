@@ -19,6 +19,8 @@ import {
   BANK_MATCH_BY_ID_SQL,
   bankMatchRemoveStatement,
   bankMatchStatement,
+  type CreditHeldScanRow,
+  creditHeldPage,
   SETTLEMENTS_SQL,
   type SettlementItemRow,
   type SettlementRow,
@@ -121,27 +123,40 @@ const unmatchedQuery = z.object({
   cursor: z.optional(z.string().check(z.maxLength(200))),
 });
 
+/** M6–M7 audit AU2 (B0 2): the most payments one page of the two payment lists below looks at (a page then reads about 2,000 rows at any table size). */
+export const RECON_SCAN = 1_000;
+
 /**
- * Razorpay payments 5 or more days old (`?1` the last received day) that no settlement item names; keyset `(received_on, id)` from `?2`/`?3`. M6–M7 audit AU2
- * (B0 2): one range of `payments_confirmed_provider (provider, received_on, id)` for Razorpay alone (the partial index's WHERE and the provider stated as
- * literals), so the other gateways' and the bank's payments are never read.
+ * M6–M7 audit AU2 (B0 2): one provider's confirmed money-received payments in a bounded window (`w`: the next `RECON_SCAN` after the keyset `?2`/`?3`, one range
+ * of `payments_confirmed_provider (provider, received_on, id)` with the partial index's WHERE and the provider stated as literals, so no other provider's payment
+ * is read), and of those the ones `match` keeps (at most 51, oldest first). Every row carries the window's last key and size (`scan_on`, `scan_id`, `scanned`);
+ * a window with no match answers ONE row of only those (its `id` NULL). The route pages with `creditHeldPage` (`@techaust/db/refunds`): the pages together hold
+ * exactly what an unbounded read would (a test compares them). At 5,000 bank payments the unbounded manual list read 10,000 rows.
  */
-export const GATEWAY_UNSETTLED_SQL = `SELECT p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.provider_payment_id
-   FROM payments p INDEXED BY payments_confirmed_provider
-   WHERE p.provider = 'razorpay' AND p.status = 'confirmed' AND p.kind = 'payment' AND p.received_on <= ?1
-     AND (p.received_on > ?2 OR (p.received_on = ?2 AND p.id > ?3))
-     AND NOT EXISTS (SELECT 1 FROM settlement_items si INDEXED BY settlement_items_payment WHERE si.payment_id = p.id)
-   ORDER BY p.received_on, p.id LIMIT 51`;
-/**
- * Confirmed manual payments verified before `?1` (UTC ms) with no live "seen in the bank statement" tick; keyset `(received_on, id)` from `?2`/`?3`. AU2: one
- * range of `payments_confirmed_provider` for `manual` alone.
- */
-export const MANUAL_UNTICKED_SQL = `SELECT p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm
-   FROM payments p INDEXED BY payments_confirmed_provider
-   WHERE p.provider = 'manual' AND p.status = 'confirmed' AND p.kind = 'payment' AND p.verified_at < ?1
-     AND (p.received_on > ?2 OR (p.received_on = ?2 AND p.id > ?3))
-     AND NOT EXISTS (SELECT 1 FROM bank_matches bm INDEXED BY bank_matches_payment WHERE bm.payment_id = p.id AND bm.removed_at IS NULL)
-   ORDER BY p.received_on, p.id LIMIT 51`;
+const windowSql = (provider: "razorpay" | "manual", cols: string, range: string, match: string) =>
+  `WITH w AS (SELECT p.id, p.received_on FROM payments p INDEXED BY payments_confirmed_provider
+       WHERE p.provider = '${provider}' AND p.status = 'confirmed' AND p.kind = 'payment'${range}
+         AND (p.received_on > ?2 OR (p.received_on = ?2 AND p.id > ?3))
+       ORDER BY p.received_on, p.id LIMIT ${RECON_SCAN}),
+     e AS (SELECT received_on AS scan_on, id AS scan_id, (SELECT count(*) FROM w) AS scanned FROM w ORDER BY received_on DESC, id DESC LIMIT 1)
+   SELECT s.*, e.scan_on, e.scan_id, e.scanned
+   FROM e LEFT JOIN (SELECT ${cols} FROM w CROSS JOIN payments p ON p.id = w.id WHERE ${match} ORDER BY p.received_on, p.id LIMIT 51) s ON 1
+   ORDER BY s.received_on, s.id`;
+
+/** Razorpay payments 5 or more days old (`?1` the last received day) that no settlement item names, keyset `(received_on, id)` from `?2`/`?3` (AU2 window). */
+export const GATEWAY_UNSETTLED_SQL = windowSql(
+  "razorpay",
+  "p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.provider_payment_id",
+  " AND p.received_on <= ?1",
+  "NOT EXISTS (SELECT 1 FROM settlement_items si INDEXED BY settlement_items_payment WHERE si.payment_id = p.id)",
+);
+/** Confirmed manual payments verified before `?1` (UTC ms) with no live "seen in the bank statement" tick, keyset `(received_on, id)` from `?2`/`?3` (AU2 window). */
+export const MANUAL_UNTICKED_SQL = windowSql(
+  "manual",
+  "p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm",
+  "",
+  "p.verified_at < ?1 AND NOT EXISTS (SELECT 1 FROM bank_matches bm INDEXED BY bank_matches_payment WHERE bm.payment_id = p.id AND bm.removed_at IS NULL)",
+);
 
 /**
  * Second review, L2: one settlement's lines (`?1`), oldest first, keyset `(created_at, id)` after `?2`/`?3` (the first page binds -1 and ''), at most 51 (a page
@@ -209,13 +224,18 @@ export const reconciliation = new Hono<AppEnv>()
         ? await db
             .prepare(GATEWAY_UNSETTLED_SQL)
             .bind(istDay(now - 5 * 86_400_000), at, after)
-            .all<{ id: string; received_on: string }>()
+            .all<CreditHeldScanRow>()
         : await db
             .prepare(MANUAL_UNTICKED_SQL)
             .bind(now - 7 * 86_400_000, at, after)
-            .all<{ id: string; received_on: string }>()
+            .all<CreditHeldScanRow>()
     ).results;
-    return c.json(pageOf(rows, (r) => r.received_on));
+    // AU2: a bounded window per page; a page may hold fewer than 50 items and still go on.
+    const p = creditHeldPage(rows, RECON_SCAN);
+    return c.json({
+      items: p.items.map(({ scan_on: _o, scan_id: _i, scanned: _n, ...item }) => item),
+      next: p.next ? encodeCursor(p.next) : null,
+    });
   })
   .post("/bank-matches", body(bankMatchBody), async (c) => {
     const f = c.req.valid("json");
