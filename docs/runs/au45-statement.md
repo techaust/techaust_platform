@@ -248,6 +248,12 @@ After the fixes (lead, 2026-11-07): core 2,723 passed, pdf 421 passed, admin `wo
 After the fixes: jobs suite 781 passed, admin `worker/reports.test.ts` 24 passed, biome clean.
 
 ## Integration notes
+- Merged by the lead into `feat/au45-statement`: origin/main with #193 (7b46da9), builder b1 (c52187c), the lead's early-check lows (a596b9e), designer d1 (5550498), the review lows (one commit) and the re-check lows (one commit). No conflicts; `packages/core/package.json` took both `./company` (#193) and `./copy-zu`. Main had not moved again when the final run started.
+- **Final run on the branch tip (2026-11-07, lead, each through `tools/heavy.sh`):** `pnpm check` exit 0 (87 migrations, none rebuilds; CSS, SPA headers, worker config, web bindings and content lint ok). `pnpm build` exit 0. `pnpm test` exit 0: **13,284 passed, 6 skipped** (core 2,723; db 1,100; pdf 421; admin 5,314; jobs 781; portal 957; web 1,152 + 4 skipped; ui 471 + 2 skipped; email 205; auth 156; testing 4).
+- The cloud session's `.dev.vars` (written by its SessionStart hook) are copied into `dist/` by the Vite plugin and refused by `check-spa-headers`, which failed the first build and web's `spa-headers` test. The lead set them aside for the build and restored them afterwards; none is in any `dist/`. CI has none, so nothing to change in code (the designer met the same).
+- **Worker bytes (limit; plan line):** admin front 121,871 (150,000); admin API 560,704 (800,000); admin finance 435,938 (800,000; 500,000); admin invoices 568,112 (800,000; 650,000); portal 163,583 (200,000; 180,000); jobs 872,527 (1,000,000). Start-up 24–84 ms, fastest of 7 (limit 200); no forbidden modules.
+- **Migrations:** none.
+- Done check: the db test, the admin HTTP test and the core twin each show a refund out in November and back in December with closing(Nov) = opening(Dec) and November unchanged by the return; the designer's local fixture shows the same in the admin tab and the PDF (Sep closes −₹5,000 = Oct opens; screenshots in `.logs/au45/`). The portal has no statement view (nothing to show there).
 
 ## Lead decisions (for 13)
 - 2026-11-07, AU45: the statement lists every refund that went out (debit on its `settled_on`) and, for one that came back, a credit "refund came back" on the IST day of `reversed_at`; the statement is no longer "as at" its last day (AU37's as-at rule is kept by the dates themselves: a statement ending before the return is unchanged). The portal has no statement, so nothing changes there. Lead (analyst's draft).
