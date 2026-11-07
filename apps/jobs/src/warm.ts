@@ -58,16 +58,32 @@ import { warmDp } from "./retention.ts";
  */
 export function warmStatement(count = 3): number {
   try {
-    const kinds: StatementKind[] = ["tax_invoice", "credit_note", "export_invoice", "receipt"];
+    // AU45 (review low 4): every kind the PDF prints, so a long warm statement (the CPU test's 200 lines) goes through each; start-up's 3 lines take the first three.
+    const kinds: StatementKind[] = [
+      "tax_invoice",
+      "credit_note",
+      "export_invoice",
+      "receipt",
+      "debit_note",
+      "tds",
+      "refund",
+      "refund_returned",
+    ];
     const rows = Array.from({ length: count }, (_, i) => {
       const kind = kinds[i % kinds.length] as StatementKind;
       return {
         id: `warm-${i}`,
         kind,
         date: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`,
-        number: `TH/INV/2627/${String(i + 1).padStart(4, "0")}`,
+        // as real rows can: a TDS line with no invoice number (the empty cell), a refund line with the gateway's refund id (re-check low 5)
+        number:
+          kind === "tds"
+            ? ""
+            : kind === "refund" || kind === "refund_returned"
+              ? `rfnd_WARM${String(i + 1).padStart(10, "0")}`
+              : `TH/INV/2627/${String(i + 1).padStart(4, "0")}`,
         amountMinor: 118_000 + i,
-        againstNumber: kind === "credit_note" ? "TH/INV/2627/0001" : null,
+        againstNumber: kind === "credit_note" || kind === "debit_note" ? "TH/INV/2627/0001" : null,
       };
     });
     const done = statementEntries(rows, 500_000);

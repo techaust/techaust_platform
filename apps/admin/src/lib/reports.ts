@@ -10,6 +10,7 @@
 // through core (`moneyText`); nothing here adds up an amount.
 import { compareDocNumbers, formatMoney, money } from "@techaust/core";
 import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
+import { returnedNoteFor, STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import type { CalendarDate, GstErrorCode, GstIssue, GstWarning, RealisationStage } from "@techaust/core/gst";
 import { STATE_CODES } from "@techaust/core/gstin";
@@ -695,6 +696,9 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
     // M6.5: a refund that went out (07-ZO lacks the word: drafted for the owner, marked until approved).
     case "refund":
       return STATEMENT_REFUND_WORD;
+    // AU45 (07-ZU U1, approved 2026-11-07): a refund that came back to us (a credit).
+    case "refund_returned":
+      return STATEMENT_REFUND_RETURNED_WORD;
     case "receipt":
       return "Payment received";
     // M6.1 (07-ZH line 19, approved by the owner 2026-10-31): the tax the client deducted at source.
@@ -706,6 +710,17 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
 /** The Details cell of one statement entry (the screen's words; the CSV's come from `statementCsvLabels`). */
 export const statementDetailsText = (e: { kind: StatementKind; againstNumber?: string | null }): string =>
   statementKindText(e.kind, e.againstNumber);
+
+/**
+ * Whether a statement line is a document of the invoice family, so its number opens `/invoices/:id`. A payment or TDS line (M6.1) prints the invoice it
+ * paid, and a refund or a refund that came back (M6.5, AU45) prints the gateway's refund id: their `id` is not a document's, so they are plain text.
+ */
+export const statementLineIsDocument = (kind: StatementKind): boolean =>
+  kind === "tax_invoice" || kind === "export_invoice" || kind === "debit_note" || kind === "credit_note";
+
+/** AU45 (07-ZU U2): the note under the Statement tab's table, once, when any loaded line is a refund that came back; else null. */
+export const statementReturnedNote = (entries: readonly { kind: StatementKind }[]): string | null =>
+  returnedNoteFor(entries);
 
 /** The CSV's credit-note words: 07-V's line with core's `{number}` slot, or 07-U §3's type name when a credit note in the file lacks its invoice number. */
 export function statementCsvCreditNoteLabel(
@@ -770,6 +785,7 @@ export const statementCsvLabels = (
     receipt: statementKindText("receipt"),
     tds: statementKindText("tds"),
     refund: statementKindText("refund"),
+    refund_returned: statementKindText("refund_returned"),
   } satisfies Record<StatementKind, string>,
 });
 

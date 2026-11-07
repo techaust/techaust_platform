@@ -67,6 +67,7 @@
     "./copy-zq": "./src/copy-zq.ts",
     "./copy-zr": "./src/copy-zr.ts",
     "./copy-zt": "./src/copy-zt.ts",
+    "./copy-zu": "./src/copy-zu.ts",
     "./csv-cell": "./src/csv-cell.ts",
     "./refund-gateways": "./src/refund-gateways.ts",
     "./refunds": "./src/refunds.ts",

@@ -14,6 +14,7 @@ import type {
 import type { Role } from "@techaust/core/permissions";
 import type { AgeingBucket, DashboardReportLinks } from "@techaust/core/reports";
 import type { Settings, SignatureRef } from "@techaust/core/settings";
+import type { StatementKind } from "@techaust/core/statement";
 import type { TermsBlockId } from "@techaust/core/terms";
 import type { UsageMetric } from "@techaust/core/usage";
 import type { HashRequest, HashResponse } from "./hash.worker.ts";
@@ -1029,10 +1030,11 @@ export const isFinanceTile = (t: DashboardTiles["finance"]): t is FinanceTile =>
 /** One line of a statement (M5.5b): core `StatementEntry`. */
 export type StatementEntryView = {
   id: string;
-  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt" | "tds";
+  /** Core `StatementKind` itself (review low 1, AU45): a copied list had already lost M6.5's `refund`. */
+  kind: StatementKind;
   date: string;
   number: string;
-  /** A credit note's invoice number (07-V §6 "Credit note against {number}"); null for every other kind. */
+  /** A credit or debit note's invoice number (07-V §6 "Credit note against {number}", FX-4 "Debit note against {number}"); null for every other kind. */
   againstNumber?: string | null;
   amountMinor: number;
   debitMinor: number;
