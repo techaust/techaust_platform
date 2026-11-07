@@ -121,7 +121,7 @@ describe("AU36 (L1) and AU33 (M1): Stripe's requires_action after success, then 
     const first = await items(r.paymentId, "refund_reversed");
     expect(first).toEqual([{ id: expect.any(String), stage: "requires_action", reason: null }]);
     const bells = await bellsOf(first[0]?.id);
-    expect(bells).toHaveLength(await activeOwners());
+    expect(bells).toHaveLength((await activeOwners()) ?? -1);
     expect(bells[0]?.title).toMatch(
       /Stripe needs the client to act before the refund of \$[\d,.]+ can reach them/,
     );
