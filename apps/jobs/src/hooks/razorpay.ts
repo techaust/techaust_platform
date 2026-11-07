@@ -9,18 +9,24 @@
 //   6. one parse (a handled type that fails it is kept from a lenient read: its name and link id; early check 2, finding 3); a type we do not handle is stored
 //      `ignored` (200); otherwise `INSERT ... ON CONFLICT DO NOTHING` and the row's state read in the same batch;
 //      a new row, or one still `received`, is queued as `gateway.event` on the leads queue (L9: no new hosted queue); 200 `{ok: true}`. A queue failure is a 500
-//      with the row kept (Razorpay retries; the sweep is the safety net).
+//      with the row kept (Razorpay retries; the sweep is the safety net);
+//   7. P7 (the analyst's Phase 7 finding 5): before 6's insert, an event whose environment mark (`notes.techaust_env` of the link, else of the payment: core
+//      `razorpayEnvMarkOf`) names ANOTHER environment (staging and production share one sandbox account and both webhooks get every event) is stored at once as
+//      `ignored` with outcome `other_env` and the event name and mark only, never queued: no ledger write, no review item, no bell; one log line
+//      (`hook.other_env`, no id). An event with no mark (a link made before P7) keeps the path above.
 // Never logged: the body, the signature, the secret, or anything personal; the row keeps whitelisted facts only (L8; Settled by the lead on the safest reading,
 // 2026-11-01 (08-C RB-40)). CPU (JOB-HOOK-03, ≤ 5 ms p99): one HMAC over at most 64 KiB, one parse, two D1 statements, one send; the key is imported once per
 // isolate and the code warmed at start-up (`warmRazorpayHook`).
 
 import { uuidv7 } from "@techaust/core/ids";
+import { envMarkVerdict } from "@techaust/core/payments";
 import {
   eventFacts,
   fallbackEventId,
   lenientRazorpayFacts,
   parseRazorpayEvent,
   RAZORPAY_EVENT_TYPES,
+  razorpayEnvMarkOf,
   razorpayEventIdOf,
   verifyRazorpaySignature,
 } from "@techaust/core/razorpay";
@@ -32,6 +38,8 @@ import {
 import {
   hookFailureKey,
   hookFailureStatements,
+  OTHER_ENV_OUTCOME,
+  WEBHOOK_EVENT_IGNORED_SQL,
   WEBHOOK_EVENT_INSERT_SQL,
   WEBHOOK_EVENT_STATE_SQL,
 } from "@techaust/db/gateway";
@@ -45,7 +53,7 @@ const SIG = /^[0-9a-fA-F]{64}$/;
 export const BELL_SIGNATURES =
   "Razorpay webhook signatures failed 5 times in an hour. Check the webhook secret.";
 
-type HookEnv = { DB: D1Database; LEADS_QUEUE: Queue };
+type HookEnv = { DB: D1Database; LEADS_QUEUE: Queue; ENVIRONMENT?: string };
 
 /** Whether this isolate answered a webhook yet (the `f: 1` first-run marker of the staging CPU gate; CPU diagnosis lead decision 4). */
 let answeredOnce = false;
@@ -132,6 +140,23 @@ async function handleHook(req: Request, env: HookEnv, now: number): Promise<Resp
     Object.hasOwn(RAZORPAY_EVENT_TYPES, name) ||
     (refund !== null && Object.hasOwn(RAZORPAY_REFUND_EVENTS, name));
   const rowId = uuidv7();
+  // (7) P7: another environment's event is kept `ignored` and goes no further.
+  const mark = razorpayEnvMarkOf(obj);
+  if (envMarkVerdict(mark, secretOf(env, "ENVIRONMENT")) === "other") {
+    logEvent("hook.other_env", { provider: "razorpay" });
+    await env.DB.prepare(WEBHOOK_EVENT_IGNORED_SQL)
+      .bind(
+        rowId,
+        "razorpay",
+        eventId,
+        name,
+        now,
+        OTHER_ENV_OUTCOME,
+        JSON.stringify({ event: name, env: mark }),
+      )
+      .run();
+    return answer(200, { ok: true });
+  }
   const [, state] = await env.DB.batch([
     env.DB.prepare(WEBHOOK_EVENT_INSERT_SQL).bind(
       rowId,

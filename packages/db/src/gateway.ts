@@ -879,6 +879,47 @@ export function gatewayDeadLetterStatements(db: D1Database, a: DeadLetterArgs): 
 export const WEBHOOK_EVENT_INSERT_SQL = `INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status, attempts, facts)
    VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7) ON CONFLICT (provider, event_id) DO NOTHING`;
 
+/**
+ * P7 (the analyst's Phase 7 finding 5): an event another environment made (its mark names another `ENVIRONMENT`), kept so it can be traced and a redelivery is
+ * a duplicate: `ignored` at once with its outcome (`?6`, `other_env`) and `processed_at` = `received_at`, never queued. `?1` row id, `?2` provider, `?3` event id,
+ * `?4` type, `?5` now, `?7` the facts (the event name and the mark only). The 0064 triggers allow it: an event arrives `received` or `ignored` with no attempts,
+ * and `outcome` is free text of 1 to 64 characters.
+ */
+export const WEBHOOK_EVENT_IGNORED_SQL = `INSERT INTO webhook_events (id, provider, event_id, event_type, received_at, status, attempts, processed_at, outcome, facts)
+   VALUES (?1, ?2, ?3, ?4, ?5, 'ignored', 0, ?5, ?6, ?7) ON CONFLICT (provider, event_id) DO NOTHING`;
+
+/** The outcome of an event another environment made (P7). */
+export const OTHER_ENV_OUTCOME = "other_env";
+
+/**
+ * P7 A2.1, A2.2: the three modes of Settings › Gateways, read by the jobs hooks without the settings schema (one row by primary key; a missing row or field
+ * reads as test, the seeded default). Asked only while `PAYMENTS_LIVE_ALLOWED` is "true": with the flag off every gateway runs in test (core `effectiveMode`).
+ */
+export const GATEWAY_MODES_SQL = `SELECT json_extract(value, '$.razorpay.mode') AS razorpay, json_extract(value, '$.stripe.mode') AS stripe,
+     json_extract(value, '$.paypal.mode') AS paypal FROM settings WHERE key = 'gateways'`;
+
+/**
+ * P7 A2.3 (the M3.1 follow-up): Settings › Gateways says live for at least one gateway while `PAYMENTS_LIVE_ALLOWED` is not "true", so the finance Worker runs
+ * it in test mode; every active Owner hears it once per settings version (`INSERT OR IGNORE` on member, kind and entity: the entity is `gateways:v<version>`, so
+ * a later Settings save that sets live again rings again; a flag change alone, with no Settings save, does not). The words are the caller's.
+ */
+export function liveRevertBellStatement(
+  db: D1Database,
+  a: { settingsVersion: number; title: string; link: string },
+): D1PreparedStatement {
+  return ownerBells(
+    db,
+    {
+      kind: "payment.live_reverted",
+      entityType: "settings",
+      entityId: `gateways:v${a.settingsVersion}`,
+      title: a.title,
+      link: a.link,
+    },
+    undefined,
+  );
+}
+
 /** The row of a provider's event id, after the insert (in the same batch): new, or the earlier one with its status. */
 export const WEBHOOK_EVENT_STATE_SQL =
   "SELECT id, status FROM webhook_events INDEXED BY webhook_events_provider_event WHERE provider = ?1 AND event_id = ?2";

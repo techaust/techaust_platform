@@ -20,6 +20,7 @@ import type {
   ProviderResult,
   WebhookInput,
 } from "@techaust/core/payments";
+import { isEnvMark } from "@techaust/core/payments";
 import {
   keyModeOf,
   parseRazorpayEvent,
@@ -234,7 +235,11 @@ const fail = <T>(code: RzpFailure): ProviderResult<T> => ({ ok: false, code: pro
  * the signature with the secret given here (the jobs Worker holds the real one; the finance Worker never verifies webhooks itself).
  */
 export function razorpayProvider(
-  cfg: RazorpayConfig & { webhookSecrets?: readonly string[] },
+  /**
+   * `env`: this Worker's `ENVIRONMENT`, the link's `notes.techaust_env` (required, P7 early check L4). A malformed one is refused before any call, as
+   * `linkRequestOf` refuses it (`env_invalid`); the provider contract has no such code, so it answers `provider_error` (the live guard first, as Stripe's).
+   */
+  cfg: RazorpayConfig & { webhookSecrets?: readonly string[]; env: string },
 ): PaymentProvider {
   const api = razorpayApi(cfg);
   return {
@@ -242,6 +247,10 @@ export function razorpayProvider(
     mode: api.mode,
     async createCheckout(req: CheckoutRequest): Promise<ProviderResult<Checkout>> {
       if (req.currency !== "INR") return { ok: false, code: "unsupported" };
+      if (!isEnvMark(cfg.env))
+        return api.mode === "live" && !razorpayAllowed(cfg.keyId, cfg.settingsMode, cfg.liveFlag)
+          ? { ok: false, code: "live_not_allowed" }
+          : { ok: false, code: "provider_error" };
       const r = await api.createLink({
         amount: req.amountMinor,
         currency: "INR",
@@ -251,7 +260,7 @@ export function razorpayProvider(
         expire_by: Math.trunc(req.expiresAt / 1000),
         notify: { sms: false, email: false },
         reminder_enable: false,
-        notes: { document_id: req.documentId, checkout_id: req.checkoutId },
+        notes: { document_id: req.documentId, checkout_id: req.checkoutId, techaust_env: cfg.env },
         callback_url: req.callbackUrl,
         callback_method: "get",
       });

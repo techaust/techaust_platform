@@ -119,7 +119,7 @@ export async function makePayPalLink(
         open.amount_minor === a.amountMinor &&
         open.capture_started_at === null &&
         open.short_url &&
-        isPayPalApproveUrl(open.short_url, open.provider_link_id ?? undefined) &&
+        isPayPalApproveUrl(open.short_url, open.provider_link_id ?? undefined, mode) &&
         open.expires_at - now >= PAYPAL_REUSE_MIN_LEFT_MS
       )
         return {
@@ -136,7 +136,7 @@ export async function makePayPalLink(
       replacedCheckoutId = open.id;
     } else if (open.provider === "stripe") {
       if (limited) return { ok: false, error: "too_many_links" };
-      const stripeMode = await stripeModeOfSettings(db);
+      const stripeMode = await stripeModeOfSettings(db, env);
       const stripe = stripeOf(env, stripeMode);
       if (!stripe) return { ok: false, error: "gateway_error" };
       const r = await endStripeSession(env, stripe, open, stripeMode, now, (row) =>
@@ -208,6 +208,8 @@ export async function makePayPalLink(
     returnUrl: urls.returnUrl,
     cancelUrl: urls.cancelUrl,
     brandName,
+    // P7: the environment mark rides in `custom_id` (`<checkout id>-<env>`), so the other environment's webhook ignores this order's events.
+    env: envText(env, "ENVIRONMENT") ?? "",
   });
   if (!body.ok) {
     await checkoutFailStatement(db, { id: checkoutId, now }).run();

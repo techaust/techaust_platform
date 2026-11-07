@@ -35,6 +35,7 @@ import {
   type PayPalOrder,
   type PayPalOrderBody,
   parsePayPalEvent,
+  payPalCustomIdOf,
   payPalModeOfOrigin,
   paypalOriginFor,
   readPayPalCapture,
@@ -182,6 +183,8 @@ export function payPalApi(cfg: PayPalConfig): PayPalApi {
       ? { ok: false, code: "bad_answer", status: r.status }
       : { ok: true, value: r.body };
   }
+  // P7 A2.1: an approval link is read only on this client's own mode's host (sandbox in test, live in live).
+  const hostMode = origin ? (payPalModeOfOrigin(origin) ?? undefined) : undefined;
   return {
     mode: origin ? payPalModeOfOrigin(origin) : null,
     blocked,
@@ -192,14 +195,14 @@ export function payPalApi(cfg: PayPalConfig): PayPalApi {
         prefer: "return=minimal",
       });
       if (!r.ok) return r;
-      const o = readPayPalOrder(r.value);
+      const o = readPayPalOrder(r.value, hostMode);
       return o ? { ok: true, value: o } : { ok: false, code: "bad_answer" };
     },
     async getOrder(orderId) {
       if (!PAYPAL_ORDER_ID.test(orderId)) return { ok: false, code: "not_found" };
       const r = await call("GET", `/v2/checkout/orders/${orderId}`);
       if (!r.ok) return r;
-      const o = readPayPalOrder(r.value);
+      const o = readPayPalOrder(r.value, hostMode);
       return o && o.id === orderId ? { ok: true, value: o } : { ok: false, code: "bad_answer" };
     },
     async captureOrder(orderId, requestId) {
@@ -215,7 +218,7 @@ export function payPalApi(cfg: PayPalConfig): PayPalApi {
           : { ok: false, error: { kind: "refused", issue: r.gate === "forbidden" ? "FORBIDDEN" : null } };
       const e = captureErrorOf(r.status, r.body);
       if (e) return { ok: false, error: e };
-      const o = readPayPalOrder(r.body);
+      const o = readPayPalOrder(r.body, hostMode);
       return o && o.id === orderId ? { ok: true, order: o } : { ok: false, error: null, code: "bad_answer" };
     },
     async refundCapture(captureId, amountMinor, refundId) {
@@ -447,7 +450,8 @@ export function stubCapture(
       paypal_fee: { currency_code: "USD", value: usd(fee) },
       net_amount: { currency_code: "USD", value: usd(p.amountMinor - fee) },
     },
-    custom_id: p.checkoutId,
+    // P7: marked "local" like the orders this Worker makes locally (`payPalCustomIdOf`), so every local path reads the split.
+    custom_id: payPalCustomIdOf(p.checkoutId, "local"),
     create_time: at,
     update_time: at,
     supplementary_data: { related_ids: { order_id: orderId } },
@@ -471,7 +475,7 @@ export function stubOrder(
     purchase_units: [
       {
         reference_id: p.checkoutId,
-        custom_id: p.checkoutId,
+        custom_id: payPalCustomIdOf(p.checkoutId, "local"),
         amount: { currency_code: "USD", value: usd(p.amountMinor) },
         ...(capture ? { payments: { captures: [capture] } } : {}),
       },
@@ -514,12 +518,13 @@ export function payPalStubAnswer(input: RequestInfo | URL, init?: RequestInit): 
   }
   if (method === "POST" && url.pathname === "/v2/checkout/orders") {
     const body = JSON.parse(String(init?.body ?? "{}")) as {
-      purchase_units?: { custom_id?: string; amount?: { value?: string } }[];
+      purchase_units?: { reference_id?: string; amount?: { value?: string } }[];
     };
     const unit = body.purchase_units?.[0];
     const [units, cents = "00"] = String(unit?.amount?.value ?? "").split(".");
+    // P7: `reference_id` is the bare checkout id (`custom_id` carries the environment mark after it).
     const id = stubOrderIdOf(
-      String(unit?.custom_id ?? ""),
+      String(unit?.reference_id ?? ""),
       Number(units) * 100 + Number(cents.padEnd(2, "0")),
     );
     if (!id)

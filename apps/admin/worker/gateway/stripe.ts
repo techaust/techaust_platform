@@ -276,7 +276,8 @@ const fail = <T>(code: StripeFailure): ProviderResult<T> => ({
  * and derives the cancel page from it (`?pay=cancel`); its line and description are the request's `description`.
  */
 export function stripeProvider(
-  cfg: StripeConfig & { webhookSecrets?: readonly string[]; env?: string },
+  /** `env`: this Worker's `ENVIRONMENT`, the session's `techaust_env` (required, P7 early check L4: a malformed one is refused by `sessionRequestOf`, no call). */
+  cfg: StripeConfig & { webhookSecrets?: readonly string[]; env: string },
 ): PaymentProvider {
   const api = stripeApi(cfg);
   return {
@@ -288,7 +289,7 @@ export function stripeProvider(
       const body = sessionRequestOf({
         checkoutId: req.checkoutId,
         documentId: req.documentId,
-        env: cfg.env ?? "local",
+        env: cfg.env,
         amountMinor: req.amountMinor,
         documentLabel: req.description,
         description: req.description,
