@@ -14,6 +14,7 @@ import { Link } from "react-router";
 import { paymentsApi } from "../../api.ts";
 import { PageHeader } from "../../components/display.tsx";
 import { Archive, Ban, Download, FolderKanban, Lock } from "../../components/icons.tsx";
+import { RebuildPdf } from "../../components/rebuild-pdf.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { allowed } from "../../lib/access.ts";
 import { WITHDRAW_COPY } from "../../lib/copy-zf.ts";
@@ -169,6 +170,7 @@ function SupplierCopy({
       <p id={lineId} className="pdf-panel__supplier-note" role="status">
         {line}
       </p>
+      <RebuildPdf kind="supplier" id={id} number={number} ready />
     </div>
   );
 }
@@ -376,9 +378,12 @@ export function InvoiceRead({ view, reload, role }: { view: InvoiceView; reload:
               source={PDF_SOURCE}
               onReady={reload}
               extra={
-                canDownloadSupplierCopy(role, v.type) ? (
-                  <SupplierCopy id={v.id} number={v.number} anonymised={v.client.anonymised} />
-                ) : undefined
+                <>
+                  <RebuildPdf kind="invoice" id={v.id} number={v.number} ready />
+                  {canDownloadSupplierCopy(role, v.type) && (
+                    <SupplierCopy id={v.id} number={v.number} anonymised={v.client.anonymised} />
+                  )}
+                </>
               }
             />
           )}

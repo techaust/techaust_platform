@@ -36,6 +36,7 @@ import {
   Upload,
   X,
 } from "../../components/icons.tsx";
+import { RebuildPdf } from "../../components/rebuild-pdf.tsx";
 import { LoadFailed, StaleNotice, useLoad } from "../../components/states.tsx";
 import { useToast } from "../../components/toast.tsx";
 import { Notice } from "../../components/ui.tsx";
@@ -952,10 +953,13 @@ function FinalActions(props: {
           {C.pdf.heading}
         </h2>
         {deed.unsignedPdf ? (
-          <a className="btn btn--secondary btn--block" href={deedsApi.unsignedHref(deed.id)} download>
-            <Download size={20} />
-            {C.pdf.download}
-          </a>
+          <>
+            <a className="btn btn--secondary btn--block" href={deedsApi.unsignedHref(deed.id)} download>
+              <Download size={20} />
+              {C.pdf.download}
+            </a>
+            <RebuildPdf kind="deed" id={deed.id} number={deed.number} ready />
+          </>
         ) : (
           <>
             <p className="deed-actions__said" role="status">
@@ -1172,10 +1176,13 @@ function SignedPanel({ deed }: { deed: DeedRecord }) {
         {C.signed.download}
       </a>
       {deed.unsignedPdf && (
-        <a className="btn btn--text deed-actions__second" href={deedsApi.unsignedHref(deed.id)} download>
-          <Download size={20} />
-          {C.pdf.download}
-        </a>
+        <>
+          <a className="btn btn--text deed-actions__second" href={deedsApi.unsignedHref(deed.id)} download>
+            <Download size={20} />
+            {C.pdf.download}
+          </a>
+          <RebuildPdf kind="deed" id={deed.id} number={deed.number} ready />
+        </>
       )}
       {s?.signatureLine && <p className="deed-esign__line">{s.signatureLine}</p>}
     </section>

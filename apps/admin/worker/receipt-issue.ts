@@ -28,6 +28,7 @@ import { clientGoneSql, storedPdfRefusal } from "./anonymised.ts";
 import { type AppEnv, err, mutate, NOT_FOUND } from "./context.ts";
 import { SUPPLIER_ASK_SQL, SUPPLIER_ASK_WINDOW_MS } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
+import { servedPdf } from "./pdf-served.ts";
 import { cachedSetting } from "./settings-cache.ts";
 import { mutateSystem } from "./system.ts";
 
@@ -250,14 +251,19 @@ export const receiptPdf = new Hono<AppEnv>()
     const refused = storedPdfRefusal(c, row.gone);
     if (refused) return refused;
     if (!row.pdf_r2_key || !row.pdf_sha256) return err(c, PDF_PENDING, 409);
-    const obj = await c.env.DOCS.get(row.pdf_r2_key);
-    if (!obj) return err(c, PDF_PENDING, 409);
+    // Rebuild PDF (JOB-PDF-02, L3): the newest rebuilt file when there is one, else the stored original.
+    const served = await servedPdf(c.env, row.pdf_r2_key, c.var.rid);
+    const obj = served.object;
+    if (!obj) {
+      console.error(JSON.stringify({ level: "error", message: "pdf object missing", rid: c.var.rid }));
+      return err(c, PDF_PENDING, 409);
+    }
     return new Response(obj.body, {
       headers: downloadHeaders({
         contentType: "application/pdf",
         size: obj.size,
         filename: receiptFilename(row.number_display),
-        etag: row.pdf_sha256,
+        etag: served.sha256 ?? row.pdf_sha256,
       }),
     });
   })

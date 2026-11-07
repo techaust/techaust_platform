@@ -48,6 +48,7 @@ import {
   FAILED_NIGHT_SQL,
   failed,
   HALF_BELL_SQL,
+  type PdfPage,
   putPdfOnce,
   STAT_ADD_SQL,
   STOPPED_BELL_SQL,
@@ -85,6 +86,7 @@ const CONTACTS_SQL = `SELECT lower(c.email) AS email FROM contacts c
 const REFUSED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.refused', 'document', ?1, ?2, ?3 FROM staff_users u WHERE u.status = 'active' AND u.role = 'owner'`;
 
+export type ReceiptRow = Row;
 type Row = {
   id: string;
   client_id: string;
@@ -163,6 +165,50 @@ export async function processReceipt(
   return renderReceipt(env, body, now, clock);
 }
 
+/** One receipt's row (`ROW_SQL`), for the rebuild (Rebuild PDF, JOB-PDF-02). */
+export const receiptRow = (env: Pick<Env, "DB">, receiptId: string) =>
+  env.DB.prepare(ROW_SQL).bind(receiptId).first<Row>();
+
+/**
+ * The receipt's page from its sealed `header_extras.receiptOf` (shared by the first render and the rebuild, JOB-PDF-02), with its write-once key; or why not:
+ * `skip` for the gates (the layout or 07-ZO's words not approved outside "local": nothing is stored, no failure counted), a refusal `receipt_seal` when the
+ * sealed values fail their check. The status gate (a voided receipt's first render) stays with the caller: a void receipt's stored PDF may be rebuilt.
+ */
+export async function receiptPlan(
+  env: Env,
+  row: Row,
+): Promise<
+  | { ok: true; page: () => PdfPage; key: string; receiptOf: ReceiptOf }
+  | { ok: false; code: string; skip: boolean }
+> {
+  const environment: string = env.ENVIRONMENT;
+  if (RECEIPT_LAYOUT_PLACEHOLDER && environment !== "local")
+    return { ok: false, code: "layout_placeholder", skip: true };
+  // Finding 5: the receipt's words come from 07-ZO; until the owner approves it, nothing is stored write-once or emailed outside "local" (no failure counted).
+  if (!rendersAllowed(env)) return { ok: false, code: "copy_unapproved", skip: true };
+  const receiptOf = receiptOfRow(row.header_extras);
+  const label = row.fy ? fyLabelOfToken(row.fy) : null;
+  const sealed =
+    receiptOf !== null &&
+    row.snapshot_sha256 !== null &&
+    (await sha256Hex(canonicalJson(receiptOf))) === row.snapshot_sha256 &&
+    row.number_display !== null &&
+    row.number !== null &&
+    label !== null;
+  if (!sealed || !receiptOf || !row.number_display || row.number === null || !label)
+    return { ok: false, code: "receipt_seal", skip: false };
+  const numberDisplay = row.number_display;
+  return {
+    ok: true,
+    page: () => ({
+      html: renderReceiptHtml(receiptView(receiptOf, numberDisplay)),
+      options: pdfOptionsFor(),
+    }),
+    key: pdfKeys({ type: "receipt", fy: label, number: row.number, version: 1 }).pdf,
+    receiptOf,
+  };
+}
+
 async function renderReceipt(
   env: Env,
   msg: ReceiptRenderMessage,
@@ -179,20 +225,9 @@ async function renderReceipt(
   if (row.anonymised_at !== null) return skip("client_gone");
   // Early check 2, finding 4: a receipt voided (its payment withdrawn) before its PDF is never rendered or emailed.
   if (row.status !== "issued") return skip("not_issued");
-  const environment: string = env.ENVIRONMENT;
-  if (RECEIPT_LAYOUT_PLACEHOLDER && environment !== "local") return skip("layout_placeholder");
-  // Finding 5: the receipt's words come from 07-ZO; until the owner approves it, nothing is stored write-once or emailed outside "local" (no failure counted).
-  if (!rendersAllowed(env)) return skip("copy_unapproved");
-  const receiptOf = receiptOfRow(row.header_extras);
-  const label = row.fy ? fyLabelOfToken(row.fy) : null;
-  const sealed =
-    receiptOf !== null &&
-    row.snapshot_sha256 !== null &&
-    (await sha256Hex(canonicalJson(receiptOf))) === row.snapshot_sha256 &&
-    row.number_display !== null &&
-    row.number !== null &&
-    label !== null;
-  if (!sealed || !receiptOf || !row.number_display || row.number === null || !label) {
+  const plan = await receiptPlan(env, row);
+  if (!plan.ok && plan.skip) return skip(plan.code);
+  if (!plan.ok) {
     await env.DB.batch([
       env.DB.prepare(REFUSED_BELL_SQL).bind(
         row.id,
@@ -203,7 +238,7 @@ async function renderReceipt(
     logEvent("pdf.refused", { stage: "render", code: "receipt_seal", family: "receipt" });
     return "refused";
   }
-  const key = pdfKeys({ type: "receipt", fy: label, number: row.number, version: 1 }).pdf;
+  const { key, receiptOf } = plan;
   const settle = async (pdfSha: string, usage: { browserMs: number } | null) => {
     const date = dayOf(now);
     await env.DB.batch([
@@ -232,8 +267,8 @@ async function renderReceipt(
     logEvent("receipt.adopted", { layout: RECEIPT_PDF_LAYOUT_ID });
     return "adopted";
   }
-  const html = renderReceiptHtml(receiptView(receiptOf, row.number_display));
-  const result = await renderPaced(env as unknown as RenderEnv, html, pdfOptionsFor(), clock);
+  const page = plan.page();
+  const result = await renderPaced(env as unknown as RenderEnv, page.html, page.options, clock);
   if (!result.ok) {
     await failed(env, msg, result, now);
     return "delayed";

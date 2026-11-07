@@ -10,5 +10,6 @@ export * from "./documents.ts";
 export * from "./email.ts";
 export * from "./identity.ts";
 export * from "./payments.ts";
+export * from "./pdf-repairs.ts";
 export * from "./portal.ts";
 export * from "./settings.ts";

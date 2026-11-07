@@ -27,6 +27,7 @@ import { leadData } from "./lead-data.ts";
 import { leads } from "./leads.ts";
 import { notes } from "./notes.ts";
 import { notifications } from "./notifications.ts";
+import { deedRebuilds, documentRebuilds } from "./pdf-rebuild.ts";
 import { milestones, projects } from "./projects.ts";
 import { deliveryReports } from "./report-delivery.ts";
 import { search } from "./search.ts";
@@ -54,11 +55,14 @@ export function mountApi(app: App) {
   app.route("/v1/documents", documentConvert);
   app.route("/v1/documents", documentPdf);
   app.route("/v1/documents", documentLinks);
+  // Rebuild PDF (JOB-PDF-02): an offer's PDF and its certificate re-made from the sealed record.
+  app.route("/v1/documents", documentRebuilds);
   app.route("/v1/documents", documentStart);
   app.route("/v1/projects", projects);
   // T11: the deed of assignment of a project, and its own routes (Schedules, finalise, the signed copy, cancel, the PDFs).
   app.route("/v1/projects", projectDeed);
   app.route("/v1/deeds", deeds);
+  app.route("/v1/deeds", deedRebuilds);
   app.route("/v1/milestones", milestones);
   app.route("/v1/care-plans", carePlans);
   app.route("/v1/time", timeLogs);

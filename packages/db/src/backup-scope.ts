@@ -53,6 +53,9 @@ export const BACKUP_SCOPE: Record<string, BackupScope> = {
   // L48: an accepted proposal or estimate (the version accepted, with its lines, sections and schedule), its acceptance and certificate
   acceptances: F,
   acceptance_certificates: F,
+  // Rebuild PDF (JOB-PDF-02): a restored monthly copy serves a rebuilt PDF by its original key (ids, keys and hashes only).
+  pdf_repairs: F,
+  pdf_repair_results: F,
   // everything else: rolling copies only
   access_log: R,
   approvals: R,

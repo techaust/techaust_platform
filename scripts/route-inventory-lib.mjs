@@ -112,6 +112,7 @@ export const QUEUE_KINDS = [
   "offer.sweep",
   "pdf.certificate",
   "pdf.deed",
+  "pdf.rebuild",
   "pdf.render",
   "pdf.snapshot",
   "pdf.statement",

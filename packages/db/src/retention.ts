@@ -163,6 +163,13 @@ export const RETENTION_MATRIX: Record<string, RetentionRule> = {
   deeds: record(
     "T11: a final or signed deed is the legal record of a transfer of rights (RB-38(a)); a draft goes only with an anonymised client",
   ),
+  // Rebuild PDF (JOB-PDF-02): ids, keys and hashes only; the readers resolve the served PDF of a kept document through them for as long as it is kept.
+  pdf_repairs: record(
+    "Rebuild PDF: the request record of a stored PDF re-made (ids, keys and hashes only): append-only, never deleted",
+  ),
+  pdf_repair_results: record(
+    "Rebuild PDF: how each request ended and the rebuilt key the readers serve: append-only, never deleted",
+  ),
 };
 
 /** One table of a family: what makes a row old enough (`age`), what holds it (`held`, or none), the column the oldest date is read from, the page order. */
