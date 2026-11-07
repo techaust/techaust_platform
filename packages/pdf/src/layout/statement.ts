@@ -16,6 +16,7 @@
 //
 // No logic beyond formatting: every value is a pre-formatted string of the view (the jobs Worker formats through core). Every dynamic string goes through
 // `esc`. Data-testids (tests and the visual suite): `opening`, `closing`, `amount-due`, `entry`, `returned-note`, `generated`, `rupee`, `currency-symbol`.
+import type { StatementKind } from "@techaust/core/statement";
 import { esc } from "../escape.ts";
 import { PDF_LOGOS, PDF_PRINT_CSS, PDF_SYMBOL, TECHAUST_PDF_FONT_DATA } from "../generated/assets.ts";
 import { STATEMENT_PDF_COPY as C } from "./copy.ts";
@@ -25,18 +26,8 @@ import { cssString, TEMPLATE_CSS } from "./styles.ts";
 /** The CSP of every document page (render.ts has the same): nothing external, inline styles only. */
 const DOCUMENT_CSP = "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'";
 
-/** What a line of the statement is. */
-export type StatementLineKind =
-  | "tax_invoice"
-  | "export_invoice"
-  | "debit_note"
-  | "credit_note"
-  | "receipt"
-  | "tds"
-  // M6.5: a refund that went out (a debit: it raises what the client is owed back down).
-  | "refund"
-  // AU45: a refund that came back to us (a credit: the money is the client's credit again).
-  | "refund_returned";
+/** What a line of the statement is: core `StatementKind` itself (review low 1, AU45; M6.5 `refund` a debit, AU45 `refund_returned` a credit). */
+export type StatementLineKind = StatementKind;
 
 /**
  * What the layout prints, every value already formatted (dates as the PDFs write them, amounts with their currency sign). The jobs Worker's view

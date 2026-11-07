@@ -4,6 +4,8 @@
 // Lines U1 and U2 were drafted by the lead under the owner's blanket approval of 2026-11-07 and approved by the main session the same day, so `APPROVED_07ZU` is
 // true; the gate (`zu`) stays for any later line. No line is legal wording.
 
+import type { StatementKind } from "./statement.ts";
+
 /** The approval of 07-ZU's lines U1 and U2: approved word for word by the main session under the owner's delegation, 2026-11-07. */
 export const APPROVED_07ZU: boolean = true;
 const zu = (line: string): string => (APPROVED_07ZU ? line : `[Placeholder] ${line}`);
@@ -15,6 +17,13 @@ export const STATEMENT_REFUND_RETURNED_WORD: string = zu("Refund came back");
 export const STATEMENT_REFUND_RETURNED_NOTE: string = zu(
   "A refund that came back is one the bank or card network returned to us. The amount is your credit again.",
 );
+
+/**
+ * U2's rule in ONE place (review low 2, AU45): the note, once, when any line of the statement is a refund that came back (`refund_returned`), else null. The
+ * statement PDF's view and the admin Statement tab both call it, over every line they show.
+ */
+export const returnedNoteFor = (entries: readonly { readonly kind: StatementKind }[]): string | null =>
+  entries.some((e) => e.kind === "refund_returned") ? STATEMENT_REFUND_RETURNED_NOTE : null;
 
 /** Every 07-ZU line, for the gate's test. */
 export const zuAllText = (): readonly string[] => [

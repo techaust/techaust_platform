@@ -6,6 +6,7 @@ import { uuidv7 } from "@techaust/core";
 import { STATEMENT_REFUND_RETURNED_NOTE, STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
 import { STATEMENT_PDF_MAX_ENTRIES } from "@techaust/core/statement";
 import { recomputeStatement } from "@techaust/db/ledger";
+import { refundReverseStatement } from "@techaust/db/refunds";
 import { describe, expect, it } from "vitest";
 import { stubPdf } from "../src/browser.ts";
 import worker from "../src/index.ts";
@@ -318,12 +319,15 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
       owner.id,
       settledAt,
     );
-    // it came back at 10:00 IST on 20 Oct (the columns `refundReverseStatement` writes)
-    await run(
-      "UPDATE payment_refunds SET status = 'failed', failure_code = 'stripe_failed', reversed_at = ?2, updated_at = ?2 WHERE id = ?1",
-      refund,
-      Date.parse("2026-10-20T04:30:00Z"),
-    );
+    // it came back at 10:00 IST on 20 Oct, through the app's own reversal statement (review low 5)
+    const reversed = await refundReverseStatement(realEnv.DB, {
+      refundId: refund,
+      providerRefundId: ref,
+      failureCode: "stripe_failed",
+      providerStatus: "failed",
+      now: Date.parse("2026-10-20T04:30:00Z"),
+    }).run();
+    expect(reversed.meta.changes).toBeGreaterThan(0);
     const row = await mkStatement(clientId, owner.id);
     const b = browser();
     expect(await processStatementPdf(mkEnv(b), message(row.id), NOW, clock)).toBe("rendered");

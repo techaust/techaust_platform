@@ -58,12 +58,14 @@ import { warmDp } from "./retention.ts";
  */
 export function warmStatement(count = 3): number {
   try {
-    // AU45: `refund` and `refund_returned` too, so a long warm statement (the CPU test's 200 lines) goes through every kind the PDF prints.
+    // AU45 (review low 4): every kind the PDF prints, so a long warm statement (the CPU test's 200 lines) goes through each; start-up's 3 lines take the first three.
     const kinds: StatementKind[] = [
       "tax_invoice",
       "credit_note",
       "export_invoice",
       "receipt",
+      "debit_note",
+      "tds",
       "refund",
       "refund_returned",
     ];
@@ -75,7 +77,7 @@ export function warmStatement(count = 3): number {
         date: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`,
         number: `TH/INV/2627/${String(i + 1).padStart(4, "0")}`,
         amountMinor: 118_000 + i,
-        againstNumber: kind === "credit_note" ? "TH/INV/2627/0001" : null,
+        againstNumber: kind === "credit_note" || kind === "debit_note" ? "TH/INV/2627/0001" : null,
       };
     });
     const done = statementEntries(rows, 500_000);

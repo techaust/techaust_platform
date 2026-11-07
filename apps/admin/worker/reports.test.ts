@@ -2,6 +2,7 @@
 // register page and one audit row per page (never row contents), the period rules, keyset paging, the settings the pages depend on, the EDF month, the realisation list, a client's
 // statement and its PDF (the cache row, the queue message, the stream, every refusal).
 import { env } from "cloudflare:workers";
+import { refundReverseStatement } from "@techaust/db/refunds";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
 import { encodeCursor } from "./keyset.ts";
@@ -568,12 +569,18 @@ describe("a client's statement", () => {
     )
       .bind(refundId, paymentId, c, ref, ownerId, settledAt)
       .run();
-    const reverse = () =>
-      env.DB.prepare(
-        "UPDATE payment_refunds SET status = 'failed', failure_code = 'stripe_failed', reversed_at = ?2, updated_at = ?2 WHERE id = ?1",
-      )
-        .bind(refundId, Date.parse("2026-12-05T04:30:00Z"))
-        .run();
+    // review low 5: the app's own reversal statement (it refuses anything but a succeeded gateway refund of this id), never a hand-written UPDATE
+    const reverse = async () => {
+      const r = await refundReverseStatement(env.DB, {
+        refundId,
+        providerRefundId: ref,
+        failureCode: "stripe_failed",
+        providerStatus: "failed",
+        now: Date.parse("2026-12-05T04:30:00Z"),
+      }).run();
+      expect(r.meta.changes).toBeGreaterThan(0);
+      return r;
+    };
     return { c, doc, paymentId, tdsId, refundId, ref, reverse };
   }
 

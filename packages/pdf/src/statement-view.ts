@@ -1,8 +1,9 @@
 // The statement of account's view (M5.5b stage B, LD79; ADM-CLI-04, JOB-PDF-01): the rows the jobs Worker reads, formatted into the designer's layout contract (`StatementLayoutView`, `layout/statement.ts`).
 // Kept out of `types.ts` and `view.ts` on purpose: those two are the portal's view entry and must never reach a layout (test/m45.test.ts). Jobs only.
-import { STATEMENT_REFUND_RETURNED_NOTE } from "@techaust/core/copy-zu";
+import { returnedNoteFor } from "@techaust/core/copy-zu";
 import { formatMoney, money } from "@techaust/core/money";
 import { placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
+import type { StatementKind } from "@techaust/core/statement";
 import { footerLine } from "./footer.ts";
 import { countryName, shortIsoDate } from "./format.ts";
 import type { StatementLayoutView } from "./layout/statement.ts";
@@ -10,15 +11,8 @@ import type { Address } from "./types.ts";
 
 /** One line of a statement as the jobs Worker reads it: the amount is positive and the kind says which side it is on (`@techaust/core/statement`). */
 export type StatementInputEntry = {
-  kind:
-    | "tax_invoice"
-    | "export_invoice"
-    | "debit_note"
-    | "credit_note"
-    | "receipt"
-    | "tds"
-    | "refund"
-    | "refund_returned";
+  /** Core `StatementKind` itself (review low 1, AU45), never a copied list. */
+  kind: StatementKind;
   /** ISO date (IST): the issue date, or the day the money arrived. */
   date: string;
   /** The document's printed number (a receipt shows the number of the invoice it paid). */
@@ -127,9 +121,7 @@ export function statementView(input: StatementViewInput): StatementView {
       balance: fmt(e.balanceMinor),
     })),
     // AU45 (07-ZU U2): printed once, and only when a refund came back in the range.
-    returnedNote: input.entries.some((e) => e.kind === "refund_returned")
-      ? STATEMENT_REFUND_RETURNED_NOTE
-      : null,
+    returnedNote: returnedNoteFor(input.entries),
     generatedOn: shortIsoDate(input.generatedOn),
     email: input.billingEmail,
     footerBrand: footerLine(input.billingEmail),

@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import {
   APPROVED_07ZU,
+  returnedNoteFor,
   STATEMENT_REFUND_RETURNED_NOTE,
   STATEMENT_REFUND_RETURNED_WORD,
   zuAllText,
@@ -24,5 +25,13 @@ describe("07-ZU statement lines [ADM-CLI-04]", () => {
       expect(line.startsWith("[Placeholder] ")).toBe(!APPROVED_07ZU);
       expect(line).not.toMatch(/&|within \d|days?\b/i);
     }
+  });
+
+  it("returnedNoteFor: U2 once when any line came back, else null (review low 2: the PDF and the admin tab share it)", () => {
+    expect(returnedNoteFor([])).toBeNull();
+    expect(returnedNoteFor([{ kind: "refund" }, { kind: "receipt" }])).toBeNull();
+    expect(
+      returnedNoteFor([{ kind: "refund" }, { kind: "refund_returned" }, { kind: "refund_returned" }]),
+    ).toBe(STATEMENT_REFUND_RETURNED_NOTE);
   });
 });

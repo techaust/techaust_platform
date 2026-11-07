@@ -10,7 +10,7 @@
 // through core (`moneyText`); nothing here adds up an amount.
 import { compareDocNumbers, formatMoney, money } from "@techaust/core";
 import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
-import { STATEMENT_REFUND_RETURNED_NOTE, STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
+import { returnedNoteFor, STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import type { CalendarDate, GstErrorCode, GstIssue, GstWarning, RealisationStage } from "@techaust/core/gst";
 import { STATE_CODES } from "@techaust/core/gstin";
@@ -720,7 +720,7 @@ export const statementLineIsDocument = (kind: StatementKind): boolean =>
 
 /** AU45 (07-ZU U2): the note under the Statement tab's table, once, when any loaded line is a refund that came back; else null. */
 export const statementReturnedNote = (entries: readonly { kind: StatementKind }[]): string | null =>
-  entries.some((e) => e.kind === "refund_returned") ? STATEMENT_REFUND_RETURNED_NOTE : null;
+  returnedNoteFor(entries);
 
 /** The CSV's credit-note words: 07-V's line with core's `{number}` slot, or 07-U §3's type name when a credit note in the file lacks its invoice number. */
 export function statementCsvCreditNoteLabel(
