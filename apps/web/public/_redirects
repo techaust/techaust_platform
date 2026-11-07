@@ -8,3 +8,8 @@
 /services/workforce-automation/ /services/workflow-automation 301
 /services/security-guard/ /services 301
 /calculator/ /pricing 301
+# Any other page asked for with a trailing slash goes to its address without one, permanently (production check, 2026-11-08: the
+# assets' own trailing-slash handling answered 307, a temporary redirect). Pages are at most two segments deep (/services/<slug>).
+# Dynamic rules come after every static one (Cloudflare's order; at most 100 dynamic rules).
+/:a/ /:a 301
+/:a/:b/ /:a/:b 301

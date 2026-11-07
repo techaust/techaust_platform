@@ -199,3 +199,45 @@ describe("the command", () => {
     },
   );
 });
+
+describe("the SPAs' robots.txt (production check, 2026-11-08)", () => {
+  it.each(g.SPA_APPS as string[])(
+    "%s has its own plain robots.txt that leaves crawling open, so crawlers see the noindex header",
+    (app) => {
+      expect(g.checkRobotsFile(app, g.sourceRobotsFile(app))).toEqual([]);
+      expect(readFileSync(g.sourceRobotsFile(app), "utf8").replace(/\r\n/g, "\n")).toMatch(
+        /^User-agent: \*\nDisallow:\n$/m,
+      );
+    },
+  );
+
+  it.each([
+    ["no file content", "", /User-agent: \*/],
+    ["Disallow: / (it would hide the noindex header)", "User-agent: *\nDisallow: /\n", /hide the noindex/],
+    [
+      "Disallow: / in a second * group (crawlers merge them)",
+      "User-agent: *\nDisallow:\n\nUser-agent: *\nDisallow: /\n",
+      /hide the noindex/,
+    ],
+    ["Disallow: /*", "User-agent: *\nDisallow: /*\n", /hide the noindex/],
+    ["no * group", "User-agent: GPTBot\nDisallow:\n", /User-agent: \*/],
+    ["HTML (the SPA fallback)", '<!doctype html><html lang="en-IN"></html>\n', /holds HTML/],
+  ])("refuses %s", (_label, text, why) => {
+    const problems = g.checkRobots("admin", text) as string[];
+    expect(problems.length).toBeGreaterThan(0);
+    expect(problems.join("\n")).toMatch(why);
+  });
+
+  it("accepts comments, other agents and a path rule", () => {
+    expect(
+      g.checkRobots(
+        "portal",
+        "# never indexed\nUser-agent: Foo\nDisallow: /api\n\nUser-agent: *\nDisallow:\n",
+      ),
+    ).toEqual([]);
+  });
+
+  it("a missing file is a problem", () => {
+    expect(g.checkRobotsFile("admin", "/no/such/robots.txt")[0]).toMatch(/is missing/);
+  });
+});

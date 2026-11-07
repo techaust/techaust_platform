@@ -20,9 +20,19 @@ const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8").replace(/\r\n/g, "\n");
 const text = read(".github/workflows/backup.yml");
 
-/** The job's steps, each as its YAML text without comment lines (a comment above a step is not its code). */
-const steps = text
-  .slice(text.indexOf("    steps:\n"))
+/** One job's YAML, from its `  name:` line to the next job (or the end). */
+const jobText = (name: string) => {
+  const from = text.indexOf(`\n  ${name}:\n`);
+  expect(from, `no job ${name}`).toBeGreaterThanOrEqual(0);
+  const next = text.slice(from + 1).search(/\n {2}[a-z][\w-]*:\n/);
+  return next < 0 ? text.slice(from) : text.slice(from, from + 1 + next);
+};
+const backupJob = jobText("backup");
+const gateJob = jobText("gate");
+
+/** The backup job's steps, each as its YAML text without comment lines (a comment above a step is not its code). */
+const steps = backupJob
+  .slice(backupJob.indexOf("    steps:\n"))
   .split("\n      - ")
   .slice(1)
   .map((s) =>
@@ -40,23 +50,38 @@ const at = (needle: string) => {
 const expr = (inner: string) => ["$", "{{ ", inner, " }}"].join("");
 
 describe("backup.yml: triggers, permissions, environment [JOB-BKP-01]", () => {
-  it("runs nightly at 21:10 UTC (02:40 IST, clear of jobs' :30 tick and 22:00 UTC run) and by hand; never on a push or a pull request", () => {
+  it("tries nightly at 21:10, 23:10 and 01:10 UTC (02:40, 04:40, 06:40 IST; clear of jobs' :30 tick and 22:00 UTC run when started within about 15 minutes) and runs by hand; never on a push or a pull request", () => {
     const on = text.slice(text.indexOf("\non:\n"), text.indexOf("\npermissions:"));
-    expect(on).toMatch(/\n {2}schedule:\n(?: {4}#.*\n)* {4}- cron: "10 21 \* \* \*"\n/);
+    const crons = [...on.matchAll(/^ {4}- cron: "([^"]+)"$/gm)].map((m) => m[1]);
+    expect(crons).toEqual(["10 21 * * *", "10 23 * * *", "10 1 * * *"]);
     expect(on).toContain("\n  workflow_dispatch:");
     expect(on).not.toMatch(/push|pull_request|workflow_run|repository_dispatch/);
   });
 
-  it("asks only for contents: read and id-token: write (OIDC), at the workflow level and nowhere else", () => {
+  it("grants nothing at the workflow level: the backup job has contents: read and id-token: write (OIDC), the gate only actions: read", () => {
     const head = text.slice(text.indexOf("\npermissions:"), text.indexOf("\nconcurrency:"));
-    expect(head.trim()).toBe("permissions:\n  contents: read\n  id-token: write");
-    expect(text.match(/^\s*permissions:/gm)).toHaveLength(1);
+    expect(head.replace(/^#.*\n/gm, "").trim()).toBe("permissions: {}");
+    expect(backupJob).toContain(
+      "\n    permissions:\n      contents: read\n      id-token: write\n    runs-on:",
+    );
+    expect(gateJob).toContain("\n    permissions:\n      actions: read\n    runs-on:");
+    expect(text.match(/^\s*permissions:/gm)).toHaveLength(3);
   });
 
-  it("is one job in the `backup` environment, never two runs at once", () => {
-    expect(text.slice(text.indexOf("\njobs:\n")).match(/^ {2}[a-z][\w-]*:\n/gm)).toEqual(["  backup:\n"]);
-    expect(text).toContain("\n    environment: backup\n");
+  it("is the backup job in the `backup` environment after a gate with no environment, never two runs at once", () => {
+    expect(text.slice(text.indexOf("\njobs:\n")).match(/^ {2}[a-z][\w-]*:\n/gm)).toEqual([
+      "  backup:\n",
+      "  gate:\n",
+    ]);
+    expect(backupJob).toContain("\n    environment: backup\n");
+    expect(gateJob).not.toMatch(/environment:|secrets\.|vars\.|uses:|checkout|pnpm|npm|wrangler|aws /);
     expect(text).toContain("concurrency:\n  group: backup-production\n  cancel-in-progress: false");
+  });
+
+  it('the backup job waits for the gate and is skipped only on its clear "false" (a failed gate still backs up)', () => {
+    expect(backupJob).toContain("\n    needs: gate\n");
+    expect(backupJob).toContain(`\n    if: ${expr("!cancelled() && needs.gate.outputs.run != 'false'")}\n`);
+    expect(gateJob).toContain(`\n      run: ${expr("steps.decide.outputs.run")}\n`);
   });
 
   it("uses only the backup token and the account id, and the three variables", () => {
@@ -431,6 +456,164 @@ describe("backup.yml: the monthly finance-only copy [JOB-BKP-01, T7 F1]", () => 
       expect(/^FINANCE=\/tmp\/rt\/techaust-prod-[^/]*\.sql$/m.test(first.vars)).toBe(true);
     },
   );
+});
+
+// ---------- the gate: one backup a night from three tries (owner 2026-11-08) ----------
+
+describe("backup.yml: the gate (three nightly tries, one backup) [JOB-BKP-01]", () => {
+  const gateStep = gateJob.slice(gateJob.indexOf("    steps:\n"));
+  const hasBash = existsSync(
+    process.platform === "win32"
+      ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+      : "/bin/bash",
+  );
+
+  it("reads only this workflow's runs with the run's own token", () => {
+    expect(gateStep).toContain(`GH_TOKEN: ${expr("github.token")}`);
+    // every completed run counts when its daily copy was checked, whatever the run's conclusion (a failed monthly copy fails the run)
+    expect(gateStep).toContain('"repos/$REPO/actions/workflows/backup.yml/runs" -f status=completed');
+    expect(gateStep).toContain('gh api "repos/$REPO/actions/runs/$id/jobs"');
+    expect(gateStep).toContain(
+      `[.jobs[] | select(.name == "backup") | .steps[]? | select(.name == "Check the uploaded object" and .conclusion == "success")] | length`,
+    );
+    expect(gateStep).not.toMatch(/--method (POST|PUT|PATCH|DELETE)|dispatches|rerun|cancel/);
+  });
+
+  it("the names the gate looks for exist: the job id `backup` with no display name, and its daily check step", () => {
+    // GitHub reports a job by its `name:` when it has one, so a display name would hide the job from the gate
+    expect(backupJob).not.toMatch(/^ {4}name:/m);
+    expect(steps.filter((s) => s.startsWith("name: Check the uploaded object\n"))).toHaveLength(1);
+    expect(steps[at("name: Check the uploaded object")]).toContain('--prefix "$OBJECT"');
+  });
+
+  /** Runs the gate's step through `bash -e` with stand-ins for `gh` and the clock (`date -u +%s`). */
+  const gate = (opts: {
+    event: string;
+    now: string; // ISO UTC
+    runs: string[] | "error";
+    made?: Record<string, number | "error">;
+  }) => {
+    const bash =
+      process.platform === "win32"
+        ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe")
+        : "/bin/bash";
+    const dir = mkdtempSync(join(tmpdir(), "backup-gate-"));
+    try {
+      const fwdPath = (p: string) => p.replace(/\\/g, "/");
+      const out = join(dir, "out");
+      const calls = join(dir, "calls");
+      for (const f of [out, calls]) writeFileSync(f, "");
+      const now = Math.floor(Date.parse(opts.now) / 1000);
+      const fakeDate = `date() { if [ "$*" = "-u +%s" ]; then echo ${now}; else command date "$@"; fi; }`;
+      const runs =
+        opts.runs === "error" ? "echo 'HTTP 502' >&2; return 1" : `printf '%s\\n' ${opts.runs.join(" ")}`;
+      const jobs = Object.entries(opts.made ?? {})
+        .map(([id, n]) =>
+          n === "error"
+            ? `repos/o/r/actions/runs/${id}/jobs) echo 'HTTP 502' >&2; return 1 ;;`
+            : `repos/o/r/actions/runs/${id}/jobs) echo ${n} ;;`,
+        )
+        .join("\n");
+      const fakeGh = [
+        "gh() {",
+        `  printf '%s\\n' "$*" >> "${fwdPath(calls)}"`,
+        '  [ "$1" = api ] || return 9',
+        '  if [ "$2" = --method ]; then',
+        '    [ "$3 $4" = "GET repos/o/r/actions/workflows/backup.yml/runs" ] || return 9',
+        `    ${runs}`,
+        "    return",
+        "  fi",
+        '  case "$2" in',
+        jobs,
+        "    *) return 9 ;;",
+        "  esac",
+        "}",
+      ].join("\n");
+      const r = spawnSync(bash, ["-e", "-c", `${fakeDate}\n${fakeGh}\n${runBlock(gateStep)}`], {
+        encoding: "utf8",
+        env: { ...process.env, EVENT: opts.event, REPO: "o/r", RUN_ID: "999", GITHUB_OUTPUT: fwdPath(out) },
+      });
+      return {
+        status: r.status,
+        stderr: r.stderr,
+        stdout: r.stdout,
+        output: readFileSync(out, "utf8"),
+        calls: readFileSync(calls, "utf8").split("\n").filter(Boolean),
+      };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it.skipIf(!hasBash)("a run by hand always backs up and asks nothing", () => {
+    const r = gate({
+      event: "workflow_dispatch",
+      now: "2026-11-08T21:10:00Z",
+      runs: ["111"],
+      made: { "111": 1 },
+    });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.output).toBe("run=true\n");
+    expect(r.calls).toEqual([]);
+  });
+
+  it.skipIf(!hasBash)(
+    "every try of one night looks back to that night's 20:30 UTC, however late it starts",
+    () => {
+      for (const [now, since] of [
+        ["2026-11-08T21:10:00Z", "2026-11-08T20:30:00Z"],
+        ["2026-11-08T23:55:00Z", "2026-11-08T20:30:00Z"],
+        ["2026-11-09T01:10:00Z", "2026-11-08T20:30:00Z"],
+        ["2026-11-09T09:00:00Z", "2026-11-08T20:30:00Z"],
+        ["2026-11-09T20:29:00Z", "2026-11-08T20:30:00Z"],
+        ["2026-11-09T20:31:00Z", "2026-11-09T20:30:00Z"],
+        ["2026-12-01T01:10:00Z", "2026-11-30T20:30:00Z"],
+      ] as const) {
+        const r = gate({ event: "schedule", now, runs: [] });
+        expect(r.status, r.stderr).toBe(0);
+        expect(r.output).toBe("run=true\n");
+        expect(r.calls[0]).toContain(`-f created=>=${since} `);
+      }
+    },
+  );
+
+  it.skipIf(!hasBash)("a daily copy checked tonight skips the try", () => {
+    const r = gate({ event: "schedule", now: "2026-11-09T01:10:00Z", runs: ["111"], made: { "111": 1 } });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.output).toBe("run=false\n");
+    expect(r.stdout).toContain("Run 111 uploaded and checked a daily copy since 2026-11-08T20:30:00Z");
+  });
+
+  it.skipIf(!hasBash)(
+    "a run with no checked daily copy (its backup job skipped or failed early), or this run itself, never counts",
+    () => {
+      const r = gate({
+        event: "schedule",
+        now: "2026-11-08T23:10:00Z",
+        runs: ["999", "111"],
+        made: { "111": 0 },
+      });
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.output).toBe("run=true\n");
+      expect(r.calls.some((c) => c.includes("runs/999/jobs"))).toBe(false);
+    },
+  );
+
+  it.skipIf(!hasBash)("an answer it can't read backs up, with a warning", () => {
+    const list = gate({ event: "schedule", now: "2026-11-08T21:10:00Z", runs: "error" });
+    expect(list.status, list.stderr).toBe(0);
+    expect(list.output).toBe("run=true\n");
+    expect(list.stdout).toContain("::warning::The list of earlier backup runs could not be read");
+    const jobs = gate({
+      event: "schedule",
+      now: "2026-11-08T23:10:00Z",
+      runs: ["111"],
+      made: { "111": "error" },
+    });
+    expect(jobs.status, jobs.stderr).toBe(0);
+    expect(jobs.output).toBe("run=true\n");
+    expect(jobs.stdout).toContain("::warning::The jobs of run 111 could not be read");
+  });
 });
 
 // ---------- the envelope, round-tripped ----------

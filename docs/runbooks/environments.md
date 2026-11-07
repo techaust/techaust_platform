@@ -136,7 +136,7 @@ The jobs, in order:
 - **The old site:** `techaust-web` was deleted on 2026-11-07 (owner); there is no fallback to it. A website problem is fixed forward or the new `web` Worker is rolled back.
 
 ### Backups ([restore.md](restore.md) §3)
-- **Nightly:** `.github/workflows/backup.yml` at 21:10 UTC (02:40 IST) exports the production D1, encrypts it for the owner's RSA key and uploads it to `s3://<BACKUP_BUCKET>/daily/` (ap-south-1), kept 90 days by the bucket's lifecycle rule (60 + 30 days on the versioned bucket; [restore.md](restore.md) §3.1). The export's signed download link never reaches the public log.
+- **Nightly:** `.github/workflows/backup.yml`, tried at 21:10, 23:10 and 01:10 UTC (02:40, 04:40, 06:40 IST; a `gate` job keeps it to one copy a night), exports the production D1, encrypts it for the owner's RSA key and uploads it to `s3://<BACKUP_BUCKET>/daily/` (ap-south-1), kept 90 days by the bucket's lifecycle rule (60 + 30 days on the versioned bucket; [restore.md](restore.md) §3.1). The export's signed download link never reaches the public log.
 - **Monthly, kept 10 years:** the run on the 1st of each month (UTC), any nightly run while the month has no copy yet (a missed or failed 1st is caught up), or a run by hand with **monthly** ticked, also uploads the finance-only copy to `monthly/` (each copy named by the run's UTC time, never replaced) ([restore.md](restore.md) §3.6; the AWS policy and lifecycle changes are in §3.6.4).
 - **Restore drill:** [restore.md](restore.md) §3.4; `scripts/backup-verified.json` records it, and the readiness check blocks stage `full` until it does.
 
