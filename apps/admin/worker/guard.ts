@@ -149,6 +149,9 @@ export const ROUTES: readonly RouteDef[] = [
   R("POST", "/deeds/:id/pdf/render", "deeds.renderPdf", { audit: "deed.pdf_retry" }),
   R("GET", "/deeds/:id/pdf/unsigned", "deeds.view"),
   R("GET", "/deeds/:id/pdf/signed", "deeds.view"),
+  // Rebuild PDF (JOB-PDF-02): the Owner re-makes a missing or damaged stored PDF from its sealed record (step-up); the state for anyone who reads it.
+  R("POST", "/deeds/:id/pdf/rebuild", "pdfs.rebuild", { audit: "pdf.rebuild" }),
+  R("GET", "/deeds/:id/pdf/rebuilds", "deeds.view"),
   R("GET", "/clients/:id/projects", "projects.read"),
   R("GET", "/clients/:id/notes", "projects.read"),
   R("POST", "/clients/:id/notes", "projects.write", { audit: "note.create" }),
@@ -231,6 +234,11 @@ export const ROUTES: readonly RouteDef[] = [
   // The PDF of a sent version (M4.4, JOB-PDF-01): streamed through the session (an access-log row each); "again" is for a send-level role.
   R("GET", "/documents/:id/pdf", "proposals.read"),
   R("POST", "/documents/:id/pdf/retry", "proposals.send", { audit: "document.pdf_retry" }),
+  // Rebuild PDF (JOB-PDF-02; owner Q1 = B: never an offer the client can still accept): the offer's PDF and its acceptance certificate.
+  R("POST", "/documents/:id/pdf/rebuild", "pdfs.rebuild", { audit: "pdf.rebuild" }),
+  R("GET", "/documents/:id/pdf/rebuilds", "proposals.read"),
+  R("POST", "/documents/:id/certificate/rebuild", "pdfs.rebuild", { audit: "pdf.rebuild" }),
+  R("GET", "/documents/:id/certificate/rebuilds", "proposals.read"),
   // Offers to the client (M4.5): send again, end every link, the acceptance certificate, and start the project of an accepted proposal.
   R("POST", "/documents/:id/resend", "proposals.send", { audit: "document.resend" }),
   R("POST", "/documents/:id/links/revoke", "proposals.send", { audit: "document.links_revoke" }),
@@ -262,6 +270,11 @@ export const ROUTES: readonly RouteDef[] = [
   I("GET", "/invoices/:id/pdf", "invoices.read"),
   I("GET", "/invoices/:id/pdf/supplier", "invoices.supplierCopy"),
   I("POST", "/invoices/:id/pdf/retry", "invoices.draft", { audit: "invoice.pdf_retry" }),
+  // Rebuild PDF (JOB-PDF-02): an invoice-family PDF and its stored supplier copy.
+  I("POST", "/invoices/:id/pdf/rebuild", "pdfs.rebuild", { audit: "pdf.rebuild" }),
+  I("GET", "/invoices/:id/pdf/rebuilds", "invoices.read"),
+  I("POST", "/invoices/:id/pdf/supplier/rebuild", "pdfs.rebuild", { audit: "pdf.rebuild" }),
+  I("GET", "/invoices/:id/pdf/supplier/rebuilds", "invoices.supplierCopy"),
   // M5.4 (ADM-INV-15, ADM-INV-13, POR-06): send an issued invoice (Owner and Staff, Q42), revoke its links, pause or resume its reminders.
   I("POST", "/invoices/:id/send", "invoices.send", { audit: "invoice.send" }),
   I("POST", "/invoices/:id/links/revoke", "invoices.send", { audit: "invoice.links_revoke" }),
@@ -347,6 +360,9 @@ export const ROUTES: readonly RouteDef[] = [
   X("POST", "/receipts/:id/send", "invoices.send", { audit: "receipt.send" }),
   I("GET", "/receipts/:id/pdf", "payments.read"),
   I("POST", "/receipts/:id/pdf/retry", "invoices.draft", { audit: "receipt.pdf_retry" }),
+  // Rebuild PDF (JOB-PDF-02): a receipt's PDF.
+  I("POST", "/receipts/:id/pdf/rebuild", "pdfs.rebuild", { audit: "pdf.rebuild" }),
+  I("GET", "/receipts/:id/pdf/rebuilds", "payments.read"),
   // The owner's approval queue. Staff and Sales read only their own requests (the handler filters); only the owner decides.
   I("GET", "/approvals", "approvals.readOwn"),
   I("POST", "/approvals/:id/decide", "approvals.decide", { audit: "approval.decide" }),

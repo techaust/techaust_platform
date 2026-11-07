@@ -34,6 +34,8 @@ export type CertificateRow = {
   rendered_at: number | null;
   /** The document's frozen Settings "Email on documents" (07-Q Q11); null or absent on versions sent before it was frozen. */
   issuer_email?: string | null;
+  /** Rebuild PDF (JOB-PDF-02): 1 when the legal name came from the document's frozen recipient block, 0 when it is the live client record's fallback. */
+  name_sealed?: number;
 };
 
 /**
@@ -41,7 +43,7 @@ export type CertificateRow = {
  * recipient block (what the offer itself says); the live client record is only the fallback for an old document without one.
  */
 export const CERTIFICATE_READ =
-  "SELECT d.number_display, d.version, d.type, d.title, d.total_minor, d.currency, coalesce(nullif(CASE WHEN json_valid(d.recipient) THEN json_extract(d.recipient, '$.legalName') END, ''), cl.legal_name) AS client_legal_name, a.typed_name, a.email, a.accepted_at, a.ip, a.user_agent, a.country, a.via, a.pdf_sha256, a.snapshot_sha256, t.version AS terms_version, t.sha256 AS terms_sha256, a.certificate_r2_key, ce.rendered_at, CASE WHEN json_valid(d.issuer) THEN nullif(json_extract(d.issuer, '$.company.email'), '') END AS issuer_email FROM acceptances a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN terms_versions t ON t.id = a.terms_version_id LEFT JOIN acceptance_certificates ce ON ce.acceptance_id = a.id WHERE a.id = ?1";
+  "SELECT d.number_display, d.version, d.type, d.title, d.total_minor, d.currency, coalesce(nullif(CASE WHEN json_valid(d.recipient) THEN json_extract(d.recipient, '$.legalName') END, ''), cl.legal_name) AS client_legal_name, a.typed_name, a.email, a.accepted_at, a.ip, a.user_agent, a.country, a.via, a.pdf_sha256, a.snapshot_sha256, t.version AS terms_version, t.sha256 AS terms_sha256, a.certificate_r2_key, ce.rendered_at, CASE WHEN json_valid(d.issuer) THEN nullif(json_extract(d.issuer, '$.company.email'), '') END AS issuer_email, coalesce(CASE WHEN json_valid(d.recipient) THEN nullif(json_extract(d.recipient, '$.legalName'), '') END IS NOT NULL, 0) AS name_sealed FROM acceptances a JOIN documents d ON d.id = a.document_id JOIN clients cl ON cl.id = d.client_id LEFT JOIN terms_versions t ON t.id = a.terms_version_id LEFT JOIN acceptance_certificates ce ON ce.acceptance_id = a.id WHERE a.id = ?1";
 
 const DASH = "–";
 const orDash = (v: string | null | undefined) => (v && v.trim() !== "" ? v : DASH);
@@ -78,8 +80,13 @@ export function buildCertificateView(r: CertificateRow): CertificateView {
 export async function readCertificateView(
   db: D1Database,
   acceptanceId: string,
-): Promise<{ view: CertificateView; key: string; rendered: boolean } | null> {
+): Promise<{ view: CertificateView; key: string; rendered: boolean; nameSealed: boolean } | null> {
   const row = await db.prepare(CERTIFICATE_READ).bind(acceptanceId).first<CertificateRow>();
   if (!row?.certificate_r2_key) return null;
-  return { view: buildCertificateView(row), key: row.certificate_r2_key, rendered: row.rendered_at !== null };
+  return {
+    view: buildCertificateView(row),
+    key: row.certificate_r2_key,
+    rendered: row.rendered_at !== null,
+    nameSealed: row.name_sealed === 1,
+  };
 }

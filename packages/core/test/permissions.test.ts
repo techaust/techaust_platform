@@ -66,6 +66,7 @@ const EXPECTED: Record<Exclude<Action, "proposals.send" | "requests.close">, str
   "deeds.cancel": "A---", // T11 (L8): the Owner cancels a draft
   "deeds.recheck": "A---", // T11 (L8): the Owner asks for a project to be checked again
   "deeds.renderPdf": "A---", // T11 round 2: the Owner asks for the unsigned PDF to be rendered again
+  "pdfs.rebuild": "S---", // Rebuild PDF (JOB-PDF-02): the Owner with a fresh code
   "realisation.extend": "A---", // M6.1 (L14, Q60): the Owner only
   "refunds.read": "A--A",
   "refunds.issue": "S---",

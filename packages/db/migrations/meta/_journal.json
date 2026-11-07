@@ -610,6 +610,20 @@
       "when": 1794027624826,
       "tag": "0086_audit_af3_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "6",
+      "when": 1794064097267,
+      "tag": "0087_pdf_repairs",
+      "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "6",
+      "when": 1794064186472,
+      "tag": "0088_pdf_repair_triggers",
+      "breakpoints": true
     }
   ]
 }

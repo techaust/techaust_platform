@@ -37,6 +37,13 @@ export type PdfSupplierMessage = { v: 1; kind: "pdf.supplier"; documentId: strin
  */
 export type PdfDeedMessage = { v: 1; kind: "pdf.deed"; deedId: string; hop: number };
 
+/**
+ * Rebuild PDF (JOB-PDF-02, run file docs/runs/rebuild-pdf.md): one `pdf_repairs` request, sent by the admin route after its batch. One unit of work: the consumer
+ * reads the request, its subject and the sealed envelope or row, and stores the rebuilt PDF write-once under the request's `new_key`. Ids only. `hop` counts
+ * pacing re-sends like `pdf.render`'s.
+ */
+export type PdfRebuildMessage = { v: 1; kind: "pdf.rebuild"; repairId: string; hop: number };
+
 export type PdfMessage =
   | PdfSnapshotMessage
   | PdfRenderMessage
@@ -45,6 +52,7 @@ export type PdfMessage =
   | PdfStatementMessage
   | PdfSupplierMessage
   | PdfDeedMessage
+  | PdfRebuildMessage
   | OfferSweepMessage;
 
 /**
@@ -128,6 +136,14 @@ export function isPdfMessage(body: unknown): body is PdfMessage {
     case "pdf.deed":
       return (
         isId(body.deedId) &&
+        typeof body.hop === "number" &&
+        Number.isInteger(body.hop) &&
+        body.hop >= 0 &&
+        body.hop <= PDF_MAX_HOPS
+      );
+    case "pdf.rebuild":
+      return (
+        isId(body.repairId) &&
         typeof body.hop === "number" &&
         Number.isInteger(body.hop) &&
         body.hop >= 0 &&

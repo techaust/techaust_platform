@@ -249,3 +249,165 @@ CPU: the admin check hashes at most one PDF (native digest, ~300 KB typical) onl
 - 2026-11-07 20:30 IST: USAGE 14 at 20:29; origin/main (#193) taken in.
 - 2026-11-07: owner's answers recorded (Q1 B, Q2 A, 07-ZV approved); builder told.
 - 2026-11-07 21:00 IST: final brief written; Q1, Q2 and 07-ZV asked; builder starting on the parts the questions don't block.
+
+## Early check
+
+### Builder report (b1)
+Builder claude-opus-5-5/high, cloud session, branch `fix/rebuild-pdf-b1` (from `origin/feat/rebuild-pdf` c6a9cb9), 2026-11-07. Scope: the brief's early-check items (1) to (5), with the owner's answers as the lead passed them on mid-run: Q1 = B (a rebuild of an offer the client can still accept is refused, 409 `offer_open`, 07-ZV line 19), Q2 = A (no mark), and 07-ZV lines 1 to 19 approved. Not started (they come after GO): portal `streamPdf`, jobs `attachmentFor` and every screen. The brief's Q1 = A change to the accept is dropped (owner Q1 = B).
+
+**Skills.** None loaded. The docs/14 §9 rows for this task are:
+- `cloudflare:workers-best-practices` and `cloudflare:wrangler` (Worker code, D1, queues);
+- `cloudflare:workers-profiling` (Worker bytes and start-up);
+- `cloudflare:cloudflare` (R2, Queues).
+
+None of them exists in a cloud session (no plugins load there; CLAUDE.md "In a cloud session"). `code-review` and `security-review` are the reviewer's. No other listed skill fits builder work.
+
+**Files by layer**
+- Core:
+  - `packages/core/src/pdf-repair.ts` (new; subpath `@techaust/core/pdf-repair`): `REPAIR_KINDS`, `REPAIR_OUTCOMES`, `REPAIR_FOUND`, `REPAIR_MAX`, `repairKey`, `rebuildVerdict`, `REBUILD_WINDOW_MS`, `REBUILD_OPEN_MS`, `REBUILD_HASH_MAX_BYTES`, `isRepairCode`.
+  - `pdf-jobs.ts`: `PdfRebuildMessage` is in `PdfMessage` and `isPdfMessage`, with the same bounds as `pdf.render`.
+  - `permissions.ts`: `"pdfs.rebuild": { owner: "step-up" }`.
+  - Tests: `test/pdf-repair.test.ts` (new: a fast-check property for `repairKey`, the verdict, the message bounds, the permission row) and `test/permissions.test.ts` (the new row `S---`).
+- Data:
+  - `packages/db/src/schema/pdf-repairs.ts` (new, exported from `schema/index.ts`).
+  - Migrations `0087_pdf_repairs.sql` (drizzle-kit: CREATE TABLE and CREATE INDEX only) and `0088_pdf_repair_triggers.sql` (custom, written by `scripts/write-triggers.ts pdf_repair_triggers`).
+  - `src/triggers-pdf-repairs.ts`: the new trigger set, registered in `TRIGGER_SETS`.
+  - `src/retention.ts`: both tables `record`, never deleted. `src/backup-scope.ts`: both `F`.
+  - `src/pdf-repairs.ts` (new; subpath `@techaust/db/pdf-repairs`):
+    - the key twins: `REPAIR_KEY_SQL`, `SUPPLIER_KEY_SQL`, `IST_DAY_SQL`;
+    - the Q1 = B rule: `OFFER_OPEN_PARTS` and `offerOpenSql`;
+    - the subject and the served key: `rebuildableKeySql`, `servedKeySql`, `SERVED_PDF_SQL`, `SUBJECT_SQL` and `subjectBinds`, `repairsOfSql`, `subjectServedSql`;
+    - the writes and the jobs read: `REQUEST_INSERT_SQL`, `requestBinds`, `RESULT_INSERT_SQL`, `REPAIR_READ_SQL`.
+  - Tests: `test/pdf-repairs.test.ts` (new) and `test/migrations.test.ts` (80 tables, the two migrations).
+  - No other table list for backups exists in the repo: #193's backup code is `backup-scope.ts` only (scripts and workflows grepped).
+- Admin API:
+  - `apps/admin/worker/pdf-rebuild.ts` (new): the factory `rebuildRoutes`, the four mounted routers, `checkStored` and the 07-ZV refusals.
+  - `pdf-served.ts` (new): `servedKey` and `servedPdf`.
+  - `guard.ts`: 12 ROUTES rows, six on the API Worker and six on the invoices Worker. Mounted in `routes-api.ts` and `routes-invoices.ts`.
+  - The readers:
+    - `document-pdf.ts`: the offer and invoice GET (ETag = the served SHA); the supplier copy (a rebuild wins, the self-heal stays);
+    - `receipt-issue.ts`;
+    - `document-links.ts` (the certificate);
+    - `deeds.ts` (the unsigned PDF only).
+  - `apps/admin/src/lib/audit.ts`: the `pdf.rebuild` label and a "Stored PDFs" filter group (see deviation 9).
+  - Tests:
+    - `pdf-rebuild.test.ts` (new), with the helper `test-rebuild.ts` (new);
+    - `split.test.ts` (the invoices regex, counts 47/49);
+    - `invoices.test.ts` (the route table);
+    - `rbac.test.ts` (one audit row per rebuild route).
+- Jobs:
+  - `apps/jobs/src/pdf.ts`:
+    - the render plans `invoiceCheck`, `invoicePlan`, `offerPlan` and `certificatePlan`, with the types `PdfPage` and `RenderPlan`;
+    - `bell` and `RenderRow` exported;
+    - `failed()` takes `PdfRebuildMessage`;
+    - a misrouted `pdf.rebuild` is logged.
+  - The other plans: `receipts.ts` (`receiptPlan`, `receiptRow`) and `deed-pdf.ts` (`deedPlan`).
+  - `certificate.ts`: the `name_sealed` column and `nameSealed`.
+  - `pdf-rebuild.ts` (new): `processRebuild`, `processRebuildDeadLetter`, `storedVerdict` and the 07-ZV bells 16 to 18.
+  - `queue.ts`: `pdf.rebuild` is routed before the other PDF kinds, and its dead letter.
+  - Test: `test/pdf-rebuild.test.ts` (new).
+- Shared:
+  - `packages/testing/src/pdf-rebuild.ts` (new): the done-test fixture both halves import.
+  - `scripts/route-inventory-lib.mjs`: `pdf.rebuild` in `QUEUE_KINDS`.
+  - `apps/portal/worker/offer-open-twin.test.ts` (new, a test only): pins `OFFER_OPEN_PARTS` to the portal's `ACCEPT_INSERT_SQL`. No portal code changed.
+
+**Migrations**
+- **0087 `pdf_repairs`:** two new tables. Nothing is rebuilt and no referenced table is touched.
+  - `pdf_repairs`:
+    - CHECKs: kind; found; n from 1 to 99; subject id length; keys under `docs/` or `deeds/` and at most 512 characters; `old_sha256` null or 64 lower-case hex.
+    - Indexes: unique `new_key`; unique `(subject_kind, subject_id, n)`; `(requested_by)`.
+  - `pdf_repair_results`:
+    - PK `repair_id` → `pdf_repairs.id`.
+    - CHECKs: outcome; code glob and length; rebuilt ⇔ key and SHA; key shape; SHA shape; bytes ≥ 1.
+    - The partial index `pdf_repair_results_served (original_key, n) WHERE outcome = 'rebuilt'`.
+- **0088 `pdf_repair_triggers`:** CREATE TRIGGER only.
+  - The four append-only triggers.
+  - `pdf_repairs_insert`: the subject may be rebuilt now, and `original_key` is its recorded key. Per kind:
+    - frozen, with its PDF recorded;
+    - the client not anonymised;
+    - an offer not redacted, and not open on the IST day of `requested_at` (Q1 = B);
+    - a deed final or signed; a receipt issued or void;
+    - a supplier copy's key = `SUPPLIER_KEY_SQL`.
+  - `pdf_repairs_insert_n`: the next n.
+  - `pdf_repairs_insert_keys`: `new_key` = `REPAIR_KEY_SQL`, and `old_key` = the served key.
+  - `pdf_repair_results_insert`: the request exists; the same key and n; the request's new key when rebuilt, and no key, SHA or bytes otherwise; never before the request.
+  - `documents_redact_repairs_outbox`: AFTER UPDATE OF redacted_at, with the same WHEN as `documents_redact_outbox`. It queues every rebuilt key of the offer's PDF in `r2_deletions` (`ON CONFLICT DO NOTHING`).
+- **The redaction batch:** D1 counts these trigger writes. The db test shows the redaction UPDATE's `changes` > 1 when a rebuilt key exists. `offer-redaction.ts` already reads `changes() > 0`; it is unchanged and its tests pass.
+- **Numbers:** planned. Renumber at merge if another branch takes 0087–0088 first.
+
+**Commands and results** (the heavy ones through `tools/heavy.sh`)
+- **Core** (`pnpm --filter @techaust/core test`): 134 files, 2,728 tests passed. Coverage: statements 98.11 %, branches 96.28 %, functions 98.31 %, lines 98.5 % (`.logs/rb-core-test.log`).
+- **DB** (`pnpm --filter @techaust/db test`): 63 files, 1,111 tests passed (`.logs/rb-db-test2.log`, the run after the last SQL change).
+- **Admin** (`pnpm --filter @techaust/admin test`):
+  - first run: 8 failures, because the rebuild routes had no `rbac.test.ts` scenarios and no `invoices.test.ts` route-table lines;
+  - after the fix: 200 files, 5,433 tests passed (`.logs/rb-admin-test2.log`).
+- **Jobs** (`pnpm --filter @techaust/jobs test`):
+  - first run: 1 failure (`pdf.rebuild` missing from the inventory's `QUEUE_KINDS`);
+  - after the fix: 53 files, 794 tests passed (`.logs/rb-jobs-test2.log`).
+- **Portal:** only `worker/offer-open-twin.test.ts`, run directly: 2 tests passed. The portal suite was not run, because no portal source changed.
+- **Typecheck** (`pnpm -r --workspace-concurrency=1 typecheck`): every package passed (`.logs/rb-typecheck2.log`). The first, parallel `pnpm typecheck` failed on the new fixture's DOM globals in `packages/testing`; fixed.
+- **`pnpm check`:** passed on the third run (`.logs/rb-check3.log`).
+  - It covers lint, typecheck, the binding guard, the content lint, the Worker config guard, the SPA headers, the migration guard (89 migrations, none rebuilds a referenced table) and the CSS collisions.
+  - The first two runs failed on Biome formatting: `packages/db/src/pdf-repairs.ts`, then the drizzle snapshots and journal. Both fixed.
+  - So the whole-repository lint ran three times, each time inside `pnpm check`. No separate `pnpm lint` was run after that.
+- **Builds** (`pnpm --filter @techaust/admin build`, `pnpm --filter @techaust/jobs build`): both pass the Worker budget (below).
+
+**Worker bytes** (measured; no baseline build of the task branch was made, so there are no exact deltas, only a comparison with the brief's estimates)
+
+| Worker | Bytes | Start-up (fastest of 7) | Ceiling or plan line |
+|---|---|---|---|
+| admin front | 122,717 | 30.2 ms | 150,000 |
+| admin API | 572,452 | 83.0 ms | 800,000 |
+| admin finance | 436,784 | 74.7 ms | plan line 500,000 |
+| admin invoices | 579,222 | 86.1 ms | plan line 650,000 |
+| jobs | 885,539 | 72.8 ms | 1,000,000 |
+| portal | not rebuilt (no portal source changed) | | plan line 180,000 |
+
+Finance does not import the rebuild code. Its figure is above the brief's estimate (~425 K), which more likely means the estimate predates main's latest finance changes than that this task grew it.
+
+**workerd and `checksums.sha256`:** yes.
+- After `put(key, bytes, { sha256 })`, `head(key).checksums.sha256` holds that SHA-256. After a plain put it is undefined.
+- Proved in `apps/admin/worker/pdf-rebuild.test.ts` ("R2's stored checksum") and in `apps/jobs/test/pdf-rebuild.test.ts` (`storedVerdict`).
+- So locally the head shortcut and the supplier copy's stored-checksum check both work, and an object stored by a plain put is hashed instead.
+
+**Deviations from the brief, with reasons**
+1. **`rebuildVerdict` takes `{ present, recordedSha, objectSha }`:** an object that is present but could not be hashed (over 5 MB) must read `damaged`, not `missing`.
+2. **`pdf.rebuild` is not added to `FINANCE_AUDIT_ACTIONS`:** that list holds only events that move money or tax, and it says outright that a PDF re-request is not a finance event. Effect: the monthly copy holds both rebuild tables but not the rebuild audit rows. The lead decides.
+3. **No `pdf_repairs (original_key)` index, because no query needs it:**
+   - the insert trigger's served-key lookup reads `pdf_repair_results` through `pdf_repair_results_served` (EXPLAIN in the db test);
+   - the max-n lookup uses the unique `(subject_kind, subject_id, n)`.
+4. **The insert trigger is three triggers** (`pdf_repairs_insert`, `_insert_n`, `_insert_keys`): the same rule, but each refusal has its own message for the tests.
+5. **`REQUEST_INSERT_SQL` is one statement per kind:**
+   - it computes `n`, `new_key` and `old_key` in SQL;
+   - beside the brief's 5-minute and 26-hour guard, it also requires that the subject can still be rebuilt now (Q1 = B included) and that the served key is the one the route checked;
+   - so a request never records a stale old key or hash, and a lost race is 409 `rebuild_in_progress`;
+   - the route works out `n` only for the audit summary.
+6. **Jobs step 1 is two reads:** the request with its result and `live`, then the kind's own row. One batch would have had to read every kind's tables without knowing the kind.
+7. **`certificate_unsealed` only when asked:** `certificatePlan` refuses only when the caller passes `sealedName: true` (the rebuild). The first render keeps M4.5's fallback name, so its behaviour is unchanged. `CERTIFICATE_READ` gains one column, `name_sealed`.
+8. **Plans return a lazy `page()`:** an adopted PDF never builds its page, as before. Building it eagerly broke an existing receipt-adoption test whose sealed row doesn't render.
+9. **Copy outside 07-ZV that an existing test requires:**
+   - the audit-log label `"pdf.rebuild": "asked for a stored PDF to be rebuilt"` and the filter group "Stored PDFs", in `apps/admin/src/lib/audit.ts`;
+   - `audit-labels.test.ts` fails without them;
+   - both are builder drafts in the S-style used before, for the lead to approve; the designer may move or tighten them.
+10. **The shared fixture holds bytes and helpers only:**
+    - `packages/testing/src/pdf-rebuild.ts` has the original, damaged and rebuilt PDFs, the SHA, the whole row as JSON and `putWithSha`;
+    - the apps import it by path, so it cannot use package imports;
+    - each half seeds its documents through its own real paths: the issue and send statements in jobs, the issue routes and the receipt RPC in admin.
+11. **Bells**, all with entity `pdf_repair` and linked to the subject's admin page:
+    - `pdf.rebuilt` (line 16);
+    - `pdf.refused` (line 17), for any plan refusal;
+    - `pdf.failed` (line 18), for `envelope_missing` and `dead_letter`;
+    - a skipped result rings nothing.
+12. **The `client_gone` code:** it carries 07-ZV line 9, as the brief says. The existing admin `CLIENT_GONE` codes are `client_anonymised`, so this is a new code beside them.
+13. **The `rebuilt` result's guard has no offer-open check:** an offer that was not open when the rebuild was asked can't become open again.
+
+**Not verified**
+- Not run: the portal suite, the staging cold CPU reading (nothing deployed), e2e.
+- Not measured: real R2's checksum behaviour (workerd only), and the Worker-byte deltas against the task branch.
+- A void receipt's rebuild: the SQL and the trigger allow it, but no test seeds one.
+- `rebuild_in_progress` from two Owners racing: covered by the guarded INSERT and the db tests, but not exercised through two parallel HTTP requests.
+
+**Open questions**
+1. The two new admin strings in deviation 9 (the audit label and its filter group): approve them, or give the wording.
+2. Deviation 2: should the `pdf.rebuild` audit rows go into the monthly finance copy (that is, be added to `FINANCE_AUDIT_ACTIONS`)?
+3. The branch `fix/rebuild-pdf-b1` is pushed. The run file on `origin/feat/rebuild-pdf` has moved since my branch point (the owner's answers), so the lead keeps both sections when merging.
