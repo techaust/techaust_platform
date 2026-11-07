@@ -330,3 +330,28 @@ Tier A: stopped here for the analyst's early check (schema, migrations, core log
 - **AU30 (Q3):** a reversed refund that came from a pending gateway payment (L33, already rejected) stays a `refund_reversed` item. The Owner records the money from it; there's no automatic re-open of a rejected payment (safest: no money is counted without the Owner).
 - **AU31 (Q4):** a bank tick on a reversed refund is kept: the outgoing entry was real, and the bank shows the return as its own line.
 - **Merge order:** AF1 (0081, 0082) merges first, then AF2 renumbers after it.
+
+## Early check of AF1 (analyst, 2026-11-07): NO-GO, small fixes
+Analyst claude-opus-5-5/high; skill `cloudflare:workers-best-practices`. Read-only at 530d88e2.
+
+**Sound:** the reversal trigger and its single path; forged or replayed events can't reverse; every reader moves; AU2's pagination adds up to the unbounded answer; RA-40 is identical in route, WHERE and trigger; the AU3, AU4, AU6, AU7 and AU21 items; migrations 0081/0082 are ADD COLUMN, partial index and triggers only.
+
+**Findings:**
+- **H1:** the bounded windows can return an empty page with `next` set. `credit-held-tab.tsx:44,132` and `reconciliation.tsx:164,557` stop paging and show the empty state. On the RA-41 tab that wrongly says no client held credit once there are more than 1,000 confirmed payments.
+- **M1:** a reversed refund of an L33 (rejected pending) payment is called client credit, in the client email (`refund-notify.ts:190-193`) and the staff line (`reasons.ts:153-155`). It isn't credit.
+- **M2:** 07-ZT line 2 gives an order the database refuses: a partial refund of a pending payment is refused, and so is a confirm with a live refund (`reasons.ts:139-143`).
+- **M3:** no failure-path test for `live_not_allowed` being retried, `isOurs` on the first refund answer at the route, or PayPal's `partly_refunded` settle branch.
+- **L1:** Stripe `requires_action` after success can still pay out, but our reversal is permanent (`core/refund-gateways.ts:55`).
+- **L2:** a reversal changes past periods' refunds register, Collected, statement and RA-41.
+- **L3:** a payment left out of the receipt sweep after `series_full` stays out after the FY changes.
+- **L4:** the SES transport (`packages/email/src/transport.ts:149`) and Turnstile siteverify have no `redirect: "manual"` or capped read.
+
+### Lead's triage of the early check (2026-11-07)
+- **AU32 (H1):** both screens keep `next` whatever the page size. An empty page with `next` set fetches the next page by itself (up to 20 pages, with a "Checking older payments" line from the lead under the delegation). The empty state shows only when `next` is null. Screen tests with an empty first page.
+- **AU33 (M1):** `REFUND_REVERSED_ROW_SQL` holds `p.status = 'confirmed'`, so no client email goes out for a rejected payment. The staff line for that case: "{Gateway}'s refund of {amount} came back after it was made. The payment was rejected when this refund was made, so the money isn't counted here. Record it as a payment." Tests for each.
+- **AU34 (M2):** line 2 is reworded to the order that works: "{Gateway} had already refunded {refunded} of this payment of {amount} when it reached us, so it waits here. Confirm it, putting only what was kept on the invoice, then record the {refunded} refund from credit with {Gateway}'s refund id." (and a PayPal variant without the amount). An end-to-end worker test: confirm with a partial allocation, then an outside refund from credit. If the Needs-review confirm can't leave the refunded part off the invoice, fix that and report it.
+- **AU35 (M3):** the three failure-path tests.
+- **AU36 (L1):** settled on the safest reading: reverse only on Stripe `failed` or `canceled`. A `requires_action` after success opens a `refund_reversed`-family item without a reversal, and only logs if one is already open.
+- **AU37 (L2):** settled on the safest reading, so filed periods don't move: the period-end and range readers count a reversed refund as out until `reversed_at` (`status = 'succeeded' OR (reversed_at IS NOT NULL AND reversed_at > <period end>)`). 08-C RA-41 gets a note. Tests across a period boundary.
+- **AU38 (L3):** a `series_full` exclusion also lifts when the FY of `receipt_tried_at` is earlier than today's FY. Test.
+- **AU39 (L4):** `redirect: "manual"` and a capped read on the SES transport and Turnstile siteverify, with tests (both hosts are fixed: defence in depth).
