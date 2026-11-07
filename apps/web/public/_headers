@@ -6,7 +6,9 @@
 # NOT (no GA4 at launch, owner 2026-10-22): add it here in the same change that sets the GA4 ID.
 # Cross-Origin-Resource-Policy same-site (audit A1 finding 2): our files load only on techaust.com and its subdomains, except
 # the email logos under /brand/ (below), which mail clients load from other sites.
-# X-Robots-Tag keeps staging out of search; it MUST be removed for production (Phase 7, with the M2.5 robots work).
+# No X-Robots-Tag here (P7): the build adds "X-Robots-Tag: noindex" to the "/*" block of dist/_headers on every build except
+# CLOUDFLARE_ENV=production (scripts/web-noindex.mjs, the noindex integration in astro.config.mjs), so staging and local builds stay out
+# of search and production is indexed.
 /*
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Content-Type-Options: nosniff
@@ -15,7 +17,6 @@
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-site
   Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-IitZjVUYb8SRbxM8hUyE5U+6H4MDIaoohN9YT0fUy00=' https://static.cloudflareinsights.com https://challenges.cloudflare.com; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://cloudflareinsights.com; frame-src https://challenges.cloudflare.com; manifest-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
-  X-Robots-Tag: noindex
 
 # Astro writes content-hashed file names, so these can be cached for a year.
 /_astro/*

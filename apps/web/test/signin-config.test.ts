@@ -95,6 +95,16 @@ describe("the build-time site key (scripts/turnstile-site-key.mjs)", () => {
     }
   });
 
+  // P7-B: a production build refuses an empty key, as staging's does.
+  it("a production build with an empty key fails", () => {
+    expect(() =>
+      siteKeyOf({ env: { production: { vars: { TURNSTILE_SITE_KEY: "" } } } }, "production"),
+    ).toThrow(/env\.production has no TURNSTILE_SITE_KEY/);
+    expect(siteKeyOf({ env: { production: { vars: { TURNSTILE_SITE_KEY: "0xprod" } } } }, "production")).toBe(
+      "0xprod",
+    );
+  });
+
   it("a staging build with an empty key fails, and so does an unknown environment", () => {
     expect(() => siteKeyOf({ env: { staging: { vars: { TURNSTILE_SITE_KEY: "" } } } }, "staging")).toThrow(
       /no TURNSTILE_SITE_KEY/,

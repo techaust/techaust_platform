@@ -2,10 +2,11 @@
 // staging deploy. It fails while a pending owner input is still a placeholder, so production can't ship with one.
 // Each failure line says what the owner must supply. Pure functions for the tests; the CLI is at the bottom.
 // Since the full audit (A1 finding 6) it also reads the admin's and the portal's built bundles for "[Placeholder" copy, and the
-// Worker configs for an empty production Turnstile site key and for queues staging has and production lacks. The admin and the
-// portal must be built before it runs: today deploy-prod.yml builds only the website, so this check fails there until Phase 7
-// adds those builds (a workflow change, the owner's yes); production is blocked anyway until then.
-import { existsSync, readFileSync } from "node:fs";
+// Worker configs for an empty production Turnstile site key and for queues staging has and production lacks.
+// P7 (docs/runs/p7-launch.md P7-B): deploy-prod.yml's build job builds every app for production first, so this check now also finds and reads
+// jobs' and the website's pre-bundled production Workers (`dist-production`), compares staging and production per Worker (D1, R2, browser, rate
+// limits, crons, the secrets.required set and the vars key set: only values may differ), and reads noindex from the BUILT dist/_headers.
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseJsonc } from "./check-worker-config.mjs";
@@ -71,14 +72,21 @@ export function checkBuiltPage(name, html) {
   return problems;
 }
 
-/** The X-Robots-Tag: noindex line of the `/*` block in public/_headers. */
+/**
+ * The X-Robots-Tag: noindex line in the BUILT dist/_headers (P7: the website's build writes it into dist/_headers on every build except
+ * `CLOUDFLARE_ENV=production`, so a production build has none; `headersText` null means dist/_headers is missing).
+ */
 export function checkNoindex(headersText) {
+  if (headersText === null)
+    return [
+      "apps/web/dist/_headers is missing: build the website for production (CLOUDFLARE_ENV=production) first.",
+    ];
   const set = headersText
     .split(/\r?\n/)
     .some((l) => /^\s+x-robots-tag\s*:\s*[^#\n]*noindex/i.test(l) && !l.trim().startsWith("#"));
   return set
     ? [
-        "public/_headers still sets X-Robots-Tag: noindex (staging only): remove it for production (Phase 7, with the robots work).",
+        "dist/_headers sets X-Robots-Tag: noindex: the website was not built for production; build it with CLOUDFLARE_ENV=production (deploy-prod.yml's build:production).",
       ]
     : [];
 }
@@ -133,8 +141,40 @@ export const SPA_APPS = ["admin", "portal"];
  * built bundle that still holds the mark would show it to clients and staff. The issue guard that REFUSES such a line looks for
  * the bare prefix and stays in the bundle on purpose: `"[Placeholder"` in core (`issueBlockers`) and `'%[Placeholder%'` in the
  * freeze SQL. So a match counts only when the prefix is not followed by a closing quote or "%".
+ * P7-B: nor by "] ${": that is a copy gate's own body (`APPROVED_x ? line : `[Placeholder] ${line}``). Vite folds a gate whose flag is
+ * true out of the SPA bundles, but jobs' bundler keeps the unreachable branch (seen in the 2026-11-07 production bundle: the 07-ZJ email
+ * gate, flag true). Whether a gate is open is read from its flag instead (checkApprovalFlags).
  */
-const PENDING_COPY = /\[Placeholder(?![%"'`])/g;
+const PENDING_COPY = /\[Placeholder(?![%"'`]|\] \$\{)/g;
+
+/** The source folders whose copy gates (`export const APPROVED_… = true|false`) reach a bundle. */
+const FLAG_SOURCES = ["packages", "apps"];
+const APPROVAL_FLAG = /export const (APPROVED_\w+)(?:\s*:\s*boolean)?\s*=\s*false\b/g;
+
+/**
+ * P7-B: every copy-approval flag in the source (packages/<pkg>/src, apps/<app>/src and apps/<app>/worker) is true: a false one would show its
+ * lines after a "[Placeholder]" mark, which a bundle scan can't always see (above). `rootDir` is the repository root.
+ */
+export function checkApprovalFlags(rootDir) {
+  const problems = [];
+  for (const top of FLAG_SOURCES) {
+    const base = join(rootDir, top);
+    if (!existsSync(base)) continue;
+    for (const name of readdirSync(base))
+      for (const sub of ["src", "worker"]) {
+        const dir = join(base, name, sub);
+        if (!existsSync(dir)) continue;
+        for (const file of walk(dir)) {
+          if (!/\.(?:ts|tsx|mjs|js)$/.test(file) || /\.test\.[a-z]+$/.test(file)) continue;
+          for (const m of readFileSync(file, "utf8").matchAll(APPROVAL_FLAG))
+            problems.push(
+              `${relative(rootDir, file).split(sep).join("/")}: ${m[1]} is false, so its lines show a "[Placeholder]" mark: the owner approves that copy, then the lead sets ${m[1]} to true.`,
+            );
+        }
+      }
+  }
+  return problems;
+}
 const BUNDLE_TEXT = /\.(?:js|mjs|cjs|html|css|json|txt)$/i;
 
 /** Problems in one built file of `app`: each pending-copy mark, with a little of the text around it (never more). */
@@ -152,9 +192,46 @@ export function checkBundleText(app, name, text) {
   return problems;
 }
 
-/** Every built file of the admin and the portal under `appsDir` (apps/); a missing build is a problem in itself. */
+/**
+ * P7: the pre-bundled production Workers deploy-prod.yml's build job makes (`wrangler deploy --dry-run --env production --outdir <dir>`), read
+ * like the SPAs' bundles. Jobs renders the emails, the PDFs and the bells, so pending copy there would reach clients.
+ */
+export const PREBUNDLED_WORKERS = [
+  {
+    app: "jobs",
+    dir: "dist-production",
+    entry: "index.js",
+    how: "pnpm --filter @techaust/jobs exec wrangler deploy --dry-run --env production --outdir dist-production",
+  },
+  {
+    app: "web",
+    dir: ".wrangler/dist-production",
+    entry: "worker.js",
+    how: "pnpm --filter @techaust/web exec wrangler deploy --dry-run --env production --outdir .wrangler/dist-production",
+  },
+];
+
+/** Every built file of the admin and the portal, and the pre-bundled jobs and website Workers, under `appsDir` (apps/); a missing build is a problem in itself. */
 export function checkBundles(appsDir) {
   const problems = [];
+  for (const { app, dir, entry, how } of PREBUNDLED_WORKERS) {
+    const out = join(appsDir, app, ...dir.split("/"));
+    if (!existsSync(join(out, entry))) {
+      problems.push(
+        `apps/${app}/${dir}/${entry} is not built: bundle it for production (${how}) before this check.`,
+      );
+      continue;
+    }
+    for (const file of walk(out))
+      if (/\.(?:js|mjs|cjs)$/i.test(file))
+        problems.push(
+          ...checkBundleText(
+            app,
+            `${dir}/${relative(out, file).split(sep).join("/")}`,
+            readFileSync(file, "utf8"),
+          ),
+        );
+  }
   for (const app of SPA_APPS) {
     const dist = join(appsDir, app, "dist");
     if (!existsSync(join(dist, "client", "index.html"))) {
@@ -240,7 +317,129 @@ export function checkProductionConfig(where, config, { turnstile }) {
   return problems;
 }
 
-/** checkProductionConfig over every config in PROD_CONFIGS under `appsDir`. */
+/**
+ * Vars staging has and production must not (P7 brief, P7-A): the email allow-list applies only on staging (production emails every recipient).
+ */
+export const STAGING_ONLY_VARS = Object.freeze(["EMAIL_ALLOWED_RECIPIENTS"]);
+
+/** A staging host, a staging resource name, a workers.dev host or localhost in a production value. */
+const NON_PRODUCTION_VALUE = /techaust-staging|-staging\.|workers\.dev|localhost|127\.0\.0\.1/i;
+
+const sorted = (xs) => [...xs].map(String).sort();
+const sameSet = (a, b) => JSON.stringify([...new Set(sorted(a))]) === JSON.stringify([...new Set(sorted(b))]);
+const listed = (xs) => (xs.length === 0 ? "none" : sorted(xs).join(", "));
+
+/**
+ * P7: staging and production of one parsed config must differ only in values (docs/runs/p7-launch.md P7-B 4): the same D1 bindings (each its
+ * own database, never staging's, with the same migrations folder), the same R2 bindings (production buckets), the same browser binding, the same
+ * rate limits (name and limits; production's own namespace ids), the same crons (`triggers` is inherited, so a scope without its own takes the
+ * top level's), the same `secrets.required` set and the same vars keys (STAGING_ONLY_VARS aside). No production value names a staging resource,
+ * a workers.dev host or localhost. Queues and service bindings are checkProductionConfig's.
+ */
+export function checkEnvParity(where, config) {
+  const prod = config.env?.production;
+  const staging = config.env?.staging;
+  if (!prod || !staging) return [];
+  const problems = [];
+  const differ = (what, s, p) =>
+    problems.push(
+      `${where}: ${what} differ between staging (${listed(s)}) and production (${listed(p)}); only values may differ.`,
+    );
+
+  const d1s = staging.d1_databases ?? [];
+  const d1p = prod.d1_databases ?? [];
+  if (
+    !sameSet(
+      d1s.map((d) => d.binding),
+      d1p.map((d) => d.binding),
+    )
+  )
+    differ(
+      "the D1 bindings",
+      d1s.map((d) => d.binding),
+      d1p.map((d) => d.binding),
+    );
+  for (const p of d1p) {
+    const s = d1s.find((d) => d.binding === p.binding);
+    if (!s) continue;
+    if (p.database_id === s.database_id || p.database_name === s.database_name)
+      problems.push(
+        `${where}: env.production's D1 ${p.binding} is staging's database (${String(p.database_name)}): name the production database.`,
+      );
+    if ((p.migrations_dir ?? null) !== (s.migrations_dir ?? null))
+      problems.push(
+        `${where}: env.production's D1 ${p.binding} has migrations_dir ${String(p.migrations_dir)}, staging's ${String(s.migrations_dir)}.`,
+      );
+  }
+
+  const r2s = (staging.r2_buckets ?? []).map((b) => b.binding);
+  const r2p = (prod.r2_buckets ?? []).map((b) => b.binding);
+  if (!sameSet(r2s, r2p)) differ("the R2 bindings", r2s, r2p);
+
+  const bs = staging.browser?.binding;
+  const bp = prod.browser?.binding;
+  if (bs !== bp) differ("the browser bindings", bs ? [bs] : [], bp ? [bp] : []);
+
+  const rls = staging.ratelimits ?? [];
+  const rlp = prod.ratelimits ?? [];
+  if (
+    !sameSet(
+      rls.map((r) => r.name),
+      rlp.map((r) => r.name),
+    )
+  )
+    differ(
+      "the rate limits",
+      rls.map((r) => r.name),
+      rlp.map((r) => r.name),
+    );
+  for (const p of rlp) {
+    const s = rls.find((r) => r.name === p.name);
+    if (!s) continue;
+    if (JSON.stringify(p.simple ?? null) !== JSON.stringify(s.simple ?? null))
+      problems.push(
+        `${where}: env.production's rate limit ${p.name} is ${JSON.stringify(p.simple)}, staging's ${JSON.stringify(s.simple)}.`,
+      );
+    if (String(p.namespace_id) === String(s.namespace_id))
+      problems.push(
+        `${where}: env.production's rate limit ${p.name} shares staging's namespace_id ${String(s.namespace_id)} (their counters would be shared).`,
+      );
+  }
+
+  const crons = (scope) => scope.triggers?.crons ?? config.triggers?.crons ?? [];
+  if (JSON.stringify(sorted(crons(staging))) !== JSON.stringify(sorted(crons(prod))))
+    differ("the crons", crons(staging), crons(prod));
+
+  const ss = staging.secrets?.required ?? [];
+  const sp = prod.secrets?.required ?? [];
+  if (!sameSet(ss, sp)) differ("the secrets.required sets", ss, sp);
+
+  const vs = Object.keys(staging.vars ?? {}).filter((k) => !STAGING_ONLY_VARS.includes(k));
+  const vp = Object.keys(prod.vars ?? {});
+  for (const k of STAGING_ONLY_VARS)
+    if (vp.includes(k))
+      problems.push(`${where}: env.production sets ${k}, which applies only on staging: leave it out.`);
+  const vpKept = vp.filter((k) => !STAGING_ONLY_VARS.includes(k));
+  if (!sameSet(vs, vpKept)) differ("the vars keys", vs, vpKept);
+
+  for (const [k, v] of Object.entries(prod.vars ?? {}))
+    if (NON_PRODUCTION_VALUE.test(String(v)))
+      problems.push(
+        `${where}: env.production.vars.${k} names a staging, workers.dev or local host or resource: give it its production value.`,
+      );
+  const resources = [
+    ...d1p.map((d) => d.database_name),
+    ...(prod.r2_buckets ?? []).map((b) => b.bucket_name),
+    ...(prod.queues?.producers ?? []).map((q) => q.queue),
+    ...(prod.queues?.consumers ?? []).flatMap((q) => [q.queue, q.dead_letter_queue]),
+  ].filter((n) => n !== undefined);
+  for (const n of resources)
+    if (NON_PRODUCTION_VALUE.test(String(n)))
+      problems.push(`${where}: env.production names ${String(n)}: bind the production resource.`);
+  return problems;
+}
+
+/** checkProductionConfig and checkEnvParity over every config in PROD_CONFIGS under `appsDir`. */
 export function checkProductionConfigs(appsDir) {
   const problems = [];
   for (const c of PROD_CONFIGS) {
@@ -250,7 +449,8 @@ export function checkProductionConfigs(appsDir) {
       problems.push(`${where} is missing.`);
       continue;
     }
-    problems.push(...checkProductionConfig(where, parseJsonc(readFileSync(path, "utf8")), c));
+    const config = parseJsonc(readFileSync(path, "utf8"));
+    problems.push(...checkProductionConfig(where, config, c), ...checkEnvParity(where, config));
   }
   return problems;
 }
@@ -274,11 +474,13 @@ export function checkProdReadiness(webDir, backupFile = BACKUP_RECORD_FILE, apps
         problems.push(
           ...checkBuiltPage(relative(dist, file).split(sep).join("/"), readFileSync(file, "utf8")),
         );
-    problems.push(...checkNoindex(readFileSync(join(webDir, "public", "_headers"), "utf8")));
+    const headers = join(dist, "_headers");
+    problems.push(...checkNoindex(existsSync(headers) ? readFileSync(headers, "utf8") : null));
     problems.push(...checkBackupVerified(existsSync(backupFile) ? readFileSync(backupFile, "utf8") : null));
   }
   problems.push(...checkBundles(appsDir));
   problems.push(...checkProductionConfigs(appsDir));
+  problems.push(...checkApprovalFlags(join(appsDir, "..")));
   return problems;
 }
 
