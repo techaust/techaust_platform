@@ -249,3 +249,75 @@ Ran:
 - **AU26 (L4):** settled on the safest reading (DPDP s.6(4)–(6)): a `consent_withdrawal` request closes `done` only with a linked `lead.consent_withdraw` audit row or a contact consent-change row after the request arrived (route, WHERE and trigger). Otherwise it's declined with a reason.
 - **AU27 (L5):** staff line, reworded by the lead: "A scrambled form of the address is kept only to stop emails to it and to prove what they agreed to. Email records keep the address until they expire."
 - **AU28 (L7):** designer. The actions wrap under the title below about 900 px.
+
+## AF1 report (Early check): builder claude-opus-5-5/high, 2026-11-07, branch `fix/audit-af1` (from `origin/fix/audit-m6-m7` 00ae8fbf, merged 8563097f)
+Tier A: stopped here for the analyst's early check (schema, migrations, core logic, routes and their tests are done; the designer's layout work on the Payments screens is not started).
+
+**Skills loaded:** `cloudflare:workers-best-practices` (redirect and body-size guards on credentialed gateway calls, no `ctx` misuse, generated `Env` only); `cloudflare:wrangler` (no config or binding changed, so nothing to regenerate; used to confirm no `wrangler.jsonc` edit was needed). Context7 (PayPal REST spec) checked whether a capture carries a refunded total: it does not in the published capture schema, so PayPal's partial-refund item says "part of it" (not verified on a sandbox).
+
+### Changes
+**Migrations (my own two; AF2 takes the next number):**
+- `packages/db/migrations/0081_audit_money.sql` (drizzle-generated, ADD COLUMN and CREATE INDEX only): `payment_refunds.reversed_at`; `payments.receipt_failures` (NOT NULL DEFAULT 0), `receipt_tried_at`, `receipt_fail_reason`, `receipt_fail_version`; partial index `payments_status_received (status, received_on, id) WHERE status IN ('rejected','withdrawn')` (partial so no other query's plan can pick it: an unpartial one stole `payments_proof_awaited`'s plan in `stripe.test.ts`).
+- `packages/db/migrations/0082_audit_money_triggers.sql` (set `audit_money_triggers`, `scripts/write-triggers.ts`): drops and recreates `review_items_values_insert/update` (kind `refund_reversed`), `payment_refunds_bounds` (RA-40: a linked credit note issued on or after the payment's day and covering the refund) and `payment_refunds_status_flow` (a GATEWAY refund, not manual and not a chargeback, with a gateway id, may move `succeeded → failed` once, with `failure_code` and `reversed_at` set in the same move and its settled time and day kept; `reversed_at` only by that move). No table rebuilt; `scripts/check-migrations.mjs` ok (83 migrations). 0070's output is byte-identical (the drift test in `triggers.test.ts` passes).
+- `packages/db/src/triggers.ts` (`refundTriggerParts("0070"|"0082")`, `gatewayTriggerParts` gains `"0082"`, `REVIEW_KINDS_0082`, `AUDIT_MONEY_RECREATED_*_0082`), `packages/db/src/schema/payments.ts`.
+
+**AU1 (B0 1), a gateway refund that fails after `succeeded`:**
+- `packages/core/src/refund-gateways.ts`: Stripe's `requires_action` is marked (`requiresAction`); `reversalOf(g)` (failed → the gateway's code; `requires_action` → `stripe_requires_action`).
+- `packages/db/src/refunds.ts`: `refundReverseStatement` (every rule in the WHERE, bound to the gateway id); `reversed_at` in `REFUND_COLS`.
+- `apps/admin/worker/refund-flow.ts`: `reverseIfFailed` (ONE batch: reverse, audit `refund.status` with `reversed: true`, then guarded on it the `refund_reversed` item and the owners' bell once per refund, and the event's move: 4 to 5 statements); `isOurs` exported and now also checks currency and the gateway id we hold.
+- `apps/admin/worker/gateway/refund-events.ts`: a refund of ours that succeeded is re-fetched before anything (manual, chargeback, already reversed or no gateway id: quiet as before); answer `{needs_review, refundReversed}`.
+- Money back to credit through the existing readers (status `succeeded` / not `failed`): proved in `packages/db/test/refund-statements.test.ts` (free money, `CLIENT_CREDIT_SQL`, statement totals, Collected, refunds register).
+- The client email (07-ZT C1–C3, OFF): `packages/core/src/copy-zt.ts` (`APPROVED_07ZT = false`, every line "[Placeholder] "), `packages/core/src/notifications.ts` (`refund.reversed` message), `packages/core/src/gateway-rpc.ts` (`refundReversed`), `packages/core/src/email-templates.ts`, `packages/email/src/{notifications,index,fixtures}.ts` (the builder's plain template, as `request.received`; snapshots `packages/email/test/__snapshots__/all/refund-reversed.*`), `apps/jobs/src/refund-notify.ts` (`processRefundReversed`, `refundReversedCopyGate`: held outside local), `apps/jobs/src/queue.ts`, `apps/jobs/src/gateway.ts`. Copy drafted in `docs/07-content-appendix/ZT-audit-money.md`.
+
+**AU2 (B0 2, 3):**
+- `apps/admin/worker/recon.ts`: both lists read `payments_confirmed_provider` with literal providers, in a bounded window of `RECON_SCAN` (1,000) payments per page (the unbounded manual list read **10,000 rows at 5,000** bank payments: over target, so it is bounded like credit-held). Pages hold exactly the unbounded answer (test with two unticked payments across windows).
+- `packages/db/src/refunds.ts`: `CREDIT_HELD_SQL` read **15,013 rows at 5,000** payments (6,000-ish at 2,000), so it is now `creditHeldSql(CREDIT_HELD_SCAN = 1,000)` with `creditHeldPage` (the route: `apps/admin/worker/credit-held.ts`); twin-tested against `CREDIT_HELD_SQL_UNBOUNDED` at 2,000 and 5,000 and with a 50-payment window (`packages/db/test/credit-held-rows.test.ts`); every page ≤ 9,000 rows (asserted). A page may hold fewer than 50 rows and still give `next` (API shape unchanged).
+- `apps/admin/worker/payments.ts`: rejected/withdrawn list through `payments_status_received`, keyset `(received_on, id)` (the rowid branch removed).
+
+**AU3 (B0 4–8):**
+- RA-40 in `refundInsertStatement`'s WHERE and in the 0082 trigger (tests: statement 0 rows, trigger abort, the covering note accepted).
+- `apps/admin/worker/reductions.ts`: the letter is dropped from DOCS only when the row doesn't name that key (also on the throw path); 409 `client_gone` before upload and in `reductionLetterStatement`'s WHERE.
+- `NOT EXISTS (id)` in `realisationReductionStatement` and `bankMatchStatement`; on zero rows the routes re-read by id: the same request → 200, the same id with other details → 409 (`reduction_exists`, `match_exists`) (`REDUCTION_BY_ID_SQL`, `BANK_MATCH_BY_ID_SQL`).
+- Receipts (`packages/db/src/receipts.ts`, `apps/admin/worker/receipt-issue.ts`): `RECEIPTS_DUE_SQL` never-tried first, then least recently tried, left out after 3 failures under one numbering version (back when the numbering settings change); `receiptFailureStatements` (2 statements: the count, then ONE owners' bell `receipt.blocked` guarded on exactly the third failure at this instant); `series_full` reason. **Found while testing:** the refused issue's own abort ("issue did not freeze…") wasn't matched by the catch, so a full series THREW (the sweep's message died in the DLQ every hour); now a counted refusal. Closes B6 L4.
+- `isOurs` on the first gateway answer in `apps/admin/worker/refunds.ts` (not ours → 202 `requested`, the sweep finds it by our id).
+
+**AU4 (B0 9):** `packages/db/src/ledger.ts` `NO_ACTIVE_LINK_SQL` in the withdraw WHERE; `apps/admin/worker/payments.ts` re-read → 409 `payment_linked`; `apps/admin/worker/payment-messages.ts`; SPA line in `PAY_ERRORS.payment_linked`.
+
+**AU5 (B0 10):** failure-path tests: cancel `not_cancellable` and `refund_found` (gateway already holds it: the row follows, 409), recon `match_exists` (another target, a second tick), `reduction_refused` (above the total), non-export 404.
+
+**AU6 (B1 M1):** `readRazorpayPayment` reads `amount_refunded` (`refundedMinor`); verdict `partly_refunded` in all three judges (`packages/core/src/{razorpay,stripe,paypal}.ts`; Stripe and PayPal after RA-38's `not_export_receipt`, whose tax consequence comes first; Razorpay before the amount check); `settle.ts`, `stripe-settle.ts`, `paypal-capture.ts` record it pending (no ledger move, `checkoutPaid: "if_open"`) with a `refunded_outside` item carrying `refundedMinor` (PayPal: `reason: partly_refunded`, no amount); a full refund stays item-only. Tests: core judges per gateway, Stripe settle, and Razorpay with the refund event arriving BEFORE `payment_link.paid` (ignored as not ours, then pending with the amount).
+
+**AU7 (B1 L1–L8):**
+- L1 `apps/jobs/src/hooks/stripe.ts`: flag true → both modes kept with `livemode` in the facts; flag false → only test events.
+- L2/L3 `apps/admin/worker/gateway/answer.ts` (`readJsonCapped` 256 KiB, `isRedirect`), used by `razorpay.ts`, `stripe.ts`, `paypal.ts`, `paypal-token.ts` (`redirect: "manual"`, 3xx → `bad_answer`). The start-up dry run's body-less answers still read (`json()` fallback).
+- L4: unreadable signed body → 200, `invalid_event` logged, an `ignored` row when `evt_` id and type can be read.
+- L5: `RAZORPAY_STALE_LINKS_SQL` in the sweep (live ≥ 1 h, not refreshed in 6 h, ≤ 10).
+- L6: `paypalExpireUnclaimedStatements` (system `payment.link_end` audit rows, same read as the expiry).
+- L7: `live_not_allowed` retried in `settle.ts`, `stripe-settle.ts`, `events.ts`.
+- L8: sweep sends through `sendChunked` (≤ 100 per `sendBatch`).
+
+**AU16 server parts:** `receipt-send.ts` answers top-level `contactIds`; `code` in `PAYMENT_DETAIL_KEYS` and the dead limit branch deleted (`refund-dialog.tsx`); `GET /payments/:id` sends `hasLiveRefund` and `bankTicked`, Withdraw hidden with the line beside it (`withdrawBlockedLine`, a plain `<p className="hint">`: the designer places it); "Make the PDF again" busy before the request (`refund-parts.tsx`).
+
+**AU21 (lead's message):** `email_suppressions` `NOT EXISTS` in `receipt-send.ts` (pre-check and INSERT WHERE) and in `REFUND_CONTACTS_SQL`; jobs also leaves out erased `h:` addresses in one read (`withoutErased`; without the key it throws and the message retries, as the email consumer). The finance Worker has no erasure key, so `receipt-send.ts` can't check the `h:` form (an erased contact is anonymised there, which the rule already refuses; the email consumer stays the guard for a re-typed erased address).
+
+**Statement counts (≤ 45):** reversal 4–5 (main, audit, item, bell, event move); receipt failure 2; withdraw unchanged plus nothing; refund insert unchanged; PayPal sweep expiry 2 (was 1) in a 9-statement read batch.
+
+### Commands and results
+- `bash tools/heavy.sh --log af1-admin-full pnpm --filter @techaust/admin test`: 194 files, **5,272 passed**.
+- `bash tools/heavy.sh --log af1-pkgs pnpm --filter @techaust/{db,core,email,jobs,portal} test`: db 1,060, core 2,708 (coverage gate passed), email 202, jobs 772, portal 950, all passed.
+- `bash tools/heavy.sh --log af1-typecheck{,2} … typecheck` (admin, core, jobs, db, email, portal): 0 errors.
+- `bash tools/heavy.sh --log af1-build-admin pnpm --filter @techaust/admin --filter @techaust/jobs build`: budgets ok (front 121,265; API 556,285; finance 433,812; invoices 564,184; jobs 863,885 bytes; start-up ≤ 122.5 ms).
+- `node scripts/check-migrations.mjs`: ok. `pnpm lint` (once, final): 3 format errors in my generated `0081/0082` snapshot and journal JSON, fixed with `biome format` and re-checked; the remaining 14 warnings and 8 infos are in files this branch doesn't touch.
+
+### Not verified
+- Real gateways: Stripe's `refund.failed` / `requires_action` after success, Razorpay's `amount_refunded` on a partly refunded payment, PayPal's PARTIALLY_REFUNDED capture (no refunded total read) are from the vendors' documented shapes and the simulator, not a sandbox.
+- The `refund.reversed` email is a plain builder template with placeholder words; no designer pass, no real mail client.
+- Rows-read figures are local workerd, not staging D1.
+- `pnpm check` as a whole (CSS collisions, web guards) was not run; only the migration guard.
+
+### Open questions
+1. **The owner (07-ZT C1–C3):** approve the client email about a refund that came back (recommendations in the appendix). Until then `APPROVED_07ZT` is false and nothing is sent outside local.
+2. **The lead (07-ZT lines 1–8):** the staff lines drafted for review items, the receipt bells, `reduction_exists`, `payment_linked` and the hidden-Withdraw lines.
+3. **The lead:** a reversed refund that had come from a PENDING gateway payment (L33: the payment was rejected when the refund succeeded) reverses the refund row, but the money does not come back as credit: a rejected payment holds none. The `refund_reversed` item tells the Owner; should such a payment be re-opened (a new trigger move `rejected → pending_verification`), or is the item enough? I left it as item only.
+4. **The lead:** an active bank tick on a refund that is later reversed stays (the refund's debit was seen in the statement); say if it should be removed with the reversal.
+5. **Merge order:** two migrations, `0081_audit_money` and `0082_audit_money_triggers`; AF2 renumbers after them.
