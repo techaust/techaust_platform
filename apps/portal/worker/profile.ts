@@ -43,8 +43,11 @@ export const MY_REQUESTS_AFTER_SQL = `SELECT ${REQUEST_COLS} FROM client_request
 export const SELF_UPDATE_SQL = `UPDATE contacts SET name = ?3, phone = ?4, updated_at = ?5
    WHERE id = ?2 AND client_id = ?1 AND updated_at = ?6 AND portal_access = 1 AND anonymised_at IS NULL`;
 
-/** 409: the row changed since the page read it. The SPA shows copy line C17; the message stays a marked placeholder until the owner approves the copy page. */
-export const STALE_VERSION = { code: "stale_version", message: "[Placeholder] C17" } as const;
+/** 409: the row changed since the page read it. The SPA shows copy line C17; the message carries the same owner-approved 07-ZP C17 words (full audit AU13). */
+export const STALE_VERSION = {
+  code: "stale_version",
+  message: "Your details changed in another window. Reload to see them.",
+} as const;
 
 type MeRow = { name: string; email: string; phone: string | null; title: string | null; updated_at: number };
 type ColleagueRow = { name: string; title: string | null; you: number };

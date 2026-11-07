@@ -198,6 +198,8 @@ describe("review part 1, findings 5 and 7: no unapproved words stored outside lo
         "adopted",
       );
       expect(fakes.email.map((s) => (s.body as { template: string }).template)).toEqual(["receipt.sent"]);
+      // full audit AU13 (B3 L1): the email's link opens the portal's receipts page
+      expect((fakes.email[0]?.body as { data: { url: string } }).data.url).toMatch(/\/receipts$/);
       expect((await pdfOf(id))?.pdf_sha256).toMatch(/^[0-9a-f]{64}$/);
     } finally {
       gate.mockRestore();

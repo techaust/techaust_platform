@@ -18,7 +18,12 @@ import * as z from "zod/mini";
 import { clientGoneSql } from "./anonymised.ts";
 import { type ApiError, type AppEnv, actor, type Ctx, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
 import { afterSend } from "./document-events.ts";
-import { checkRecipientIds, invalidRecipients } from "./document-links.ts";
+import {
+  checkRecipientIds,
+  invalidRecipients,
+  recipientHashes,
+  VALID_RECIPIENTS_SQL,
+} from "./document-links.ts";
 import { customLinesOf } from "./document-view.ts";
 import { readContext } from "./documents.ts";
 import { body, idParam, param, refusedWith, STALE_VERSION } from "./http.ts";
@@ -89,7 +94,9 @@ export const documentSend = new Hono<AppEnv>().post(
     if (d.frozen_at !== null || d.status !== "draft") return err(c, FROZEN, 409);
     if (d.updated_at !== f.expectedUpdatedAt) return err(c, STALE_VERSION, 409);
     if (ctx.client.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
-    const invalid = await invalidRecipients(db, d.client_id, shape.ids);
+    // Full audit AU21: a recipient whose emails are stopped (plainly, or as an erased address by its keyed hash) is refused like one without portal access.
+    const hashes = await recipientHashes(c.env, db, d.client_id, shape.ids);
+    const invalid = await invalidRecipients(db, d.client_id, shape.ids, VALID_RECIPIENTS_SQL, hashes);
     if (invalid.length > 0) return recipientRefusal(c, RECIPIENT_INVALID, 409, invalid);
 
     const settings = readSettings(ctx.settingsRows);
@@ -202,7 +209,7 @@ export const documentSend = new Hono<AppEnv>().post(
       computedJson: seal.computedJson,
       snapshotSha256: seal.snapshotSha256,
       issuedBy: u.id,
-      sends: { rows: sendRows, attachPdf: f.attachPdf ?? null },
+      sends: { rows: sendRows, attachPdf: f.attachPdf ?? null, erasedHashes: hashes },
       expected: {
         updatedAt: d.updated_at,
         contentSha256: computation.hash,
@@ -257,6 +264,7 @@ export const documentSend = new Hono<AppEnv>().post(
         needsApproval,
         shape.ids,
         d.version === 1 ? { series, fy: fyOf(now).token, max: maxNumber(settings.numbering[series]) } : null,
+        hashes,
       );
 
     afterSend(c, { documentId: id, groupId, version: d.version });
@@ -284,6 +292,8 @@ async function explain(
   recipientIds: readonly string[],
   /** A first version takes a number: its series, the FY it was taken in, and the series' highest number (A0 6). Null for a later version. */
   numbered: { series: string; fy: string; max: number } | null,
+  /** AU21: the recipients' keyed hashes the send was checked with (null: the plain stop only). */
+  hashes: string | null,
 ) {
   const row = await c.env.DB.prepare(
     `SELECT d.client_id, d.status, d.frozen_at, d.updated_at, d.content_sha256, ${clientGoneSql("d.client_id")} AS gone,
@@ -318,7 +328,13 @@ async function explain(
   if (numbered && (row.next_no ?? 1) > numbered.max) return refuse(SERIES_FULL, 409);
   if (approvalNeeded && row.approved !== 1) return refuse(APPROVAL_REQUIRED, 403);
   // A recipient lost portal access (or was anonymised) between the read and the batch: the whole send was refused, no number was taken.
-  const invalid = await invalidRecipients(c.env.DB, row.client_id, recipientIds);
+  const invalid = await invalidRecipients(
+    c.env.DB,
+    row.client_id,
+    recipientIds,
+    VALID_RECIPIENTS_SQL,
+    hashes,
+  );
   if (invalid.length > 0) return recipientRefusal(c, RECIPIENT_INVALID, 409, invalid);
   return refuse(STALE_VERSION, 409);
 }

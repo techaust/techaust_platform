@@ -8,11 +8,13 @@
 import { downloadHeaders } from "@techaust/core/file-types";
 import { uuidv7 } from "@techaust/core/ids";
 import { todayIst as todayIstText } from "@techaust/core/offers";
+import { NOT_STOPPED_SQL } from "@techaust/db/issue";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql, storedPdfRefusal } from "./anonymised.ts";
 import { type ApiError, type AppEnv, actor, err, mutate, NOT_FOUND } from "./context.ts";
 import { pdfFilename } from "./document-pdf.ts";
+import { erasureHashMap } from "./erasure-key.ts";
 import { body, idParam, param } from "./http.ts";
 import { CLIENT_GONE, NOT_A_QUOTE } from "./quote-model.ts";
 
@@ -45,9 +47,11 @@ export const resendBody = z.strictObject({
   attachPdf: z.optional(z.boolean()),
 });
 
-/** The contacts of `clientId` among `ids` that may receive an offer (portal access on, not anonymised). Placeholders: ?1 client, ?2 JSON array of ids. */
-export const VALID_RECIPIENTS_SQL =
-  "SELECT c.id, c.name, lower(c.email) AS email, c.is_billing FROM contacts c WHERE c.client_id = ?1 AND c.portal_access = 1 AND c.anonymised_at IS NULL AND c.id IN (SELECT value FROM json_each(?2))";
+/**
+ * The contacts of `clientId` among `ids` that may receive an offer (portal access on, not anonymised, and (full audit AU21) emails to the address not
+ * stopped, plainly or as erased). Placeholders: ?1 client, ?2 JSON array of ids, ?3 the keyed hashes of their addresses or NULL (`recipientHashes`).
+ */
+export const VALID_RECIPIENTS_SQL = `SELECT c.id, c.name, lower(c.email) AS email, c.is_billing FROM contacts c WHERE c.client_id = ?1 AND c.portal_access = 1 AND c.anonymised_at IS NULL AND ${NOT_STOPPED_SQL("c.email", "?3")} AND c.id IN (SELECT value FROM json_each(?2))`;
 
 /** The same rule for an invoice-family document: the contact must also be allowed to see finance (POR-03; the portal refuses the rest). */
 export const VALID_INVOICE_RECIPIENTS_SQL = VALID_RECIPIENTS_SQL.replace(
@@ -74,16 +78,42 @@ export function checkRecipientIds(ids: readonly string[]): RecipientCheck {
   return { ok: true, ids: distinct };
 }
 
-/** Which of `ids` may NOT receive the offer of `clientId` (another client's, no portal access, anonymised, unknown). */
+/** Which of `ids` may NOT receive the offer of `clientId` (another client's, no portal access, anonymised, unknown, emails stopped). */
 export async function invalidRecipients(
   db: D1Database,
   clientId: string,
   ids: readonly string[],
   sql: string = VALID_RECIPIENTS_SQL,
+  erasedHashes: string | null = null,
 ): Promise<string[]> {
-  const ok = await db.prepare(sql).bind(clientId, JSON.stringify(ids)).all<{ id: string }>();
+  const ok = await db.prepare(sql).bind(clientId, JSON.stringify(ids), erasedHashes).all<{ id: string }>();
   const good = new Set(ok.results.map((r) => r.id));
   return ids.filter((id) => !good.has(id));
+}
+
+/**
+ * Full audit AU21: the keyed hashes (`{address: hash}`) of the named contacts' addresses, so a send can refuse an address stopped as erased. Only on a Worker
+ * that holds `ERASURE_HASH_KEY` (the admin API: offers); elsewhere null, and the email pipeline's own check (`apps/jobs/src/email.ts`) stays the guard for
+ * that form. One read of at most five rows.
+ */
+export async function recipientHashes(
+  env: object,
+  db: D1Database,
+  clientId: string,
+  ids: readonly string[],
+): Promise<string | null> {
+  const key: unknown = Reflect.get(env, "ERASURE_HASH_KEY");
+  if (typeof key !== "string" || key.length < 32) return null;
+  const { results } = await db
+    .prepare(
+      "SELECT lower(email) AS email FROM contacts WHERE client_id = ?1 AND id IN (SELECT value FROM json_each(?2))",
+    )
+    .bind(clientId, JSON.stringify(ids))
+    .all<{ email: string }>();
+  return erasureHashMap(
+    env,
+    results.map((r) => r.email),
+  );
 }
 
 const QUOTES = "('proposal', 'estimate')";
@@ -125,7 +155,9 @@ export const documentLinks = new Hono<AppEnv>()
     const cl = client?.results[0] as { attach_pdf: number; anonymised_at: number | null } | undefined;
     if (!d || !cl) return err(c, NOT_FOUND, 404);
     if (cl.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
-    const invalid = await invalidRecipients(db, d.client_id, shape.ids);
+    // Full audit AU21: a recipient whose emails are stopped is refused like one without portal access.
+    const hashes = await recipientHashes(c.env, db, d.client_id, shape.ids);
+    const invalid = await invalidRecipients(db, d.client_id, shape.ids, VALID_RECIPIENTS_SQL, hashes);
     if (invalid.length > 0)
       return c.json(
         {
@@ -149,11 +181,12 @@ export const documentLinks = new Hono<AppEnv>()
           `INSERT INTO document_sends (id, document_id, version_group_id, client_id, contact_id, email, attach_pdf, kind, queued_at, created_by, created_at)
            SELECT json_extract(j.value, '$.id'), d.id, d.version_group_id, d.client_id, c.id, lower(c.email), ?3, 'resend', NULL, ?4, ?5
            FROM documents d JOIN json_each(?2) j JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+             AND ${NOT_STOPPED_SQL("c.email", "?7")}
            WHERE d.id = ?1 AND d.type IN ${QUOTES} AND d.frozen_at IS NOT NULL AND d.redacted_at IS NULL AND d.status IN ('sent', 'viewed') AND d.valid_until >= ?6 AND ${NEWEST}
            AND NOT ${clientGoneSql("d.client_id")}
-           AND (SELECT count(*) FROM contacts c2 WHERE c2.client_id = d.client_id AND c2.portal_access = 1 AND c2.anonymised_at IS NULL AND c2.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?2))) = json_array_length(?2)`,
+           AND (SELECT count(*) FROM contacts c2 WHERE c2.client_id = d.client_id AND c2.portal_access = 1 AND c2.anonymised_at IS NULL AND ${NOT_STOPPED_SQL("c2.email", "?7")} AND c2.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?2))) = json_array_length(?2)`,
         )
-        .bind(id, JSON.stringify(rows), attach ? 1 : 0, u.id, t, today),
+        .bind(id, JSON.stringify(rows), attach ? 1 : 0, u.id, t, today, hashes),
       action: "document.resend",
       entityType: "document",
       entityId: id,

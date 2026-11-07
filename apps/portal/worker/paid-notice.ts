@@ -13,6 +13,7 @@
 // the access row only if the audit row exists; a read in the same batch explains a refusal. Then the staff bells through jobs (`portal.alert`, L9).
 import { uuidv7 } from "@techaust/core/ids";
 import { issueDateOf, normaliseReference } from "@techaust/core/invoices";
+import { formatMoney, money } from "@techaust/core/money";
 import { NOTICES_OPEN_MAX } from "@techaust/core/portal";
 import { noticeNoteOf, paidNotice, tokenPaidNotice } from "@techaust/core/portal-schemas";
 import { accessStmt, auditStmt } from "@techaust/db/log";
@@ -54,7 +55,7 @@ export const NOTICE_INSERT_SQL = `INSERT INTO payment_notices (id, client_id, do
  * `link_live` 0: the link stopped opening between `open()` and this batch (a 404, as a link that never opened).
  */
 export const NOTICE_AFTER_SQL = `SELECT (SELECT 1 FROM payment_notices w WHERE w.id = ?3 AND w.client_id = ?1) AS written, ${noticeRefusalSql("d")} AS refusal,
-     ${VERDICT} AS verdict, d.balance_minor, ${OPEN_COUNT} AS open_count, ${DUPLICATE} AS duplicate, ${LINK_LIVE} AS link_live
+     ${VERDICT} AS verdict, d.balance_minor, d.currency, ${OPEN_COUNT} AS open_count, ${DUPLICATE} AS duplicate, ${LINK_LIVE} AS link_live
    FROM documents d WHERE d.client_id = ?1 AND d.id = ?2 AND d.frozen_at IS NOT NULL AND d.type IN (${TYPES_SQL}) AND ${openOrWithdrawnSql("d")}`;
 
 type After = {
@@ -62,13 +63,30 @@ type After = {
   refusal: string | null;
   verdict: string;
   balance_minor: number;
+  currency: string;
   open_count: number;
   duplicate: number;
   link_live: number;
 };
 
-/** The refusals (the SPA words them: C15). `not_payable` carries `reason` (core `NOTICE_REFUSALS`), `amount_above_balance` the balance. */
-const refusal = (code: string) => ({ code, message: "[Placeholder] C15" });
+/**
+ * The refusals: the SPA words them by code (C15), and since the full audit (AU13, B3 M3) the `message` carries the same owner-approved 07-ZP C15 words
+ * (2026-11-05), never a placeholder. `not_payable` carries `reason` (core `NOTICE_REFUSALS`), `amount_above_balance` the balance.
+ */
+export const NOTICE_REFUSAL_WORDS: Readonly<Record<string, string>> = {
+  date_in_future: "The date can't be in the future.",
+  date_before_issue: "The date can't be before the invoice date.",
+  notice_duplicate: "We already have a notice with this reference.",
+  notice_open_limit: "You've told us about 3 payments for this document. We'll confirm them soon.",
+  not_payable: "This document can't take a payment notice.",
+};
+const refusal = (code: string, balance?: { minor: number; currency: string }) => ({
+  code,
+  message:
+    code === "amount_above_balance" && balance
+      ? `That's more than the balance due (${formatMoney(money(balance.minor, balance.currency === "USD" ? "USD" : "INR"))}).`
+      : (NOTICE_REFUSAL_WORDS[code] ?? (NOTICE_REFUSAL_WORDS.not_payable as string)),
+});
 
 type NoticeFacts = {
   clientId: string;
@@ -173,7 +191,11 @@ async function writeNotice(c: Ctx, f: NoticeFacts): Promise<Response> {
     return c.json({ error: refusal("not_payable"), reason: after.refusal, request_id: c.var.rid }, 409);
   if (after.verdict === "amount_above_balance")
     return c.json(
-      { error: refusal("amount_above_balance"), balanceMinor: after.balance_minor, request_id: c.var.rid },
+      {
+        error: refusal("amount_above_balance", { minor: after.balance_minor, currency: after.currency }),
+        balanceMinor: after.balance_minor,
+        request_id: c.var.rid,
+      },
       400,
     );
   if (after.verdict === "date_in_future" || after.verdict === "date_before_issue")

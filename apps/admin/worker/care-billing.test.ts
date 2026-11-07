@@ -602,6 +602,30 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
     expect(bell?.title).not.toContain("issued and emailed");
   });
 
+  it("full audit AU19: a billing contact whose emails are stopped is nobody to email: issued, notEmailed, no sends, no reminders, the bell says not emailed", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const d = await draft(w);
+    expect(d.autoEligible).toBe(true);
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO email_suppressions (email, reason, at) SELECT lower(email), 'hard_bounce', 1 FROM contacts WHERE client_id = (SELECT client_id FROM documents WHERE id = ?1)",
+    )
+      .bind(d.documentId)
+      .run();
+    const r = await issueCareDraft(pdfQueue().env, { documentId: d.documentId as string });
+    expect(r).toMatchObject({ result: "issued", notEmailed: true });
+    expect(await rows("SELECT id FROM document_sends WHERE document_id = ?", d.documentId)).toEqual([]);
+    expect(await rows("SELECT id FROM reminders WHERE document_id = ?", d.documentId)).toEqual([]);
+    expect(
+      (
+        await one<{ title: string }>(
+          "SELECT title FROM notifications WHERE kind = 'care.issued' AND entity_id = ?",
+          d.documentId,
+        )
+      )?.title,
+    ).toContain("wasn't emailed");
+  });
+
   it("with nobody to email it is still issued (the money is owed) and says notEmailed; no sends, no reminders", async () => {
     const w = await world({ contact: false });
     clock(at("2026-11-05"));

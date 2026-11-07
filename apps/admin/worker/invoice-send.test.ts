@@ -4,6 +4,7 @@ import { ANONYMISED_CONTACT } from "@techaust/core/clients";
 import { toIsoDate, toIst } from "@techaust/core/dates";
 import { uuidv7 } from "@techaust/core/ids";
 import { describe, expect, it, vi } from "vitest";
+import { erasureHash } from "./erasure-key.ts";
 import { cancelUnlinkedSendsSql, type SendRow, sendsView } from "./invoice-send.ts";
 import { insert, mkClient, mkContact } from "./test-clients.ts";
 import { call, captureQueue, one, rows, sessionFor } from "./test-helpers.ts";
@@ -111,6 +112,33 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
     expect((await send(s, made.id, { contactIds: ids, extra: 1 })).status).toBe(400); // strict body
     expect(await sendsOf(made.id)).toEqual([]);
     expect(await remindersOf(made.id)).toEqual([]);
+  });
+
+  it("full audit AU21: a recipient whose emails are stopped (by its address, or as an erased address by its keyed hash) is refused; nothing is written", async () => {
+    const { s, made, ids } = await issued(1);
+    const stopped = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
+    await env.DB.prepare(
+      "INSERT INTO email_suppressions (email, reason, at) SELECT lower(email), 'complaint', 1 FROM contacts WHERE id = ?1",
+    )
+      .bind(stopped.id)
+      .run();
+    const r = await send(s, made.id, { contactIds: [ids[0], stopped.id] });
+    expect(r.status).toBe(409);
+    expect(await json(r)).toMatchObject({ error: { code: "recipient_invalid" }, contactIds: [stopped.id] });
+    // the erased form: the stop row holds only the keyed hash of the address (a contact added again after an erasure)
+    const erased = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
+    const email =
+      (await one<{ email: string }>("SELECT email FROM contacts WHERE id = ?1", erased.id))?.email ?? "";
+    await env.DB.prepare("INSERT INTO email_suppressions (email, reason, at) VALUES (?1, 'erased', 1)")
+      .bind(`h:${await erasureHash(env, email)}`)
+      .run();
+    const r2 = await send(s, made.id, { contactIds: [erased.id] });
+    expect(r2.status).toBe(409);
+    expect(await json(r2)).toMatchObject({ error: { code: "recipient_invalid" }, contactIds: [erased.id] });
+    expect(await sendsOf(made.id)).toEqual([]);
+    expect(await remindersOf(made.id)).toEqual([]);
+    // the others still go
+    expect((await send(s, made.id, { contactIds: ids })).status).toBe(200);
   });
 
   it("Owner and Staff may send (Q42); Sales and the Accountant may not; no session is 401", async () => {

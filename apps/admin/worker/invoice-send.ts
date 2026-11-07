@@ -16,7 +16,12 @@ import { invoiceSendStatements } from "@techaust/db/issue";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type ApiError, type AppEnv, actor, type Ctx, err, mutate, NOT_FOUND } from "./context.ts";
-import { checkRecipientIds, invalidRecipients, VALID_INVOICE_RECIPIENTS_SQL } from "./document-links.ts";
+import {
+  checkRecipientIds,
+  invalidRecipients,
+  recipientHashes,
+  VALID_INVOICE_RECIPIENTS_SQL,
+} from "./document-links.ts";
 import { body, idParam, param } from "./http.ts";
 import { INVOICE_TYPES_SQL, INVOICE_VOID } from "./invoice-model.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
@@ -136,7 +141,10 @@ export const invoiceSend = new Hono<AppEnv>()
     if (d.frozen_at === null || d.status === "draft") return err(c, NOT_ISSUED, 409);
     if (d.status === "void") return err(c, INVOICE_VOID, 409);
     if (d.anonymised_at !== null) return err(c, CLIENT_GONE, 409);
-    const invalid = await invalidRecipients(db, d.client_id, shape.ids, VALID_INVOICE_RECIPIENTS_SQL);
+    // Full audit AU21: a recipient whose emails are stopped is refused like one without finance or portal access (the erased form only where this Worker
+    // holds the erasure key; the invoices Worker has none, so `hashes` is null there and the email pipeline stays the guard for that form).
+    const hashes = await recipientHashes(c.env, db, d.client_id, shape.ids);
+    const invalid = await invalidRecipients(db, d.client_id, shape.ids, VALID_INVOICE_RECIPIENTS_SQL, hashes);
     if (invalid.length > 0) return recipientRefusal(c, RECIPIENT_INVALID, 409, invalid);
 
     const now = Date.now();
@@ -159,6 +167,7 @@ export const invoiceSend = new Hono<AppEnv>()
       now,
       frozenAt: null,
       reminders: rows.map((r) => ({ id: uuidv7(), offset: r.offset, dueAt: r.dueAt })),
+      erasedHashes: hashes,
     });
     const sends = statements[0] as D1PreparedStatement;
     const reminders = statements[1];
@@ -180,7 +189,7 @@ export const invoiceSend = new Hono<AppEnv>()
     });
     if (!done) {
       // The statement wrote nothing: say why, in the order a person can act on it (a recipient lost access, the invoice went void or the client was anonymised in between).
-      const again = await invalidRecipients(db, d.client_id, shape.ids, VALID_INVOICE_RECIPIENTS_SQL);
+      const again = await invalidRecipients(db, d.client_id, shape.ids, VALID_INVOICE_RECIPIENTS_SQL, hashes);
       if (again.length > 0) return recipientRefusal(c, RECIPIENT_INVALID, 409, again);
       const now2 = await readDoc(c, id);
       if (!now2) return err(c, NOT_FOUND, 404);

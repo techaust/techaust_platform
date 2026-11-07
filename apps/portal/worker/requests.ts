@@ -45,9 +45,15 @@ export const REQUEST_AFTER_SQL = `SELECT (SELECT r.id FROM client_requests r WHE
      EXISTS (SELECT 1 FROM client_requests o WHERE o.contact_id = ?2 AND o.kind = ?4 AND o.status = 'open' AND o.client_id = ?1) AS open_of_kind,
      ${REQUESTS_TODAY_SQL("?2", "?5")} AS today`;
 
-/** The refusals (the SPA words them: C24). */
-export const REQUEST_OPEN = { code: "request_open", message: "[Placeholder] C24" } as const;
-export const TOO_MANY_REQUESTS = { code: "too_many_requests", message: "[Placeholder] C24" } as const;
+/** The refusals (the SPA words them by code: C24; the message carries the same owner-approved 07-ZP C24 words, full audit AU13). */
+export const REQUEST_OPEN = {
+  code: "request_open",
+  message: "You already have an open request of this kind. We'll answer it first.",
+} as const;
+export const TOO_MANY_REQUESTS = {
+  code: "too_many_requests",
+  message: "You've sent several requests today. Try again tomorrow, or email contact@techaust.com.",
+} as const;
 
 /**
  * L9: asks the jobs Worker for the staff bells of the audit row just written. In the execution context, after the answer; a failed send is one log line

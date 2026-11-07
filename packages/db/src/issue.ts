@@ -92,8 +92,26 @@ export type SendArgs = {
    * client's), so a recipient who lost access between the read and the batch refuses the WHOLE send (no number is taken); the
    * `document_sends` rows are written after the freeze, in the same batch, guarded on the freeze having happened. `attachPdf` null: the client's setting.
    */
-  sends?: { rows: readonly { id: string; contactId: string }[]; attachPdf: boolean | null };
+  sends?: {
+    rows: readonly { id: string; contactId: string }[];
+    attachPdf: boolean | null;
+    /**
+     * Full audit M6–M7 AU21: `{address: keyed hash}` of the recipients (`erasureHashMap`), on a Worker that holds the erasure key, so a recipient whose
+     * address is stopped as erased (`h:` + hash) refuses the send too; null: the plain stop only.
+     */
+    erasedHashes?: string | null;
+  };
 };
+
+/**
+ * Full audit M6–M7 AU21 (B4 L2), AU19: an address (`email`, any expression) that emails are not stopped to: no stop row for the address, and (`map`, a
+ * placeholder bound to a JSON `{address: keyed hash}` or NULL) none for its keyed hash (`h:` + hash, the erased form, Settled by the lead on the safest
+ * reading, 2026-11-06 (08-C RB-46)). The send routes hold it in their WHERE, so a stopped recipient is refused like one without portal access, the
+ * `document_sends` rows and the `queued` count are only ever real sends, and the email pipeline's own check (`apps/jobs/src/email.ts`) stays the last guard.
+ */
+export const NOT_STOPPED_SQL = (email: string, map: string): string =>
+  `NOT EXISTS (SELECT 1 FROM email_suppressions es WHERE es.email = lower(${email})
+     OR es.email = 'h:' || (SELECT hj.value FROM json_each(coalesce(${map}, '{}')) hj WHERE hj.key = lower(${email})))`;
 
 export type SendStatements = {
   main: D1PreparedStatement[];
@@ -139,8 +157,10 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
         number: first("number"),
         display: first("number_display"),
       };
+  // AU21: a recipient whose address is stopped (plainly or as erased, `?19` the hash map) is not a valid one: the whole send is refused, as for one without
+  // portal access.
   const recipientGuard = a.sends
-    ? " AND (SELECT count(*) FROM contacts rc WHERE rc.client_id = documents.client_id AND rc.portal_access = 1 AND rc.anonymised_at IS NULL AND rc.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?17))) = ?18"
+    ? ` AND (SELECT count(*) FROM contacts rc WHERE rc.client_id = documents.client_id AND rc.portal_access = 1 AND rc.anonymised_at IS NULL AND ${NOT_STOPPED_SQL("rc.email", "?19")} AND rc.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?17))) = ?18`
     : "";
   const approval = a.expected.approvalNeeded
     ? " AND EXISTS (SELECT 1 FROM approvals ap WHERE ap.document_id = documents.id AND ap.kind = 'discount' AND ap.status = 'approved' AND ap.content_sha256 = documents.content_sha256)"
@@ -150,7 +170,7 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
   const seriesRoom = a.isFirstVersion ? `\n         AND ${nextNo} <= ${a.maxNumber}` : "";
   // ?1 id, ?2 series, ?3 fy, ?4 group, ?5 pattern, ?6 now, ?7 issue date, ?8 valid until, ?9 recipient, ?10 issuer, ?11 computed,
   // ?12 snapshot sha, ?13 issued by, ?14 expected updated_at, ?15 expected content sha, ?16 numbering version, and with recipients (M4.5)
-  // ?17 the recipients as JSON and ?18 their count. Exactly as many values as the highest placeholder are bound, whichever branch is built
+  // ?17 the recipients as JSON, ?18 their count and (AU21) ?19 their keyed hashes or NULL. Exactly as many values as the highest placeholder are bound, whichever branch is built
   // (D1 refuses more values than the highest placeholder).
   const freeze = db
     .prepare(
@@ -180,7 +200,7 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
       a.expected.updatedAt,
       a.expected.contentSha256,
       a.expected.numberingVersion,
-      ...(a.sends ? [JSON.stringify(a.sends.rows), a.sends.rows.length] : []),
+      ...(a.sends ? [JSON.stringify(a.sends.rows), a.sends.rows.length, a.sends.erasedHashes ?? null] : []),
     );
   const main: D1PreparedStatement[] = [guardStatement(db, a.documentId)];
   if (a.isFirstVersion) main.push(...counterStatements(db, a.series, a.fy));
@@ -216,6 +236,7 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
                    coalesce(?3, (SELECT cl.attach_pdf FROM clients cl WHERE cl.id = d.client_id)), 'send', NULL, ?4, ?5
                  FROM documents d JOIN json_each(?2) j
                    JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL
+                     AND ${NOT_STOPPED_SQL("c.email", "?6")}
                  WHERE d.id = ?1 AND d.status = 'sent' AND d.frozen_at = ?5`,
               )
               .bind(
@@ -224,6 +245,7 @@ export function sendStatements(db: D1Database, a: SendArgs): SendStatements {
                 a.sends.attachPdf === null ? null : a.sends.attachPdf ? 1 : 0,
                 a.issuedBy,
                 a.now,
+                a.sends.erasedHashes ?? null,
               ),
           ]
         : []),
@@ -1111,6 +1133,8 @@ export type InvoiceSendArgs = {
   frozenAt: number | null;
   /** The reminders to create, only on the FIRST send (core `reminderRows`): one row per future offset. `id` is the new `reminders` id. */
   reminders: readonly { id: string; offset: number; dueAt: number }[];
+  /** Full audit AU21: the recipients' keyed hashes (`NOT_STOPPED_SQL`), or null where the Worker has no erasure key (the plain stop only). */
+  erasedHashes?: string | null;
 };
 
 /** The types a send can be about, and the statuses it cannot (a draft is not frozen; a void document is never sent). Credit and debit notes are sent too (LD15). */
@@ -1131,15 +1155,17 @@ const REMINDED_TYPES = inList(REMINDER_TYPES);
 export function invoiceSendStatements(db: D1Database, a: InvoiceSendArgs): D1PreparedStatement[] {
   const valid = `d.id = ?1 AND d.type IN ${SENDABLE_TYPES} AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL AND (?7 IS NULL OR d.frozen_at = ?7)
        AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = d.client_id AND z.anonymised_at IS NOT NULL)
-       AND (SELECT count(*) FROM contacts c2 WHERE c2.client_id = d.client_id AND c2.portal_access = 1 AND c2.can_see_finance = 1 AND c2.anonymised_at IS NULL AND c2.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?2))) = json_array_length(?2)`;
+       AND (SELECT count(*) FROM contacts c2 WHERE c2.client_id = d.client_id AND c2.portal_access = 1 AND c2.can_see_finance = 1 AND c2.anonymised_at IS NULL AND ${NOT_STOPPED_SQL("c2.email", "?8")} AND c2.id IN (SELECT json_extract(value, '$.contactId') FROM json_each(?2))) = json_array_length(?2)`;
   const rows = JSON.stringify(a.rows);
   const first = a.rows[0];
+  // AU21: a recipient whose address is stopped (`?8` the keyed hashes or NULL) is not valid: the send writes nothing, so the rows are only real sends.
   const sends = db
     .prepare(
       `INSERT INTO document_sends (id, document_id, version_group_id, client_id, contact_id, email, attach_pdf, kind, queued_at, created_by, created_at)
        SELECT json_extract(j.value, '$.id'), d.id, d.id, d.client_id, c.id, lower(c.email), coalesce(?3, (SELECT cl.attach_pdf FROM clients cl WHERE cl.id = d.client_id)), ?4, NULL, ?5, ?6
        FROM documents d JOIN json_each(?2) j
          JOIN contacts c ON c.id = json_extract(j.value, '$.contactId') AND c.client_id = d.client_id AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
+           AND ${NOT_STOPPED_SQL("c.email", "?8")}
        WHERE ${valid}`,
     )
     .bind(
@@ -1150,6 +1176,7 @@ export function invoiceSendStatements(db: D1Database, a: InvoiceSendArgs): D1Pre
       a.createdBy,
       a.now,
       a.frozenAt,
+      a.erasedHashes ?? null,
     );
   if (a.reminders.length === 0 || !first) return [sends];
   const reminders = db

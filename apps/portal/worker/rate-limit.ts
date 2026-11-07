@@ -7,10 +7,15 @@ import { addressOf, type Limiter, RATE_LIMIT_RETRY_S, rateLimitKey, underLimit }
 import { createMiddleware } from "hono/factory";
 import { type AppEnv, type Ctx, rateLimited } from "./context.ts";
 
-/** The public rows limited per address and the binding of each: the two sign-in rows, and every emailed-link row (`/t/...`). */
+/**
+ * The public rows limited per address and the binding of each: the two sign-in rows and (full audit AU13, B3 L2) the sign-out, which reads and deletes the
+ * session; every emailed-link row (`/t/...`) and (AU13) the PayPal return, which reads the checkout and may call the finance Worker. No public row that
+ * touches D1 is left unlimited.
+ */
 export function addressBindingOf(path: string): "RL_SIGNIN" | "RL_LINKS" | null {
-  if (path === "/api/v1/auth/magic" || path === "/api/v1/auth/magic/verify") return "RL_SIGNIN";
-  if (path.startsWith("/api/v1/t/")) return "RL_LINKS";
+  if (path === "/api/v1/auth/magic" || path === "/api/v1/auth/magic/verify" || path === "/api/v1/auth/logout")
+    return "RL_SIGNIN";
+  if (path.startsWith("/api/v1/t/") || path === "/api/v1/pay/paypal/return") return "RL_LINKS";
   return null;
 }
 

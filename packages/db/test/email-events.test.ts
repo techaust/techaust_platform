@@ -537,6 +537,48 @@ describe("the hook's batch (sesEventStatements)", () => {
     expect((await bells(owner, id)).map((b) => b.kind)).toEqual(["email.bounced", "email.complaint"]);
   });
 
+  it("full audit AU20: a complaint about the weekly digest switches that member's digest off and stops nothing; a bounce of it still stops the address", async () => {
+    const owner = await mkMember("owner");
+    const other = await mkMember("owner");
+    const email = `${owner}@example.test`;
+    const digestLog = async (to: string) => {
+      const id = uuidv7();
+      await run(
+        "INSERT INTO email_log (id, to_email, template, entity_type, entity_id, ses_message_id, status, created_at, updated_at) VALUES (?1, ?2, 'digest.weekly', 'digest', ?3, ?4, 'delivered', 1, 1)",
+        id,
+        to,
+        `${owner}:2026-11-02`,
+        `m-${id}`,
+      );
+      return id;
+    };
+    const prefs = (userId: string) =>
+      first<{ digest_weekly: number; digest_off_via: string | null }>(
+        "SELECT digest_weekly, digest_off_via FROM staff_notification_prefs WHERE user_id = ?1",
+        userId,
+      );
+    const id = await digestLog(email);
+    expect((await apply(mkEvent(`m-${id}`, "complaint", { recipients: [email] }))).outcome).toBe("applied");
+    expect((await logRow(id))?.status).toBe("complained");
+    expect(await suppression(email)).toBeNull();
+    expect(await prefs(owner)).toEqual({ digest_weekly: 0, digest_off_via: "complaint" });
+    // no "emails to that address are stopped" bell (they aren't); another member's switches are untouched
+    expect(await bells(owner, id)).toEqual([]);
+    expect(await prefs(other)).toBeNull();
+    // a member who already switched it off keeps how they did it
+    await run(
+      "INSERT INTO staff_notification_prefs (user_id, digest_weekly, digest_off_via, updated_at) VALUES (?1, 0, 'settings', 1)",
+      other,
+    );
+    const id2 = await digestLog(`${other}@example.test`);
+    await apply(mkEvent(`m-${id2}`, "complaint", { recipients: [`${other}@example.test`] }));
+    expect(await prefs(other)).toEqual({ digest_weekly: 0, digest_off_via: "settings" });
+    // a Permanent bounce of a digest is not a spam report: the address is stopped as before
+    const id3 = await digestLog(email);
+    await apply(mkEvent(`m-${id3}`, "bounce", { recipients: [email] }));
+    expect((await suppression(email))?.reason).toBe("hard_bounce");
+  });
+
   it("Transient and Undetermined bounces move the row but stop nothing; a Permanent one after them is applied and stops the address", async () => {
     const email = `soft-${uuidv7()}@example.test`;
     const contact = await mkContact(await mkClientRow(), { email });
