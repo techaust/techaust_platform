@@ -249,6 +249,7 @@ CPU: the admin check hashes at most one PDF (native digest, ~300 KB typical) onl
 ## Handover
 - 2026-11-07 20:15 IST: branch made from `origin/main` (0ec9e8b); analyst drafting the Tier A brief.
 - 2026-11-07 20:30 IST: USAGE 14 at 20:29; origin/main (#193) taken in.
+- 2026-11-07 22:30 IST: USAGE 71; weekly all-models 82 %: only the planned agents (reviewer, then a re-check if needed). Merge order: #194, #195, #196, this branch, then the LUT fold (0089); this branch keeps 0087–0088.
 - 2026-11-07 21:45 IST: early check GO; builder b2 (changes 1–9, portal, attachments) and designer d1 started in parallel.
 - 2026-11-07 21:30 IST: builder b1 merged (head dfb06c9); worktree removed; analyst early check started (USAGE 53 at 21:30).
 - 2026-11-07: owner's answers recorded (Q1 B, Q2 A, 07-ZV approved); builder told.
