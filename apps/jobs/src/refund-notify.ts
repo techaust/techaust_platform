@@ -189,7 +189,7 @@ export async function sendRefundNotify(env: Pick<Env, "EMAIL_QUEUE">, refundId: 
 
 // ---- M6–M7 audit AU1: a refund that came back (`refund.reversed`) ---------------------------------------------------------------------------------------------
 
-/** 07-ZT's client lines approved (one switch, off until the owner approves them); behind an object so a test can stand in for the flipped switch. */
+/** 07-ZT's client lines approved (one switch, on since the owner's approval of 2026-11-07); behind an object so a test can force it off. */
 export const refundReversedCopyGate = { approved: (): boolean => APPROVED_07ZT };
 
 /**
@@ -204,7 +204,7 @@ export const REFUND_REVERSED_ROW_SQL = refundRowSql(
 /**
  * `refund.reversed {refundId}` (M6–M7 audit AU1; from jobs after `GatewayEvents.processEvent` reversed one of our refunds): ONE batch (the row with every rule in
  * SQL, the finance contacts, the terms row), then outside the send window the same message again with `delaySeconds`, else one `refund.reversed` per contact,
- * entity `{type: "refund_reversal", id}` so a redelivery sends once. Held outside "local" while 07-ZT is unapproved (`refundReversedCopyGate`).
+ * entity `{type: "refund_reversal", id}` so a redelivery sends once. Held outside "local" while the 07-ZT gate is off (`refundReversedCopyGate`; on since 2026-11-07).
  */
 export async function processRefundReversed(
   env: Pick<Env, "DB" | "EMAIL_QUEUE" | "PORTAL_URL" | "ENVIRONMENT">,
