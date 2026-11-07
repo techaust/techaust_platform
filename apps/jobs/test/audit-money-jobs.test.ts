@@ -12,7 +12,9 @@ import {
   processRefundNotify,
   processRefundReversed,
   REFUND_REVERSED_ROW_SQL,
+  REFUND_ROW_SQL,
   refundReversedCopyGate,
+  refundRowSql,
 } from "../src/refund-notify.ts";
 import { all, fakes, makeEnv, mkClient, mkContact, mkDoc, run, staff, useFakes } from "./billing-fixtures.ts";
 
@@ -280,6 +282,47 @@ describe("AU1: the email about a refund that came back (`refund.reversed`, 07-ZT
       "r.status = 'failed' AND r.reversed_at IS NOT NULL AND p.status = 'confirmed'",
     );
     expect(REFUND_REVERSED_ROW_SQL).not.toContain("r.status = 'succeeded'");
+  });
+
+  it("AU61 (review L4): both reads come from one builder, differing only in the status clause", () => {
+    expect(REFUND_ROW_SQL).toBe(refundRowSql("r.status = 'succeeded'"));
+    expect(REFUND_REVERSED_ROW_SQL).toBe(
+      refundRowSql("r.status = 'failed' AND r.reversed_at IS NOT NULL AND p.status = 'confirmed'"),
+    );
+    expect(REFUND_ROW_SQL).toContain(
+      "WHERE r.id = ?1 AND r.status = 'succeeded' AND r.origin <> 'chargeback'",
+    );
+    expect(REFUND_REVERSED_ROW_SQL).toContain(
+      "WHERE r.id = ?1 AND r.status = 'failed' AND r.reversed_at IS NOT NULL AND p.status = 'confirmed' AND r.origin <> 'chargeback'",
+    );
+    const marker = "§";
+    const [head, tail] = refundRowSql(marker).split(marker);
+    expect(REFUND_ROW_SQL.startsWith(head ?? "x") && REFUND_ROW_SQL.endsWith(tail ?? "x")).toBe(true);
+    expect(
+      REFUND_REVERSED_ROW_SQL.startsWith(head ?? "x") && REFUND_REVERSED_ROW_SQL.endsWith(tail ?? "x"),
+    ).toBe(true);
+  });
+
+  it("AU61 (review L7): outside the send window both consumers put the message back before keying any address (no key needed); inside it, no key is a retry", async () => {
+    const reversed = await refundOf({ reversed: true });
+    await mkContact(reversed.clientId);
+    const stands = await refundOf();
+    await mkContact(stands.clientId);
+    const night = Date.parse("2026-11-05T16:00:00Z"); // 21:30 IST
+    const noKey = () => makeEnv({ ENVIRONMENT: "local", ERASURE_HASH_KEY: undefined });
+    expect(
+      await processRefundReversed(noKey(), { kind: "refund.reversed", refundId: reversed.refundId }, night),
+    ).toBe("delayed");
+    expect(
+      await processRefundNotify(noKey(), { kind: "refund.notify", refundId: stands.refundId }, night),
+    ).toBe("delayed");
+    expect(fakes.email.map((s) => s.body)).toEqual([
+      { kind: "refund.reversed", refundId: reversed.refundId },
+      { kind: "refund.notify", refundId: stands.refundId },
+    ]);
+    await expect(
+      processRefundNotify(noKey(), { kind: "refund.notify", refundId: stands.refundId }, IN_WINDOW),
+    ).rejects.toThrow();
   });
 
   it("AU33 (M1): a reversed refund whose payment was rejected (L33's pending source) emails nobody: it is no credit of the client's", async () => {
