@@ -122,7 +122,7 @@ export const sha256Bytes = async (bytes: Uint8Array): Promise<string> =>
 const BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, ?1, ?2, ?3, ?4, ?5 FROM staff_users u WHERE u.status = 'active' AND u.role = 'owner'`;
 
-const bell = (
+export const bell = (
   env: Env,
   kind: string,
   entityType: string,
@@ -548,7 +548,7 @@ function skip(why: string): SnapshotOutcome {
 
 // ---- render ----------------------------------------------------------------------------------------------------------------------------
 
-type RenderRow = {
+export type RenderRow = {
   id: string;
   type: string;
   frozen_at: number | null;
