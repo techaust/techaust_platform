@@ -14,6 +14,7 @@ import { invoiceNotes } from "./invoice-notes.ts";
 import { invoiceSend } from "./invoice-send.ts";
 import { invoiceWithdraw } from "./invoice-withdraw.ts";
 import { invoices } from "./invoices.ts";
+import { invoiceRebuilds, receiptRebuilds } from "./pdf-rebuild.ts";
 import { receiptPdf } from "./receipt-issue.ts";
 import { revenueReports } from "./report-revenue.ts";
 import { reports } from "./reports.ts";
@@ -38,8 +39,11 @@ export function mountInvoices(app: App) {
   app.route("/v1/invoices", invoiceSend);
   app.route("/v1/invoices", invoicePdf);
   app.route("/v1/invoices", invoiceSupplierPdf);
+  // Rebuild PDF (JOB-PDF-02): an invoice-family PDF and its supplier copy re-made from the sealed envelope.
+  app.route("/v1/invoices", invoiceRebuilds);
   // M6.5 (L34): the receipt PDF (an invoice-family document).
   app.route("/v1/receipts", receiptPdf);
+  app.route("/v1/receipts", receiptRebuilds);
   app.route("/v1/approvals", approvals);
   app.route("/v1/dashboard", dashboard);
   // M7.5 D1/G: the Free-plan usage tile's data (Owner and Accountant).

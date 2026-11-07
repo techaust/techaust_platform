@@ -111,10 +111,21 @@ export type SubjectRow = {
   label: string | null;
 };
 
-/** The newest 10 requests of a subject with their results (`?1` kind, `?2` subject id), newest first. */
-export const REPAIRS_OF_SQL = `SELECT p.id, p.n, p.found, p.old_key, p.new_key, p.requested_at, r.outcome, r.code, r.new_sha256, r.completed_at
+/** The subject id `pdf_repairs` records, from the id a route takes (`?1`): the certificate's route takes the document id, its subject is the acceptance. */
+const subjectIdOf = (kind: RepairKind) =>
+  kind === "certificate" ? "(SELECT a.id FROM acceptances a WHERE a.document_id = ?1)" : "?1";
+
+/** The newest 10 requests of a subject with their results (`?1` the route's id), newest first. */
+export const repairsOfSql = (kind: RepairKind) => `SELECT p.id, p.n, p.found, p.old_key, p.new_key, p.requested_at, r.outcome, r.code, r.new_sha256, r.completed_at
   FROM pdf_repairs p LEFT JOIN pdf_repair_results r ON r.repair_id = p.id
-  WHERE p.subject_kind = ?1 AND p.subject_id = ?2 ORDER BY p.n DESC LIMIT 10`;
+  WHERE p.subject_kind = '${kind}' AND p.subject_id = ${subjectIdOf(kind)} ORDER BY p.n DESC LIMIT 10`;
+
+/**
+ * The newest rebuilt object of a subject (`?1` the route's id): its key is the served one, its hash the recorded one. Every request of a subject has the same
+ * original key (the insert trigger), so this is `SERVED_PDF_SQL` for that key, read in the route's first batch.
+ */
+export const subjectServedSql = (kind: RepairKind) => `SELECT r.new_key, r.new_sha256, r.completed_at FROM pdf_repairs p JOIN pdf_repair_results r ON r.repair_id = p.id
+  WHERE p.subject_kind = '${kind}' AND p.subject_id = ${subjectIdOf(kind)} AND r.outcome = 'rebuilt' ORDER BY p.n DESC LIMIT 1`;
 
 export type RepairOfRow = {
   id: string;

@@ -67,6 +67,7 @@ import {
 } from "./context.ts";
 import { docDownload, dropDoc, streamToDocs, type UploadRules, uploadHead } from "./docs-upload.ts";
 import { body, idParam, param, STALE_VERSION } from "./http.ts";
+import { servedKey } from "./pdf-served.ts";
 import { sessionRefusal } from "./session-refusal.ts";
 
 // ---- refusals (staff-facing; for 07-ZJ, the lead approves staff lines under the owner's delegation) --------------------------------------------------------
@@ -906,8 +907,10 @@ export const deeds = new Hono<AppEnv>()
     const refused = storedPdfRefusal(c, row.gone);
     if (refused) return refused;
     if (row.unsigned_r2_key === null) return err(c, PDF_NOT_READY, 404);
+    // Rebuild PDF (JOB-PDF-02, L3): the newest rebuilt unsigned PDF when there is one (never the signed upload, which is not rebuildable).
+    const served = await servedKey(c.env, row.unsigned_r2_key);
     return (
-      (await docDownload(c, row.unsigned_r2_key, "application/pdf", fileName(row.number_display, ""))) ??
+      (await docDownload(c, served.key, "application/pdf", fileName(row.number_display, ""))) ??
       err(c, PDF_NOT_READY, 404)
     );
   })

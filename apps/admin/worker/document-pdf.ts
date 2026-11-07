@@ -11,6 +11,7 @@ import { type ApiError, type AppEnv, type Ctx, err, mutate, NOT_FOUND } from "./
 import { enqueuePdf, enqueueSupplierPdfOnce } from "./document-events.ts";
 import { body, idParam, param } from "./http.ts";
 import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
+import { servedPdf } from "./pdf-served.ts";
 import { CLIENT_GONE } from "./quote-model.ts";
 
 export const PDF_PENDING: ApiError = {
@@ -71,7 +72,9 @@ function pdfRoutes(types: string, retryAction: string) {
         // T7: deleted with the personal details (410: it existed and is gone for good).
         if (row.redacted_at !== null) return err(c, PDF_ERASED, 410);
         if (row.pdf_sha256 === null || row.pdf_r2_key === null) return err(c, PDF_PENDING, 409);
-        const obj = await c.env.DOCS.get(row.pdf_r2_key);
+        // Rebuild PDF (JOB-PDF-02, L3): the newest rebuilt file when there is one (its own SHA-256 is the ETag), else the stored original.
+        const served = await servedPdf(c.env, row.pdf_r2_key);
+        const obj = served.object;
         if (!obj) {
           console.error(JSON.stringify({ level: "error", message: "pdf object missing", rid: c.var.rid }));
           return err(c, PDF_PENDING, 409);
@@ -81,7 +84,7 @@ function pdfRoutes(types: string, retryAction: string) {
             contentType: "application/pdf",
             size: obj.size,
             filename: pdfFilename(row.number_display as string, row.version),
-            etag: row.pdf_sha256,
+            etag: served.sha256 ?? row.pdf_sha256,
           }),
         });
       })
@@ -145,9 +148,10 @@ export const invoiceSupplierPdf = new Hono<AppEnv>().get("/:id/pdf/supplier", pa
   // M7.4 (Q4 A): the route is the Owner's and the Accountant's already (`invoices.supplierCopy`); the same check as every stored PDF, so a later matrix change can't open it.
   const refused = storedPdfRefusal(c, row.gone);
   if (refused) return refused;
-  const obj = await c.env.DOCS.get(
-    supplierPdfKey({ type: row.type, fy: label, number: row.number, version: 1 }),
-  );
+  // Rebuild PDF (JOB-PDF-02, L3): a rebuilt copy wins; otherwise the stored copy, and the self-heal below while it is missing.
+  const obj = (
+    await servedPdf(c.env, supplierPdfKey({ type: row.type, fy: label, number: row.number, version: 1 }))
+  ).object;
   if (!obj) {
     // Not made yet. An erased client's copy is never made: 409. The copy is rendered after the original, so while the original has no PDF (not rendered yet, or its
     // render failed: the original's own retry is `/:id/pdf/retry`) nothing here can make it: 409 `pdf_pending`, never a 202 answered forever (FX-4, full audit A5 9).
