@@ -306,6 +306,7 @@ Earlier, measured by builder b2 (after d1, the admin front is unchanged at 122,7
 ## Handover
 - 2026-11-07 20:15 IST: branch made from `origin/main` (0ec9e8b); analyst drafting the Tier A brief.
 - 2026-11-07 20:30 IST: USAGE 14 at 20:29; origin/main (#193) taken in.
+- 2026-11-08 00:30 IST: final run on the branch tip with origin/main through #196: `pnpm check` exit 0; every package suite through heavy.sh, 13,531 passed, 24 skipped, 0 failed (core 2,749; db 1,120; auth 156; email 205; pdf 421; ui 471 + 2 skipped; testing 4; web 1,134 + 22 skipped; admin 5,485; portal 966; jobs 820; payments has no test files); admin and portal `build:staging` ok. PR opened. #195 had not merged yet: take it in when the main session says so.
 - 2026-11-07 23:35 IST: re-check APPROVE, its findings fixed (13115068); origin/main (#196) merged; final builds measured; `pnpm check` and every package suite running.
 - 2026-11-07 22:55 IST: review APPROVE; the lead fixed findings 1–6 and 8 (02f36bc8; jobs `pdf-rebuild.test.ts` 21 passed, admin `pdf-rebuild.test.ts` + `src/lib/pdf-repairs.test.ts` 52 passed); 07-ZV line 24 added (staff, the lead's); re-check of the fix commit and the full checks next.
 - 2026-11-07 22:20 IST: builder b2 merged (6906b041; run file sections kept from both); origin/main (#194, no migrations) merged; reviewer starting.
