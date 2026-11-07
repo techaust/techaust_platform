@@ -639,10 +639,6 @@ input[readonly] {
   color: var(--color-text);
 }
 
-.notice > div > :last-child {
-  margin-bottom: 0;
-}
-
 .notice .icon {
   margin-top: 0.125rem;
 }

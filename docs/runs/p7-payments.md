@@ -268,7 +268,7 @@ Builder `fix/p7-payments-b1` (Opus 5.5, high), 2026-11-07. This round applies th
 - Usage: builder agent-a5c1936fb71e4ef83, analyst agent-ab7030af55bfdcc39, both claude-opus-5-5/high.
 
 ## Review (reviewer, Opus 5.5 high, 2026-11-07): SEND BACK on one high (screen); fixed by the lead
-- **H1 (high):** the A2.5 notice overflowed below about 430 px (WCAG 1.4.10). Fixed in `apps/admin/src/app.css`: `.notice > div` gets `min-width: 0; overflow-wrap: anywhere`, and the last child has no bottom margin. This is safe for every notice.
+- **H1 (high):** the A2.5 notice overflowed below about 430 px (WCAG 1.4.10). Fixed in `apps/admin/src/app.css`: `.notice > div` gets `min-width: 0; overflow-wrap: anywhere`. This is safe for every notice. The extra bottom spacing (low) is kept: a `:last-child` rule there trips biome's `noDescendingSpecificity` against `.dialog__body > :last-child`.
 - **L2:** the bell-dedupe comment is corrected (a flag change alone doesn't ring again).
 - **L3, kept:** a test payment taken during the fallback can't be refunded through the gateway once the flag is on; the way out is "recorded as made outside". Test money only.
 - **L4, kept:** checkouts staging made before P7 are unmarked and can still raise `unknown_link` items in production. Before registering the production test webhooks at launch, the lead checks staging for open checkouts.
