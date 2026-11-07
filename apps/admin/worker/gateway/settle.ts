@@ -137,6 +137,10 @@ export const reviewFactsOf = (facts: GatewayFacts, r: ReasonFacts): GatewayFacts
   ...facts,
   ...(typeof r.reason === "string" && /^[a-z_]{1,40}$/.test(r.reason) ? { reason: r.reason } : {}),
   ...(Number.isSafeInteger(r.expectedMinor) ? { expectedMinor: r.expectedMinor as number } : {}),
+  // M6–M7 audit AU6: what the gateway had already refunded of a payment we first saw partly refunded.
+  ...(Number.isSafeInteger(r.refundedMinor) && (r.refundedMinor as number) > 0
+    ? { refundedMinor: r.refundedMinor as number }
+    : {}),
 });
 
 /** The event's id when the news came from one. */
@@ -576,6 +580,15 @@ export async function settlePayment(
     );
   const pending = (kind: string, reasonFacts: ReasonFacts, checkFirst = false) =>
     pendingOrDuplicate(env, a, { checkout, p, paymentRef, kind, reasonFacts, facts, onLink, checkFirst });
+  // M6–M7 audit AU6 (B1 M1): part of the payment was refunded at Razorpay before we first settled it: recorded pending (no ledger move) with a `refunded_outside`
+  // item carrying the refunded amount; the link is marked paid only while it is still open (`if_open`).
+  if (!verdict.ok && verdict.verdict === "partly_refunded")
+    return pending("refunded_outside", {
+      paidMinor: p.amountMinor,
+      refundedMinor: p.refundedMinor ?? 0,
+      provider: "razorpay",
+      currency: "INR",
+    });
   if (!verdict.ok)
     return pending(verdict.verdict, { paidMinor: p.amountMinor, expectedMinor: checkout.amount_minor });
   const payable = payableOnline(

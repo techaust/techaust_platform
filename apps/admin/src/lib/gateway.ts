@@ -348,6 +348,8 @@ export function itemReason(
     reason: str(f.reason),
     // M6.4: PayPal's own code for a held or refused capture (S3, S5)
     code: str(f.code),
+    // M6–M7 audit AU6: a payment first seen partly refunded at the gateway (`refunded_outside`)
+    refundedMinor: num(f.refundedMinor),
     blocker: blockers.length ? blockers.map(blockerWords).join("; ") : null,
   });
 }

@@ -16,6 +16,8 @@ export type ReasonFacts = {
   currency?: "INR" | "USD" | null;
   /** M6.4: PayPal's own code for a held or refused capture (`PENDING_REVIEW`, `TRANSACTION_REFUSED`, …), shown as PayPal gives it. */
   code?: string | null;
+  /** M6–M7 audit AU6: `refunded_outside` on a payment first seen partly refunded: how much the gateway had already refunded. */
+  refundedMinor?: number | null;
 };
 
 const money_ = (m: number | null | undefined, currency: "INR" | "USD" | null | undefined) =>
@@ -134,6 +136,11 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "reversed_after_confirm":
       return `PayPal reversed ${m(f.paidMinor)} that was already counted. Check the case in PayPal. The invoice's balance hasn't changed.`;
     case "refunded_outside":
+      // M6–M7 audit AU6 (staff-only; the builder's draft for the lead, 07-ZT line 2): a payment first seen with part of it already refunded at the gateway.
+      if (f.refundedMinor != null && f.refundedMinor > 0)
+        return `${gw} had already refunded ${m(f.refundedMinor)} of this payment of ${m(f.paidMinor)} when it reached us, so it waits here instead of being counted. Record the refund, then confirm what was kept.`;
+      if (f.reason === "partly_refunded")
+        return `${gw} had already refunded part of this payment of ${m(f.paidMinor)} when it reached us, so it waits here instead of being counted. Check the amount in ${gw}, record the refund, then confirm what was kept.`;
       // M6.5 (builder's draft for the lead, staff-only): every gateway by name; "Record this refund" moves the ledger (L7).
       return `This payment was refunded in ${gw}, outside the admin. The invoice's balance hasn't changed until you record the refund.`;
     case "refund_failed":

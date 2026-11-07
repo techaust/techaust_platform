@@ -538,6 +538,9 @@ export const PAYPAL_JUDGE_VERDICTS = [
   "capture_pending",
   "capture_denied",
   "capture_refunded",
+  // M6–M7 audit AU6 (B1 M1): PARTIALLY_REFUNDED before we first settled it: the money kept is recorded pending with a `refunded_outside` item (PayPal's capture
+  // carries no refunded total, so the item says "part of it"); REFUNDED in full stays `capture_refunded` (the item only).
+  "partly_refunded",
   "not_final",
   "not_export_receipt",
   "currency_mismatch",
@@ -545,14 +548,15 @@ export const PAYPAL_JUDGE_VERDICTS = [
 ] as const;
 export type PayPalJudgeVerdict = (typeof PAYPAL_JUDGE_VERDICTS)[number];
 /**
- * The verdicts the finance Worker stores as a review kind of the same name (every verdict but `capture_refunded`, written as `refunded_outside`). Each is in
- * `REVIEW_KINDS` (`@techaust/core/online-pay`) and the 0068 triggers' list; `packages/core/test/paypal.test.ts` pins it (review part 1, finding 1).
+ * The verdicts the finance Worker stores as a review kind of the same name (every verdict but `capture_refunded` and `partly_refunded`, both written as
+ * `refunded_outside`). Each is in `REVIEW_KINDS` (`@techaust/core/online-pay`) and the 0068 triggers' list; `packages/core/test/paypal.test.ts` pins it (review
+ * part 1, finding 1).
  */
-export type PayPalReviewVerdict = Exclude<PayPalJudgeVerdict, "capture_refunded">;
-/** The judge's answer; `capture_refunded` is its own branch so a caller that has handled it holds a `PayPalReviewVerdict`. */
+export type PayPalReviewVerdict = Exclude<PayPalJudgeVerdict, "capture_refunded" | "partly_refunded">;
+/** The judge's answer; `capture_refunded` and `partly_refunded` are their own branches so a caller that has handled them holds a `PayPalReviewVerdict`. */
 export type PayPalJudgement =
   | { readonly ok: true }
-  | { readonly ok: false; readonly verdict: "capture_refunded" }
+  | { readonly ok: false; readonly verdict: "capture_refunded" | "partly_refunded" }
   | { readonly ok: false; readonly verdict: PayPalReviewVerdict };
 
 /** Our checkout row, as the judge needs it. */
@@ -571,8 +575,8 @@ export type PayPalCheckoutRow = {
  *      checkout id as its `custom_id` and lists this capture), or its order is not the row's; the order, when given, is not the row's order or carries another
  *      `custom_id`;
  *   2. `order_mismatch`: the order, when given, does not list this capture;
- *   3. the money's state (before any amount, as M6.2 review finding 7): PENDING → `capture_pending`; DECLINED or FAILED → `capture_denied`; REFUNDED or
- *      PARTIALLY_REFUNDED → `capture_refunded`;
+ *   3. the money's state (before any amount, as M6.2 review finding 7): PENDING → `capture_pending`; DECLINED or FAILED → `capture_denied`; REFUNDED →
+ *      `capture_refunded` (PARTIALLY_REFUNDED → `partly_refunded`, M6–M7 audit AU6, after step 5);
  *   4. `not_final`: `final_capture` false on our CAPTURE-intent order (more money may follow; nothing is confirmed on a part);
  *   5. `not_export_receipt`: no country reported, or India (RA-38; the countries come from the ORDER, so a judge without the order holds the payment: the event
  *      path re-fetches the order, never only the capture);
@@ -604,9 +608,11 @@ export function judgePayPalCapture(
   if (order !== null && !order.captures.some((c) => c.id === capture.id)) return no("order_mismatch");
   if (capture.status === "PENDING") return no("capture_pending");
   if (capture.status === "DECLINED" || capture.status === "FAILED") return no("capture_denied");
-  if (capture.status !== "COMPLETED") return no("capture_refunded");
+  if (capture.status !== "COMPLETED" && capture.status !== "PARTIALLY_REFUNDED") return no("capture_refunded");
   if (capture.finalCapture === false) return no("not_final");
   if (!payPalExportReceipt(order?.countries ?? [])) return no("not_export_receipt");
+  // AU6: after RA-38's test, whose tax consequence comes first.
+  if (capture.status === "PARTIALLY_REFUNDED") return no("partly_refunded");
   if (
     capture.currency !== "USD" ||
     row.currency !== "USD" ||
