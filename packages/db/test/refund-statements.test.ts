@@ -2582,6 +2582,61 @@ describe("AU3 (B0 7, B6 L4): the receipt sweep tries the least recently tried fi
     expect(nextFy).not.toContain(other);
   });
 
+  it("AU47 (re-check L1): on 1 April, after three refusals in March, the count starts again at 1, the payment stays due, and the third refusal of the new FY rings again", async () => {
+    const { owner, clientId } = await setup();
+    const p = await pay(clientId, owner, { amount: 1_300 });
+    const version =
+      (await first<{ version: number }>("SELECT version FROM settings WHERE key = 'numbering'"))?.version ??
+      null;
+    const fail = (now: number) =>
+      db().batch(
+        receiptFailureStatements(db(), {
+          paymentId: p,
+          reason: "series_full",
+          numberingVersion: version,
+          now,
+          bellTitle: "Receipts can't be numbered",
+          link: "/payments",
+        }),
+      );
+    const state = () =>
+      first<{ receipt_failures: number }>("SELECT receipt_failures FROM payments WHERE id = ?", p);
+    const bells = () =>
+      all<{ read_at: number | null; created_at: number }>(
+        "SELECT read_at, created_at FROM notifications WHERE kind = 'receipt.blocked' AND entity_id = ?",
+        p,
+      );
+    const due = async (cutoff: number) =>
+      (await all<{ id: string }>(RECEIPTS_DUE_SQL.replace("LIMIT 20", "LIMIT 100000"), cutoff)).map(
+        (r) => r.id,
+      );
+    // three refusals on 31 March 2032 (FY 2031-32), the last at 23:50 IST: out, one bell per owner
+    const march = Date.parse("2032-03-31T18:20:00Z");
+    for (const at of [march - 2, march - 1, march]) await fail(at);
+    expect((await state())?.receipt_failures).toBe(3);
+    expect(await due(Date.parse("2032-03-31T18:29:00Z"))).not.toContain(p);
+    const rung = await bells();
+    expect(rung.length).toBeGreaterThan(0);
+    // the owners read the bell
+    await run("UPDATE notifications SET read_at = 1 WHERE kind = 'receipt.blocked' AND entity_id = ?", p);
+    // 1 April 2032, 00:05 IST (FY 2032-33): due again; the first refusal of the new FY counts 1, and the payment is still due
+    const april = Date.parse("2032-03-31T18:35:00Z");
+    expect(await due(april)).toContain(p);
+    await fail(april);
+    expect((await state())?.receipt_failures).toBe(1);
+    expect(await due(april + 1)).toContain(p);
+    await fail(april + 1);
+    expect((await state())?.receipt_failures).toBe(2);
+    expect((await bells()).every((b) => b.read_at === 1)).toBe(true);
+    // the third refusal of the new FY rings the owners again (the same rows, unread)
+    await fail(april + 2);
+    expect((await state())?.receipt_failures).toBe(3);
+    const again = await bells();
+    expect(again).toHaveLength(rung.length);
+    expect(again.every((b) => b.read_at === null)).toBe(true);
+    expect(await due(april + 3)).not.toContain(p);
+  });
+
   it("istFyOfMsSql is core fyOf's twin across the 31 March / 1 April IST boundary", async () => {
     for (const at of [
       Date.parse("2030-03-31T18:29:59.999Z"),

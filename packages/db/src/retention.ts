@@ -69,7 +69,7 @@ export const RETENTION_MATRIX: Record<string, RetentionRule> = {
   ),
   notifications: fam(
     "bells",
-    "read and older than 90 days, or any older than 12 months (L13); never a once-only marker (`BELL_MARKER_KINDS`, full audit AU10)",
+    "read and older than 90 days, or any older than 12 months (L13); never a once-only marker (`BELL_MARKER_KINDS`, full audit AU10), whose title becomes a neutral line after 12 months (AU53)",
   ),
   stats_daily: fam(
     "stats",
@@ -209,6 +209,7 @@ export const HASH_SETTLED_SQL = (h: string) =>
  * Full audit M6–M7 AU10 (B6 L1): the bell kinds a job reads back as a once-only marker ("rung once, ever"), so deleting one would make it ring again: the PDF
  * refusal (`pdf.refused`; the PDF sweep reads `pdf_failures.refused_at` too), the daily alerts' unbilled work and proforma due (`alerts.ts` reads them), and
  * the export realisation stages (`REALISATION_BELLS_SQL`). The `bells` family never deletes them; they are few (one per document or milestone and owner).
+ * AU53: after 12 months in all it replaces their title with `BELL_MARKER_SCRUBBED_TITLE` (the title can name a client or a person).
  */
 export const BELL_MARKER_KINDS = [
   "pdf.refused",
@@ -219,6 +220,13 @@ export const BELL_MARKER_KINDS = [
   "export.gst_approaching",
   "export.gst_overdue",
 ] as const;
+
+/**
+ * Full audit AU53: the title a once-only marker bell keeps after 12 months (staff-only; the builder's draft for the lead, run file "AF3 report"). Plain
+ * ASCII without quotes, so it sits in the SQL as a literal.
+ */
+export const BELL_MARKER_SCRUBBED_TITLE =
+  "An alert from over a year ago. Its details were removed after 12 months.";
 
 /** The per-plan statistics (a care plan id in `dimension`). */
 export const PER_PLAN_METRICS = ["care.used_minutes", "care.available_minutes"] as const;
@@ -314,6 +322,17 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
       oldest: "created_at",
       order: "created_at, id",
     },
+    {
+      // Full audit M6–M7 AU53 (early check of AF2, M3; Settled by the lead on the safest reading, 2026-11-07, DPDP Act 2023 s.8(7) (08-C RB-11)): a
+      // once-only marker bell stays (deleting it would ring again), but after 12 months in all its title, which can name a client or a person, becomes
+      // one neutral line. The link (ids only) stays. A scrubbed row is no longer due, so a page never takes it twice.
+      table: "notifications",
+      age: `notifications.created_at < ?1 AND notifications.kind IN (${q(BELL_MARKER_KINDS)}) AND notifications.title <> '${BELL_MARKER_SCRUBBED_TITLE}'`,
+      held: null,
+      oldest: "created_at",
+      order: "created_at, id",
+      scrub: `title = '${BELL_MARKER_SCRUBBED_TITLE}'`,
+    },
   ],
   stats: [
     {
@@ -383,12 +402,29 @@ export const DRY_RUN_COUNT_CAP = 10_000;
 /** A live page removes at most this many rows of each table of the family. */
 export const LIVE_PAGE_ROWS = 500;
 /**
- * Full audit M6–M7 AU9 (B6 M1; the lead's answer AU40): a live run takes at most this many pages a night across ALL its families (about 15,000 rows), so a
- * backlog after months of dry runs never spends the account's daily D1 writes in one night. The page that reaches the cap with rows still due ends its family
- * with `more_tomorrow`; a family whose page comes after the cap deletes nothing and is done with `capped` (and `more_tomorrow` when it has rows due). The next
- * night's run carries on; this run still finishes and rings as before.
+ * Full audit M6–M7 AU9 (B6 M1), AU40, AU51 (early check of AF2, M1): a live run stops once the rows D1 measured as written by its batches (`written`, the
+ * sum of `meta.rows_written` of every statement of each page batch, index and trigger writes included, added by the consumer after each batch:
+ * `RECORD_WRITTEN_SQL`) reach this many across ALL its families, so a backlog after months of dry runs never spends the account's 100,000 daily D1 row
+ * writes in one night. A page is taken only while the run's total is below the budget, so a night writes at most the budget plus one page
+ * (`LIVE_PAGE_WRITE_CEILING`). A page that finds the budget spent deletes nothing and ends its family with `capped` (and `more_tomorrow` when it has rows
+ * due); the next night's run carries on, and this run still finishes and rings as before.
  */
-export const RUN_PAGE_CAP = 30;
+export const RUN_WRITE_BUDGET = 40_000;
+/**
+ * AU51: the most rows one live page may write (its upsert, up to 500 deletes or scrubs per table of its family with their index and trigger writes, the run's
+ * finish and bell), so the worst night is `RUN_WRITE_BUDGET + LIVE_PAGE_WRITE_CEILING`, well inside D1's 100,000 a day. A db test measures a full page of
+ * the families against it (`retention-budget.test.ts`).
+ */
+export const LIVE_PAGE_WRITE_CEILING = 10_000;
+/**
+ * AU51: the consumer adds a page batch's measured writes to its family's row (`?1` run, `?2` family, `?3` rows written, a whole number >= 0) right after the
+ * batch, before it queues the next page (the leads queue runs one message at a time, so the next page reads the total).
+ */
+export const RECORD_WRITTEN_SQL =
+  "UPDATE retention_run_counts SET written = written + ?3 WHERE run_id = ?1 AND family = ?2 AND ?3 > 0";
+/** AU51: the rows a batch wrote, as D1 measured them (`meta.rows_written` of each statement; a missing figure counts 0). */
+export const rowsWrittenOf = (results: readonly { meta?: { rows_written?: number } }[]): number =>
+  results.reduce((n, r) => n + Math.max(0, Math.trunc(r.meta?.rows_written ?? 0)), 0);
 
 /** The single predicate of a table (L5): old enough and not held. Both the dry-run count and the live page select with it. */
 export const dueWhere = (t: FamilyTable): string => (t.held ? `(${t.age}) AND NOT ${t.held}` : `(${t.age})`);
@@ -470,22 +506,21 @@ export function livePageSql(family: RetentionFamily): string[] {
   const onFirst = (x: string, otherwise: string) =>
     `CASE WHEN NOT EXISTS (SELECT 1 FROM retention_run_counts WHERE run_id = ?3 AND family = ?4) THEN ${x} ELSE ${otherwise} END`;
   const ifLive = (x: string, off: string) => `CASE WHEN ${SWITCH_LIVE_SQL} THEN ${x} ELSE ${off} END`;
-  // AU9 (AU40): `pages` counts the run's live pages, family by family; `spent` is the run's total BEFORE this page (the VALUES and the DO UPDATE read the same
-  // rows: one batch, one transaction). A page within the cap counts and acts; the page that reaches the cap with rows still due ends its family with
-  // `more_tomorrow`. A page after the cap counts nothing, acts on nothing (`capped` 1, which the deletes read), and ends its family, with `more_tomorrow`
-  // when rows are due. A stopped page (the switch went off) is done as before and never marks either.
-  const spent = "(SELECT coalesce(sum(rs.pages), 0) FROM retention_run_counts rs WHERE rs.run_id = ?3)";
-  const within = `${spent} < ${RUN_PAGE_CAP}`;
-  const reachesCap = `${spent} + 1 >= ${RUN_PAGE_CAP}`;
+  // AU9, AU40, AU51: `pages` counts the run's live pages, family by family; `spent` is the rows the run's batches wrote BEFORE this page, as D1 measured
+  // them (`written`, added after each batch). A page within the budget counts and acts (and, when rows are left, the consumer sends the next one). A page
+  // that finds the budget spent counts nothing, acts on nothing (`capped` 1, which the deletes read), and ends its family, with `more_tomorrow` when rows are
+  // due. A stopped page (the switch went off) is done as before and never marks either.
+  const spent = "(SELECT coalesce(sum(rs.written), 0) FROM retention_run_counts rs WHERE rs.run_id = ?3)";
+  const within = `${spent} < ${RUN_WRITE_BUDGET}`;
   const anyDue = tables.map((t) => `EXISTS (SELECT 1 FROM ${t.table} WHERE ${dueWhere(t)})`).join(" OR ");
   const upsert = `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done, pages, capped, more_tomorrow)
     VALUES (?3, ?4, ${ifLive(`CASE WHEN ${within} THEN ${sum(tables.map(page))} ELSE 0 END`, "0")}, ${helds.length ? ifLive(onFirst(sum(helds), "0"), "0") : "0"}, ${ifLive(onFirst(minOf(tables.map(oldestOf)), "NULL"), "NULL")},
-      ${ifLive(`CASE WHEN ${within} THEN ((${done}) OR ${reachesCap}) ELSE 1 END`, "1")}, ${ifLive(`CASE WHEN ${within} THEN 1 ELSE 0 END`, "0")},
-      ${ifLive(`CASE WHEN ${within} THEN 0 ELSE 1 END`, "0")}, ${ifLive(`CASE WHEN ${within} THEN (NOT (${done}) AND ${reachesCap}) ELSE (${anyDue}) END`, "0")})
+      ${ifLive(`CASE WHEN ${within} THEN (${done}) ELSE 1 END`, "1")}, ${ifLive(`CASE WHEN ${within} THEN 1 ELSE 0 END`, "0")},
+      ${ifLive(`CASE WHEN ${within} THEN 0 ELSE 1 END`, "0")}, ${ifLive(`CASE WHEN ${within} THEN 0 ELSE (${anyDue}) END`, "0")})
     ON CONFLICT(run_id, family) DO UPDATE SET due = retention_run_counts.due + excluded.due, pages = retention_run_counts.pages + excluded.pages,
       done = excluded.done, capped = max(retention_run_counts.capped, excluded.capped),
       more_tomorrow = max(retention_run_counts.more_tomorrow, excluded.more_tomorrow)`;
-  // AU40: a page after the run's cap acts on nothing (its family's row says `capped`, written by the upsert above in the same batch).
+  // AU40, AU51: a page after the run's budget acts on nothing (its family's row says `capped`, written by the upsert above in the same batch).
   const notCapped =
     "NOT EXISTS (SELECT 1 FROM retention_run_counts cr WHERE cr.run_id = ?3 AND cr.family = ?4 AND cr.capped = 1)";
   const act = tables.map((t) => {

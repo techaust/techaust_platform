@@ -104,6 +104,8 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0082_audit_money_triggers.sql",
       "0083_audit_af2.sql",
       "0084_audit_af2_triggers.sql",
+      "0085_audit_af3.sql",
+      "0086_audit_af3_triggers.sql",
     ]);
   });
 

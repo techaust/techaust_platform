@@ -163,6 +163,12 @@ export const retentionRunCounts = sqliteTable(
     capped: flag("capped"),
     /** AU9: a live family stopped by the run's page cap with rows still due: the next night's run carries on ("more tomorrow"). */
     moreTomorrow: flag("more_tomorrow"),
+    /**
+     * Full audit M6–M7 AU51: the D1 rows this family's batches wrote in this run, as D1 measured them (`meta.rows_written` of every statement of each
+     * batch, index and trigger writes included), added after each batch. A live run stops once its families' total reaches `RUN_WRITE_BUDGET`. Added by
+     * ALTER TABLE (0085): no CHECK here; the trigger set `audit_af3_triggers` holds it (never below 0, only up).
+     */
+    written: integer("written").notNull().default(0),
   },
   (t) => [
     primaryKey({ columns: [t.runId, t.family] }),

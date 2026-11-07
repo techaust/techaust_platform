@@ -49,7 +49,7 @@ import {
   SIGNATURES_IN_USE_SQL,
   SWEEP_PAGE_KEYS,
 } from "@techaust/db/r2-sweep";
-import { retentionStatements } from "@techaust/db/retention";
+import { RECORD_WRITTEN_SQL, retentionStatements, rowsWrittenOf } from "@techaust/db/retention";
 import { erasureHashOf } from "./erasure.ts";
 import { logEvent } from "./log.ts";
 
@@ -214,6 +214,11 @@ async function retentionPage(env: Env, m: RetentionPageMessage, now: number): Pr
     | { done?: number; more_tomorrow?: number; live?: number }
     | undefined;
   const done = read?.done === 1;
+  // Full audit AU51: the rows this batch wrote, as D1 measured them, go on the family's row BEFORE the next page is queued (the leads queue runs one message
+  // at a time), so the next page of any family reads the run's true total against `RUN_WRITE_BUDGET`. If this write fails the message is retried and the page
+  // runs again (it deletes only rows still due).
+  const written = rowsWrittenOf(results);
+  if (written > 0) await db.prepare(RECORD_WRITTEN_SQL).bind(m.runId, m.family, written).run();
   // Early check 2 M2: the Owner turned real deletion off after this run started. The page's statements read the same switch in the same batch: they deleted
   // nothing and marked the family done, so nothing is sent again.
   if (m.mode === "live" && read?.live !== 1) {
