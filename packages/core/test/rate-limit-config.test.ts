@@ -39,14 +39,17 @@ describe("rateLimitProblems [M7.5 L22]", () => {
         [
           ["admin", read("admin/wrangler.jsonc"), RATE_LIMITS.admin],
           ["portal", read("portal/wrangler.jsonc"), RATE_LIMITS.portal],
+          // P7-A: the website's RL_FORMS is checked like the others (every scope, production 4301).
+          ["web", read("web/wrangler.jsonc"), RATE_LIMITS.web],
         ],
-        [["web", read("web/wrangler.jsonc")]],
+        [],
         ADMIN_AUX_CONFIGS.map((f) => [f, read(`admin/${f}`)] as [string, WranglerConfig]),
       ),
     ).toEqual([]);
     expect(RATE_LIMITS).toEqual({
       admin: { RL_SESSION: 240, RL_SIGNIN: 20, RL_INVITE: 10 },
       portal: { RL_SESSION: 120, RL_SIGNIN: 10, RL_LINKS: 30, RL_SIGNOUT: 60 },
+      web: { RL_FORMS: 2 },
     });
   });
 

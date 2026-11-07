@@ -6,7 +6,11 @@ export type WranglerConfig = Record<string, unknown> & {
 export const APPS: string[];
 export const ADMIN_AUX_CONFIGS: string[];
 export function parseJsonc(text: string): WranglerConfig;
-export const RATE_LIMITS: { admin: Record<string, number>; portal: Record<string, number> };
+export const RATE_LIMITS: {
+  admin: Record<string, number>;
+  portal: Record<string, number>;
+  web: Record<string, number>;
+};
 export function rateLimitProblems(
   required: [label: string, config: WranglerConfig, want: Record<string, number>][],
   others?: [label: string, config: WranglerConfig][],

@@ -44,28 +44,33 @@ describe.each(["admin", "portal"] as const)("%s wrangler.jsonc", (app) => {
     expect(c.env.staging.vars?.TURNSTILE_SITE_KEY).not.toBe("0x4AAAAAAFhXQJodywYfgEIP");
   });
 
-  it("production has an empty key (no widget until Phase 7) and no queue", () => {
-    expect(c.env.production.vars?.TURNSTILE_SITE_KEY).toBe("");
+  it("production: ONLY this app's techaust.com host, and a key that is empty until the lead sets the production widget's (never staging's or a test key)", () => {
+    // P7-A: the readiness check (scripts/check-prod-readiness.mjs) refuses the empty key before any production deploy.
     expect(c.env.production.vars?.TURNSTILE_HOSTNAMES).toBe(`${app}.techaust.com`);
-    expect(c.env.production.queues).toBeUndefined();
+    expect(c.env.production.vars?.TURNSTILE_SITE_KEY).not.toBe(STAGING_KEY);
+    expect(c.env.production.vars?.TURNSTILE_SITE_KEY).not.toBe(TEST_KEY);
   });
 
-  it("produces to the email queue of each environment that has one (the jobs Worker consumes it)", () => {
+  it("produces to the email queue of each environment (the jobs Worker of that environment consumes it)", () => {
     // The admin Worker also produces to the PDF queue (M4.4), so the email producer is checked, not the whole list.
-    expect(c.queues?.producers).toContainEqual({ binding: "EMAIL_QUEUE", queue: "techaust-local-email" });
-    expect(c.env.staging.queues?.producers).toContainEqual({
+    const want = {
+      top: "techaust-local-email",
+      staging: "techaust-staging-email",
+      production: "techaust-prod-email",
+    };
+    expect(c.queues?.producers).toContainEqual({ binding: "EMAIL_QUEUE", queue: want.top });
+    expect(c.env.staging.queues?.producers).toContainEqual({ binding: "EMAIL_QUEUE", queue: want.staging });
+    expect(c.env.production.queues?.producers).toContainEqual({
       binding: "EMAIL_QUEUE",
-      queue: "techaust-staging-email",
+      queue: want.production,
     });
+    type Consumers = { queues: { consumers: { queue: string }[] } };
     const jobs = guard.parseJsonc(
       readFileSync(new URL("../../jobs/wrangler.jsonc", import.meta.url), "utf8"),
-    ) as { queues: { consumers: { queue: string }[] }; env: { staging: { queues: typeof c.queues } } };
-    expect(jobs.queues.consumers.map((q) => q.queue)).toContain("techaust-local-email");
-    expect(
-      (jobs.env.staging.queues as unknown as { consumers: { queue: string }[] }).consumers.map(
-        (q) => q.queue,
-      ),
-    ).toContain("techaust-staging-email");
+    ) as Consumers & { env: { staging: Consumers; production: Consumers } };
+    expect(jobs.queues.consumers.map((q) => q.queue)).toContain(want.top);
+    expect(jobs.env.staging.queues.consumers.map((q) => q.queue)).toContain(want.staging);
+    expect(jobs.env.production.queues.consumers.map((q) => q.queue)).toContain(want.production);
   });
 
   it("keeps Preview URLs off (the existing guard)", () => {
