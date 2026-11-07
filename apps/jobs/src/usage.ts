@@ -94,7 +94,9 @@ export async function processUsage(env: Env, body: unknown, now = Date.now()): P
   if (!token || !account) {
     logEvent("usage.not_configured", { token: token !== "", account: account !== "" });
     // L55: locally there is never a token; anywhere else a missing one means the tile stops, so the owners hear of it.
-    if (env.ENVIRONMENT !== "local") await ringTokenBell(env, body.day, "not_configured", now);
+    // (`Env` is typed from the staging config, so ENVIRONMENT is read as a plain string.)
+    if (String(Reflect.get(env, "ENVIRONMENT") ?? "") !== "local")
+      await ringTokenBell(env, body.day, "not_configured", now);
     return "ack";
   }
   return readAndStore(env, body, token, account, now);

@@ -26,17 +26,13 @@ import { isStatsKind } from "@techaust/core/stats";
 import { isUsageKind } from "@techaust/core/usage";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
-import {
-  CRON_BRANCHES,
-  jobsFetchRows,
-  QUEUE_EXTRA,
-  QUEUE_KINDS,
-  queueRowOf,
-} from "../../../scripts/route-inventory-lib.mjs";
+import * as inventory from "../../../scripts/route-inventory-lib.mjs";
 import { cronBranchOf, HOURLY_CRON } from "../src/billing.ts";
 import indexText from "../src/index.ts?raw";
 import { PURGE_CRON } from "../src/purge.ts";
 import wranglerText from "../wrangler.jsonc?raw";
+
+const { CRON_BRANCHES, jobsFetchRows, QUEUE_EXTRA, QUEUE_KINDS, queueRowOf } = inventory;
 
 /** The predicates `handleQueue` routes by (src/queue.ts), plus the three kinds it tells apart by shape or by its own check. */
 const ROUTED = [
