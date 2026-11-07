@@ -78,15 +78,17 @@ const T = 1_700_000_000_000;
 const plan = async (sql: string, ...binds: unknown[]): Promise<string> =>
   (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...binds)).map((r) => r.detail).join("\n");
 /**
- * A table scan (a SEARCH is fine): any of the tables these statements read, by name or alias. M6–M7 audit AU37: the walk of a CO-ROUTINE (a FROM subquery
- * whose own reads are listed above it, e.g. `refundsOutSql`'s two index SEARCHes) is no table scan, so a `SCAN <name>` of a co-routine of the plan is left out.
+ * A table scan (a SEARCH is fine): any of the tables these statements read, by name or alias. M6–M7 audit AU37, AU48: the one walk left out is
+ * `refundsOutSql`'s co-routine, aliased `fo` at every caller (its own two index SEARCHes are listed above it): exactly the line `SCAN fo`, and only when
+ * the plan has `CO-ROUTINE fo`. Any other `SCAN` of these names, another co-routine's included, is a table scan.
  */
 const scansTable = (p: string) => {
-  const coroutines = new Set([...p.matchAll(/CO-ROUTINE (\w+)/g)].map((m) => m[1]));
+  const refundsOut = /CO-ROUTINE fo\b/.test(p);
   return p.split("\n").some((line) => {
-    const m =
-      /SCAN (documents|payments|payment_refunds|leads|clients|care_plans|d|p|f|l|c|n)\b(?! USING)/.exec(line);
-    return m !== null && !coroutines.has(m[1]);
+    if (refundsOut && line.trim() === "SCAN fo") return false;
+    return /SCAN (documents|payments|payment_refunds|leads|clients|care_plans|d|p|f|fo|l|c|n)\b(?! USING)/.test(
+      line,
+    );
   });
 };
 const rowsRead = async (sql: string, ...binds: unknown[]) =>

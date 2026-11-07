@@ -45,6 +45,7 @@ import {
   taxOnlyNoteExactSql,
 } from "./sql-rules.ts";
 import { auditAf2TriggerStatements } from "./triggers-audit-af2.ts";
+import { auditAf3TriggerStatements } from "./triggers-audit-af3.ts";
 import { dataProtectionTriggerStatements } from "./triggers-data-protection.ts";
 
 /**
@@ -2624,6 +2625,10 @@ export const TRIGGER_SETS = {
   audit_af2_triggers: {
     what: "Full audit M6–M7 fix round AF2: the PDF refusal kept outside the bells (back-filled, set once), the clean-up's page budget columns, a lead held by its address, the redaction hold on every redaction, the export date and the consent withdrawal's proof at a request's close, the digest switched off by a spam report, and the staff close notes cleared with a contact",
     statements: auditAf2TriggerStatements,
+  },
+  audit_af3_triggers: {
+    what: "Full audit M6–M7 fix round AF3: the clean-up's measured rows written are a whole number that only goes up",
+    statements: auditAf3TriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

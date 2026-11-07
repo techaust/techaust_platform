@@ -114,7 +114,7 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
     expect(await remindersOf(made.id)).toEqual([]);
   });
 
-  it("full audit AU21: a recipient whose emails are stopped (by its address, or as an erased address by its keyed hash) is refused; nothing is written", async () => {
+  it("full audit AU21: a recipient whose emails are stopped by its address is refused; nothing is written", async () => {
     const { s, made, ids } = await issued(1);
     const stopped = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
     await env.DB.prepare(
@@ -125,6 +125,16 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
     const r = await send(s, made.id, { contactIds: [ids[0], stopped.id] });
     expect(r.status).toBe(409);
     expect(await json(r)).toMatchObject({ error: { code: "recipient_invalid" }, contactIds: [stopped.id] });
+    expect(await sendsOf(made.id)).toEqual([]);
+    expect(await remindersOf(made.id)).toEqual([]);
+    expect((await send(s, made.id, { contactIds: ids })).status).toBe(200);
+  });
+
+  // Full audit AU56 (early check of AF2, L3): the erased (`h:`) form is the ROUTE's rule only where the Worker holds `ERASURE_HASH_KEY`. These tests run
+  // every route set in process with the key; the deployed invoices Worker has no key (the lead's decision AU41), so there `recipientHashes` is null, the
+  // send goes through, and the email consumer (which skips an `h:`-stopped address and rings) stays that form's guard: the second half shows it.
+  it("AU21, AU56: where the Worker holds ERASURE_HASH_KEY, a recipient stopped as an erased address (its keyed hash) is refused; without the key the route can't see that form and the send goes", async () => {
+    const { s, made, ids } = await issued(1);
     // the erased form: the stop row holds only the keyed hash of the address (a contact added again after an erasure)
     const erased = await mkContact(made.clientId, { portal_access: 1, can_see_finance: 1 });
     const email =
@@ -137,8 +147,10 @@ describe("the send refuses what it must [ADM-INV-15]", () => {
     expect(await json(r2)).toMatchObject({ error: { code: "recipient_invalid" }, contactIds: [erased.id] });
     expect(await sendsOf(made.id)).toEqual([]);
     expect(await remindersOf(made.id)).toEqual([]);
-    // the others still go
-    expect((await send(s, made.id, { contactIds: ids })).status).toBe(200);
+    // without the key (the deployed invoices Worker) the route can't hash the address: the send goes, and the email consumer is the guard
+    const noKey = { ...env, ERASURE_HASH_KEY: undefined } as unknown as Env;
+    expect((await send(s, made.id, { contactIds: [ids[0], erased.id] }, noKey)).status).toBe(200);
+    expect((await sendsOf(made.id)).length).toBe(2);
   });
 
   it("Owner and Staff may send (Q42); Sales and the Accountant may not; no session is 401", async () => {

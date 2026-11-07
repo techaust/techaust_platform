@@ -547,7 +547,8 @@ export function portalFilesProblems(portal) {
  */
 export const RATE_LIMITS = {
   admin: { RL_SESSION: 240, RL_SIGNIN: 20, RL_INVITE: 10 },
-  portal: { RL_SESSION: 120, RL_SIGNIN: 10, RL_LINKS: 30 },
+  // Full audit AU60: RL_SIGNOUT per address on the portal's sign-out (generous: a 429 still clears the cookie).
+  portal: { RL_SESSION: 120, RL_SIGNIN: 10, RL_LINKS: 30, RL_SIGNOUT: 60 },
 };
 
 /**

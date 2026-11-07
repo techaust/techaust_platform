@@ -72,6 +72,7 @@ import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 import { KEYED_FORM_MONTHS_SQL, keyedFormMonthsOf } from "./lead-data.ts";
 import {
+  ADDRESS_HELD_SQL,
   dropOfferObjects,
   MATCHED_LEAD_EMAILS_SQL,
   type RedactionPlan,
@@ -1465,7 +1466,7 @@ async function eraseBatch(
         "c.client_id",
         `json_object('contactId', c.id, 'mode', ?8, 'reason', ?9${fresh ? ", 'offers', CAST(?10 AS INTEGER)" : ""})`,
         `FROM contacts c JOIN clients cl ON cl.id = c.client_id
-         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}
+         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL} AND NOT ${ADDRESS_HELD_SQL("c")}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}
            AND NOT ${PAYMENTS_PENDING_ON_LAST("?7")}${fresh ? ` AND ${fresh.sql}` : ""} AND ${HASHES_FRESH_SQL(mapAt)}`,
         [
           ...(fresh && plan ? [id, mode, reason, plan.ids.length, ...fresh.params] : [id, mode, reason]),
@@ -1541,12 +1542,16 @@ async function eraseBatch(
       //     requests name the person ("{name} at {client} sent a request"), so they go for ANY client type (on `client_requests_contact`); the bells
       //     of the client's "I've paid" notices name the client only, so they go with an individual's last live contact (on `payment_notices_client`)
       //     and a business client's stay. Folded into this statement too (T7's 45).
+      //     Full audit M6–M7 AU53 (Settled by the lead on the safest reading, 2026-11-07, DPDP Act 2023 s.8(7) (08-C RB-11)): the bells of its milestones
+      //     (`milestone.unbilled`, `proforma.tax_invoice_due`: "{milestone} for {client} ...") go with an individual's last live contact too, in this
+      //     statement (T7's 45). They never ring again: the daily alerts skip an anonymised client.
       db
         .prepare(
           `DELETE FROM notifications WHERE ((entity_type = 'document' AND entity_id IN (SELECT id FROM documents WHERE ${LAST_LIVE_INDIVIDUAL("documents.client_id")}))
              OR (entity_type = 'payment' AND entity_id IN (SELECT id FROM payments WHERE ${LAST_LIVE_INDIVIDUAL("payments.client_id")}))
              OR (entity_type = 'client_request' AND entity_id IN (SELECT id FROM client_requests WHERE contact_id = ?1))
-             OR (entity_type = 'payment_notice' AND entity_id IN (SELECT id FROM payment_notices WHERE ${LAST_LIVE_INDIVIDUAL("payment_notices.client_id")}))) AND ${g.sql(2)}`,
+             OR (entity_type = 'payment_notice' AND entity_id IN (SELECT id FROM payment_notices WHERE ${LAST_LIVE_INDIVIDUAL("payment_notices.client_id")}))
+             OR (entity_type = 'milestone' AND entity_id IN (SELECT m.id FROM milestones m WHERE m.project_id IN (SELECT id FROM projects WHERE ${LAST_LIVE_INDIVIDUAL("projects.client_id")})))) AND ${g.sql(2)}`,
         )
         .bind(id, ...g.params),
       db
@@ -1691,7 +1696,7 @@ async function eraseBatch(
   }
   // Nothing was written: say why.
   const why = await c.env.DB.prepare(
-    `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc, ${PAYMENTS_PENDING_ON_LAST("?1")} AS pending FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
+    `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL} OR ${ADDRESS_HELD_SQL("c")}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc, ${PAYMENTS_PENDING_ON_LAST("?1")} AS pending FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
   )
     .bind(id)
     .first<{ gone: number | null; held: number; doc: number; pending: number }>();
@@ -1731,7 +1736,7 @@ async function redactPart(c: Ctx, id: string, reason: string, plan: RedactionPla
         "c.client_id",
         "json_object('contactId', c.id, 'mode', ?8, 'reason', ?9, 'offers', CAST(?10 AS INTEGER), 'part', json('true'))",
         `FROM contacts c JOIN clients cl ON cl.id = c.client_id
-         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL} AND ${fresh.sql}`,
+         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL} AND NOT ${ADDRESS_HELD_SQL("c")} AND ${fresh.sql}`,
         [id, "anonymise", reason, plan.ids.length, ...fresh.params],
       ),
     after: (g, auditId) => [
@@ -1759,7 +1764,7 @@ async function redactPart(c: Ctx, id: string, reason: string, plan: RedactionPla
   }
   const why = await db
     .prepare(
-      `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL}) AS held FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
+      `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL} OR ${ADDRESS_HELD_SQL("c")}) AS held FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
     )
     .bind(id)
     .first<{ gone: number | null; held: number }>();
