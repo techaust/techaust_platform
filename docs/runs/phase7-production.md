@@ -1,6 +1,6 @@
 # Phase 7: preparing the first production deployment
 
-Status: plan written (lead, 2026-11-07, from the analyst's draft); waiting for the owner's answers to Q1–Q11, then Wave 1 starts.
+Status: plan written (lead, 2026-11-07, from the analyst's draft); the owner accepted Q1–Q11 as recommended (2026-11-07). Wave 1 (P7-A, P7-N8) starts once #190 is on `main`.
 
 ## The owner's decisions this plan follows (13, 2026-11-07)
 1. techaust.com switches at the first production deploy, with no workers.dev-only period. `techaust-web` is deleted at that moment, only on the owner's explicit "go" given at the time.
