@@ -2,6 +2,8 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-08 [#199](https://github.com/techaust/techaust_platform/pull/199) feat(invoices): fold the M3 LUT into the list before production
+- 2026-11-07 [#197](https://github.com/techaust/techaust_platform/pull/197) feat(pdf): Owner-only Rebuild PDF for a lost or damaged stored PDF
 - 2026-11-07 [#196](https://github.com/techaust/techaust_platform/pull/196) feat(payments): environment marks for test payments and live-payment readiness
 - 2026-11-07 [#195](https://github.com/techaust/techaust_platform/pull/195) feat(ops): monthly 10-year finance backup, production catalogue snapshot, first restore drill
 - 2026-11-07 [#194](https://github.com/techaust/techaust_platform/pull/194) feat(statement): the "Refund came back" line, so statements always join up (AU45)
