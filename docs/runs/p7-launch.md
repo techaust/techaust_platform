@@ -125,3 +125,22 @@ Files:
 - the launch content (`site.launchDate` and every legal `effective` set to 2026-11-08, `founderBio`, `aliasesConfirmed`);
 - the production Turnstile keys in the configs;
 - the integration, the reviewer, the merge, then the hosted steps and the launch-day order in [phase7-production](phase7-production.md) D.
+
+## Hosted log (lead, 2026-11-07 evening; owner's decisions in chat)
+- **Production resources** created through the connector: D1 `techaust-prod` (`d16029d2-373e-4b66-beb0-d77158d6dfc2`, APAC); R2 `techaust-prod-docs` and `techaust-prod-files` (private); queues `techaust-prod-{leads,pdf,email}` and their `-dlq`.
+- **The old site deleted now** (owner, "Now": a fresh start before the new deployment; techaust.com is offline until launch):
+  - the custom domains techaust.com and www.techaust.com detached from `techaust-web`;
+  - the route `*.techaust.com/*` deleted;
+  - the Worker `techaust-web` deleted (with its assets, its `RESEND_API_KEY` secret and its workers.dev address).
+
+  Its custom-domain records (the apex and www `AAAA 100::`) went with the domains. The old repository `techaust/techaust-web` is untouched (rule 3).
+- **The zone's redirect rules** deleted and recreated as the same two (owner, "Delete and recreate"): www → apex, http → https, both 301. A proxied `AAAA www.techaust.com 100::` was recreated for the www redirect.
+- **Left for the owner:** delete the unused user API token "Workers Builds - 2026-09-04 12:28" (the connector can't manage user tokens). Optional: revoke the old site's Resend API key in Resend.
+- **Kept:** the email DNS (Zoho, the SES DKIM and MAIL FROM records), Web Analytics for techaust.com (the new CSP allows its script, and the privacy notice names Cloudflare's cookieless analytics), and the Turnstile widgets of the owner's other domains (GPLFamily, PluginWay).
+- **GitHub environment `production`** (lead, through `gh api`): required reviewer `techaust`; deployment refs branch `main` and tags `v*`.
+- **Access for production admin** (connector, Q2):
+  - the app `techaust-platform-admin (production)` on `admin.techaust.com` uses the reusable "Cloudflare account members" policy;
+  - the app `admin production health` on `admin.techaust.com/api/health` uses "Bypass everyone".
+
+  Portal, hooks and web stay public.
+- **DNS list:** the owner said yes (2026-11-07); the records are added at the step each belongs to.
