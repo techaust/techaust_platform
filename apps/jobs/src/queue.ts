@@ -25,6 +25,7 @@ import {
 import { isPdfKind, isPdfMessage, isReceiptKind } from "@techaust/core/pdf-jobs";
 import { isPortalAlertKind } from "@techaust/core/portal";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
+import { isUsageKind } from "@techaust/core/usage";
 import { processBilling, processBillingDeadLetter } from "./billing.ts";
 import { processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
 import { processDigest } from "./digest.ts";
@@ -34,7 +35,7 @@ import { logExpireDeadLetter, processExpire, skipExpire } from "./expire.ts";
 import { processGateway, processGatewayDeadLetter } from "./gateway.ts";
 import { processInvoiceSend } from "./invoice-send.ts";
 import { processLead } from "./leads.ts";
-import { logEvent, noteInvocation } from "./log.ts";
+import { firstRun, logEvent, noteInvocation } from "./log.ts";
 import { logLutCheckDeadLetter, processLutCheck, skipLutCheck } from "./lut-check.ts";
 import { processOfferMessage } from "./offers.ts";
 import { processPdf, processPdfDeadLetter } from "./pdf.ts";
@@ -51,6 +52,7 @@ import { processStaffAlert } from "./staff-alerts.ts";
 import { processBellsSweep, processStaffNotify } from "./staff-notify.ts";
 import { processStatementDeadLetter, processStatementPdf } from "./statement-pdf.ts";
 import { logStatsDeadLetter, processStats, skipStats } from "./stats.ts";
+import { processUsage } from "./usage.ts";
 
 /** A staff alert (`{ kind: "staff.alert", auditId }`) shares the email queue with ordinary emails (M2.4b). */
 const isStaffAlert = (body: unknown) =>
@@ -87,7 +89,12 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
   const queue = batch.queue;
   const isPdfDlq = queue.endsWith("-pdf-dlq");
   const isDlq = queue.endsWith("-leads-dlq") || queue.endsWith("-email-dlq") || isPdfDlq;
+  const q = queue.replace(/^techaust-(?:local-|staging-)?/, "");
   for (const message of batch.messages) {
+    // M7.5 L20: one line per message with its kind (a code, never a value) and `f: 1` on that queue and kind's first run in this isolate, so the staging CPU
+    // gate reads first runs per kind (the isolate count `n` alone can't tell them apart).
+    const k = kindOf(message.body) ?? "other";
+    logEvent("q", { q, k, f: firstRun(`q ${q} ${k}`) });
     try {
       if (isPdfDlq) {
         // The PDF family has its own dead-letter queue: a bell for the owners, then done (the daily sweep tries the document again).
@@ -157,6 +164,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // also rings the Owners' `job.failed` bell, once per run and family (early check 2, low 6).
         await processDpDeadLetter(env, queue, message.body);
         message.ack();
+      } else if (isDlq && isUsageKind(message.body)) {
+        // M7.5 D1: a usage reading that ran out of tries is only logged: the day stays unrecorded (the tile shows a gap), tomorrow's run reads the next day.
+        logEvent("usage.dead_letter", { queue });
+        message.ack();
       } else if (isDlq && isPortalAlertKind(message.body)) {
         // M7.1 (L9): a portal bell that ran out of tries: the request or notice itself is stored and shows in the admin's lists, so no alert and no retry.
         logEvent("portal_alert.dead_letter", { queue });
@@ -187,6 +198,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         // valid or not, can never become a lead).
         await processDp(env, message.body);
         message.ack();
+      } else if (queue.endsWith("-leads") && isUsageKind(message.body)) {
+        // M7.5 D1 (Q4 A): the day's Free-plan usage (one GraphQL fetch, one batch); before the lead fall-through (a body of this kind never becomes a lead).
+        if ((await processUsage(env, message.body)) === "retry") message.retry({ delaySeconds: 300 });
+        else message.ack();
       } else if (queue.endsWith("-leads") && isPurgeScanMessage(message.body)) {
         await enqueueDue(env, message.body.asOf, message.body.cursor);
         message.ack();

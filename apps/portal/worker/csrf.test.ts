@@ -35,7 +35,9 @@ describe("the shared CSRF corpus, through the portal [05 §7.1]", () => {
       const { res, calls } = await run(c);
       if (c.verdict === "cross_site") {
         expect(res.status).toBe(403);
-        expect(await bodyOf(res)).toEqual({ error: { code: "forbidden", message: "Request refused" } });
+        // a HEAD answer has no body (M7.5 L3 added HEAD refusals to the corpus)
+        if (c.input.method !== "HEAD")
+          expect(await bodyOf(res)).toEqual({ error: { code: "forbidden", message: "Request refused" } });
         expect(calls).toBe(0);
       } else if (c.verdict === "not_json") {
         expect(res.status).toBe(415);

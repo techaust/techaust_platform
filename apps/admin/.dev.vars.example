@@ -2,6 +2,9 @@
 PASSWORD_PEPPER=
 SALT_PEPPER=
 TOTP_ENC_KEY=
+# M7.5 (L23): optional, only while TOTP_ENC_KEY is being rotated: the OLD key, so secrets sealed under it still open (and are re-sealed under the new key at
+# each member's next sign-in or step-up). Not in secrets.required; leave it out otherwise.
+# TOTP_ENC_KEY_PREVIOUS=
 SESSION_HMAC_KEY=
 # Cloudflare's always-pass Turnstile TEST secret (written by `pnpm dev:secrets`); staging and production use the real widget secret.
 TURNSTILE_SECRET=

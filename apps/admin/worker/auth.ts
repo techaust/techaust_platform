@@ -35,6 +35,7 @@ import {
   isAttemptKey,
   isChallengeId,
   isRecoveryCode,
+  issuedAtOf,
   LOCK_AFTER,
   LOCK_MS,
   loginRequest,
@@ -43,10 +44,11 @@ import {
   newSession,
   newTotpSecret,
   normaliseRecoveryCode,
-  openTotpSecret,
+  openTotpSecretRotating,
   passwordHmac,
   RESERVE_GATED_SQL,
   RESERVE_SQL,
+  readChallenge,
   readCookie,
   recoveryCodeHash,
   recoveryRequest,
@@ -56,6 +58,7 @@ import {
   signChallenge,
   TURNSTILE_AFTER,
   tokenHash,
+  totpKeysOf,
   totpRequest,
   totpUri,
   verifyChallenge,
@@ -80,6 +83,7 @@ import {
   logBatch,
   requestInfo,
 } from "./context.ts";
+import { addressLimit } from "./rate-limit.ts";
 
 type UserRow = {
   id: string;
@@ -89,6 +93,8 @@ type UserRow = {
   status: string;
   totp_secret_enc: string | null;
   totp_last_step: number | null;
+  /** M7.5 (L34): read with the code step, so a right code on a spent challenge is told apart (`challenge_used`). */
+  last_login_at: number | null;
 };
 
 const INVALID: ApiError = { code: "invalid_credentials", message: "Invalid email, password or code" };
@@ -97,6 +103,24 @@ const LOCKED: ApiError = { code: "locked", message: "Too many attempts. Try agai
 export const TURNSTILE_REQUIRED: ApiError = {
   code: "turnstile_required",
   message: "Verification required",
+};
+/**
+ * M7.5 (L9, M1.5 L3): the authenticator step of an invite outlived its 10-minute window (a genuine, expired enrolment challenge): the screen goes back to
+ * step 1, where the name and password start a new window. Staff line drafted under the lead's delegation (run file, B1 report: for the lead).
+ */
+export const ENROLMENT_EXPIRED: ApiError = {
+  code: "enrolment_expired",
+  message:
+    "Setting up took more than 10 minutes, so it has stopped. Enter your name and password again to start over.",
+};
+/**
+ * M7.5 (L34, the early check's F3): a right code on a challenge a finished sign-in has already spent (another tab signed in first). Uncounted: the code proves
+ * the person, so they are never locked out by their own second tab. The SPA goes back to the password step and shows this line (approved by the lead under the
+ * owner's delegation, run file "Lead's triage of the early check").
+ */
+export const CHALLENGE_USED: ApiError = {
+  code: "challenge_used",
+  message: "This sign-in has already been used. Enter your password again.",
 };
 const INVITE_INVALID: ApiError = {
   code: "invite_invalid",
@@ -120,13 +144,64 @@ export { FAIL_SQL, IP_READ, RESERVE_SQL };
 export const LOGIN_READ =
   "SELECT id, status, role, pw_salt, pw_hmac, totp_enabled_at FROM staff_users WHERE email = ?1";
 export const TOTP_READ =
-  "SELECT id, email, name, role, totp_secret_enc, totp_last_step FROM staff_users WHERE id = ?1 AND status = 'active'";
+  "SELECT id, email, name, role, totp_secret_enc, totp_last_step, last_login_at FROM staff_users WHERE id = ?1 AND status = 'active'";
 export const RECOVERY_USER_READ =
-  "SELECT id, email, name, role FROM staff_users WHERE id = ?1 AND status = 'active'";
+  "SELECT id, email, name, role, last_login_at FROM staff_users WHERE id = ?1 AND status = 'active'";
+/** M7.5 (L5): /invite/totp's read (?1 user id, ?2 invite hash, ?3 now), in the counter's batch: the member being enrolled with the live invite's role. */
+export const INVITE_TOTP_READ =
+  "SELECT u.id, u.email, u.name, i.role AS role, u.totp_secret_enc, u.totp_last_step FROM staff_users u JOIN staff_invites i ON i.token_hash = ?2 AND i.email = u.email AND i.used_at IS NULL AND i.expires_at > ?3 WHERE u.id = ?1 AND u.status = 'invited'";
 export const RECOVERY_CODE_READ =
   "SELECT 1 AS ok FROM staff_recovery_codes WHERE user_id = ?1 AND code_hash = ?2 AND used_at IS NULL";
 
 type Counted = { failures: number; locked_until: number | null };
+
+/**
+ * M7.5 (L34): gives back the code counter's reservation of THIS request (a right code on a spent challenge), by compare-and-set on exactly what the
+ * reservation left (`?2` its failures, `?3` its lock), so a concurrent attempt's count is never taken back. The reservation's own lock (it reached `LOCK_AFTER`)
+ * is lifted (`?4` = 1). A reservation that started the row or its window (`failures` 1) deletes it instead: `CODE_RELEASE_FIRST_SQL` (`?4` its window start).
+ */
+export const CODE_RELEASE_SQL =
+  "UPDATE auth_attempts SET failures = failures - 1, locked_until = CASE WHEN ?4 = 1 THEN NULL ELSE locked_until END WHERE key = ?1 AND failures = ?2 AND locked_until IS ?3";
+export const CODE_RELEASE_FIRST_SQL =
+  "DELETE FROM auth_attempts WHERE key = ?1 AND failures = ?2 AND locked_until IS ?3 AND window_start = ?4";
+
+const releaseStmt = (db: D1Database, key: string, reserved: Counted, t: number) =>
+  reserved.failures <= 1
+    ? db.prepare(CODE_RELEASE_FIRST_SQL).bind(key, reserved.failures, reserved.locked_until, t)
+    : db
+        .prepare(CODE_RELEASE_SQL)
+        .bind(key, reserved.failures, reserved.locked_until, reserved.failures >= LOCK_AFTER ? 1 : 0);
+
+/**
+ * M7.5 (L45): a right code on a spent challenge proves the member was there, so that challenge's unfinished sign-in marker (`staff_signin_pending`, keyed by
+ * its `jti`, 0075) goes too, or the hourly scan would email "unfinished sign-in" for the second tab. Only the row of THIS challenge for THIS member.
+ */
+export const SIGNIN_PENDING_SPENT_SQL = "DELETE FROM staff_signin_pending WHERE id = ?1 AND user_id = ?2";
+
+/**
+ * M7.5 (L34): the answer to a right code on a spent challenge: 401 `challenge_used`, the code counter's reservation given back and the address not counted,
+ * in the one call that writes the access row. No session, no alert. L45: the challenge's sign-in marker is deleted in the same call.
+ */
+async function challengeUsed(
+  c: Ctx,
+  key: string,
+  t: number,
+  reserved: Counted,
+  pending: { jti: unknown; userId: string },
+) {
+  const db = c.env.DB;
+  await logBatch(c, 401, [
+    releaseStmt(db, key, reserved, t),
+    ...(isChallengeId(pending.jti)
+      ? [db.prepare(SIGNIN_PENDING_SPENT_SQL).bind(pending.jti, pending.userId)]
+      : []),
+  ]);
+  return err(c, CHALLENGE_USED, 401);
+}
+
+/** M7.5 (L4, L34): a sign-in finished since the challenge was issued has spent it (`last_login_at` is moved to at least the finishing challenge's `iat`). */
+const spent = (lastLoginAt: number | null | undefined, iat: number) =>
+  typeof lastLoginAt === "number" && lastLoginAt >= iat;
 
 /**
  * The first call of /login, /totp and /recovery: [ip lock read, reservation, ...reads] in one batch. When the
@@ -210,6 +285,16 @@ export type SessionStart = {
   clear?: string[];
   /** M7.2 (Q3 A): the finished challenge's id; its `staff_signin_pending` row is deleted in the same batch, once the session row exists. */
   pendingId?: string | undefined;
+  /**
+   * M7.5 (L33, the early check's F2): the finishing challenge's `iat`. A recovery sign-in sets `last_login_at = max(now, iat)`, so a clock behind the one that
+   * issued the challenge can't leave it usable again.
+   */
+  iat?: number | undefined;
+  /**
+   * M7.5 (L23): a key rotation is in progress and only `TOTP_ENC_KEY_PREVIOUS` opened the member's secret: `sealed` is the same secret under the current key,
+   * stored in the same batch once the session row exists, and only while the row still holds `was` (so a concurrent change is never overwritten).
+   */
+  reseal?: { sealed: string; was: string } | undefined;
 };
 
 /**
@@ -256,8 +341,10 @@ export async function startSession(c: Ctx, o: SessionStart) {
   if (o.via === "recovery") {
     stmts.push(
       db
-        .prepare(`UPDATE staff_users SET last_login_at = ?2, updated_at = ?2 WHERE id = ?1 AND ${live(3)}`)
-        .bind(uid, t, s.id),
+        .prepare(
+          `UPDATE staff_users SET last_login_at = MAX(?2, ?4), updated_at = ?2 WHERE id = ?1 AND ${live(3)}`,
+        )
+        .bind(uid, t, s.id, o.iat ?? t),
     );
     addAlert(
       alertStmt(
@@ -300,6 +387,8 @@ export async function startSession(c: Ctx, o: SessionStart) {
     );
   }
   if (o.pendingId) stmts.push(db.prepare(signinPendingDoneSql(3)).bind(o.pendingId, uid, s.id));
+  if (o.reseal)
+    stmts.push(resealStmt(db, uid, o.reseal, `EXISTS (SELECT 1 FROM staff_sessions WHERE id = ?4)`, s.id));
   stmts.push(accessStmt(db, accessEntry(c, 200, uid), s.id));
   const results = await db.batch(stmts);
   if (results[1]?.meta.changes !== 1) return null;
@@ -315,6 +404,24 @@ export async function startSession(c: Ctx, o: SessionStart) {
   return s;
 }
 
+/**
+ * M7.5 (L23): stores a secret re-sealed under the current `TOTP_ENC_KEY`, only while the row still holds the seal that was opened (`was`) and `guardSql` (on
+ * ?4) holds; shared by sign-in (the session row exists) and step-up (the audit row exists).
+ */
+export function resealStmt(
+  db: D1Database,
+  userId: string,
+  reseal: { sealed: string; was: string },
+  guardSql: string,
+  guardParam: string,
+) {
+  return db
+    .prepare(
+      `UPDATE staff_users SET totp_secret_enc = ?1 WHERE id = ?2 AND totp_secret_enc = ?3 AND ${guardSql}`,
+    )
+    .bind(reseal.sealed, userId, reseal.was, guardParam);
+}
+
 const inviteSalt = async (saltPepper: string, hash: string) => fakeSalt(saltPepper, `invite:${hash}`);
 
 async function liveInvite(db: D1Database, token: string) {
@@ -328,6 +435,17 @@ async function liveInvite(db: D1Database, token: string) {
   return invite;
 }
 
+/**
+ * The guard of an enrolment's recovery codes: the member is active since `t`, AND (M7.5 L9, M1.5 L1) `changes() = 1`, which ties the codes to THIS request's
+ * activation, the statement just before them in the batch: two enrolments in the same millisecond can't both pass `totp_enabled_at = t`, so a member never
+ * gets 20 codes.
+ */
+export const enrolCodesGuard = (userId: string, t: number): GuardSql => ({
+  sql: (at) =>
+    `changes() = 1 AND EXISTS (SELECT 1 FROM staff_users WHERE id = ?${at} AND status = 'active' AND totp_enabled_at = ?${at + 1})`,
+  params: [userId, t],
+});
+
 /** Ten recovery-code rows in one statement (30 bound values; D1 allows 100), only if `guardSql` holds. */
 export function insertRecoveryCodes(db: D1Database, userId: string, hashes: string[], guard: GuardSql) {
   const values = hashes.map((_, i) => `(?${i * 3 + 1}, ?${i * 3 + 2}, ?${i * 3 + 3})`).join(", ");
@@ -339,6 +457,9 @@ export function insertRecoveryCodes(db: D1Database, userId: string, hashes: stri
 }
 
 export const auth = new Hono<AppEnv>()
+  // M7.5 (C2, L5): the per-address Rate Limiting of /salt, /login, /totp, /recovery and the three /invite routes, before the body is read, Turnstile or any
+  // D1 statement (rate-limit.ts; this router is the front's only).
+  .use(addressLimit)
   // 1. Salt for an email (a deterministic fake one when there's no usable account). A lookup, not an attempt.
   .post("/salt", json(saltRequest), async (c) => {
     const { email } = c.req.valid("json");
@@ -356,7 +477,7 @@ export const auth = new Hono<AppEnv>()
   //    the reservation (counts the attempt), the user.
   .post("/login", json(loginRequest), async (c) => {
     const { email, clientHash, turnstile } = c.req.valid("json");
-    const key = await accountKey(email);
+    const key = await accountKey(c.env.SALT_PEPPER, email);
     const db = c.env.DB;
     // Checked BEFORE any counter moves. A normal sign-in carries no token and makes no siteverify call.
     const verified = turnstile
@@ -415,6 +536,8 @@ export const auth = new Hono<AppEnv>()
       purpose: "login_totp",
       sub: row.id,
       exp: issuedAt + CHALLENGE_TTL_MS,
+      // M7.5 (L4): single use. The code step's batch is guarded on `last_login_at < iat`, and a finished sign-in moves it past.
+      iat: issuedAt,
       ak: key,
       jti,
     });
@@ -435,19 +558,28 @@ export const auth = new Hono<AppEnv>()
     const user = a.reads[0] as UserRow | undefined;
     const alerts = user && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, user.id, user.role)] : [];
     if (!user?.totp_secret_enc) return refuse(c, a, alerts);
-    const secret = await openTotpSecret(c.env.TOTP_ENC_KEY, user.id, user.totp_secret_enc);
-    const result = verifyTotp(secret, code, a.t, user.totp_last_step);
+    // M7.5 (L23): the current key, then TOTP_ENC_KEY_PREVIOUS during a rotation; a secret no key opens is refused like a wrong code (fail-closed).
+    const opened = await openTotpSecretRotating(totpKeysOf(c.env), user.id, user.totp_secret_enc);
+    if (!opened) return refuse(c, a, alerts);
+    const result = verifyTotp(opened.secret, code, a.t, user.totp_last_step);
     if (!result.ok) return refuse(c, a, alerts);
+    const iat = issuedAtOf(claim, CHALLENGE_TTL_MS);
+    // M7.5 (L34): a right code on a spent challenge (another tab signed in first) is not a failure: uncounted, 401 `challenge_used`.
+    if (spent(user.last_login_at, iat))
+      return challengeUsed(c, key, a.t, a.reserved, { jti: claim.jti, userId: user.id });
     const session = await startSession(c, {
       user,
+      // M7.5 (L4): the challenge is single use: a sign-in finished since it was issued moved `last_login_at` past its `iat`.
+      // L33: and this one moves it to at least its own `iat` (`MAX(now, iat)`), so a server clock behind the issuer's can't leave it usable.
       guard: db
         .prepare(
-          "UPDATE staff_users SET totp_last_step = ?2, last_login_at = ?3, updated_at = ?3 WHERE id = ?1 AND status = 'active' AND (totp_last_step IS NULL OR totp_last_step < ?2)",
+          "UPDATE staff_users SET totp_last_step = ?2, last_login_at = MAX(?3, ?4), updated_at = ?3 WHERE id = ?1 AND status = 'active' AND (totp_last_step IS NULL OR totp_last_step < ?2) AND (last_login_at IS NULL OR last_login_at < ?4)",
         )
-        .bind(user.id, result.step, now()),
+        .bind(user.id, result.step, now(), iat),
       via: "totp",
       clear: [claim.ak, key],
       pendingId: isChallengeId(claim.jti) ? claim.jti : undefined,
+      reseal: opened.reseal ? { sealed: opened.reseal, was: user.totp_secret_enc } : undefined,
     });
     if (!session) return refuse(c, a, alerts);
     return c.json({ ok: true, user: { name: user.name, email: user.email, role: user.role } });
@@ -467,19 +599,26 @@ export const auth = new Hono<AppEnv>()
     ]);
     if (a.ipLocked) return locked(c, a);
     if (!a.reserved) return locked(c, a);
-    const user = a.reads[0] as Pick<UserRow, "id" | "email" | "name" | "role"> | undefined;
+    const user = a.reads[0] as Pick<UserRow, "id" | "email" | "name" | "role" | "last_login_at"> | undefined;
     const alerts = user && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, user.id, user.role)] : [];
     const matches = !!a.reads[1] && isRecoveryCode(normaliseRecoveryCode(code));
     if (!user || !matches) return refuse(c, a, alerts);
+    const iat = issuedAtOf(claim, CHALLENGE_TTL_MS);
+    // M7.5 (L34): a right recovery code on a spent challenge: uncounted, 401 `challenge_used`, and the code is not spent.
+    if (spent(user.last_login_at, iat))
+      return challengeUsed(c, key, a.t, a.reserved, { jti: claim.jti, userId: user.id });
     const session = await startSession(c, {
       user,
       // The code's single use IS the guard: of two requests with the same code only one changes a row.
+      // M7.5 (L4): and the challenge is single use (a sign-in finished since it was issued moved `last_login_at` past its `iat`).
       guard: db
         .prepare(
-          "UPDATE staff_recovery_codes SET used_at = ?3 WHERE user_id = ?1 AND code_hash = ?2 AND used_at IS NULL",
+          "UPDATE staff_recovery_codes SET used_at = ?3 WHERE user_id = ?1 AND code_hash = ?2 AND used_at IS NULL AND EXISTS (SELECT 1 FROM staff_users WHERE id = ?1 AND (last_login_at IS NULL OR last_login_at < ?4))",
         )
-        .bind(user.id, hash, now()),
+        .bind(user.id, hash, now(), iat),
       via: "recovery",
+      // L33: the session batch sets `last_login_at = MAX(now, iat)`.
+      iat,
       clear: [claim.ak, key],
       pendingId: isChallengeId(claim.jti) ? claim.jti : undefined,
     });
@@ -563,29 +702,27 @@ export const auth = new Hono<AppEnv>()
 
   .post("/invite/totp", json(totpRequest), async (c) => {
     const { challenge, code } = c.req.valid("json");
-    const claim = await verifyChallenge(c.env.SESSION_HMAC_KEY, challenge, "enrol_totp", now());
-    const [userId, inviteHash] = claim ? claim.sub.split("|") : [];
+    const read = await readChallenge(c.env.SESSION_HMAC_KEY, challenge, "enrol_totp", now());
+    // M7.5 (L9, M1.5 L3): a genuine challenge past its 10 minutes has its own answer, so the screen goes back to step 1.
+    if (read === "expired") return err(c, ENROLMENT_EXPIRED, 401);
+    const [userId, inviteHash] = read ? read.sub.split("|") : [];
     if (!userId || !inviteHash) return err(c, INVALID, 401);
     const db = c.env.DB;
+    // M7.5 (A1 F5, L5): codes count on the member's `code:` counter, as /totp does: reserved FIRST, with the address's lock, in the read's batch.
+    const key = codeKey(userId);
     // The member being enrolled, with the role of the invite that is still live for them (none live: refused).
-    const row = await db
-      .prepare(
-        "SELECT u.id, u.email, u.name, i.role AS role, u.totp_secret_enc, u.totp_last_step FROM staff_users u JOIN staff_invites i ON i.token_hash = ?2 AND i.email = u.email AND i.used_at IS NULL AND i.expires_at > ?3 WHERE u.id = ?1 AND u.status = 'invited'",
-      )
-      .bind(userId, inviteHash, now())
-      .first<UserRow>();
-    if (!row?.totp_secret_enc) return err(c, INVALID, 401);
-    const user = row;
-    const secret = await openTotpSecret(c.env.TOTP_ENC_KEY, user.id, user.totp_secret_enc as string);
-    const result = verifyTotp(secret, code, now(), user.totp_last_step);
-    if (!result.ok) return err(c, INVALID, 401);
+    const a = await attempt(c, key, [db.prepare(INVITE_TOTP_READ).bind(userId, inviteHash, now())]);
+    if (a.ipLocked || !a.reserved) return locked(c, a);
+    const user = a.reads[0] as Omit<UserRow, "last_login_at"> | undefined;
+    const alerts = user && a.reserved.failures >= LOCK_AFTER ? [lockoutAlert(c, user.id, user.role)] : [];
+    if (!user?.totp_secret_enc) return refuse(c, a, alerts);
+    const opened = await openTotpSecretRotating(totpKeysOf(c.env), user.id, user.totp_secret_enc);
+    if (!opened) return refuse(c, a, alerts);
+    const result = verifyTotp(opened.secret, code, a.t, user.totp_last_step);
+    if (!result.ok) return refuse(c, a, alerts);
     const t = now();
     const codes = newRecoveryCodes();
-    const active: GuardSql = {
-      sql: (at) =>
-        `EXISTS (SELECT 1 FROM staff_users WHERE id = ?${at} AND status = 'active' AND totp_enabled_at = ?${at + 1})`,
-      params: [user.id, t],
-    };
+    const active = enrolCodesGuard(user.id, t);
     // The invite is consumed FIRST, only if it is still live (not revoked, expired or replaced) and belongs to this
     // member; the member is activated, with the role of THAT invite, only if it was consumed (`changes()` right
     // after it); the recovery codes only if the member is active. A revoked invite therefore can't be completed.
@@ -611,6 +748,8 @@ export const auth = new Hono<AppEnv>()
         )
         .bind(user.id, result.step, now()),
       via: "invite",
+      clear: [key],
+      reseal: opened.reseal ? { sealed: opened.reseal, was: user.totp_secret_enc } : undefined,
     });
     if (!session) return err(c, INVALID, 401);
     return c.json({

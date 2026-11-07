@@ -1,7 +1,8 @@
 // Worker budget guard (M3.4–M4.5 batch, lead decision 2026-10-25; replaces the raw-byte limits of check-admin-bundle.mjs and
 // check-portal-bundle.mjs). Bytes are not what costs metered CPU: a Worker's startup (compile + top-level evaluation) runs
 // before the request, and the Free plan's 10 ms meters the request path. So the guard checks three things:
-//   - a byte ceiling (well under the 3 MB compressed Worker limit),
+//   - a byte ceiling (our own line: Cloudflare's Worker size limit is 64 MiB uncompressed with no compressed limit, docs read
+//     2026-11-07, M7.5 L16; the ceilings below exist for startup time, not for that limit),
 //   - a startup budget: the fastest of compile + top-level evaluation + the start-up work an entry hands to the probe, in a fresh `node:vm` context
 //     under workerd's global-scope rules (a local proxy, not workerd),
 //   - forbidden modules: classic zod (~150 KB), and PDF code that belongs only in the jobs Worker.
@@ -128,8 +129,9 @@ export const BUDGETS = {
     // M4.5 added ~20–25 KB to ~58 KB; M6.4 (L27, the lead's "before M7.1" decision brought forward): 150,000 (about 120,000 before PayPal).
     // M7.1 L3 (lead, precedent 13 2026-10-25): one Worker, ceiling 200,000 with a 160,000 plan line (measured 125,236 after M6.5, start-up 12.1 ms
     // fastest of 7). Past the plan line, or start-up past 100 ms locally, the split into a front and a portal API Worker goes to the owner.
+    // M7.5 L47 (owner, 2026-11-07): at 163,583 bytes (start-up 25–58 ms) the plan line is raised to 180,000 and the portal is not split.
     maxBytes: 200_000,
-    planBytes: 160_000,
+    planBytes: 180_000,
     maxStartupMs: 200,
     forbidden: [CLASSIC_ZOD, PDF_LIB, PUPPETEER, PDF_FONTS, GST_CORE],
   },

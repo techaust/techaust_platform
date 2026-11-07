@@ -29,6 +29,7 @@ import { isoDayText, REPORTS_COPY } from "../lib/reports.ts";
 import { useUser } from "../session.tsx";
 import { FlagPill, HoursBar, tierText } from "./care/parts.tsx";
 import { FinanceTiles } from "./dashboard-finance.tsx";
+import { UsageTile } from "./dashboard-usage.tsx";
 import { MilestonePill } from "./projects/parts.tsx";
 
 export function Dashboard() {
@@ -48,6 +49,7 @@ export function Dashboard() {
 }
 
 function Tiles({ data }: { data: DashboardData }) {
+  const user = useUser();
   const t = data.tiles;
   const reportLinks = reportLinksOf(data.reports);
   const kpis = [
@@ -93,6 +95,8 @@ function Tiles({ data }: { data: DashboardData }) {
           )}
         </div>
       )}
+      {/* M7.5 G: the account's Free-plan usage, last (Owner and Accountant; the API refuses the others). It loads on its own after the page. */}
+      {allowed(user.role, "usage.read") && <UsageTile />}
     </div>
   );
 }

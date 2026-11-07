@@ -187,6 +187,9 @@ const MATRIX = {
   "realisation.reduce": { owner: "step-up" },
   // The dashboard (M3.5): every role; the handler keeps only the tiles the role may see (core/dashboard.ts)
   "dashboard.read": { owner: "allow", staff: "allow", sales: "allow", accountant: "allow" },
+  // M7.5 D1/G (Q4 A): the dashboard's Free-plan usage tile (the account's daily Cloudflare figures, `cf.*` in stats_daily): Owner and Accountant only (the lead's
+  // proposal, a new docs/04 §9 row "Free-plan usage tile: Owner ✅ · Accountant 👁").
+  "usage.read": { owner: "allow", accountant: "allow" },
   // Reports
   "reports.finance": { owner: "allow", accountant: "allow" },
   "reports.delivery": { owner: "allow", staff: "allow" },

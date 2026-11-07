@@ -72,6 +72,7 @@ describe("the 09:00 IST dispatch [LD76]", () => {
           "signin.unfinished", // M7.2, changed on purpose
           "bells.sweep",
           ...(h === ALERTS_HOUR_IST ? ["requests.clock"] : []), // M7.4, changed on purpose
+          ...(h === 6 ? ["usage.daily"] : []), // M7.5 L50, changed on purpose
         ];
         expect(kinds, `day ${day} hour ${h}`).toEqual(expected);
       }

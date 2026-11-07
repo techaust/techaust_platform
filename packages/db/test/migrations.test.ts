@@ -99,6 +99,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0077_reports_indexes.sql",
       "0078_data_protection.sql",
       "0079_data_protection_triggers.sql",
+      "0080_fk_child_indexes.sql",
     ]);
   });
 
@@ -165,6 +166,23 @@ describe("migrations apply cleanly to a fresh D1", () => {
         );
         expect(hit.length, `${table}.${column} has an index starting with it`).toBeGreaterThan(0);
       }
+    }
+  });
+
+  it("deleting a contact or a milestone checks its foreign-key children through an index, never a scan (0080, M7.5 L38)", async () => {
+    // SQLite's foreign-key check on a parent DELETE looks up `child = ?`; these two were the sweep's findings S1 and S2 (packages/testing budget.ts).
+    // Both indexes are partial (`IS NOT NULL`): the planner may use them because `= ?` implies NOT NULL.
+    for (const [table, column, index] of [
+      ["documents", "decided_contact_id", "documents_decided_contact"],
+      ["payment_schedules", "milestone_id", "payment_schedules_milestone"],
+    ] as const) {
+      const plan = await all<{ detail: string }>(
+        `EXPLAIN QUERY PLAN SELECT 1 FROM ${table} WHERE ${column} = ?1`,
+        "x",
+      );
+      expect(plan.map((p) => p.detail).join(" | "), `${table}.${column}`).toContain(
+        `USING COVERING INDEX ${index}`,
+      );
     }
   });
 

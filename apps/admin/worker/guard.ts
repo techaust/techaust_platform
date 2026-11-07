@@ -8,6 +8,7 @@ import { createMiddleware } from "hono/factory";
 import {
   type Actor,
   type AppEnv,
+  type Ctx,
   err,
   FORBIDDEN,
   NOT_FOUND,
@@ -176,6 +177,8 @@ export const ROUTES: readonly RouteDef[] = [
   R("PATCH", "/time/:id", "time.writeOwn", { audit: "time.update" }),
   R("DELETE", "/time/:id", "time.writeOwn", { audit: "time.delete" }),
   I("GET", "/dashboard", "dashboard.read"),
+  // M7.5 D1/G (Q4 A): the Free-plan usage tile's data, Owner and Accountant.
+  I("GET", "/dashboard/usage", "usage.read"),
   // Reports (M5.5b, LD71, LD74): the register page of the GST and CA exports (a fresh step-up on every page: `exports.gst`; one audit row per page), the EDF month and the
   // export realisation list (Owner and Accountant, `reports.finance`, Q56).
   I("GET", "/reports/registers", "exports.gst", { audit: "report.export" }),
@@ -407,15 +410,38 @@ export const TOUCH_SQL =
   "UPDATE staff_sessions SET last_seen_at = ?2, idle_expires_at = min(?3, abs_expires_at) WHERE id = ?1";
 export const IDLE_REFRESH_MS = 12 * 60 * 60 * 1000;
 
-export const guard = createMiddleware<AppEnv>(async (c, next) => {
-  const row = c.var.route;
-  if (!row) return err(c, NOT_FOUND, 404);
-  if (row.access === "public") return next();
+/**
+ * M7.5 (A1 F2, L2): the front's per-session limit (rate-limit.ts `sessionLimit`): its 429 when this session is over the limit, else null. Passed in by the
+ * front only (createApp `sessionLimit`), so the Workers behind it never bundle the limiter or name its key.
+ */
+export type SessionLimit = (c: Ctx, sessionId: string) => Promise<Response | null>;
 
-  // No cookie: 401 without touching the database.
-  const token = readCookie(c.req.header("Cookie"));
-  if (!token) return err(c, UNAUTHENTICATED, 401);
-  const sessionId = await tokenHash(token);
+/** The guard, with the front's per-session limit asked before any D1 work (none: the Workers behind the front, which counted the request). */
+export const guardWith = (sessionLimit?: SessionLimit) =>
+  createMiddleware<AppEnv>(async (c, next) => {
+    const row = c.var.route;
+    if (!row) return err(c, NOT_FOUND, 404);
+    if (row.access === "public") return next();
+
+    // No cookie: 401 without touching the database.
+    const token = readCookie(c.req.header("Cookie"));
+    if (!token) return err(c, UNAUTHENTICATED, 401);
+    const sessionId = await tokenHash(token);
+    // A refusal writes nothing, not even the access row.
+    const refused = sessionLimit ? await sessionLimit(c, sessionId) : null;
+    if (refused) return refused;
+    return guarded(c, next, row.access, sessionId);
+  });
+
+/** The guard without a session limit (the Workers behind the front, and tests of the table). */
+export const guard = guardWith();
+
+async function guarded(
+  c: Ctx,
+  next: () => Promise<void>,
+  access: Exclude<RouteDef["access"], "public">,
+  sessionId: string,
+) {
   const s = await c.env.DB.prepare(SESSION_READ).bind(sessionId).first<SessionRow>();
   const t = Date.now();
   const state = s
@@ -442,9 +468,11 @@ export const guard = createMiddleware<AppEnv>(async (c, next) => {
   c.set("user", user);
   if (state.touch) c.set("touch", c.env.DB.prepare(TOUCH_SQL).bind(sessionId, t, t + IDLE_REFRESH_MS));
 
-  const decision = isRole(s.role) ? decide(s.role, row.access) : "deny";
+  const decision = isRole(s.role) ? decide(s.role, access) : "deny";
   if (decision === "deny") return err(c, FORBIDDEN, 403);
   if (decision === "step-up" && !stepUpActive(s.step_up_until, t)) return err(c, STEP_UP_REQUIRED, 403);
-  // "approval": the handler decides (no route needs it yet).
+  // "approval" (M7.5 L9: this used to say no route needed it): a Staff member's issue request and payment record (`invoices.issue`, `payments.record`), a
+  // proposal sent with a discount over the self-send limit (`proposals.send`) and a request close without its kind (`requests.close`) reach the handler,
+  // which decides again with the record (`decide(role, action, ctx)`) and turns "approval" into an approval request or a refusal; it never allows on it.
   return next();
-});
+}

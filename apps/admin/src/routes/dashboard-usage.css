@@ -1,0 +1,181 @@
+/* The Free-plan usage tile (M7.5 G; routes/dashboard-usage.tsx). Tokens only (@techaust/ui). The tile closes the dashboard: the account's own meter, after the
+   business tiles. On a desktop it spans both columns, so each limit is one line (its name and figure, its 30-day strip, its share); in a narrow box the
+   strip moves under the name, full width. A container query, not the window: the tile's own width decides. */
+
+.tile--usage {
+  order: 6;
+  container-type: inline-size;
+}
+
+@media (min-width: 64rem) {
+  .dash > .tile--usage {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ---------- Head: the title and the day read, the table toggle at the right ---------- */
+
+.usage-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.usage-head__text {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: var(--container-prose);
+}
+
+.usage-head__intro {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.usage-head__intro--stale {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-text);
+}
+
+.usage-head__intro--stale .icon {
+  flex: none;
+  margin-top: 0.125rem;
+}
+
+/* A narrow tile: the toggle wraps under the intro and lines up with its text (the button's own padding pulled back). */
+.usage-head__toggle {
+  margin-inline-start: calc(-1 * var(--space-2));
+  font-size: var(--text-sm);
+}
+
+@container (min-width: 40rem) {
+  .usage-head__toggle {
+    margin-inline-start: auto;
+  }
+}
+
+/* ---------- One row per limit ---------- */
+
+.usage-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.usage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name share"
+    "strip strip";
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+  padding-block: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.usage-row__name {
+  grid-area: name;
+  display: grid;
+  min-width: 0;
+}
+
+.usage-row__label {
+  font-weight: 560;
+}
+
+.usage-row__figure {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--text-sm--line-height);
+}
+
+.usage-row__strip {
+  grid-area: strip;
+  display: block;
+  min-width: 0;
+}
+
+.usage-row__share {
+  grid-area: share;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1) var(--space-3);
+}
+
+.usage-row__pct {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.usage-row--skeleton .usage-row__name {
+  gap: var(--space-2);
+}
+
+.usage-row--skeleton .usage-row__strip {
+  align-self: center;
+}
+
+/* A wide tile: one line per limit, and the rows share their columns (a subgrid), so every strip starts and ends at the same x and the shares line up as a
+   column of figures, with a pill after its figure where there is one. */
+@container (min-width: 40rem) {
+  .usage-rows {
+    grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr) auto;
+    column-gap: var(--space-5);
+  }
+
+  .usage-row {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    grid-template-areas: none;
+    row-gap: 0;
+  }
+
+  .usage-row__name {
+    grid-area: auto;
+    grid-column: 1;
+  }
+
+  .usage-row__strip {
+    grid-area: auto;
+    grid-column: 2;
+  }
+
+  .usage-row__share {
+    grid-area: auto;
+    grid-column: 3;
+    display: grid;
+    grid-template-columns: 3.75rem auto;
+    justify-content: start;
+    column-gap: var(--space-3);
+  }
+
+  .usage-row__pct {
+    grid-column: 1;
+    justify-self: end;
+  }
+}
+
+/* ---------- Under the rows: requests stopped at a limit, then the table ---------- */
+
+.usage-failed {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-3);
+}
+
+.usage-failed p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.usage-table {
+  margin-top: var(--space-2);
+}

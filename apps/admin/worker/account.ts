@@ -8,11 +8,12 @@ import {
   LOCK_AFTER,
   LOCK_MS,
   newRecoveryCodes,
-  openTotpSecret,
+  openTotpSecretRotating,
   recoveryCodeHash,
   STEP_UP_MS,
   sessionIdParam,
   stepUpRequest,
+  totpKeysOf,
   verifyTotp,
   WINDOW_MS,
 } from "@techaust/auth";
@@ -68,13 +69,11 @@ export const account = new Hono<AppEnv>()
     const user = read?.results[0] as
       | { totp_secret_enc: string | null; totp_last_step: number | null }
       | undefined;
-    const result = user?.totp_secret_enc
-      ? verifyTotp(
-          await openTotpSecret(c.env.TOTP_ENC_KEY, u.id, user.totp_secret_enc),
-          code,
-          t,
-          user.totp_last_step,
-        )
+    // M7.5 (L23): the current key, then TOTP_ENC_KEY_PREVIOUS during a rotation; a secret no key opens is refused like a wrong code (fail-closed).
+    const sealed = user?.totp_secret_enc ?? null;
+    const opened = sealed ? await openTotpSecretRotating(totpKeysOf(c.env), u.id, sealed) : null;
+    const result = opened
+      ? verifyTotp(opened.secret, code, t, user?.totp_last_step ?? null)
       : ({ ok: false } as const);
     const refuse = async () => {
       await logBatch(
@@ -108,6 +107,16 @@ export const account = new Hono<AppEnv>()
       summary: { until },
       side: (g) => [
         db.prepare(`DELETE FROM auth_attempts WHERE key = ?1 AND ${g.sql(2)}`).bind(key, ...g.params),
+        // M7.5 (L23): only the previous key opened the secret: store it re-sealed under the current key, while the row still holds the seal that was opened.
+        ...(opened?.reseal && sealed
+          ? [
+              db
+                .prepare(
+                  `UPDATE staff_users SET totp_secret_enc = ?1 WHERE id = ?2 AND totp_secret_enc = ?3 AND ${g.sql(4)}`,
+                )
+                .bind(opened.reseal, u.id, sealed, ...g.params),
+            ]
+          : []),
       ],
     });
     if (!done) return refuse(); // a replayed code: the guard moved nothing

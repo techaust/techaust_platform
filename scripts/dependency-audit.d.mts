@@ -5,6 +5,8 @@ export type Advisory = {
   title: string;
   patched: string | null;
   paths: string[];
+  findings?: { version: string; paths: string[] }[];
+  outside?: string[];
 };
 export type AllowEntry = {
   advisory: string;
@@ -13,6 +15,8 @@ export type AllowEntry = {
   added: string;
   addedBy: string;
   expires: string;
+  versions?: string[];
+  via?: string[];
 };
 export type Verdict = {
   blocked: Advisory[];
@@ -24,6 +28,8 @@ export type Verdict = {
 export const ALLOW_FILE: string;
 export const GATED: string[];
 export const MAX_ALLOW_DAYS: number;
+export function viaMatches(pattern: string, path: string): boolean;
+export function coveredBy(entry: AllowEntry, advisory: Advisory): boolean;
 export function advisoriesOf(text: string): Advisory[];
 export function allowListProblems(entries: unknown): string[];
 export function verdict(advisories: Advisory[], entries: AllowEntry[], today: string): Verdict;

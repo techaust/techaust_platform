@@ -2,7 +2,7 @@
 // hour per account (`acct:` = a password attempt, `code:` = a code attempt), and per IP after 100 failures per hour
 // (`ip:`). Pure decision functions; the Worker stores the rows in `auth_attempts` and its SQL is tested against
 // these functions (`RESERVE_SQL` agrees with `reserveAttempt`).
-import { enc, hex, hmacSha256, sha256 } from "./crypto.ts";
+import { enc, hex, hmacSha256 } from "./crypto.ts";
 import { addressOf } from "./portal.ts";
 
 export const WINDOW_MS = 60 * 60 * 1000;
@@ -87,9 +87,13 @@ export function reserveAttemptGated(
   return reserveAttempt(a, nowMs, lockAfter, lockMs, windowMs);
 }
 
-/** Password counter key: a hash of the email, so unknown emails behave exactly like real ones. */
-export const accountKey = async (email: string) =>
-  `acct:${hex(await sha256(enc.encode(email))).slice(0, 32)}`;
+/**
+ * Password counter key: a keyed hash of the email, so unknown emails behave exactly like real ones. M7.5 (A1 F11, L8): an HMAC under `SALT_PEPPER` (as `ipKey`),
+ * no longer a bare SHA-256, so the counter table's keys can't be matched against a list of addresses without the secret. The shape (`acct:<32 hex>`) is
+ * unchanged (`isAttemptKey`); rows written under the old key are simply not found again, which is harmless: a lock lasts 15 minutes and a window an hour.
+ */
+export const accountKey = async (saltPepper: string, email: string) =>
+  `acct:${hex(await hmacSha256(saltPepper, enc.encode(`acct:${email}`))).slice(0, 32)}`;
 
 /** Code counter key (TOTP, recovery code, step-up code), one per account: `code:<user id>`. */
 export const codeKey = (userId: string) => `code:${userId}`;

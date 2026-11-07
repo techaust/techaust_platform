@@ -35,14 +35,14 @@ describe("admin front and API budgets (M5.0)", () => {
 
 describe("the portal budget (M7.1 L3)", () => {
   const portal = BUDGETS.portal;
-  it("one Worker: ceiling 200,000, plan line 160,000 (a note, never a failure), 200 ms startup", () => {
+  it("one Worker: ceiling 200,000, plan line 180,000 (L47; a note, never a failure), 200 ms startup", () => {
     expect(portal.maxBytes).toBe(200_000);
-    expect(portal.planBytes).toBe(160_000);
+    expect(portal.planBytes).toBe(180_000); // L47, owner 2026-11-07
     expect(portal.maxStartupMs).toBe(200);
     expect(checkBundle({ ...ok, size: 199_999 }, portal)).toEqual([]);
     expect(checkBundle({ ...ok, size: 200_001 }, portal)).toHaveLength(1);
-    expect(planNote(160_000, portal)).toBeNull();
-    expect(planNote(160_001, portal)).toMatch(/past its plan line of 160000/);
+    expect(planNote(180_000, portal)).toBeNull();
+    expect(planNote(180_001, portal)).toMatch(/past its plan line of 180000/);
   });
 });
 

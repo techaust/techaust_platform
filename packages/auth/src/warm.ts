@@ -70,7 +70,7 @@ const fail = (): never => {
  * A sealed value made once with the warm-up key above: 20 zero bytes under AAD "totp:warm-up" (the shape of a stored TOTP secret).
  * Opening it needs no randomness, so it can run at start-up; it is made-up data, not a secret.
  */
-const WARM_SEALED_TOTP = "fUdIFWufsle1jImbaqsZXMt8EknnaK_pN9pa2yqEzy9jGfChBW97NBaWDs47GzgO";
+const WARM_SEALED_TOTP = "v1.fUdIFWufsle1jImbaqsZXMt8EknnaK_pN9pa2yqEzy9jGfChBW97NBaWDs47GzgO";
 
 /**
  * Start-up warm-up of the staff step-up path (M3.1; `/auth/step-up` measured up to 9 ms on staging, 2026-10-23). Opens the sealed

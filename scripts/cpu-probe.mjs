@@ -56,7 +56,11 @@ export const BUNDLES = {
   // The fourth admin Worker (2026-11-03, brief D.6): invoices and notes, statements, reports, approvals, the dashboard, `BillingJobs` and `GatewayAdvance`.
   invoices: "apps/admin/dist/techaust_platform_admin_invoices",
   jobs: "apps/jobs/dist",
+  // M7.5 L20: the portal Worker (`pnpm --filter @techaust/portal exec vite build`).
+  portal: "apps/portal/dist/techaust_platform_portal",
 };
+/** The portal's own origin (its CSRF check wants it on unsafe requests). */
+const PORTAL_ORIGIN = "http://localhost:5174";
 const ORIGIN = "http://localhost:5173";
 /** M7.3 report cases: an IST day `days` from today (ISO), and this IST day's FY token (`2627`). */
 const isoDay = (days) => new Date(Date.now() + 19_800_000 + days * 86_400_000).toISOString().slice(0, 10);
@@ -82,6 +86,8 @@ const SECRETS = {
   SES_SECRET_ACCESS_KEY: madeUp("probe", "ses"),
   // M6.4: a made-up PayPal webhook id (letters and digits: an identifier, not a credential).
   PAYPAL_WEBHOOK_ID: "PROBEPAYPALWEBHOOK01",
+  // M7.5 L20: the portal's key pepper (base64 of 32 bytes, as the real one).
+  PORTAL_KEY_PEPPER: TEST_KEY(5),
 };
 /** M6.4: the local simulator's certificate URL (the hook accepts it while ENVIRONMENT is "local"; the case process answers it in-process). */
 const PROBE_CERT_URL = "http://localhost:8799/__paypal-test-cert";
@@ -230,8 +236,8 @@ const quietConsole = () => {
   return keep;
 };
 
-function requestOf(path, { method, body, cookie, headers = {} } = {}) {
-  const h = { Origin: ORIGIN, ...headers };
+function requestOf(path, { method, body, cookie, headers = {}, origin = ORIGIN } = {}) {
+  const h = { Origin: origin, ...headers };
   if (cookie) h.Cookie = cookie;
   let payload;
   if (body !== undefined) {
@@ -239,7 +245,7 @@ function requestOf(path, { method, body, cookie, headers = {} } = {}) {
     h["Content-Type"] ??= "application/json";
     h["Content-Length"] = String(Buffer.byteLength(payload));
   }
-  return new Request(`${ORIGIN}/api/v1${path}`, {
+  return new Request(`${origin}/api/v1${path}`, {
     method: method ?? (body === undefined ? "GET" : "POST"),
     headers: h,
     body: payload,
@@ -773,6 +779,43 @@ async function seed(dir, extra) {
       returnTo: "invoice",
     });
   }
+  // M7.5 L20: the portal. Links minted by the `portal:link` SQL: one used here for the session cookie, the rest kept for the link sign-in case (each is
+  // single use). M7.5 L39: for a contact of the probe's own INR client (X0001, portal access and finance set above), whose issued invoices, offers and
+  // receipts give Home and the invoices list rows to shape (the portal sample clients have none, so B2's first runs read empty lists); the start-up dry
+  // run's fixture is captured from the same calls.
+  const { linkStatements } = await import("./portal-sql.mjs");
+  const portalContact = raw
+    .prepare("SELECT id FROM contacts WHERE client_id = ? AND anonymised_at IS NULL ORDER BY id LIMIT 1")
+    .get(inr);
+  const mintLink = () => {
+    const token = randomBytes(32).toString("base64url");
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    for (const s of linkStatements({
+      contactId: portalContact.id,
+      tokenHash,
+      now: Date.now(),
+      auditId: randomUUID(),
+    }))
+      raw.exec(s);
+    return token;
+  };
+  const portal = await loadWorker("portal");
+  const portalEnv = envOf("portal", shared);
+  const verified = await portal.default.fetch(
+    requestOf("/auth/magic/verify", { body: { token: mintLink() }, origin: PORTAL_ORIGIN }),
+    portalEnv,
+    ctx(),
+  );
+  await drain();
+  const portalCookie =
+    verified.headers
+      .getSetCookie()
+      .find((c) => c.startsWith("__Host-ta_portal="))
+      ?.split(";")[0] ?? null;
+  await verified.text();
+  if (!portalCookie)
+    throw new Error(`cpu-probe: the portal sign-in answered ${verified.status} with no session`);
+  const portalTokens = Array.from({ length: 8 }, mintLink);
   const salted = must("salt", await via("/auth/salt", { body: { email }, cookie: device }));
   const manifest = {
     email,
@@ -794,6 +837,8 @@ async function seed(dir, extra) {
     paypalLinks,
     advances,
     reviews,
+    portalCookie,
+    portalTokens,
   };
   writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest, null, 2));
   keep.log(
@@ -957,6 +1002,30 @@ export const CASES = {
   // "All payments" (C8, a new statement): in the start-up dry run (B2: 3.5 ms first-run locally without it).
   "GET /payments": { worker: "finance", call: (m) => ({ path: "/payments", cookie: m.cookie }) },
   "rpc GatewayEvents.processEvent": { worker: "finance", rpc: true },
+  // M7.5 L20: the portal's hot rows: health, the link sign-in (a fresh single-use link per attempt), and the signed-in reads.
+  "portal GET /health": { worker: "portal", call: () => ({ path: "/health", origin: PORTAL_ORIGIN }) },
+  // M7.5 L39: in the portal's start-up dry run too, with a made-up token of the right shape (the answer book holds the rows the captured use read and wrote).
+  "portal POST /auth/magic/verify": {
+    worker: "portal",
+    warmBody: () => ({ token: "warm-up-link-token-not-a-real-one".padEnd(43, "0") }),
+    call: (m, i) => ({
+      path: "/auth/magic/verify",
+      body: { token: m.portalTokens[i] },
+      origin: PORTAL_ORIGIN,
+    }),
+  },
+  "portal GET /me": {
+    worker: "portal",
+    call: (m) => ({ path: "/me", cookie: m.portalCookie, origin: PORTAL_ORIGIN }),
+  },
+  "portal GET /home": {
+    worker: "portal",
+    call: (m) => ({ path: "/home", cookie: m.portalCookie, origin: PORTAL_ORIGIN }),
+  },
+  "portal GET /invoices": {
+    worker: "portal",
+    call: (m) => ({ path: "/invoices", cookie: m.portalCookie, origin: PORTAL_ORIGIN }),
+  },
   "jobs POST /razorpay": { worker: "jobs", hook: true },
   // M6.4: the PayPal return's capture RPC (the token, the claim, the capture and the confirmed batch) and the PayPal webhook (the certificate's first fetch
   // and import, CRC32, the RSA verify, two D1 statements, the send). L31 (early check 2 finding 4): the finance Worker's RPC entrypoints are dry-run at start-up
@@ -1211,7 +1280,7 @@ export function sqlKey(sql) {
  * for M6.3; a second row of the same shape runs the same code), and so does the invoices Worker, which took finance's invoice routes with their fixture (the
  * fourth admin Worker, 2026-11-03); the front and the API keep two.
  */
-const ROWS_KEPT = { front: 2, api: 2, finance: 1, invoices: 1 };
+const ROWS_KEPT = { front: 2, api: 2, finance: 1, invoices: 1, portal: 1 };
 
 const FIXTURE_NAMES = {
   front: "FRONT_WARM",
@@ -1220,6 +1289,7 @@ const FIXTURE_NAMES = {
   invoices: "INVOICES_WARM",
   "finance-rpc": "FINANCE_RPC_WARM",
   "invoices-rpc": "INVOICES_RPC_WARM",
+  portal: "PORTAL_WARM",
 };
 /** The type and its module of each RPC fixture (the HTTP ones are `WarmFixture` of warm-routes.ts). */
 const RPC_FIXTURE_TYPES = {
@@ -1274,6 +1344,8 @@ function writeFixtures(work, seedDir) {
     "finance-rpc": { calls: [], rows: {} },
     // Brief D.7: the invoices Worker's `GatewayAdvance` dry run (apps/admin/worker/warm-advance.ts).
     "invoices-rpc": { calls: [], rows: {} },
+    // M7.5 L39: the portal's start-up dry run (apps/portal/worker/warm-routes.ts), one row per answer (its bundle's plan line, 180,000 bytes since L47, owner 2026-11-07).
+    portal: { calls: [], rows: {} },
   };
   for (const [name, c] of Object.entries(CASES)) {
     if (c.warmRpc) {
@@ -1349,16 +1421,27 @@ function writeFixtures(work, seedDir) {
   for (const [worker, raw] of Object.entries(out)) {
     const data = madeUpGatewayIds(raw);
     const name = FIXTURE_NAMES[worker];
-    const [type, from] = RPC_FIXTURE_TYPES[worker] ?? ["WarmFixture", "../warm-routes.ts"];
-    const file = at(`apps/admin/worker/warm-fixtures/${worker}.ts`);
-    mkdirSync(at("apps/admin/worker/warm-fixtures"), { recursive: true });
+    const portal = worker === "portal";
+    const [type, from] = RPC_FIXTURE_TYPES[worker] ?? [
+      "WarmFixture",
+      portal ? "@techaust/db/warm" : "../warm-routes.ts",
+    ];
+    // M7.5 L39: the portal's fixture sits beside its own dry run (apps/portal/worker/warm-fixtures/), the second path .gitleaks.toml allows.
+    const dir = portal ? "apps/portal/worker/warm-fixtures" : "apps/admin/worker/warm-fixtures";
+    const file = at(`${dir}/${worker}.ts`);
+    mkdirSync(at(dir), { recursive: true });
+    const made = portal
+      ? `// "(sample)" names, @example.test addresses; the link token and the session cookie are made-up words, the key pepper the probe's made-up test value). No
+// real or personal data. The token hashes and HMAC'd counter keys were made under that made-up pepper only; this folder is one of the two paths
+// .gitleaks.toml allows.`
+      : `// "(sample)" names, @example.test addresses, SAMPLE bank values; secrets and keys are the admin tests' made-up test values). No real or personal data.
+// Credential-shaped values (the front's sign-in rows) were made under the admin tests' TEST_KEY values only (warm-fixtures.test.ts); this folder is the one
+// path .gitleaks.toml allows.`;
     writeFileSync(
       file,
       `// GENERATED by \`node scripts/cpu-probe.mjs --write-fixtures\` (CPU warm-up (b)1, docs/runs/cpu-warmup.md): do not edit by hand. The ${worker} Worker's
 // start-up dry run (warm-routes.ts): its hot routes' requests and the rows they read, captured from the probe's MADE-UP sample set (the e2e sample values:
-// "(sample)" names, @example.test addresses, SAMPLE bank values; secrets and keys are the admin tests' made-up test values). No real or personal data.
-// Credential-shaped values (the front's sign-in rows) were made under the admin tests' TEST_KEY values only (warm-fixtures.test.ts); this folder is the one
-// path .gitleaks.toml allows.
+${made}
 import type { ${type} } from "${from}";
 
 export const ${name}: ${type} = ${JSON.stringify(data)};
@@ -1409,6 +1492,12 @@ async function main() {
       shell: process.platform === "win32",
     });
     execFileSync(pnpm, ["--filter", "@techaust/jobs", "build"], {
+      cwd: root,
+      stdio: "inherit",
+      shell: process.platform === "win32",
+    });
+    // M7.5 L20: the portal.
+    execFileSync(pnpm, ["--filter", "@techaust/portal", "exec", "vite", "build"], {
       cwd: root,
       stdio: "inherit",
       shell: process.platform === "win32",

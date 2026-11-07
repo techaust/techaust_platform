@@ -12,6 +12,7 @@
 import { alertsDailyMessage, daysBetween, type EmailMessage, formatDate, istDate } from "@techaust/core";
 import { alertDaysFromStoredTax, unbilledCutoff } from "@techaust/core/invoices";
 import { todayIst } from "@techaust/core/offers";
+import { newestUsageDay, USAGE_METRICS, usageBellTitle, usageCrossings } from "@techaust/core/usage";
 import { UNBILLED_SQL } from "@techaust/db/billing";
 import { PROFORMA_TAX_INVOICE_DUE_SQL } from "@techaust/db/issue";
 import { firstName, moneyText } from "./invoice-mail.ts";
@@ -59,6 +60,37 @@ export type AlertsResult = {
 };
 
 const adminBase = (env: Env) => env.ADMIN_URL.replace(/\/+$/, "");
+
+/** M7.5 D1: the recorded daily totals of the last few UTC days (`?1` the oldest day read). Indexed by `stats_daily_metric` (metric, date). */
+export const USAGE_TOTALS_SQL = `SELECT date, metric, value FROM stats_daily WHERE metric IN (${USAGE_METRICS.map((m) => `'${m}'`).join(", ")}) AND dimension = '' AND date >= ?1`;
+/** One bell per owner per day, metric and line (`?1` JSON `[{id, title}]`; the unique key is the member, the kind and the entity). Link: the dashboard. */
+export const USAGE_BELLS_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+  SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'usage.limit', 'usage', json_extract(j.value, '$.id'), substr(json_extract(j.value, '$.title'), 1, 300), '/'
+  FROM staff_users u JOIN json_each(?1) j WHERE u.role = 'owner' AND u.status = 'active'`;
+/** How far back the alert looks for the newest recorded day (the 06:00 IST job, L50, records the UTC day that just ended; a missed day still alerts once). */
+const USAGE_LOOKBACK_DAYS = 3;
+
+/**
+ * M7.5 D1 (Q4 A): a bell to each active owner when the newest recorded day's total reached 50 % or 80 % of a daily Free limit (the highest line only; one bell
+ * per day, metric and line, ever). No recorded day, no bell (no alert without data). Returns the bells asked for.
+ */
+export async function ringUsageBells(env: Env, now: number): Promise<number> {
+  const since = new Date(now - USAGE_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const rows = (
+    await env.DB.prepare(USAGE_TOTALS_SQL).bind(since).all<{ date: string; metric: string; value: number }>()
+  ).results;
+  const day = newestUsageDay(rows);
+  if (day === null) return 0;
+  const crossings = usageCrossings(rows.filter((r) => r.date === day));
+  if (crossings.length === 0) return 0;
+  const bells = crossings.map((c) => ({
+    id: `${day}|${c.metric}|${c.threshold}`,
+    title: usageBellTitle(c, day),
+  }));
+  await env.DB.prepare(USAGE_BELLS_SQL).bind(JSON.stringify(bells)).run();
+  logEvent("usage.alert", { day, bells: bells.length });
+  return bells.length;
+}
 
 async function sendInChunks(env: Env, messages: EmailMessage[]): Promise<void> {
   for (let i = 0; i < messages.length; i += CHUNK)
@@ -202,6 +234,14 @@ export async function processAlertsDaily(
   if (writes.length > 0) await env.DB.batch(writes);
   if (decision && lut === "queued")
     await ringLutBell(env, { kind: "lut.check", asOf: todayIst(now) }, decision);
+  // M7.5 D1 (Q4 A): the Free-plan usage lines ride the first message only (one a day). L53 (review 1): a failure there is logged and never stops the
+  // paging below (the next page of the owners' alerts would be lost; the usage bells are retried by the 10:00 and 11:00 repeats).
+  if (msg.first)
+    try {
+      await ringUsageBells(env, now);
+    } catch (e) {
+      logEvent("usage.alert_failed", { error: e instanceof Error ? e.name : "unknown" });
+    }
 
   // A full page queues the next message; a finished list has no cursor.
   const lastU = unbilled[unbilled.length - 1];

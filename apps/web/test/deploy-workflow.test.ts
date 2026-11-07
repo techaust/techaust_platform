@@ -1,13 +1,33 @@
 // The staging deploy workflows (owner's yes 2026-10-30): full audit A1 5, package code (install, seed SQL, astro and vite builds) runs
 // only in steps WITHOUT the Cloudflare token, and the deploy scripts upload only a staging build; A6 8, the Workers deploy one per step
 // in a fixed order (from M6.5, owner's Q3 A 2026-11-02: admin API, admin invoices, admin finance, admin front, portal, jobs, website) with a
-// health check after each app (the admin's once its four Workers are new). Runs in Node (reads files).
-import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+// health check after each app (the admin's once its four Workers are new). M7.5 (owner's Q3 A): three jobs, the token only in the two that install
+// nothing but wrangler. Runs in Node (reads files).
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterAll, describe, expect, it } from "vitest";
+// @ts-expect-error plain .mjs without types
+import * as d from "../../../scripts/deploy-worker.mjs";
+import { PLACEMENTS } from "../../../scripts/place-build-artifact.mjs";
+
+/** Made-up repository roots for the deploy checks (removed after the file). */
+const scratchDirs: string[] = [];
+const scratch = () => {
+  const dir = mkdtempSync(join(tmpdir(), "deploy-worker-"));
+  scratchDirs.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of scratchDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const read = (path: string) =>
   readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const workflow = (name: string) => read(`.github/workflows/${name}`);
+/** L51: the portal's flattened staging config of 2026-11-07 (paths and vars made up). */
+const FLATTENED: Record<string, unknown> = JSON.parse(read("apps/web/test/fixtures/flattened-staging.json"));
 const scripts = (app: string): Record<string, string> => JSON.parse(read(`apps/${app}/package.json`)).scripts;
 
 /** The steps of a workflow's single job, each as its YAML text without comment lines (a comment above a step is not its code). */
@@ -39,8 +59,8 @@ const PACKAGE_CODE = [
   "pnpm -r",
 ];
 
-describe.each(["deploy-staging.yml", "publish-catalogue.yml"])("%s [A1-5]", (name) => {
-  const text = workflow(name);
+describe("publish-catalogue.yml [A1-5]", () => {
+  const text = workflow("publish-catalogue.yml");
   const steps = stepsOf(text);
 
   it("sets no secret at the job or workflow level", () => {
@@ -66,97 +86,192 @@ describe.each(["deploy-staging.yml", "publish-catalogue.yml"])("%s [A1-5]", (nam
         step.split("\n")[0],
       ).toBe(true);
   });
-
-  it("builds the website in a step without the token, before the step that deploys it", () => {
-    const build = running(steps, "pnpm --filter @techaust/web run build:staging");
-    const deploy = running(steps, "pnpm --filter @techaust/web run deploy:staging");
-    expect(build).toBeGreaterThan(-1);
-    expect(hasToken(steps[build] ?? "")).toBe(false);
-    expect(deploy).toBeGreaterThan(build);
-  });
 });
 
-describe("deploy-staging.yml order and health checks [A6-8]", () => {
-  const steps = stepsOf(workflow("deploy-staging.yml"));
-  // The fourth admin Worker (owner, Q1 A, 2026-11-02; docs/runs/admin-split-plan.md C.6, E): seven Workers. M6.5 (owner, Q3 A, approved 2026-11-02): admin
-  // API, admin invoices, admin finance, admin front, portal, jobs, website: every Worker whose entrypoint jobs calls (BillingJobs.issueReceipt,
-  // GatewayEvents.checkRefund and fetchSettlements) deploys before jobs.
+/** One job's text of a workflow (from `  <name>:` to the next job or the end). */
+const jobOf = (text: string, name: string) => {
+  const start = text.indexOf(`\n  ${name}:\n`);
+  if (start < 0) return "";
+  const rest = text.slice(start + 1);
+  const next = rest.slice(1).search(/\n {2}[a-z][\w-]*:\n/);
+  return next < 0 ? rest : rest.slice(0, next + 1);
+};
+
+/** Commands that run workspace package code: never in a job that holds the Cloudflare token (M7.5, owner's Q3 A). */
+const WORKSPACE_CODE = [
+  ...PACKAGE_CODE,
+  "pnpm --filter @techaust/admin",
+  "pnpm --filter @techaust/portal",
+  "pnpm --filter @techaust/web",
+  "pnpm --filter @techaust/jobs",
+  "pnpm --filter @techaust/db",
+];
+const WRANGLER_ONLY = "pnpm install --frozen-lockfile --filter @techaust/deploy-tools";
+
+/** The paths an upload-artifact step names (`path: x` or a `path: |` block). */
+const uploadPaths = (step: string) => {
+  const lines = step.split("\n");
+  const at = lines.findIndex((l) => /^\s+path: /.test(l));
+  if (at < 0) return [];
+  const first = (lines[at] as string).trim().slice("path: ".length);
+  if (first !== "|") return [first];
+  const indent = (lines[at] as string).search(/\S/);
+  const out: string[] = [];
+  for (const l of lines.slice(at + 1)) {
+    if (l.trim() === "" || l.search(/\S/) <= indent) break;
+    out.push(l.trim());
+  }
+  return out;
+};
+const holdsSecret = (step: string) => /secrets\./.test(step);
+
+/**
+ * L57 (re-check of review 1, finding 1): the deploy job downloads the build's artifact outside the checkout and places it with the trusted script, with no
+ * secret, right after the download and before the first step that holds one; the script's placements are exactly what the build job uploads.
+ */
+const expectPlacedSafely = (
+  build: string,
+  deploy: string,
+  scope: "staging" | "production",
+  artifact: string,
+  firstSecretStep: string,
+) => {
+  const steps = stepsOf(deploy);
+  const download = running(steps, "actions/download-artifact@");
+  expect(steps.filter((s) => s.includes("actions/download-artifact@"))).toHaveLength(1);
+  expect(steps[download]).toContain(`name: ${artifact}`);
+  expect(steps[download]).toContain(`path: ${["$", "{{ runner.temp }}/", artifact].join("")}`);
+  expect(uploadPaths(steps[download] as string)).toEqual([
+    `${["$", "{{ runner.temp }}/", artifact].join("")}`,
+  ]);
+  const place = running(steps, `node scripts/place-build-artifact.mjs ${scope} "$RUNNER_TEMP/${artifact}"`);
+  expect(place).toBe(download + 1);
+  expect(holdsSecret(steps[place] as string)).toBe(false);
+  expect(hasToken(steps[place] as string)).toBe(false);
+  const firstSecret = steps.findIndex(holdsSecret);
+  if (firstSecret >= 0) {
+    expect(place).toBeLessThan(firstSecret);
+    expect(steps[firstSecret]).toContain(firstSecretStep);
+  }
+  for (const s of steps.slice(0, download)) expect(holdsSecret(s)).toBe(false);
+  const upload = stepsOf(build).find((s) => s.includes("actions/upload-artifact@")) ?? "";
+  expect(upload).toContain(`name: ${artifact}`);
+  const placed = PLACEMENTS[scope].map((p) => (scope === "production" ? p.to : p.from));
+  expect(uploadPaths(upload).sort()).toEqual([...placed].sort());
+};
+
+describe("deploy-staging.yml: three jobs, the token only where nothing but wrangler is installed (M7.5, owner's Q3 A) [A1-5]", () => {
+  const text = workflow("deploy-staging.yml");
+  const prepare = jobOf(text, "prepare");
+  const build = jobOf(text, "build");
+  const deploy = jobOf(text, "deploy");
+
+  it("has the three jobs, in order, the later ones needing the earlier", () => {
+    for (const j of [prepare, build, deploy]) expect(j.length).toBeGreaterThan(100);
+    expect(build).toContain("needs: prepare");
+    expect(deploy).toContain("needs: [prepare, build]");
+    expect(text.indexOf("\n  prepare:\n")).toBeLessThan(text.indexOf("\n  build:\n"));
+    expect(text.indexOf("\n  build:\n")).toBeLessThan(text.indexOf("\n  deploy:\n"));
+  });
+
+  it("sets no secret at the workflow level, and the build job reaches none at all", () => {
+    expect(text.slice(0, text.indexOf("\njobs:\n"))).not.toMatch(/secrets\./);
+    expect(build).not.toMatch(/secrets\./);
+    expect(build).not.toMatch(/CLOUDFLARE_API_TOKEN/);
+  });
+
+  it("no job uses a pnpm cache: the build writes none, and the token jobs restore none (L51, L56)", () => {
+    expect(build).not.toMatch(/^\s*cache:/m);
+    expect(prepare).not.toMatch(/^\s*cache:/m);
+    expect(deploy).not.toMatch(/^\s*cache:/m);
+  });
+
+  it.each([
+    ["prepare", prepare],
+    ["deploy", deploy],
+  ])("the %s job installs only wrangler and runs no workspace package code", (_name, job) => {
+    expect(job).toContain(WRANGLER_ONLY);
+    const lines = job.split("\n").filter((l) => !l.trim().startsWith("#"));
+    for (const line of lines) {
+      if (line.includes(WRANGLER_ONLY)) continue;
+      for (const command of WORKSPACE_CODE) expect(line, `${_name} runs ${command}`).not.toContain(command);
+    }
+  });
+
+  it("the token reaches only the credentials check, the wrangler steps and the deploys", () => {
+    for (const [job, allowed] of [
+      [
+        prepare,
+        [
+          "name: Check staging credentials",
+          "wrangler.js d1 migrations apply",
+          "node scripts/fetch-catalogue-snapshot.mjs",
+        ],
+      ],
+      [deploy, ["wrangler.js d1 execute DB", "node scripts/deploy-worker.mjs staging"]],
+    ] as const)
+      for (const step of stepsOf(job).filter(hasToken))
+        expect(
+          allowed.some((a) => step.includes(a)),
+          step.split("\n")[0],
+        ).toBe(true);
+  });
+
+  it("migrates and reads the snapshot first; builds and bundles with no token; seeds before the first Worker deploys", () => {
+    const p = stepsOf(prepare);
+    expect(named(p, "Migrate staging D1")).toBeLessThan(named(p, "Fetch the published catalogue snapshot"));
+    const b = stepsOf(build);
+    for (const name of [
+      "Write the seed SQL (no token)",
+      "Build the admin (staging, no token)",
+      "Build the portal (staging, no token)",
+      "Build the website (staging, no token)",
+      "Bundle the jobs and website Workers (staging, no token)",
+    ])
+      expect(named(b, name), name).toBeGreaterThan(-1);
+    expect(build).toContain("include-hidden-files: true");
+    const d = stepsOf(deploy);
+    expect(named(d, "Seed staging D1")).toBeLessThan(
+      running(d, "node scripts/deploy-worker.mjs staging admin-api"),
+    );
+    expect(running(d, "actions/download-artifact")).toBeLessThan(named(d, "Seed staging D1"));
+  });
+
+  it("downloads the build outside the checkout and places only its outputs, before the seed and every other token step (L57)", () => {
+    expect(deploy).not.toMatch(/^\s+path: \.\s*$/m);
+    expectPlacedSafely(build, deploy, "staging", "staging-build", "name: Seed staging D1");
+  });
+
   const ORDER = [
-    "pnpm --filter @techaust/admin run deploy:staging:api",
-    "pnpm --filter @techaust/admin run deploy:staging:invoices",
-    "pnpm --filter @techaust/admin run deploy:staging:finance",
-    "pnpm --filter @techaust/admin run deploy:staging:front",
-    "pnpm --filter @techaust/portal run deploy:staging",
-    "pnpm --filter @techaust/jobs run deploy:staging",
-    "pnpm --filter @techaust/web run deploy:staging",
+    "node scripts/deploy-worker.mjs staging admin-api",
+    "node scripts/deploy-worker.mjs staging admin-invoices",
+    "node scripts/deploy-worker.mjs staging admin-finance",
+    "node scripts/deploy-worker.mjs staging admin\n",
+    "node scripts/deploy-worker.mjs staging portal",
+    "node scripts/deploy-worker.mjs staging jobs",
+    "node scripts/deploy-worker.mjs staging web",
   ];
+  const steps = stepsOf(deploy).map((s) => `${s}\n`);
 
   it("deploys the seven Workers one per step, in order: admin API, admin invoices, admin finance, admin front, portal, jobs, website", () => {
     const at = ORDER.map((c) => running(steps, c));
     for (const [i, index] of at.entries()) expect(index, ORDER[i]).toBeGreaterThan(-1);
     expect([...at].sort((a, b) => a - b)).toEqual(at);
     for (const c of ORDER) expect(steps.filter((s) => s.includes(c))).toHaveLength(1);
-    expect(workflow("deploy-staging.yml")).not.toMatch(/pnpm -r[^\n]*deploy/);
-    // Each deploy step names its place: "Deploy N of 7".
     for (const [i, index] of at.entries())
       expect(steps[index], ORDER[i]).toContain(`name: Deploy ${i + 1} of 7,`);
   });
 
-  it("the admin invoices Worker (bound by the front, jobs and finance) is deployed right after the API and before everything that binds it (the fourth admin Worker)", () => {
-    const invoices = running(steps, ORDER[1] as string);
-    expect(invoices).toBe(running(steps, ORDER[0] as string) + 1);
-    for (const binder of [ORDER[2], ORDER[3], ORDER[4]])
-      expect(invoices).toBeLessThan(running(steps, binder as string));
-    expect(hasToken(steps[invoices] ?? "")).toBe(true);
-  });
-
-  it("the admin finance Worker is deployed right after admin invoices (M6.5, Q3 A) and before the front, the portal and jobs, which bind it", () => {
-    const finance = running(steps, ORDER[2] as string);
-    expect(finance).toBe(running(steps, ORDER[1] as string) + 1);
-    for (const binder of [ORDER[3], ORDER[4], ORDER[5]])
-      expect(finance).toBeLessThan(running(steps, binder as string));
-    expect(hasToken(steps[finance] ?? "")).toBe(true);
-  });
-
-  it("migrates, seeds, reads the snapshot and builds everything before the first deploy", () => {
-    const first = running(steps, ORDER[0] as string);
-    for (const before of [
-      "Migrate and seed staging D1",
-      "Fetch the published catalogue snapshot",
-      "Build the admin (staging, no token)",
-      "Build the portal (staging, no token)",
-      "Build the website (staging, no token)",
-    ])
-      expect(named(steps, before), before).toBeLessThan(first);
-    expect(named(steps, "Migrate and seed staging D1")).toBeGreaterThan(
-      named(steps, "Write the seed SQL (no token)"),
-    );
-  });
-
-  it("checks the admin's health right after the last of its four Workers (the front), before the portal, with the Access token only", () => {
-    const health = running(steps, "node scripts/staging-health.mjs admin");
-    expect(health).toBe(running(steps, ORDER[3] as string) + 1);
-    expect(health).toBeLessThan(running(steps, ORDER[4] as string));
-    const step = steps[health] ?? "";
-    expect(step).toContain(
-      "name: Health check, the admin front, API, invoices and finance Workers (staging)",
-    );
-    expect(hasToken(step)).toBe(false);
-    expect(step).toContain(`CF_ACCESS_CLIENT_ID: ${secret("CF_ACCESS_DEPLOY_CLIENT_ID")}`);
-    expect(step).toContain(`CF_ACCESS_CLIENT_SECRET: ${secret("CF_ACCESS_DEPLOY_CLIENT_SECRET")}`);
-    expect(step).not.toMatch(/continue-on-error/);
-  });
-
   it.each([
+    ["admin", 3],
     ["portal", 4],
     ["jobs", 5],
     ["web", 6],
   ] as const)(
-    "checks the %s Worker's health right after its deploy, with the deploy-check token only",
+    "checks the %s health right after its (last) deploy, with the deploy-check token only",
     (app, at) => {
       const health = running(steps, `node scripts/staging-health.mjs ${app}`);
       expect(health).toBe(running(steps, ORDER[at] as string) + 1);
-      if (at < 6) expect(health).toBeLessThan(running(steps, ORDER[at + 1] as string));
       const step = steps[health] ?? "";
       expect(hasToken(step)).toBe(false);
       expect(step).toContain(`CF_ACCESS_CLIENT_ID: ${secret("CF_ACCESS_DEPLOY_CLIENT_ID")}`);
@@ -165,18 +280,19 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
     },
   );
 
-  it("the deploy-check token is checked before the first deploy, and reaches no step but that check and the health checks", () => {
-    const check = named(steps, "Check the deploy-check token is set");
-    expect(check).toBeGreaterThan(-1);
-    expect(check).toBeLessThan(running(steps, ORDER[0] as string));
-    expect(hasToken(steps[check] ?? "")).toBe(false);
-    for (const [i, step] of steps.entries())
-      if (step.includes("CF_ACCESS_DEPLOY"))
-        expect(i === check || step.includes("node scripts/staging-health.mjs"), `step ${i}`).toBe(true);
+  it("the deploy-check token is checked in the first job, and reaches no step but that check and the health checks", () => {
+    expect(named(stepsOf(prepare), "Check the deploy-check token is set")).toBeGreaterThan(-1);
+    for (const job of [prepare, build, deploy])
+      for (const step of stepsOf(job))
+        if (step.includes("CF_ACCESS_DEPLOY"))
+          expect(
+            step.includes("name: Check the deploy-check token is set") ||
+              step.includes("node scripts/staging-health.mjs"),
+          ).toBe(true);
   });
 
   it("uses no secrets beyond the existing two and the deploy-check token", () => {
-    const used = [...workflow("deploy-staging.yml").matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
+    const used = [...text.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
     expect(new Set(used)).toEqual(
       new Set([
         "CF_API_TOKEN_STAGING",
@@ -185,6 +301,187 @@ describe("deploy-staging.yml order and health checks [A6-8]", () => {
         "CF_ACCESS_DEPLOY_CLIENT_SECRET",
       ]),
     );
+  });
+
+  it("runs only for pushes to this repository's main (never a fork's pull request)", () => {
+    expect(prepare).toContain("github.event.workflow_run.event == 'push'");
+    expect(prepare).toContain("github.event.workflow_run.head_repository.full_name == github.repository");
+    expect(build).toContain("if: needs.prepare.outputs.ready == 'true'");
+    expect(deploy).toContain("if: needs.prepare.outputs.ready == 'true'");
+  });
+});
+
+describe("deploy-prod.yml: build without secrets, deploy with wrangler only (M7.5, owner's Q3 A)", () => {
+  const text = workflow("deploy-prod.yml");
+  const build = jobOf(text, "build");
+  const deploy = jobOf(text, "deploy");
+
+  it("the build job has no environment and no secret, runs the readiness and .dev.vars checks, and hands an artifact on", () => {
+    expect(build).toContain("needs: guard");
+    expect(build).not.toMatch(/secrets\.|environment:/);
+    expect(build).not.toMatch(/^\s*cache:/m); // L51
+    expect(deploy).not.toMatch(/^\s*cache:/m); // L56
+    expect(build).toContain("node scripts/check-prod-readiness.mjs");
+    expect(build).toContain("node scripts/check-staging-build.mjs dev-vars");
+    expect(build).toContain("actions/upload-artifact@");
+  });
+
+  it("downloads the build outside the checkout and places it into apps/web/dist before any step with a secret (L57)", () => {
+    expectPlacedSafely(build, deploy, "production", "production-build", "");
+  });
+
+  it("the deploy job holds the production environment and installs only wrangler", () => {
+    expect(deploy).toContain("needs: build");
+    expect(deploy).toContain("environment: production");
+    expect(deploy).toContain(WRANGLER_ONLY);
+    expect(deploy).toContain("actions/download-artifact@");
+    for (const line of deploy
+      .split("\n")
+      .filter((l) => !l.trim().startsWith("#") && !l.includes(WRANGLER_ONLY)))
+      for (const command of WORKSPACE_CODE) expect(line).not.toContain(command);
+  });
+});
+
+describe("scripts/deploy-worker.mjs (M7.5, owner's Q3 A)", () => {
+  it("knows the seven staging targets; jobs and the website go up pre-bundled, never re-bundled", () => {
+    expect(Object.keys(d.STAGING_DEPLOYS).sort()).toEqual(
+      ["admin", "admin-api", "admin-finance", "admin-invoices", "jobs", "portal", "web"].sort(),
+    );
+    expect(d.STAGING_DEPLOYS.jobs.args).toEqual(["--env", "staging", "--no-bundle", "dist-staging/index.js"]);
+    expect(d.STAGING_DEPLOYS.web.args).toEqual([
+      "--env",
+      "staging",
+      "--no-bundle",
+      ".wrangler/dist-staging/worker.js",
+    ]);
+    expect(d.STAGING_DEPLOYS.web.args).toContain("--no-bundle");
+    expect(d.WRANGLER).toBe("tools/deploy/node_modules/wrangler/bin/wrangler.js");
+  });
+
+  it("refuses an unknown target, and a missing wrangler or bundle, before anything runs", () => {
+    expect(d.preDeployProblems("production-web").join()).toMatch(/unknown target/);
+    const empty = fileURLToPath(new URL("./fixtures/", import.meta.url));
+    expect(d.preDeployProblems("jobs", empty).join()).toMatch(/deploy-tools/);
+  });
+
+  it("refuses a redirect file beside jobs' or the website's own config (they deploy their checked-out wrangler.jsonc)", () => {
+    const root = scratch();
+    mkdirSync(join(root, "apps", "jobs", ".wrangler", "deploy"), { recursive: true });
+    expect(d.configProblems("jobs", root)).toEqual([]);
+    writeFileSync(join(root, "apps", "jobs", d.REDIRECT), JSON.stringify({ configPath: "../../x.json" }));
+    expect(d.configProblems("jobs", root).join()).toMatch(/deploys its own wrangler\.jsonc: refused/);
+  });
+
+  it("the deploy-tools package installs wrangler alone, at the apps' pinned version", () => {
+    const tools = JSON.parse(read("tools/deploy/package.json"));
+    expect(tools.dependencies).toBeUndefined();
+    expect(Object.keys(tools.devDependencies)).toEqual(["wrangler"]);
+    expect(tools.devDependencies.wrangler).toBe(
+      JSON.parse(read("apps/jobs/package.json")).devDependencies.wrangler,
+    );
+  });
+});
+
+describe("the config each deploy uses: no build step, nothing outside dist (L51, review 1 finding 2)", () => {
+  /** A made-up app tree: `apps/portal/dist/techaust_platform_portal/wrangler.json` (today's real flattened config, sanitised) and its redirect. */
+  function portalTree(edit: (config: Record<string, unknown>) => void = () => {}, configPath?: string) {
+    const root = scratch();
+    const app = join(root, "apps", "portal");
+    const worker = join(app, "dist", "techaust_platform_portal");
+    mkdirSync(worker, { recursive: true });
+    mkdirSync(join(app, "dist", "client"), { recursive: true });
+    mkdirSync(join(app, ".wrangler", "deploy"), { recursive: true });
+    writeFileSync(join(worker, "index.js"), "export default {};\n");
+    const config = structuredClone(FLATTENED);
+    edit(config);
+    writeFileSync(join(worker, "wrangler.json"), JSON.stringify(config));
+    writeFileSync(
+      join(app, d.REDIRECT),
+      JSON.stringify({
+        // as the plugin writes it on Windows (backslashes): read the same on every OS
+        configPath: configPath ?? "..\\..\\dist\\techaust_platform_portal\\wrangler.json",
+        auxiliaryWorkers: [],
+      }),
+    );
+    return root;
+  }
+
+  it("today's flattened config (the fixture, taken from the 2026-11-07 staging build) passes", () => {
+    expect(d.redirectProblems("portal", portalTree())).toEqual([]);
+    // the fixture's keys are all on the allow list, and the list has no `build`
+    expect(Object.keys(FLATTENED).filter((k) => !d.FLATTENED_KEYS.includes(k))).toEqual([]);
+    expect(d.FLATTENED_KEYS).not.toContain("build");
+  });
+
+  it.each([
+    [
+      "a build key",
+      (c: Record<string, unknown>) => Object.assign(c, { build: { command: "curl x | sh" } }),
+      /"build" key/,
+    ],
+    [
+      "a key outside the allow list",
+      (c: Record<string, unknown>) => Object.assign(c, { alias: { a: "b" } }),
+      /outside the allow list: alias/,
+    ],
+    [
+      "a bundling config",
+      (c: Record<string, unknown>) => Object.assign(c, { no_bundle: false }),
+      /not no_bundle/,
+    ],
+    [
+      "a main outside dist",
+      (c: Record<string, unknown>) => Object.assign(c, { main: "../../../evil.js" }),
+      /main is missing or outside dist/,
+    ],
+    [
+      "assets outside dist",
+      (c: Record<string, unknown>) => Object.assign(c, { assets: { directory: "../../.." } }),
+      /assets\.directory is missing or outside dist/,
+    ],
+  ])("refuses %s", (_name, edit, problem) => {
+    expect(d.redirectProblems("portal", portalTree(edit)).join("\n")).toMatch(problem);
+  });
+
+  it("refuses a redirect that leads out of dist, an auxiliary Worker out of dist, and a missing or broken redirect", () => {
+    const out = portalTree(() => {}, "../../wrangler.jsonc");
+    expect(d.redirectProblems("portal", out).join()).toMatch(/outside dist: refused/);
+    const aux = portalTree();
+    writeFileSync(
+      join(aux, "apps", "portal", d.REDIRECT),
+      JSON.stringify({
+        configPath: "../../dist/techaust_platform_portal/wrangler.json",
+        auxiliaryWorkers: [{ configPath: "../../../../x/wrangler.json" }],
+      }),
+    );
+    expect(d.redirectProblems("portal", aux).join()).toMatch(/auxiliary Worker's config is outside dist/);
+    expect(d.redirectProblems("portal", scratch()).join()).toMatch(/missing: run the app's build:staging/);
+    const broken = portalTree();
+    writeFileSync(join(broken, "apps", "portal", d.REDIRECT), "{");
+    expect(d.redirectProblems("portal", broken).join()).toMatch(/is not JSON/);
+  });
+
+  it("the admin Workers deployed with --config get the same checks", () => {
+    const root = scratch();
+    const worker = join(root, "apps", "admin", "dist", "techaust_platform_admin_api");
+    mkdirSync(worker, { recursive: true });
+    writeFileSync(join(worker, "index.js"), "export default {};\n");
+    const { assets: _assets, ...config } = structuredClone(FLATTENED);
+    writeFileSync(join(worker, "wrangler.json"), JSON.stringify(config));
+    expect(d.configProblems("admin-api", root)).toEqual([]);
+    writeFileSync(join(worker, "wrangler.json"), JSON.stringify({ ...config, build: { command: "x" } }));
+    expect(d.configProblems("admin-api", root).join()).toMatch(/"build" key/);
+  });
+
+  // The real builds, when this checkout has them (CLOUDFLARE_ENV=staging vite build in apps/admin and apps/portal): every config passes.
+  const built = existsSync(
+    fileURLToPath(new URL("../../admin/.wrangler/deploy/config.json", import.meta.url)),
+  );
+  it.skipIf(!built)("today's real staging builds pass (admin's four Workers and the portal)", () => {
+    for (const target of ["admin", "admin-api", "admin-invoices", "admin-finance"])
+      expect(d.configProblems(target), target).toEqual([]);
+    if (existsSync(fileURLToPath(new URL("../../portal/.wrangler/deploy/config.json", import.meta.url))))
+      expect(d.configProblems("portal")).toEqual([]);
   });
 });
 

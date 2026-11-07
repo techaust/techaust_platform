@@ -176,8 +176,12 @@ describe("the statements bind exactly the placeholders they use [M5.2]", () => {
       },
     });
     expect(out.length).toBe(s.main.length + s.postAudit.length);
-    // before the audit row: the draft, ten lines, the guard, the counter row, the take, the freeze (LAST, so the audit row follows its `changes()`)
-    expect(s.main.length).toBe(1 + 10 + 1 + 2 + 1);
+    // before the audit row: the draft, the ten lines in ONE statement (M7.5 L17: `json_each`), the guard, the counter row, the take, the freeze (LAST, so
+    // the audit row follows its `changes()`)
+    expect(s.main.length).toBe(1 + 1 + 1 + 2 + 1);
+    const linesStmt = (s.main as unknown as Rec[])[1];
+    expect(linesStmt?.sql).toContain("FROM json_each(?2)");
+    expect(JSON.parse(linesStmt?.values[1] as string)).toEqual(Array.from({ length: 10 }, (_, i) => line(i)));
     expect((s.main as unknown as Rec[]).at(-1)?.sql).toContain("UPDATE documents SET series");
     // after it: issue_result (unguarded), the receipt, the proforma, the milestone, then M6.1's ledger part: the payment, its allocation, the recompute and
     // ledger_result (unguarded, last)

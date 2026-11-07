@@ -10,7 +10,7 @@ import { type FormEvent, useRef, useState } from "react";
 import { api, errorText, hashPassword, RequestError } from "../api.ts";
 import { TurnstileBox } from "../components/turnstile.tsx";
 import { Card, CodeField, Field, Notice } from "../components/ui.tsx";
-import { passwordSignIn } from "../lib/password-sign-in.ts";
+import { codeStepRefusal, passwordSignIn } from "../lib/password-sign-in.ts";
 import { useSession } from "../session.tsx";
 
 type Step = "password" | "code" | "recovery";
@@ -47,6 +47,14 @@ export function SignIn() {
 
   const fail = (err: unknown) =>
     setError({ text: errorText(err), locked: err instanceof RequestError && err.code === "locked" });
+
+  /** M7.5 (L34): the code and recovery steps' refusals; a spent sign-in (`challenge_used`) goes back to the password step with its line. */
+  function failCode(err: unknown) {
+    const r = codeStepRefusal(err);
+    if (!r.restart) return fail(err);
+    startAgain();
+    setError({ text: r.text, locked: false });
+  }
 
   function go(next: Step) {
     setError(null);
@@ -110,7 +118,7 @@ export function SignIn() {
     try {
       signedIn((await api.totp(challenge, code)).user);
     } catch (err) {
-      fail(err);
+      failCode(err);
       setCode("");
     } finally {
       setBusy(false);
@@ -130,7 +138,7 @@ export function SignIn() {
     try {
       signedIn((await api.recovery(challenge, recovery.trim())).user);
     } catch (err) {
-      fail(err);
+      failCode(err);
     } finally {
       setBusy(false);
     }

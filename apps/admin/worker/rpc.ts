@@ -19,10 +19,44 @@ export const rpcId = (v: unknown, who: string): string => {
 };
 
 let isolateCalls = 0;
-/** One id-only line per RPC call: the method, the result code, this isolate's call count and (M6.2, CPU diagnosis lead decision 4) `f: 1` on the method's first call here. */
-export function rpcLog(method: string, result: string): void {
+/**
+ * One id-only line per RPC call: the method, the result code, this isolate's call count and (M6.2, CPU diagnosis lead decision 4) `f: 1` on the method's first call
+ * here. A call that threw (M7.5 L20) logs `r: "threw"` and the error's NAME only (`e`), never its message (it may carry an id or a value).
+ */
+export function rpcLog(method: string, result: string, error?: string): void {
   isolateCalls++;
   console.log(
-    JSON.stringify({ ev: "rpc", m: method, r: result, n: isolateCalls, f: firstRun(`rpc ${method}`) }),
+    JSON.stringify({
+      ev: "rpc",
+      m: method,
+      r: result,
+      e: error,
+      n: isolateCalls,
+      f: firstRun(`rpc ${method}`),
+    }),
   );
+}
+
+/** Errors are named by a plain code only: a built-in error class name, else "unknown". */
+const errorName = (e: unknown): string =>
+  e instanceof Error && /^[A-Za-z]{1,40}$/.test(e.name) ? e.name : "unknown";
+
+/**
+ * M7.5 L20: runs one RPC method and writes its line whether it answered or threw (an id check's TypeError included), so a failing first call still shows on
+ * staging with its `f: 1`. The error is thrown on unchanged.
+ */
+export async function rpcLogged<T>(
+  method: string,
+  run: () => Promise<T>,
+  result: (answer: T) => string,
+): Promise<T> {
+  let answer: T;
+  try {
+    answer = await run();
+  } catch (e) {
+    rpcLog(method, "threw", errorName(e));
+    throw e;
+  }
+  rpcLog(method, result(answer));
+  return answer;
 }

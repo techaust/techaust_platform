@@ -56,6 +56,48 @@ describe("CSP and inline scripts (WEB-G-12)", () => {
     );
     expect(c.checkHeaders(headers())).toEqual([]);
   });
+
+  it.each([
+    "text/ecmascript",
+    "application/x-javascript",
+    "text/javascript1.5",
+    "TEXT/JavaScript; charset=utf-8",
+    " text/jscript ",
+  ])("checks an inline script of the legacy JavaScript type %j (M7.5 section F)", (type) => {
+    const problems = c.checkHtml("x.html", page(`<script type="${type}">alert(1)</script>`), headers());
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("not in the CSP");
+  });
+
+  it("still skips data blocks (ld+json, importmap-free text types)", () => {
+    expect(c.inlineScripts(page(`<script type="application/ld+json">{}</script>`))).toEqual([]);
+    expect(c.inlineScripts(page(`<script type='text/plain'>x</script>`))).toEqual([]);
+  });
+
+  it("allows only the listed CSP hosts, each in its own directives (M7.5 section F)", () => {
+    expect(
+      c.checkHeaders(
+        headers("https://static.cloudflareinsights.com https://challenges.cloudflare.com").replace(
+          "frame-ancestors",
+          "frame-src https://challenges.cloudflare.com; connect-src 'self' https://cloudflareinsights.com; img-src 'self' data:; frame-ancestors",
+        ),
+      ),
+    ).toEqual([]);
+    expect(c.checkHeaders(headers("https://evil.example")).join()).toContain(
+      "https://evil.example, which is not on the CSP host allow list",
+    );
+    expect(c.checkHeaders(headers("https://cloudflareinsights.com")).join()).toContain(
+      "allowed in connect-src only, not script-src",
+    );
+    expect(c.checkHeaders(headers("https:")).join()).toContain('allows "https:" (any host)');
+    expect(c.checkHeaders(headers("https://*.cloudflare.com")).join()).toContain("(any host)");
+    expect(c.checkHeaders(headers("data:")).join()).toContain('script-src allows "data:"');
+  });
+
+  it("the real _headers passes the host allow list", () => {
+    const real = readFileSync(new URL("../public/_headers", import.meta.url), "utf8");
+    expect(c.checkHeaders(real)).toEqual([]);
+  });
 });
 
 describe("content that must never be public (WEB-G-12, WEB-G-18, M-3)", () => {

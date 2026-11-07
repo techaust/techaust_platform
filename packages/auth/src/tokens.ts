@@ -13,9 +13,19 @@ export type Challenge = {
   purpose: "login_totp" | "enrol_totp";
   sub: string;
   exp: number;
+  /**
+   * M7.5 (A1 F4, L4): when the challenge was issued (ms), signed with the rest. A login challenge is single use: the code step's session batch is guarded on
+   * `last_login_at IS NULL OR last_login_at < iat`, and a finished sign-in moves `last_login_at` past it. A challenge signed before `iat` existed is read as
+   * issued at `exp - TTL` (`issuedAtOf`), which is exactly when it was made.
+   */
+  iat?: number;
   ak?: string;
   jti?: string;
 };
+
+/** When a challenge was issued: its signed `iat`, else `exp - ttlMs` (a challenge signed before M7.5). */
+export const issuedAtOf = (c: Challenge, ttlMs: number): number =>
+  typeof c.iat === "number" && Number.isFinite(c.iat) ? c.iat : c.exp - ttlMs;
 
 /** A new challenge id (M7.2): 16 random bytes, base64url (22 characters). */
 export const newChallengeId = () => b64url(randomBytes(16));
@@ -42,6 +52,21 @@ export async function verifyChallenge(
   purpose: Challenge["purpose"],
   nowMs: number,
 ): Promise<Challenge | null> {
+  const c = await readChallenge(key, token, purpose, nowMs);
+  return c === "expired" ? null : c;
+}
+
+/**
+ * `verifyChallenge`, telling a genuine challenge of this purpose whose time has run out ("expired") apart from anything else (null). M7.5 (L9, M1.5 L3):
+ * the invite's authenticator step answers `enrolment_expired` for the first, so the screen can go back to step 1; it reveals nothing a forger can use (only a
+ * correctly signed token gets that answer).
+ */
+export async function readChallenge(
+  key: string,
+  token: string,
+  purpose: Challenge["purpose"],
+  nowMs: number,
+): Promise<Challenge | "expired" | null> {
   const [body, mac, extra] = token.split(".");
   if (!body || !mac || extra !== undefined) return null;
   let expected: Uint8Array;
@@ -54,5 +79,6 @@ export async function verifyChallenge(
   }
   if (!timingSafeEqual(expected, given)) return null;
   const c = JSON.parse(new TextDecoder().decode(fromB64url(body))) as Challenge;
-  return c.purpose === purpose && typeof c.exp === "number" && c.exp > nowMs ? c : null;
+  if (c.purpose !== purpose || typeof c.exp !== "number") return null;
+  return c.exp > nowMs ? c : "expired";
 }

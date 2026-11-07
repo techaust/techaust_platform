@@ -9,6 +9,7 @@ import {
   allowListProblems,
   report,
   verdict,
+  viaMatches,
 } from "../../../scripts/dependency-audit.mjs";
 
 const advisory = (id: string, pkg: string, severity: string, n = 1) => ({
@@ -32,6 +33,7 @@ const entry = (over: Partial<AllowEntry> = {}): AllowEntry => ({
   added: "2026-10-30",
   addedBy: "test",
   expires: "2026-11-13",
+  versions: ["1.0.0"],
   ...over,
 });
 
@@ -85,6 +87,33 @@ describe("dependency audit verdict [A1-3]", () => {
     }
   });
 
+  it("binds an entry to its reviewed versions and paths (M7.5 section F)", () => {
+    const text = audit(advisory("GHSA-2222-3333-4444", "left-pad", "high"));
+    expect(run(text, [entry({ versions: ["1.0.0"], via: ["apps__web>left-pad"] })]).ok).toBe(true);
+    // Another installed version: blocked, naming it.
+    const v = run(text, [entry({ versions: ["0.9.0"] })]);
+    expect(v.ok).toBe(false);
+    expect(v.lines.join("\n")).toMatch(
+      /BLOCKED high GHSA-2222-3333-4444 left-pad .*outside .*version 1\.0\.0/,
+    );
+    // Another path (a Worker runtime package, say): blocked, naming the path.
+    const p = run(text, [entry({ via: ["apps__web>@lhci/cli>**>left-pad"] })]);
+    expect(p.ok).toBe(false);
+    expect(p.lines.join("\n")).toMatch(/outside .*via apps__web>left-pad/);
+  });
+
+  it("a via pattern: `*` is one package, `**` any number", () => {
+    expect(viaMatches("apps__web>astro>vite", "apps__web>astro>vite")).toBe(true);
+    expect(viaMatches("*>vite", "apps__admin>vite")).toBe(true);
+    expect(viaMatches("*>vite", "apps__admin>x>vite")).toBe(false);
+    expect(viaMatches("*>**>vitest>**>vite", "packages__db>vitest>vite")).toBe(true);
+    expect(
+      viaMatches("*>**>vitest>**>vite", "apps__web>@cloudflare/vitest-plugin>vitest>@vitest/mocker>vite"),
+    ).toBe(true);
+    expect(viaMatches("*>**>vitest>**>vite", "apps__admin>hono>vite")).toBe(false);
+    expect(viaMatches("apps__web>astro>vite", "apps__web>astro>vite>x")).toBe(false);
+  });
+
   it("fails closed when pnpm's answer is not an audit report", () => {
     expect(() => advisoriesOf("")).toThrow(/fails closed/);
     expect(() => advisoriesOf("ERR_PNPM_AUDIT_BAD_RESPONSE")).toThrow(/fails closed/);
@@ -105,6 +134,10 @@ describe("allow-list entries [A1-3]", () => {
     ["a bad date", { expires: "13/11/2026" }, /YYYY-MM-DD/],
     ["expiry before added", { expires: "2026-10-29" }, /after "added"/],
     ["expiry over 90 days", { expires: "2027-02-01" }, /more than 90 days/],
+    ["no binding", { versions: undefined, via: undefined }, /bind it with "versions" or "via"/],
+    ["an empty versions list", { versions: [] }, /"versions" must be a non-empty list/],
+    ["a via that matches every path", { via: ["**"] }, /matches every path/],
+    ["a via of only wildcards", { via: ["*>**"] }, /matches every path/],
   ])("refuse %s", (_name, over, re) => {
     expect(allowListProblems([entry(over as Partial<AllowEntry>)]).join("\n")).toMatch(re);
   });

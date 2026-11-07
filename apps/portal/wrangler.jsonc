@@ -32,6 +32,15 @@
   // tokens are random and need no key. TURNSTILE_SECRET is the secret of the widget above (local: `pnpm dev:secrets`
   // writes the always-pass test secret). Not inherited by environments, so each env lists them too.
   "secrets": { "required": ["PORTAL_KEY_PEPPER", "TURNSTILE_SECRET"] },
+  // M7.5 (C2, L2, L22): in-Worker Rate Limiting (free; per Cloudflare location, not exact), checked before any D1 work and before Turnstile's siteverify:
+  // RL_SESSION per signed-in session (120 a minute), RL_SIGNIN per address on /auth/magic and /auth/magic/verify, RL_LINKS per address on every /t/* route
+  // (each route its own counter). Keys are HMACs under PORTAL_KEY_PEPPER. Not inherited by environments, so each env lists them, each purpose and scope with
+  // its own namespace_id (unique in the account; scripts/check-worker-config.mjs).
+  "ratelimits": [
+    { "name": "RL_SESSION", "namespace_id": "6101", "simple": { "limit": 120, "period": 60 } },
+    { "name": "RL_SIGNIN", "namespace_id": "6102", "simple": { "limit": 10, "period": 60 } },
+    { "name": "RL_LINKS", "namespace_id": "6103", "simple": { "limit": 30, "period": 60 } }
+  ],
   // M6.2 (POR-06, L1): Pay now asks the admin finance Worker's `PortalPayments` entrypoint for a Razorpay link over RPC; the portal holds no gateway key.
   // Not inherited; production has none until Phase 7.
   "services": [
@@ -90,6 +99,11 @@
         "WEBSITE_ORIGIN": "https://techaust-platform-web-staging.techaust-technologies-153.workers.dev"
       },
       "secrets": { "required": ["PORTAL_KEY_PEPPER", "TURNSTILE_SECRET"] },
+      "ratelimits": [
+        { "name": "RL_SESSION", "namespace_id": "6201", "simple": { "limit": 120, "period": 60 } },
+        { "name": "RL_SIGNIN", "namespace_id": "6202", "simple": { "limit": 10, "period": 60 } },
+        { "name": "RL_LINKS", "namespace_id": "6203", "simple": { "limit": 30, "period": 60 } }
+      ],
       "services": [
         {
           "binding": "ADMIN_PAY",
@@ -129,6 +143,11 @@
         "WEBSITE_ORIGIN": "https://techaust.com"
       },
       "secrets": { "required": ["PORTAL_KEY_PEPPER", "TURNSTILE_SECRET"] },
+      "ratelimits": [
+        { "name": "RL_SESSION", "namespace_id": "6301", "simple": { "limit": 120, "period": 60 } },
+        { "name": "RL_SIGNIN", "namespace_id": "6302", "simple": { "limit": 10, "period": 60 } },
+        { "name": "RL_LINKS", "namespace_id": "6303", "simple": { "limit": 30, "period": 60 } }
+      ],
       // Production: NO invocation logs from day one (they carry the client IP, user agent and location of every
       // request, which the append-only access log already holds for security). Console logs stay on.
       "observability": {

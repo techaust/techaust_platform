@@ -10,7 +10,7 @@
 // CGST Act and Rule 50 CGST Rules (08-C RA-39)); it makes no stamp or signature claim (OPEN (08-C RB-21): is an emailed, computer-generated payment receipt above
 // ₹5,000 chargeable under Schedule I Art. 53 Indian Stamp Act 1899?).
 import type { IssueReceiptResult } from "@techaust/core/care-billing";
-import { contentDisposition } from "@techaust/core/file-types";
+import { downloadHeaders } from "@techaust/core/file-types";
 import { issueDateOf, issueFyOf } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import type { ReceiptRenderMessage } from "@techaust/core/pdf-jobs";
@@ -209,16 +209,12 @@ export const receiptPdf = new Hono<AppEnv>()
     const obj = await c.env.DOCS.get(row.pdf_r2_key);
     if (!obj) return err(c, PDF_PENDING, 409);
     return new Response(obj.body, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Length": String(obj.size),
-        "Content-Disposition": contentDisposition(receiptFilename(row.number_display)),
-        ETag: `"${row.pdf_sha256}"`,
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-        "Cache-Control": "no-store",
-        "X-Robots-Tag": "noindex",
-      },
+      headers: downloadHeaders({
+        contentType: "application/pdf",
+        size: obj.size,
+        filename: receiptFilename(row.number_display),
+        etag: row.pdf_sha256,
+      }),
     });
   })
   .post("/:id/pdf/retry", param(idParam), body(z.strictObject({})), async (c) => {

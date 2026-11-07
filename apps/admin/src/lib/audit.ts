@@ -2,6 +2,7 @@
 // (sensitive values arrive as "[masked]" and stay masked), and the CSV export built in the browser from the loaded
 // entries. Pure, so the wording and the CSV are tested without a browser.
 import { formatIstDateTime, MASKED } from "@techaust/core";
+import { csvCell } from "@techaust/core/csv-cell";
 import { ROLE_LABELS } from "@techaust/core/permissions";
 import type { AuditEntry } from "../api.ts";
 import { Y } from "./copy-y.ts";
@@ -480,11 +481,8 @@ export function readSummary(summary: Record<string, unknown> | null): { changes:
   return { changes, facts };
 }
 
-/** One CSV cell: quoted when it holds a comma, quote or line break; a leading = + - @ is defused (spreadsheet formulas). */
-export function csvCell(v: string): string {
-  const safe = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
-  return /[",\n\r]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe;
-}
+/** One CSV cell (quoted when needed; a leading = + - @, tab or CR defused): the one shared writer, `@techaust/core/csv-cell` (M7.5 B1). */
+export { csvCell };
 
 /** The CSV of the entries, newest first, times in IST. */
 export function auditCsv(entries: AuditEntry[], names: ReadonlyMap<string, string> = new Map()): string {

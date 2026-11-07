@@ -43,7 +43,7 @@ The staging admin Worker needs four random secrets. The deploy **fails without t
 2. Paste this line and press **Enter**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\staging-login-secrets.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\owner\staging-login-secrets.ps1"
 ```
 
 3. When it finishes, copy back to me **only the line that starts with `RESULT:`**.
@@ -51,7 +51,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJE
 If the result says you are not logged in to Cloudflare, run these two lines one at a time (a browser window opens; approve it), then run step 2 again:
 
 ```powershell
-cd "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\apps\admin"
+cd "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\apps\admin"
 ```
 
 ```powershell
@@ -76,7 +76,7 @@ The benchmark sends 100+ automated test logins to the staging admin, and a robot
 1. In PowerShell, paste this line and press **Enter**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\set-bench-token.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\owner\set-bench-token.ps1"
 ```
 
 2. It asks for the Client ID, then the Client Secret: copy each from the Cloudflare page and paste it (the typing stays hidden), then press **Enter**.
@@ -91,6 +91,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJE
    - Include: Selector **Service Token**, Value `staging-cpu-benchmark`
 4. Save the policy. If it was created separately, make sure it is in the application's **Access policies** list, then **Save** the application.
 5. Keep the **Cloudflare account** policy as it is: the two work side by side. Don't add the token to the other three Workers.
+6. **Done 2026-11-07 (M7.5 Q2 A, owner's go-ahead):** the same reusable policy `CPU benchmark (service token)` is also attached to **portal-staging** and **web-staging** (precedence 3, after `Cloudflare account members` and `Deploy check (service token)`), so the benchmark reaches all three hosts. The lead attached it through the Cloudflare API connector, a one-off write the owner allowed for this step (the connector is otherwise read-only). The jobs app does not get it.
 
 Your Zero Trust account is new, so **strict service token authentication** is on (Cloudflare's default since 2026-10-05): a refused token gets a 401/403 instead of the sign-in page. The benchmark script reports that as "Cloudflare Access refused the service token".
 
@@ -110,7 +111,7 @@ After each staging deploy, the workflow asks every Worker "are you healthy?" (fu
 1. In PowerShell, paste this line and press **Enter**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\set-deploy-token.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\owner\set-deploy-token.ps1"
 ```
 
 2. Paste the Client ID, then the Client Secret (the typing stays hidden), pressing **Enter** after each.

@@ -34,6 +34,17 @@
   "secrets": {
     "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
   },
+  // M7.5 (C2, L2, L5, L22): in-Worker Rate Limiting (free; per Cloudflare location, not exact), on the FRONT only (the API, finance and invoices Workers are
+  // reached only through it), checked before any D1 work and before Turnstile's siteverify: RL_SESSION per signed-in session (240 a minute: a screen loads
+  // several lists), keyed on an HMAC under SESSION_HMAC_KEY, on every forwarded request and every front route that needs a session; RL_SIGNIN per address on
+  // /auth/salt, /login, /totp and /recovery, RL_INVITE per address on /auth/invite/start, /finish and /totp (each route its own counter), keyed on the
+  // address's HMAC under SALT_PEPPER. Not inherited by environments, so each env lists them, each purpose and scope with its own namespace_id (unique in the
+  // account; scripts/check-worker-config.mjs).
+  "ratelimits": [
+    { "name": "RL_SESSION", "namespace_id": "5101", "simple": { "limit": 240, "period": 60 } },
+    { "name": "RL_SIGNIN", "namespace_id": "5102", "simple": { "limit": 20, "period": 60 } },
+    { "name": "RL_INVITE", "namespace_id": "5103", "simple": { "limit": 10, "period": 60 } }
+  ],
   // Email queue (producer, M2.4b): the staff security alerts go to the jobs Worker as an audit-row ID only (no address
   // leaves this Worker). The jobs Worker consumes it. Production has no queue until Phase 7 (owner approval).
   "queues": {
@@ -99,6 +110,11 @@
       "secrets": {
         "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
       },
+      "ratelimits": [
+        { "name": "RL_SESSION", "namespace_id": "5201", "simple": { "limit": 240, "period": 60 } },
+        { "name": "RL_SIGNIN", "namespace_id": "5202", "simple": { "limit": 20, "period": 60 } },
+        { "name": "RL_INVITE", "namespace_id": "5203", "simple": { "limit": 10, "period": 60 } }
+      ],
       "services": [
         { "binding": "ADMIN_API", "service": "techaust-platform-admin-api-staging" },
         { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance-staging" },
@@ -138,6 +154,11 @@
       "secrets": {
         "required": ["PASSWORD_PEPPER", "SALT_PEPPER", "TOTP_ENC_KEY", "SESSION_HMAC_KEY", "TURNSTILE_SECRET"]
       },
+      "ratelimits": [
+        { "name": "RL_SESSION", "namespace_id": "5301", "simple": { "limit": 240, "period": 60 } },
+        { "name": "RL_SIGNIN", "namespace_id": "5302", "simple": { "limit": 20, "period": 60 } },
+        { "name": "RL_INVITE", "namespace_id": "5303", "simple": { "limit": 10, "period": 60 } }
+      ],
       "services": [
         { "binding": "ADMIN_API", "service": "techaust-platform-admin-api" },
         { "binding": "ADMIN_FINANCE", "service": "techaust-platform-admin-finance" },

@@ -2,7 +2,7 @@
 // ONE `pdf.statement` message on `PDF_QUEUE`; the jobs Worker makes the PDF and stores it write-once in the private R2 bucket `DOCS`. This Worker only enqueues and streams the
 // finished object back (never cached, never sniffed). At most 200 lines (a longer range is refused: shorten it, or use the CSV); never for an anonymised client. The request
 // AWAITS the queue send, so a failure is told to the person (503, the row marked failed) instead of waiting for a PDF that will never come. Self-contained (LD85).
-import { contentDisposition } from "@techaust/core/file-types";
+import { downloadHeaders } from "@techaust/core/file-types";
 import { uuidv7 } from "@techaust/core/ids";
 import { STATEMENT_PDF_MAX_ENTRIES } from "@techaust/core/statement";
 import { STATEMENT_COUNT_SQL, statementTotalsBinds } from "@techaust/db/reports";
@@ -165,17 +165,11 @@ export const statementPdf = new Hono<AppEnv>()
     // A key that is set but whose object is gone will not come back: it is a failure, not "still pending" (M2)
     if (!obj) return err(c, FAILED, 409);
     return new Response(obj.body, {
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Length": String(obj.size),
-        "Content-Disposition": contentDisposition(
-          `statement-${row.code}-${row.from_date}-to-${row.to_date}.pdf`,
-        ),
-        ETag: `"${row.pdf_sha256}"`,
-        "X-Content-Type-Options": "nosniff",
-        "Content-Security-Policy": "default-src 'none'; sandbox",
-        "Cache-Control": "no-store",
-        "X-Robots-Tag": "noindex",
-      },
+      headers: downloadHeaders({
+        contentType: "application/pdf",
+        size: obj.size,
+        filename: `statement-${row.code}-${row.from_date}-to-${row.to_date}.pdf`,
+        etag: row.pdf_sha256,
+      }),
     });
   });

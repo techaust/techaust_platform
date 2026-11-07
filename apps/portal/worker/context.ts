@@ -47,6 +47,8 @@ export type Vars = {
   afterAlert?: string;
   /** The handler already wrote this request's access row (inside its batch), or must write none. */
   accessDone?: boolean;
+  /** M7.5 L39: the start-up dry run's app (createApp `warm`, warm-routes.ts): a handler draws no random value (global scope refuses one). */
+  warm?: boolean;
 };
 
 export type AppEnv = { Bindings: Env; Variables: Vars };

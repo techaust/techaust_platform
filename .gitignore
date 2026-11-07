@@ -1,5 +1,7 @@
 node_modules/
 dist/
+# M7.5 (owner's Q3 A): the staging deploy's pre-bundled jobs Worker (the web one sits under .wrangler/).
+dist-staging/
 .astro/
 .wrangler/
 coverage/

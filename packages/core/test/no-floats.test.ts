@@ -226,11 +226,41 @@ const rightOperand = (s: string, slash: number): string => {
   }
   return s.slice(start, j);
 };
+const BIGINT_CALL = /^(BigInt|divRoundHalfUp)$/;
+/**
+ * Is this operand itself a bigint? (M7.5 section F, earlier-work audit: the exemption was "a bigint marker anywhere in the operand",
+ * so `Number(5n) / 3`, `toNumber(BigInt(x)) / y` or `(5n).toString().length / 2` passed as bigint divisions.) Every call of another
+ * function is first replaced by `_` (its arguments can't make the operand a bigint), and a member access at the top level (`.length`,
+ * `.toString()`) means the value is no longer the bigint. Then a marker must remain: a bigint literal, `BigInt(…)` or
+ * `divRoundHalfUp(…)`, alone or inside a (…) group of bigint arithmetic.
+ */
+const isBigintOperand = (op: string): boolean => {
+  let t = "";
+  for (let j = 0; j < op.length; ) {
+    const name = /^[\w$]+(?=\s*\()/.exec(op.slice(j))?.[0];
+    if (name !== undefined && (j === 0 || !/[\w$]/.test(op[j - 1] as string))) {
+      const open = op.indexOf("(", j + name.length);
+      const close = matchingClose(op, open);
+      t += BIGINT_CALL.test(name) && op[j - 1] !== "." ? op.slice(j, close + 1) : "_";
+      j = close + 1;
+    } else {
+      t += op[j];
+      j++;
+    }
+  }
+  let depth = 0;
+  for (const ch of t) {
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === "." && depth === 0) return false;
+  }
+  return BIGINT_MARK.test(t);
+};
 const plainDivisions = (src: string): string[] => {
   const s = code(src).replace(TRUNC_DIVISION, "");
   const found: string[] = [];
   for (let i = s.indexOf("/"); i >= 0; i = s.indexOf("/", i + 1)) {
-    if (BIGINT_MARK.test(leftOperand(s, i)) || BIGINT_MARK.test(rightOperand(s, i))) continue;
+    if (isBigintOperand(leftOperand(s, i)) || isBigintOperand(rightOperand(s, i))) continue;
     const from = s.lastIndexOf("\n", i) + 1;
     const to = s.indexOf("\n", i);
     found.push(s.slice(from, to < 0 ? s.length : to).trim());
@@ -297,6 +327,18 @@ describe("money paths use integers only", () => {
     expect(plainDivisions("const x = a / 100n + b / 2;")).toHaveLength(1);
     expect(plainDivisions("const x = a / 100n;")).toEqual([]);
     expect(plainDivisions("const x = BigInt(a) * BigInt(b) / BigInt(c);")).toEqual([]);
+  });
+
+  it("a bigint marker inside another call or before a member access does not exempt a division (M7.5 section F)", () => {
+    expect(plainDivisions("const x = Number(5n) / 3;")).toHaveLength(1);
+    expect(plainDivisions("const x = toNumber(BigInt(a)) / y;")).toHaveLength(1);
+    expect(plainDivisions("const x = (5n).toString().length / 2;")).toHaveLength(1);
+    expect(plainDivisions("const x = a / Number(100n);")).toHaveLength(1);
+    expect(plainDivisions("const x = String(BigInt(a)).length / 2;")).toHaveLength(1);
+    // Still exempt: the operand itself is the bigint.
+    expect(plainDivisions("const x = (a * BigInt(rate)) / 10_000n;")).toEqual([]);
+    expect(plainDivisions("const x = BigInt(Number(a)) / b;")).toEqual([]);
+    expect(plainDivisions("const x = divRoundHalfUp(a, b) / c;")).toEqual([]);
   });
 
   it("does not mistake comments, strings, regexes or single-quoted text for a division", () => {

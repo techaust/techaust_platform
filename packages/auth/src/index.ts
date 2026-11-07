@@ -8,6 +8,7 @@ export * from "./device.ts";
 export * from "./lockout.ts";
 export * from "./password.ts";
 export * from "./portal.ts";
+export * from "./rate-limit.ts";
 export * from "./recovery.ts";
 export * from "./route-table.ts";
 export * from "./schemas.ts";

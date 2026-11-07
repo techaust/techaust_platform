@@ -206,9 +206,10 @@ describe("every ROUTES row has one owner", () => {
     // M7.3 (changed on purpose, run file L12): revenue (by month, category or kind), revenue per client and the ageing on the invoices Worker with the other
     // reports (38); the pipeline and care plan hours on the API, beside the leads and care plans they read. M7.3 B2 (C6, changed on purpose): the two CSV
     // twins of revenue per client and the ageing, beside them (40).
-    expect(INVOICES_ROWS.length).toBe(40);
+    // M7.5 D1/G (changed on purpose): the usage tile's data beside the dashboard (41).
+    expect(INVOICES_ROWS.length).toBe(41);
     expect(FINANCE_ROWS.length).toBe(49);
-    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 40 - 49);
+    expect(API_ROWS.length).toBe(ROUTES.length - 24 - 41 - 49);
     expect(new Set([...FRONT_ROWS, ...API_ROWS, ...INVOICES_ROWS, ...FINANCE_ROWS].map(key)).size).toBe(
       ROUTES.length,
     );
@@ -227,7 +228,7 @@ describe("every ROUTES row has one owner", () => {
   // the invoices Worker; payments, the ledger panels, credit, advices and the gateways stay in the finance Worker.
   // M7.3 (L12): the pipeline and care plan hours reports are the API's (they read leads, offers and care plans, not the invoice chain).
   const INVOICES =
-    /^\/api\/v1\/(invoices(\/:id(\/(issue|issue-request|void|withdraw|service-completed|advance-invoice|credit-note|debit-note|ims-status|pdf|pdf\/supplier|pdf\/retry|send|links\/revoke|reminders\/(pause|resume)))?)?$|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|reports\/(?!pipeline$|care-hours$)|approvals(\/|$)|dashboard$|receipts\/:id\/pdf(\/retry)?$)/;
+    /^\/api\/v1\/(invoices(\/:id(\/(issue|issue-request|void|withdraw|service-completed|advance-invoice|credit-note|debit-note|ims-status|pdf|pdf\/supplier|pdf\/retry|send|links\/revoke|reminders\/(pause|resume)))?)?$|clients\/:id\/invoices$|clients\/:id\/statement(\/|$)|reports\/(?!pipeline$|care-hours$)|approvals(\/|$)|dashboard(\/usage)?$|receipts\/:id\/pdf(\/retry)?$)/;
   const FINANCE =
     /^\/api\/v1\/(payments(\/|$)|refunds(\/|$)|reconciliation\/|clients\/:id\/credit(\/|$)|receipts\/:id\/send$|invoices\/:id\/(payment-link(\/cancel)?|payments|credit\/release|realisation-extensions(\/:eid\/letter)?|realisation-reductions(\/:rid\/letter)?)$)/;
 
@@ -864,7 +865,7 @@ describe("no sign-in secret outside the front's sources", () => {
   // warm-front.ts (CPU warm-up (b)1): the front's start-up dry run names the sign-in keys with MADE-UP test values only; front-only (the next test, and the
   // bundle guard SIGN_IN_TABLES keeps every such name out of the API and finance bundles).
   const allowed = (f: string) =>
-    ["./auth.ts", "./account.ts", "./users.ts", "./warm-front.ts"].includes(f) ||
+    ["./auth.ts", "./account.ts", "./users.ts", "./warm-front.ts", "./rate-limit.ts"].includes(f) ||
     f.startsWith("./test-") ||
     f.endsWith(".test.ts") ||
     f.endsWith(".d.ts");
@@ -887,7 +888,7 @@ describe("no sign-in secret outside the front's sources", () => {
       "./routes-invoices.ts",
       "./rpc.ts",
     ]) {
-      expect(sources[f], f).not.toMatch(/from "\.\/(auth|account|users|warm-front)\.ts"/);
+      expect(sources[f], f).not.toMatch(/from "\.\/(auth|account|users|warm-front|rate-limit)\.ts"/);
     }
   });
 
