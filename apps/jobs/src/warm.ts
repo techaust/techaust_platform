@@ -58,7 +58,15 @@ import { warmDp } from "./retention.ts";
  */
 export function warmStatement(count = 3): number {
   try {
-    const kinds: StatementKind[] = ["tax_invoice", "credit_note", "export_invoice", "receipt"];
+    // AU45: `refund` and `refund_returned` too, so a long warm statement (the CPU test's 200 lines) goes through every kind the PDF prints.
+    const kinds: StatementKind[] = [
+      "tax_invoice",
+      "credit_note",
+      "export_invoice",
+      "receipt",
+      "refund",
+      "refund_returned",
+    ];
     const rows = Array.from({ length: count }, (_, i) => {
       const kind = kinds[i % kinds.length] as StatementKind;
       return {
