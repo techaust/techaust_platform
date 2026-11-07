@@ -1,15 +1,24 @@
 name: Deploy production
 # PRODUCTION. Owner-only, manual, typed confirmation (docs/05-architecture.md §12.3, ADR 0009).
-# Disabled until Phase 7: requires repo variable PRODUCTION_ENABLED == 'true' (set by the owner at go-live).
+# Requires the repo variable PRODUCTION_ENABLED == 'true' (set by the owner at go-live).
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to deploy (e.g. v2026.11.01-1)"
+        description: "Release tag to deploy (e.g. v2026.11.08-1)"
         required: true
       confirm:
         description: "Type exactly: deploy techaust.com <tag>"
         required: true
+      stage:
+        description: "database: migrations and seed only (no Worker is deployed); full: migrations, seed, then the seven Workers"
+        type: choice
+        options: [full, database]
+        default: full
+      check_web:
+        description: "Health-check the website after its deploy (false until techaust.com is attached to it)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -18,9 +27,20 @@ concurrency:
   group: deploy-production
   cancel-in-progress: false
 
-# M7.5 (owner's Q3 A, 2026-11-01): the build and the deploy are separate jobs. `build` installs and runs package code with NO secret and NO environment;
-# `deploy` holds the production environment (its secrets and the owner's review) and installs nothing but wrangler (`@techaust/deploy-tools`, from the
-# lockfile), taking the build as an artifact. Phase 7 (L3-L4) fills in the production builds and deploy steps on this shape.
+# P7 (docs/runs/p7-launch.md P7-B), on the shape of deploy-staging.yml (M7.5, owner's Q3 A 2026-11-01):
+#   1. guard: only the owner (techaust), only while PRODUCTION_ENABLED is 'true', only with the typed confirmation.
+#   2. build: NO environment and NO secret (it installs and runs package code): the seed SQL, the production builds of the admin, the portal and the
+#      website (CLOUDFLARE_ENV=production, with the SPA header and Worker budget checks and the website's dist checks), the pre-bundled jobs and
+#      website Workers (dry runs: nothing is uploaded and no token is needed), no `.dev.vars` anywhere, and (stage full) the pre-production readiness
+#      check, which reads every one of those bundles. Handed on as an artifact.
+#   3. deploy: the `production` environment (CF_API_TOKEN_PROD and the owner's review) and nothing installed but wrangler (`@techaust/deploy-tools`, from
+#      the lockfile). The artifact is downloaded outside the checkout and placed by scripts/place-build-artifact.mjs before any step with a secret (L57),
+#      and every build is checked as a production one (scripts/deploy-worker.mjs production --check) before anything changes. Then: the D1 Time Travel
+#      bookmark into the job summary (the restore point), the migrations, the seed (insert-only), and with stage full the seven Workers one per step
+#      (admin API, admin invoices, admin finance, admin front, portal, jobs, website), each app followed by its health check (scripts/prod-health.mjs;
+#      the website's only when check_web is true). A failed step stops the job, so no Worker is deployed after a failed one.
+# No production config has a `routes` or custom-domain entry: the lead attaches the domains by hand, so a deploy never takes techaust.com.
+# Only workflow_dispatch by the owner on this repository: never a fork's pull request (the repo is public).
 jobs:
   guard:
     runs-on: ubuntu-latest
@@ -35,9 +55,10 @@ jobs:
         run: |
           # actor is who started the run; triggering_actor is who started this attempt (a re-run by someone else).
           [ "$ACTOR" = "techaust" ] && [ "$TRIGGERING_ACTOR" = "techaust" ] || { echo "Only the owner (techaust) may deploy production."; exit 1; }
-          [ "$ENABLED" = "true" ] || { echo "Production deploys are disabled until Phase 7."; exit 1; }
+          [ "$ENABLED" = "true" ] || { echo "Production deploys are disabled (repo variable PRODUCTION_ENABLED is not true)."; exit 1; }
           [ "$CONFIRM" = "deploy techaust.com $TAG" ] || { echo "Confirmation text does not match."; exit 1; }
           echo "Guards passed for $TAG"
+
   build:
     needs: guard
     # No environment and no secret: this job installs and runs package code. No `cache: pnpm` either (L51): a cache saved after package code ran could
@@ -53,33 +74,58 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: pnpm install --frozen-lockfile
-      # Pre-production check (M2.3): blocks the deploy while an owner input is still a placeholder (postal address,
-      # founder's LinkedIn, headshot and bio, unconfirmed aliases, a Placeholder on a built page, noindex).
-      # Run here only, never by CI or the staging deploy.
-      - name: Pre-production readiness (owner inputs)
-        env:
-          # robots.txt is built per environment (src/pages/robots.txt.ts): production allows crawling.
-          CLOUDFLARE_ENV: production
+      # The seed is package code (packages/db): the settings defaults, the catalogue S1-S18, the templates and the terms; no sample data. Written here,
+      # applied by the deploy job.
+      - name: Write the seed SQL (no token)
         run: |
-          pnpm --filter @techaust/web exec astro build
-          node scripts/check-prod-readiness.mjs
-      # M7.1 L17 / M7.5 F: no local secrets file (`.dev.vars`, `.dev.vars.*`) in any app's build output.
+          mkdir -p .deploy
+          pnpm --filter @techaust/db seed:sql "$GITHUB_WORKSPACE/.deploy/seed.sql"
+      # CLOUDFLARE_ENV=production is set inside each build:production script, so the Vite plugin writes the redirected production deploy config
+      # (.wrangler/deploy/config.json) and the pages and sign-in bundles carry production's keys (an empty production Turnstile key fails the build).
+      - name: Build the admin (production, no token)
+        run: pnpm --filter @techaust/admin run build:production
+      - name: Build the portal (production, no token)
+        run: pnpm --filter @techaust/portal run build:production
+      # The website: robots.txt allows crawling and dist/_headers carries no X-Robots-Tag only in this build (scripts/web-noindex.mjs).
+      - name: Build the website (production, no token)
+        run: pnpm --filter @techaust/web run build:production
+      - name: Bundle the jobs and website Workers (production, no token)
+        run: |
+          pnpm --filter @techaust/jobs exec wrangler deploy --dry-run --env production --outdir dist-production
+          pnpm --filter @techaust/web exec wrangler deploy --dry-run --env production --outdir .wrangler/dist-production
+      # M7.1 L17 / M7.5 F: no local secrets file (`.dev.vars`, `.dev.vars.*`) in any build output, the pre-bundled Workers included.
       - name: No .dev.vars in any build output
-        run: node scripts/check-staging-build.mjs dev-vars
+        run: node scripts/check-prod-build.mjs dev-vars
+      # Pre-production check (M2.3, P7): blocks the deploy while an owner input is missing (postal address, founder's LinkedIn, headshot and bio,
+      # unconfirmed aliases, the launch and legal effective dates, a Placeholder on a built page or in a bundle, noindex in dist/_headers, the backup
+      # record, the production Turnstile keys) or while a Worker's production config differs from staging's in more than values. Run here only, never
+      # by CI or the staging deploy. Not on stage database: that run deploys no Worker and no page, and comes before the backup it would wait for
+      # (docs/runs/phase7-production.md, finding 4: migrations and seed first, then the backup and restore drill, then backup-verified.json).
+      - name: Pre-production readiness (owner inputs and production configs)
+        if: inputs.stage == 'full'
+        run: node scripts/check-prod-readiness.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: production-build
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 1
-          path: apps/web/dist
+          path: |
+            .deploy/seed.sql
+            apps/admin/dist
+            apps/admin/.wrangler/deploy
+            apps/portal/dist
+            apps/portal/.wrangler/deploy
+            apps/web/dist
+            apps/web/.wrangler/dist-production
+            apps/jobs/dist-production
+
   deploy:
     needs: build
-    # The `production` environment holds the production secrets and a required reviewer (the owner). The owner
-    # creates it and sets those in Phase 7 (L3-L4); until then the guard job above stops every run.
+    # The `production` environment holds CF_API_TOKEN_PROD (no zone or DNS permission) and a required reviewer (the owner).
     environment: production
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,13 +137,112 @@ jobs:
       # Wrangler alone, from the lockfile; the build arrives as an artifact.
       - name: Install wrangler only
         run: pnpm install --frozen-lockfile --filter @techaust/deploy-tools
-      # L57: as in deploy-staging.yml, the artifact (written by a job that ran package code) is downloaded outside the checkout, and placed into
-      # apps/web/dist by a script from the checkout, with no secret, before any step that holds one: no .env* or .dev.vars*, no symlink, nothing over an
-      # existing file.
+      # L57: as in deploy-staging.yml, the artifact (written by a job that ran package code) is downloaded outside the checkout, and placed by a script
+      # from the checkout, with no secret, before any step that holds one: only the build outputs the upload step names, no .env* or .dev.vars*, no
+      # symlink, nothing over an existing file.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: production-build
           path: ${{ runner.temp }}/production-build
-      - name: Place the build output (no secret)
+      - name: Place the build outputs (no secret)
         run: node scripts/place-build-artifact.mjs production "$RUNNER_TEMP/production-build"
-      - run: echo "Production deploy steps (backup, migrations, deploy, smoke tests) are added in Phase 7 (L3-L4)."
+      # Every production build checked before anything changes (no secret): the flattened configs (L51: no build step, nothing outside dist) name
+      # the production Workers for env.production, and no output carries a staging host, name or Turnstile key (scripts/check-prod-build.mjs).
+      - name: Check every build is a production one (no secret)
+        run: node scripts/deploy-worker.mjs production --check
+      - name: Check the production credentials are set
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::CF_API_TOKEN_PROD (environment production) or CLOUDFLARE_ACCOUNT_ID is not set; nothing was changed."
+            exit 1
+          fi
+      # The restore point (08 §6.3): the D1 Time Travel bookmark before the migrations, in the job summary, so a bad migration can be undone with
+      # `wrangler d1 time-travel restore DB --env production --bookmark <bookmark>`.
+      - name: Record the D1 Time Travel bookmark (production)
+        working-directory: apps/jobs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node ../../tools/deploy/node_modules/wrangler/bin/wrangler.js d1 time-travel info DB --env production | tee "$RUNNER_TEMP/time-travel.txt"
+          {
+            echo "### Production D1 before this run's migrations"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/time-travel.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Migrations before any Worker deploys (owner decision M1.3), backward-compatible (docs/05 §5.5).
+      - name: Migrate production D1
+        working-directory: apps/jobs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node ../../tools/deploy/node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --remote --env production
+      # The seed: loaded by the first run; insert-only and idempotent (it never overwrites an edit), so a later run inserts nothing that exists.
+      - name: Seed production D1
+        working-directory: apps/jobs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node ../../tools/deploy/node_modules/wrangler/bin/wrangler.js d1 execute DB --remote --env production --file ../../.deploy/seed.sql
+      # Stage database stops here. The deploy order (from M6.5, owner's Q3 A 2026-11-02), as deploy-staging.yml: a Worker another binds deploys first.
+      - name: Deploy 1 of 7, the admin API Worker (production)
+        if: inputs.stage == 'full'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/deploy-worker.mjs production admin-api
+      - name: Deploy 2 of 7, the admin invoices Worker (production)
+        if: inputs.stage == 'full'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/deploy-worker.mjs production admin-invoices
+      - name: Deploy 3 of 7, the admin finance Worker (production)
+        if: inputs.stage == 'full'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/deploy-worker.mjs production admin-finance
+      - name: Deploy 4 of 7, the admin front Worker (production)
+        if: inputs.stage == 'full'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/deploy-worker.mjs production admin
+      # The admin is behind Cloudflare Access with a bypass for its health path only, so only the front's /api/v1/health is read (no Access token).
+      - name: Health check, the admin front Worker (production)
+        if: inputs.stage == 'full'
+        run: node scripts/prod-health.mjs admin
+      - name: Deploy 5 of 7, the portal Worker (production)
+        if: inputs.stage == 'full'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/deploy-worker.mjs production portal
+      - name: Health check, the portal Worker (production)
+        if: inputs.stage == 'full'
+        run: node scripts/prod-health.mjs portal
+      - name: Deploy 6 of 7, the jobs Worker (production)
+        if: inputs.stage == 'full'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/deploy-worker.mjs production jobs
+      - name: Health check, the jobs Worker (production)
+        if: inputs.stage == 'full'
+        run: node scripts/prod-health.mjs jobs
+      - name: Deploy 7 of 7, the website Worker (production)
+        if: inputs.stage == 'full'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_PROD }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/deploy-worker.mjs production web
+      # techaust.com is attached to the new website only at the owner's "go" (after the old Worker is deleted): until then run with check_web false.
+      - name: Health check, the website Worker (production)
+        if: inputs.stage == 'full' && inputs.check_web
+        run: node scripts/prod-health.mjs web

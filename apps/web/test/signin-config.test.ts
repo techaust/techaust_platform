@@ -81,8 +81,26 @@ describe("the build-time site key (scripts/turnstile-site-key.mjs)", () => {
     for (const dir of [admin, portal]) {
       expect(siteKeyForApp(dir, undefined)).toBe(TEST_KEY);
       expect(siteKeyForApp(dir, "staging")).toBe(STAGING_KEY);
-      expect(siteKeyForApp(dir, "production")).toBe("");
     }
+  });
+
+  // P7-B: a production build refuses an empty key, as staging's does; once the lead sets the production widget's key, it is that key.
+  it("a production build gets env.production's key, and fails while it is empty", () => {
+    for (const [app, dir] of [
+      ["admin", admin],
+      ["portal", portal],
+    ] as const) {
+      const key = load(app).env.production.vars?.TURNSTILE_SITE_KEY ?? "";
+      if (key) expect(siteKeyForApp(dir, "production")).toBe(key);
+      else
+        expect(() => siteKeyForApp(dir, "production")).toThrow(/env\.production has no TURNSTILE_SITE_KEY/);
+    }
+    expect(() =>
+      siteKeyOf({ env: { production: { vars: { TURNSTILE_SITE_KEY: "" } } } }, "production"),
+    ).toThrow(/env\.production has no TURNSTILE_SITE_KEY/);
+    expect(siteKeyOf({ env: { production: { vars: { TURNSTILE_SITE_KEY: "0xprod" } } } }, "production")).toBe(
+      "0xprod",
+    );
   });
 
   it("a staging build with an empty key fails, and so does an unknown environment", () => {

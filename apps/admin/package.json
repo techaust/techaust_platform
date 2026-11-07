@@ -13,6 +13,11 @@
     "deploy:staging:finance": "node ../../scripts/check-staging-build.mjs admin-finance && wrangler deploy --config dist/techaust_platform_admin_finance/wrangler.json",
     "deploy:staging:invoices": "node ../../scripts/check-staging-build.mjs admin-invoices && wrangler deploy --config dist/techaust_platform_admin_invoices/wrangler.json",
     "deploy:staging:front": "node ../../scripts/check-staging-build.mjs admin && wrangler deploy",
+    "build:production": "CLOUDFLARE_ENV=production vite build && node ../../scripts/check-spa-headers.mjs admin && node ../../scripts/worker-budget.mjs admin && node ../../scripts/worker-budget.mjs adminApi && node ../../scripts/worker-budget.mjs adminFinance && node ../../scripts/worker-budget.mjs adminInvoices",
+    "deploy:production:api": "node ../../scripts/check-prod-build.mjs admin-api && wrangler deploy --config dist/techaust_platform_admin_api/wrangler.json",
+    "deploy:production:finance": "node ../../scripts/check-prod-build.mjs admin-finance && wrangler deploy --config dist/techaust_platform_admin_finance/wrangler.json",
+    "deploy:production:invoices": "node ../../scripts/check-prod-build.mjs admin-invoices && wrangler deploy --config dist/techaust_platform_admin_invoices/wrangler.json",
+    "deploy:production:front": "node ../../scripts/check-prod-build.mjs admin && wrangler deploy",
     "types": "wrangler types --env staging",
     "e2e": "playwright test"
   },
