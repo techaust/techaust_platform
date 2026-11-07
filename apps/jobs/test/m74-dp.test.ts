@@ -6,6 +6,7 @@
 // acknowledged. Invented data only.
 import { env as realEnv } from "cloudflare:workers";
 import { type EmailMessage, uuidv7 } from "@techaust/core";
+import { POSTAL_ADDRESS } from "@techaust/core/company";
 import { APPROVED_07ZR } from "@techaust/core/copy-zr";
 import { dpMessageOf } from "@techaust/core/dp-jobs";
 import { requestDueAtSql } from "@techaust/core/dsr";
@@ -529,6 +530,9 @@ describe("the portal acknowledgement (D.8, L32) and dead letters", () => {
       entity: { type: "client_request", id: local.id },
     });
     expect(mail?.data.rule9).toContain("privacy@techaust.com");
+    // P7-C: the Rule 9 block carries the company's one postal address, never the marked gap.
+    expect(mail?.data.rule9).toContain(`· ${POSTAL_ADDRESS}.`);
+    expect(mail?.data.rule9).not.toContain("[Placeholder");
     expect(
       await one("SELECT acknowledged_at IS NOT NULL AS acked FROM client_requests WHERE id = ?1", local.id),
     ).toEqual({ acked: 1 });

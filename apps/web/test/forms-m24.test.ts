@@ -255,6 +255,15 @@ describe("the Turnstile site key (lib/turnstile.ts)", () => {
     expect(() => siteKeyOf({ env: { staging: { vars: {} } } }, "staging")).toThrow(/no TURNSTILE_SITE_KEY/);
     expect(() => siteKeyOf(config, "nope")).toThrow(/not an environment/);
   });
+
+  it("P7-B: fails a production build without a key, as staging's", () => {
+    expect(() =>
+      siteKeyOf({ env: { production: { vars: { TURNSTILE_SITE_KEY: "" } } } }, "production"),
+    ).toThrow(/env\.production has no TURNSTILE_SITE_KEY/);
+    expect(siteKeyOf({ env: { production: { vars: { TURNSTILE_SITE_KEY: "0xprod" } } } }, "production")).toBe(
+      "0xprod",
+    );
+  });
 });
 
 const built = existsSync(`${webDir}/dist/get-a-quote.html`);

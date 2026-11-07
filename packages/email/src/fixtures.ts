@@ -4,8 +4,9 @@
 // and the templates' snapshot suite (packages/email) read one set; imported as `@techaust/email/fixtures` (never the package index, which holds the templates
 // and the SES client).
 
+import { POSTAL_ADDRESS } from "@techaust/core/company";
 import { M72_TEMPLATE_NAMES, PREF_GROUP_LABELS } from "@techaust/core/copy-zq";
-import { M74_TEMPLATE_NAMES } from "@techaust/core/copy-zr";
+import { M74_TEMPLATE_NAMES, RULE9_BLOCK } from "@techaust/core/copy-zr";
 import { AUDIT_TEMPLATE_NAMES } from "@techaust/core/copy-zt";
 import type { EmailTemplate } from "@techaust/core/email-templates";
 import { firstNameOf } from "@techaust/core/offers";
@@ -283,8 +284,7 @@ Regards, ${who.name}, TecHaust Technologies`,
         kind_label: "Get a copy of my personal data",
         date: "6 Nov 2026",
         due_date: "6 Dec 2026",
-        rule9:
-          "Rupak Sarkar, Founder, TecHaust Technologies · privacy@techaust.com · [Placeholder] postal address.",
+        rule9: RULE9_BLOCK(POSTAL_ADDRESS),
       };
   }
 }

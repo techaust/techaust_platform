@@ -151,16 +151,24 @@ export function readBackProblem({ found, expected }) {
 /**
  * The script's refusals for the only-owner case, as a pure function so the tests can call it. `existing` and `liveInvites`
  * are counts the script reads first: staff_users rows with the new address (any status) and live unused invites for it.
- * @param {{ email: string, newEmail: unknown, existing: number, liveInvites: number, staging?: boolean }} p
+ * `staging` / `production` only add the matching flag to the command it suggests (P7-C).
+ * @param {{ email: string, newEmail: unknown, existing: number, liveInvites: number, staging?: boolean, production?: boolean }} p
  * @returns {string} the normalised new address; throws an Error with the reason otherwise
  */
-export function checkBreakGlass({ email, newEmail, existing, liveInvites, staging = false }) {
+export function checkBreakGlass({
+  email,
+  newEmail,
+  existing,
+  liveInvites,
+  staging = false,
+  production = false,
+}) {
   if (newEmail === undefined || newEmail === "")
     throw new Error(
       `${email} is the only active owner, and the database refuses to reset the last owner, so there is no reset to run. ` +
         "Break-glass instead: issue a one-time owner invite for a SECOND address you control, enrol that account, then " +
         "reset or deactivate this one from Staff and invites (allowed once two owners exist). Run:\n" +
-        `  pnpm admin:reset-2fa --email ${email} --new-email <another address you control>${staging ? " --staging" : ""}`,
+        `  pnpm admin:reset-2fa --email ${email} --new-email <another address you control>${production ? " --production" : staging ? " --staging" : ""}`,
     );
   const n = normaliseEmail(newEmail);
   if (!n) throw new Error("--new-email must be an email address.");

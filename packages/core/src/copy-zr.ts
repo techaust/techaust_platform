@@ -14,12 +14,11 @@ const zr = (line: string): string => (APPROVED_07ZR ? line : `[Placeholder] ${li
 
 /**
  * The Rule 9 contact block: 07-A §8 word for word ("**Rupak Sarkar**, Founder, TecHaust Technologies · privacy@techaust.com · {{postal_address}}."). The postal
- * address is the owner's open input (07-A placeholders); until `site.postalAddress` exists it stays the marked gap.
+ * address is `POSTAL_ADDRESS` (company.ts, the one source the website's `site.postalAddress` also reads; P7-C), passed in by the caller. No fallback text:
+ * the address is required, so no "[Placeholder" mark is left in the jobs bundle the production readiness check reads.
  */
-export const RULE9_BLOCK = (postalAddress: string | null): string =>
-  zr(
-    `Rupak Sarkar, Founder, TecHaust Technologies · privacy@techaust.com · ${postalAddress && postalAddress !== "" ? postalAddress : "[Placeholder] postal address"}.`,
-  );
+export const RULE9_BLOCK = (postalAddress: string): string =>
+  zr(`Rupak Sarkar, Founder, TecHaust Technologies · privacy@techaust.com · ${postalAddress.trim()}.`);
 
 /** C5, C6: the portal's labels of the two new kinds (beside 07-ZP C19's five). */
 export const NEW_KIND_LABELS = {

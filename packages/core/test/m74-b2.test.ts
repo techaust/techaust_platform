@@ -194,8 +194,9 @@ describe("07-A §3 and 07-ZR", () => {
     );
     expect(NEW_KIND_LABELS.nomination).toBe(`${mark}Nominate someone to act for me`);
     expect(REQUEST_KIND_LABELS.data_access).toBe("Get a copy of my personal data");
-    expect(RULE9_BLOCK(null)).toContain("privacy@techaust.com");
-    expect(RULE9_BLOCK("1 Road, Balurghat")).toContain("1 Road, Balurghat.");
+    expect(RULE9_BLOCK("1 Road, Balurghat")).toBe(
+      `${mark}Rupak Sarkar, Founder, TecHaust Technologies · privacy@techaust.com · 1 Road, Balurghat.`,
+    );
     expect(PRIVACY_KEYED_FORM_LINE.startsWith(mark)).toBe(true);
     expect(STAFF_COPY.legalHoldOn).not.toContain("[Placeholder]");
     expect(BELL_COPY.dueSoon("C0001", 3)).toBe("A data request from C0001 is due in 3 days.");

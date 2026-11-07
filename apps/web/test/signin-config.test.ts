@@ -19,6 +19,9 @@ const load = (app: string): Config =>
 
 const STAGING_KEY = "0x4AAAAAAFhrfYyx9bhG6lmt";
 const TEST_KEY = "1x00000000000000000000AA";
+/** P7-A (lead, 2026-11-07): the public site keys of the production widgets "techaust-prod-signin" (admin and portal) and "techaust-prod-forms" (web). */
+const PRODUCTION_KEY = "0x4AAAAAAF3fIdhlCqOre8yu";
+const PRODUCTION_FORMS_KEY = "0x4AAAAAAF3fDpktArFGL6Mv";
 const HOSTS = {
   admin: "techaust-platform-admin-staging.techaust-technologies-153.workers.dev",
   portal: "techaust-platform-portal-staging.techaust-technologies-153.workers.dev",
@@ -44,28 +47,35 @@ describe.each(["admin", "portal"] as const)("%s wrangler.jsonc", (app) => {
     expect(c.env.staging.vars?.TURNSTILE_SITE_KEY).not.toBe("0x4AAAAAAFhXQJodywYfgEIP");
   });
 
-  it("production has an empty key (no widget until Phase 7) and no queue", () => {
-    expect(c.env.production.vars?.TURNSTILE_SITE_KEY).toBe("");
+  it("production uses the production sign-in widget's key and ONLY this app's techaust.com host (P7-A)", () => {
     expect(c.env.production.vars?.TURNSTILE_HOSTNAMES).toBe(`${app}.techaust.com`);
-    expect(c.env.production.queues).toBeUndefined();
+    expect(c.env.production.vars?.TURNSTILE_SITE_KEY).toBe(PRODUCTION_KEY);
+    // never staging's, a test key, or the website's production forms widget
+    expect(c.env.production.vars?.TURNSTILE_SITE_KEY).not.toBe(STAGING_KEY);
+    expect(c.env.production.vars?.TURNSTILE_SITE_KEY).not.toBe(TEST_KEY);
+    expect(c.env.production.vars?.TURNSTILE_SITE_KEY).not.toBe(PRODUCTION_FORMS_KEY);
   });
 
-  it("produces to the email queue of each environment that has one (the jobs Worker consumes it)", () => {
+  it("produces to the email queue of each environment (the jobs Worker of that environment consumes it)", () => {
     // The admin Worker also produces to the PDF queue (M4.4), so the email producer is checked, not the whole list.
-    expect(c.queues?.producers).toContainEqual({ binding: "EMAIL_QUEUE", queue: "techaust-local-email" });
-    expect(c.env.staging.queues?.producers).toContainEqual({
+    const want = {
+      top: "techaust-local-email",
+      staging: "techaust-staging-email",
+      production: "techaust-prod-email",
+    };
+    expect(c.queues?.producers).toContainEqual({ binding: "EMAIL_QUEUE", queue: want.top });
+    expect(c.env.staging.queues?.producers).toContainEqual({ binding: "EMAIL_QUEUE", queue: want.staging });
+    expect(c.env.production.queues?.producers).toContainEqual({
       binding: "EMAIL_QUEUE",
-      queue: "techaust-staging-email",
+      queue: want.production,
     });
+    type Consumers = { queues: { consumers: { queue: string }[] } };
     const jobs = guard.parseJsonc(
       readFileSync(new URL("../../jobs/wrangler.jsonc", import.meta.url), "utf8"),
-    ) as { queues: { consumers: { queue: string }[] }; env: { staging: { queues: typeof c.queues } } };
-    expect(jobs.queues.consumers.map((q) => q.queue)).toContain("techaust-local-email");
-    expect(
-      (jobs.env.staging.queues as unknown as { consumers: { queue: string }[] }).consumers.map(
-        (q) => q.queue,
-      ),
-    ).toContain("techaust-staging-email");
+    ) as Consumers & { env: { staging: Consumers; production: Consumers } };
+    expect(jobs.queues.consumers.map((q) => q.queue)).toContain(want.top);
+    expect(jobs.env.staging.queues.consumers.map((q) => q.queue)).toContain(want.staging);
+    expect(jobs.env.production.queues.consumers.map((q) => q.queue)).toContain(want.production);
   });
 
   it("keeps Preview URLs off (the existing guard)", () => {
@@ -77,12 +87,22 @@ describe("the build-time site key (scripts/turnstile-site-key.mjs)", () => {
   const admin = new URL("../../admin/", import.meta.url);
   const portal = new URL("../../portal/", import.meta.url);
 
-  it("a local build gets the test key; a staging build gets the sign-in widget's key", () => {
+  it("a local build gets the test key; a staging or production build gets that environment's sign-in widget key", () => {
     for (const dir of [admin, portal]) {
       expect(siteKeyForApp(dir, undefined)).toBe(TEST_KEY);
       expect(siteKeyForApp(dir, "staging")).toBe(STAGING_KEY);
-      expect(siteKeyForApp(dir, "production")).toBe("");
+      expect(siteKeyForApp(dir, "production")).toBe(PRODUCTION_KEY);
     }
+  });
+
+  // P7-B: a production build refuses an empty key, as staging's does.
+  it("a production build with an empty key fails", () => {
+    expect(() =>
+      siteKeyOf({ env: { production: { vars: { TURNSTILE_SITE_KEY: "" } } } }, "production"),
+    ).toThrow(/env\.production has no TURNSTILE_SITE_KEY/);
+    expect(siteKeyOf({ env: { production: { vars: { TURNSTILE_SITE_KEY: "0xprod" } } } }, "production")).toBe(
+      "0xprod",
+    );
   });
 
   it("a staging build with an empty key fails, and so does an unknown environment", () => {

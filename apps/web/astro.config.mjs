@@ -1,7 +1,8 @@
 // @ts-check
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "astro/config";
+import { wantsNoindex, withNoindex } from "../../scripts/web-noindex.mjs";
 import { writeQuotable } from "./src/lib/quotable-build.ts";
 
 // The quote form's list of services (audit A2 finding 3), from the same snapshot and rule as the pages: written on every astro
@@ -50,6 +51,23 @@ const emailLogos = {
   },
 };
 
+/**
+ * P7: `X-Robots-Tag: noindex` only off production. public/_headers carries no X-Robots-Tag; after the build copies it to dist/_headers, this
+ * adds the line to its "/*" block unless CLOUDFLARE_ENV is "production" (deploy-prod.yml's build:production), the same switch robots.txt
+ * uses (src/pages/robots.txt.ts). scripts/web-dist-checks.mjs checks the result.
+ * @type {import("astro").AstroIntegration}
+ */
+const noindexOffProduction = {
+  name: "techaust:noindex-off-production",
+  hooks: {
+    "astro:build:done": ({ dir }) => {
+      if (!wantsNoindex(process.env.CLOUDFLARE_ENV)) return;
+      const file = new URL("_headers", dir);
+      writeFileSync(file, withNoindex(readFileSync(file, "utf8")));
+    },
+  },
+};
+
 // Static output, no adapter (docs/05-architecture.md §2, ADR 0002). Images are processed at build time.
 export default defineConfig({
   site: "https://techaust.com",
@@ -57,7 +75,7 @@ export default defineConfig({
   trailingSlash: "never",
   // Styles are always a file, never an inline <style> (the CSP's style-src is 'self' only).
   build: { format: "file", inlineStylesheets: "never" },
-  integrations: [devPreviewPages, emailLogos],
+  integrations: [devPreviewPages, emailLogos, noindexOffProduction],
   // The dev toolbar overlays the page and would sit in every design screenshot.
   devToolbar: { enabled: false },
   vite: {

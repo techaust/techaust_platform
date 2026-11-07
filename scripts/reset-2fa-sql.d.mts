@@ -48,4 +48,5 @@ export function checkBreakGlass(p: {
   existing: number;
   liveInvites: number;
   staging?: boolean;
+  production?: boolean;
 }): string;

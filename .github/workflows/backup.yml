@@ -1,16 +1,37 @@
 name: Backup D1 to S3
-# Nightly encrypted D1 export to S3 Mumbai (docs/08-security-compliance.md §6). Enabled in Phase 7 (L7).
+# Nightly encrypted, off-site copy of the production D1 (docs/08-security-compliance.md §6; P7-N, docs/runs/p7-launch.md; owner 2026-11-07: "Nightly
+# backups before launch"). Restore: docs/runbooks/restore.md §3.
+#   1. the owner-only guard (as deploy-prod.yml): a scheduled first attempt passes, any run by hand or re-run must be techaust's;
+#   2. wrangler alone, from the lockfile (as deploy-prod.yml's deploy job): no package code runs where the backup token is;
+#   3. every variable and secret checked first, by name, so a missing one fails before anything is exported;
+#   4. `wrangler d1 export DB --remote --env production` into $RUNNER_TEMP. Its output goes to a file that is never printed whole: wrangler logs a
+#      one-hour signed download link of the PLAINTEXT dump, and this repository's Actions logs are public;
+#   5. the OpenSSL envelope (scripts/backup-encrypt.sh): AES-256 under a random key, the key wrapped with the owner's RSA-4096 public key (the repo
+#      variable BACKUP_PUBLIC_KEY_PEM; the private key never leaves the owner's offline folder), one .tar with a manifest;
+#   6. the plaintext deleted at once (also when a step before failed);
+#   7. AWS by GitHub OIDC (no AWS key stored anywhere), `aws s3 cp` to s3://<BACKUP_BUCKET>/daily/, then the object's size checked with
+#      list-objects-v2 (the role has ListBucket on daily/ only and no GetObject). The bucket's lifecycle rule expires copies after 90 days.
+# No plaintext, key or archive ever goes into an artifact, a cache or the log.
 on:
+  schedule:
+    # 21:30 UTC = 03:00 IST, before the jobs Worker's 22:00 UTC cron: a remote export makes the database unavailable while it runs.
+    - cron: "30 21 * * *"
   workflow_dispatch:
-  # schedule:
-  #   - cron: "30 21 * * *"   # 03:00 IST
 
 permissions:
   contents: read
+  id-token: write
+
+concurrency:
+  group: backup-production
+  cancel-in-progress: false
 
 jobs:
   backup:
     runs-on: ubuntu-latest
+    # The `backup` environment holds the secret CF_API_TOKEN_BACKUP (D1 only). CLOUDFLARE_ACCOUNT_ID is the repository secret the deploys use.
+    environment: backup
+    timeout-minutes: 30
     steps:
       # Only the owner (techaust) may start this by hand or re-run it (owner, 2026-10-29), as in deploy-prod.yml. A scheduled run's
       # first attempt is GitHub's own and always passes; a re-run of it must come from the owner.
@@ -25,4 +46,115 @@ jobs:
             schedule) [ "$ATTEMPT" = "1" ] || [ "$TRIGGERING_ACTOR" = "techaust" ] ;;
             *) [ "$ACTOR" = "techaust" ] && [ "$TRIGGERING_ACTOR" = "techaust" ] ;;
           esac || { echo "Only the owner (techaust) may start or re-run this workflow."; exit 1; }
-      - run: echo "Backup job is enabled in Phase 7 once the production D1, S3 bucket and OIDC role exist."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      # Wrangler alone, from the lockfile (no secret in this step).
+      - name: Install wrangler only
+        run: pnpm install --frozen-lockfile --filter @techaust/deploy-tools
+      - name: Check the backup settings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_BACKUP }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_BACKUP_ROLE_ARN: ${{ vars.AWS_BACKUP_ROLE_ARN }}
+          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+          BACKUP_PUBLIC_KEY_PEM: ${{ vars.BACKUP_PUBLIC_KEY_PEM }}
+        run: |
+          missing=""
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || missing="$missing CF_API_TOKEN_BACKUP (secret, environment backup);"
+          [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID (repository secret);"
+          [ -n "$AWS_BACKUP_ROLE_ARN" ] || missing="$missing AWS_BACKUP_ROLE_ARN (variable);"
+          [ -n "$BACKUP_BUCKET" ] || missing="$missing BACKUP_BUCKET (variable);"
+          [ -n "$BACKUP_PUBLIC_KEY_PEM" ] || missing="$missing BACKUP_PUBLIC_KEY_PEM (variable);"
+          if [ -n "$missing" ]; then
+            echo "::error::Not set:$missing nothing was exported or uploaded."
+            exit 1
+          fi
+          case "$BACKUP_PUBLIC_KEY_PEM" in
+            "-----BEGIN PUBLIC KEY-----"*) ;;
+            *) echo "::error::BACKUP_PUBLIC_KEY_PEM is not a PEM public key (it must start with -----BEGIN PUBLIC KEY-----); nothing was exported."; exit 1 ;;
+          esac
+          printf '%s\n' "$BACKUP_PUBLIC_KEY_PEM" > "$RUNNER_TEMP/backup-public.pem"
+          echo "Backup settings present."
+      # The export. Wrangler's output goes to a private file: it holds a signed link to the plaintext dump, so only its lines without a link are
+      # printed, and only on failure. WRANGLER_LOG_PATH keeps wrangler's own debug log in $RUNNER_TEMP too; both are deleted.
+      - name: Export the production D1
+        working-directory: apps/jobs
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN_BACKUP }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          dump="$RUNNER_TEMP/techaust-prod-$stamp.sql"
+          log="$RUNNER_TEMP/wrangler-export.log"
+          export WRANGLER_LOG_PATH="$RUNNER_TEMP/wrangler-logs"
+          status=0
+          node ../../tools/deploy/node_modules/wrangler/bin/wrangler.js d1 export DB --remote --env production --skip-confirmation --output "$dump" > "$log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "::error::wrangler d1 export failed (exit $status). Its output without links:"
+            sed -E 's#https?://[^[:space:]]+#<link removed>#g' "$log"
+          fi
+          rm -rf -- "$log" "$WRANGLER_LOG_PATH"
+          [ "$status" -eq 0 ] || exit 1
+          if [ ! -s "$dump" ]; then
+            echo "::error::The export is missing or empty; nothing was uploaded."
+            exit 1
+          fi
+          echo "DUMP=$dump" >> "$GITHUB_ENV"
+          echo "ARCHIVE=$RUNNER_TEMP/techaust-prod-$stamp.tar" >> "$GITHUB_ENV"
+          echo "OBJECT=daily/techaust-prod-$stamp.tar" >> "$GITHUB_ENV"
+          echo "Exported $(wc -c < "$dump" | tr -d ' ') bytes."
+      - name: Encrypt the export
+        run: bash scripts/backup-encrypt.sh "$DUMP" "$RUNNER_TEMP/backup-public.pem" "$ARCHIVE"
+      # At once, and also when the export or the encryption failed: no plaintext stays on the runner.
+      - name: Delete the plaintext export
+        if: always()
+        run: |
+          find "$RUNNER_TEMP" -maxdepth 1 -type f -name 'techaust-prod-*.sql' -delete
+          if find "$RUNNER_TEMP" -maxdepth 1 -type f -name 'techaust-prod-*.sql' | grep -q .; then
+            echo "::error::The plaintext export could not be deleted."
+            exit 1
+          fi
+          echo "Plaintext export deleted."
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_BACKUP_ROLE_ARN }}
+          aws-region: ap-south-1
+          role-session-name: techaust-backup-${{ github.run_id }}
+          mask-aws-account-id: true
+      - name: Upload the encrypted archive
+        env:
+          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+        run: aws s3 cp "$ARCHIVE" "s3://$BACKUP_BUCKET/$OBJECT" --only-show-errors --no-progress
+      # The role can list daily/ but not read objects: the listed size must equal the archive's.
+      - name: Check the uploaded object
+        env:
+          BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+        run: |
+          set -euo pipefail
+          local_bytes="$(wc -c < "$ARCHIVE" | tr -d ' ')"
+          listed="$(aws s3api list-objects-v2 --bucket "$BACKUP_BUCKET" --prefix "$OBJECT" --query "Contents[?Key=='$OBJECT'].Size | [0]" --output text)"
+          if [ "$listed" != "$local_bytes" ]; then
+            echo "::error::$OBJECT is not in the bucket with $local_bytes bytes (listed: $listed)."
+            exit 1
+          fi
+          {
+            echo "### Production D1 backup"
+            echo
+            echo "- Object: \`$OBJECT\` ($local_bytes bytes)"
+            echo "- Manifest:"
+            echo
+            echo '```json'
+            tar -xOf "$ARCHIVE" manifest.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Uploaded and checked: $OBJECT ($local_bytes bytes)."
+      - name: Remove the archive and the public key file
+        if: always()
+        run: rm -f -- "${ARCHIVE:-}" "$RUNNER_TEMP/backup-public.pem"

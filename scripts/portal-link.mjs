@@ -14,8 +14,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { refuseProductionArgs } from "./cli-target.mjs";
 import { portOffset, shiftLocalUrl } from "./dev-ports.mjs";
 import { eligibleSql, linkStatements, linkUrl, normaliseEmail, ORIGINS } from "./portal-sql.mjs";
+
+// No production mode, ever (P7-C): a production-looking argument is refused with the reason before anything else runs.
+const productionRefused = refuseProductionArgs(process.argv.slice(2), "pnpm portal:link");
+if (productionRefused) {
+  console.error(productionRefused);
+  process.exit(1);
+}
 
 const { values } = parseArgs({
   options: {

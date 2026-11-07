@@ -7,7 +7,7 @@ import { type LegalPage, validateLegal } from "../lib/legal";
 
 const draft01 = (note: string): LegalPage => ({
   version: "0.1",
-  effective: "2026-10-22",
+  effective: "2026-11-08",
   changes: [{ version: "0.1", date: "2026-10-22", note }],
 });
 
@@ -15,7 +15,7 @@ export const legal = validateLegal({
   // 07-A v0.3 (2026-10-28): §8, complaints resolved within one month and a copy of the complaint (08-C RB-13, RB-22).
   privacy: {
     version: "0.3",
-    effective: "2026-11-07",
+    effective: "2026-11-08",
     // oldest first: the page lists them newest first (components/legal/ChangeLog.astro)
     changes: [
       { version: "0.1", date: "2026-10-22", note: "First published draft." },
@@ -35,7 +35,7 @@ export const legal = validateLegal({
   // T6, 07-ZE "Versions" (owner, 2026-10-31): Terms 0.2, word for word.
   terms: {
     version: "0.3",
-    effective: "2026-11-07",
+    effective: "2026-11-08",
     changes: [
       { version: "0.1", date: "2026-10-22", note: "First published draft." },
       {
@@ -54,7 +54,7 @@ export const legal = validateLegal({
   // 07-A §3, "Changes in 0.2 (2026-10-28)", word for word (08-C RB-07, RB-24, RA-03).
   "refund-policy": {
     version: "0.2",
-    effective: "2026-10-28",
+    effective: "2026-11-08",
     changes: [
       { version: "0.1", date: "2026-10-22", note: "First published draft." },
       {
@@ -67,7 +67,7 @@ export const legal = validateLegal({
   // T11, 07-ZE "Versions" (owner, 2026-10-31): Delivery 0.2 with line 16, published once the deed can be made.
   "delivery-policy": {
     version: "0.2",
-    effective: "2026-11-01",
+    effective: "2026-11-08",
     changes: [
       { version: "0.1", date: "2026-10-22", note: "First published draft." },
       {
@@ -81,7 +81,7 @@ export const legal = validateLegal({
   // 07-A §8 labels the accessibility statement Version 0.2, with one change entry.
   accessibility: {
     version: "0.2",
-    effective: "2026-10-22",
+    effective: "2026-11-08",
     changes: [{ version: "0.2", date: "2026-10-22", note: "First published version." }],
   },
   security: draft01("First published draft."),

@@ -1,6 +1,6 @@
 ---
 // Home (WEB-HOME, docs/07 §3): the owner-approved M2.2 preview as the real page. Indexable (no page-level noindex);
-// the site-wide `X-Robots-Tag: noindex` header (public/_headers) stays until production.
+// the site-wide `X-Robots-Tag: noindex` header is added to dist/_headers on every build except production (scripts/web-noindex.mjs).
 import HomePage from "../components/home/HomePage.astro";
 import { home } from "../content/home";
 import BaseLayout from "../layouts/BaseLayout.astro";
