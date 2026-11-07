@@ -54,9 +54,9 @@ export const site = {
   founderBio: "" as string,
   /**
    * Owner confirms the Zoho aliases security@ and privacy@ deliver (U-5). `false` blocks the production deploy
-   * (scripts/check-prod-readiness.mjs). Set to `true` only on the owner's word.
+   * (scripts/check-prod-readiness.mjs). Set to `true` only on the owner's word: confirmed by the owner, 2026-11-07 (security@, privacy@, hello@ and no-reply@ added and tested; billing@ and contact@ already delivered).
    */
-  aliasesConfirmed: false as boolean,
+  aliasesConfirmed: true as boolean,
   /**
    * OWNER: the launch day, ISO date (YYYY-MM-DD). Every legal page's effective date is the launch day (owner,
    * 2026-10-22). Empty blocks the production deploy; the lead sets this and every `effective` in content/legal.ts
