@@ -607,6 +607,12 @@ body:has(.savebar) .toasts {
   min-width: 0;
 }
 
+/* outside the PDF panel's grid (the certificate, the deed), the facts keep the same breathing room under the download as inside it */
+.offer-panel > .pdf-rebuild,
+.deed-actions > .pdf-rebuild {
+  margin-top: var(--space-2);
+}
+
 .pdf-rebuild__lines {
   display: grid;
   gap: var(--space-1);

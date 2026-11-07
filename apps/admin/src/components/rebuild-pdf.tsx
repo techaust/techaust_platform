@@ -5,11 +5,12 @@
 // Shown only once the PDF is ready: before that, the panel's own "Making the PDF…" and "Try again" are the way.
 import { formatDate, istDate } from "@techaust/core/dates";
 import type { RepairKind } from "@techaust/core/pdf-repair";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { RequestError, stepUpActive } from "../api.ts";
 import { allowed } from "../lib/access.ts";
 import { PDF_POLL_MS } from "../lib/pdf.ts";
 import {
+  FINGERPRINT_CHARS,
   numberLabel,
   REREAD_AFTER,
   type RebuildState,
@@ -26,6 +27,20 @@ import { AlertTriangle, Clock, RefreshCw } from "./icons.tsx";
 import { useToast } from "./toast.tsx";
 
 const day = (ms: number) => formatDate(istDate(ms));
+
+/** Line 11 as written, with its 12 characters set in the document face (as the panel's own "Fingerprint" line sets them). */
+function withCodeFace(fact: string, sha: string | undefined): ReactNode {
+  const fp = sha?.slice(0, FINGERPRINT_CHARS);
+  const at = fp ? fact.lastIndexOf(fp) : -1;
+  if (!fp || at < 0) return fact;
+  return (
+    <>
+      {fact.slice(0, at)}
+      <span className="docno">{fp}</span>
+      {fact.slice(at + fp.length)}
+    </>
+  );
+}
 
 export function RebuildPdf(props: {
   kind: RepairKind;
@@ -122,7 +137,7 @@ export function RebuildPdf(props: {
     <div className="pdf-rebuild" data-kind={kind}>
       {/* polite and always in the tree (empty, it takes no room), so a line that appears or changes is read */}
       <div className="pdf-rebuild__lines" ref={lines} tabIndex={-1} aria-live="polite">
-        {fact && <p className="pdf-rebuild__fact">{fact}</p>}
+        {fact && <p className="pdf-rebuild__fact">{withCodeFace(fact, state?.served?.sha256)}</p>}
         {status && (
           <p className="pdf-rebuild__status" data-tone={status.tone}>
             {status.tone === "busy" ? (
