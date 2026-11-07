@@ -28,7 +28,7 @@ _Replaced (never appended) at the end of every session._
 ## Next (launch, "as soon as ready")
 1. Attach the Custom Domains admin., portal. and hooks.techaust.com (the owner's DNS yes is given).
 2. `deploy-prod.yml stage=full check_web=false`; the owner approves.
-3. `launch-check.techaust.com` for 30 minutes or less; then the owner's "go"; attach techaust.com; run the post-launch checks.
+3. A temporary hostname for 30 minutes or less; then the owner's "go"; attach techaust.com; run the post-launch checks.
 4. The owner's first sign-in (`pnpm.cmd invite … --production`) and production Settings.
 5. Gateway TEST webhooks to hooks.techaust.com: check staging for open checkouts first.
 6. L10, with the owner's yes: TLS 1.2, a WAF rate-limit rule, CAA. Switch the Access sign-in logo to techaust.com.
