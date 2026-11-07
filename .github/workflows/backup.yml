@@ -26,6 +26,11 @@ on:
     # 21:10 UTC = 02:40 IST: clear of the jobs Worker's :30 hourly tick and its 22:00 UTC run (P7 re-check L1), even when GitHub starts a
     # scheduled run late, because a remote export makes the database unavailable while it runs.
     - cron: "10 21 * * *"
+    # Two later tries, 23:10 and 01:10 UTC (04:40 and 06:40 IST): GitHub starts scheduled runs late or drops them under load (the first
+    # production night's 21:10 run had not started an hour later; owner 2026-11-08). The `gate` job skips a try when a backup job succeeded
+    # since the night began (20:30 UTC), so one night makes one backup.
+    - cron: "10 23 * * *"
+    - cron: "10 1 * * *"
   workflow_dispatch:
     inputs:
       monthly:
@@ -33,9 +38,8 @@ on:
         type: boolean
         default: false
 
-permissions:
-  contents: read
-  id-token: write
+# Nothing at the workflow level: each job asks for its own (the backup for OIDC, the gate to read this workflow's runs).
+permissions: {}
 
 concurrency:
   group: backup-production
@@ -43,6 +47,12 @@ concurrency:
 
 jobs:
   backup:
+    needs: gate
+    # Skipped only on the gate's clear "false": a gate that failed or said nothing still backs up (never a missed night).
+    if: ${{ !cancelled() && needs.gate.outputs.run != 'false' }}
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-latest
     # The `backup` environment holds the secret CF_API_TOKEN_BACKUP (D1 only). CLOUDFLARE_ACCOUNT_ID is the repository secret the deploys use.
     environment: backup
@@ -256,3 +266,55 @@ jobs:
       - name: Remove the archives and the public key file
         if: always()
         run: rm -f -- "${ARCHIVE:-}" "${FINANCE_ARCHIVE:-}" "$RUNNER_TEMP/backup-public.pem"
+
+  # Decides whether this run backs up. A run by hand always does. A scheduled try is skipped when a run of this workflow whose `backup`
+  # job succeeded started since this backup night began at 20:30 UTC (so the 23:10 and 01:10 UTC tries skip after a good 21:10 run, while
+  # a by-hand run in the afternoon never stands in for the night). Any answer it can't read means "back up" (never a missed night); so does a gate that
+  # fails outright (the backup job's `if` skips only on "false"). No secret, no checkout,
+  # no package code: only the run list of this workflow, read with the run's own token.
+  gate:
+    permissions:
+      actions: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - name: Has tonight's backup already been made
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Started by hand: backing up."
+            exit 0
+          fi
+          # The backup night starts at 20:30 UTC (02:00 IST): the three tries (21:10, 23:10 and 01:10 UTC) share it, however late GitHub
+          # starts them. One reading of the clock; 73800 s = 20 h 30 min back lands on the night's start date.
+          now="$(date -u +%s)"
+          since="$(date -u -d "@$((now - 73800))" +%Y-%m-%d)T20:30:00Z"
+          if ! ids="$(gh api --method GET "repos/$REPO/actions/workflows/backup.yml/runs" -f status=success -f "created=>=$since" -f per_page=20 --jq '.workflow_runs[].id')"; then
+            echo "::warning::The list of earlier backup runs could not be read; backing up anyway."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for id in $ids; do
+            [ "$id" = "$RUN_ID" ] && continue
+            if ! made="$(gh api "repos/$REPO/actions/runs/$id/jobs" --jq '[.jobs[] | select(.name == "backup" and .conclusion == "success")] | length')"; then
+              echo "::warning::The jobs of run $id could not be read; backing up anyway."
+              echo "run=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$made" -gt 0 ]; then
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              echo "Run $id made a backup since $since: this try is skipped."
+              exit 0
+            fi
+          done
+          echo "run=true" >> "$GITHUB_OUTPUT"
+          echo "No backup since $since: backing up."

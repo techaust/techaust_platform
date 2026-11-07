@@ -199,3 +199,30 @@ describe("the command", () => {
     },
   );
 });
+
+describe("the SPAs' robots.txt (production check, 2026-11-08)", () => {
+  it.each(g.SPA_APPS as string[])("%s has its own robots.txt that keeps every crawler out", (app) => {
+    expect(g.checkRobotsFile(app, g.sourceRobotsFile(app))).toEqual([]);
+  });
+
+  it.each([
+    ["no file content", ""],
+    ["an Allow line", "User-agent: *\nAllow: /\nDisallow: /\n"],
+    ["only a path disallowed", "User-agent: *\nDisallow: /api\n"],
+    ["the rule under another agent", "User-agent: GPTBot\nDisallow: /\n"],
+    ["the rule commented out", "User-agent: *\n# Disallow: /\n"],
+    ["HTML (the SPA fallback)", '<!doctype html><html lang="en-IN"></html>\n'],
+  ])("refuses %s", (_label, text) => {
+    expect(g.checkRobots("admin", text)).toHaveLength(1);
+  });
+
+  it("accepts the rule with comments and other agents around it", () => {
+    expect(
+      g.checkRobots("portal", "# never indexed\nUser-agent: Foo\nDisallow:\n\nUser-agent: *\nDisallow: /\n"),
+    ).toEqual([]);
+  });
+
+  it("a missing file is a problem", () => {
+    expect(g.checkRobotsFile("admin", "/no/such/robots.txt")[0]).toMatch(/is missing/);
+  });
+});

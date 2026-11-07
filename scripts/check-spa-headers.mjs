@@ -153,6 +153,29 @@ export function checkInlinedFonts(app, headersText, files) {
     );
 }
 
+/**
+ * The app's own robots.txt (production check, 2026-11-08): without one, the SPA fallback answered /robots.txt with index.html, which
+ * Cloudflare's managed robots block was then prepended to. The file must keep every crawler out of the whole host.
+ */
+export function checkRobots(app, text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.replace(/#.*/, "").trim())
+    .filter(Boolean);
+  const star = lines.findIndex((l) => /^user-agent:\s*\*$/i.test(l));
+  const next = lines.findIndex((l, i) => i > star && /^user-agent:/i.test(l));
+  const group = star < 0 ? [] : lines.slice(star + 1, next < 0 ? undefined : next);
+  const ok = group.some((l) => /^disallow:\s*\/$/i.test(l)) && !group.some((l) => /^allow:/i.test(l));
+  return ok ? [] : [`${app} robots.txt: needs "User-agent: *" with "Disallow: /" (and no Allow line)`];
+}
+export const sourceRobotsFile = (app, base = root) => join(base, "apps", app, "public", "robots.txt");
+export const builtRobotsFile = (app, base = root) => join(base, "apps", app, "dist", "client", "robots.txt");
+export function checkRobotsFile(app, file) {
+  if (!existsSync(file))
+    return [`${app}: ${file} is missing, so /robots.txt would answer with the app's HTML page`];
+  return checkRobots(app, readFileSync(file, "utf8"));
+}
+
 /** checkInlinedFonts over `dist/client/assets/*.css` of a built app. */
 export function checkBuiltAssets(app, base = root) {
   const client = join(base, "apps", app, "dist", "client");
@@ -178,6 +201,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   }
   const problems = targets.flatMap(([app, file]) => [
     ...checkSpaHeadersFile(app, file),
+    ...checkRobotsFile(app, arg === "--source" ? sourceRobotsFile(app) : builtRobotsFile(app)),
     ...(arg === "--source" ? [] : checkBuiltAssets(app)),
     // M7.1 L17: no local secrets file in a built app's output.
     ...(arg === "--source" ? [] : devVarsProblems(app, join(root, "apps", app, "dist"))),
@@ -188,6 +212,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(1);
   }
   console.log(
-    `check-spa-headers: ok (${targets.map(([app]) => app).join(", ")}: the docs/08 section 3.1 set)`,
+    `check-spa-headers: ok (${targets.map(([app]) => app).join(", ")}: the docs/08 section 3.1 set and robots.txt)`,
   );
 }

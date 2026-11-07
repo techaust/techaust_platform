@@ -1,0 +1,3 @@
+# The admin is never meant to be indexed (X-Robots-Tag noindex on every response; docs/08 section 3.1). Checked by scripts/check-spa-headers.mjs.
+User-agent: *
+Disallow: /
