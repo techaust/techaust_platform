@@ -143,7 +143,10 @@ Branch `fix/au45-statement-b1`, built on `origin/feat/au45-statement` at the hea
 - 2026-11-07: the statement cursor accepts ord 1–6 (an existing bug: pages ending on a TDS or refund line were a 400); refund lines on the admin Statement tab no longer link to `/invoices/`. Lead.
 
 ## Proposed CLAUDE.md text
+In "M6–M7 audit fixes (#190)", after the "Period readers count a refund that came back as out until `reversed_at` …" bullet, add:
+- **The statement of account is not a period reader (AU45):** it lists a refund that went out as a debit on its `settled_on` and, if it came back, a `refund_returned` credit ("Refund came back", 07-ZU) on the IST day of `reversed_at` (`refundWentOutSql`, `refundReturnedSql`, `istDayOfMsSql` in `packages/db/src/sql-rules.ts`), so a statement ending before the return never changes and every closing balance is the next opening. Its balance before a page binds no last day (`statementBalanceBeforeBinds(client, currency, from, cursor?)`). Layout `statement-5`; the cursor takes ord 1–6.
 
 ## Follow-ups (for 12)
+- No test pins the admin statement route's rows read at scale (`reports-stress.test.ts` doesn't cover `/clients/:id/statement`; older than AU45; the early check's note).
 
 ## Handover
