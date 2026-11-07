@@ -28,6 +28,7 @@ import { ZO_UI } from "../lib/copy-zo.ts";
 import { dateError } from "../lib/date-field.ts";
 import { GW_UI } from "../lib/gateway.ts";
 import { INV_COPY } from "../lib/invoices.ts";
+import { CHECKING_OLDER_LINE, readPastEmptyPages, showsEmpty } from "../lib/keyset-pages.ts";
 import { amountText, PAY_COPY, payErrorText, todayIst } from "../lib/payments.ts";
 import {
   refundsApi,
@@ -131,12 +132,23 @@ function Reconciliation({ role }: { role: Role }) {
   );
 }
 
-/** One keyset list read page by page ("Show more"). */
+/**
+ * One keyset list read page by page ("Show more"). M6–M7 audit AU32: the unmatched lists read a bounded window of payments per page, so a page can hold no row
+ * and still name a next one: empty pages are read on by themselves (`readPastEmptyPages`, with the "Checking older payments" line), the cursor is the server's
+ * `next` whatever the page held, and the empty state shows only when no next page is left (`showsEmpty`).
+ */
 function usePages<T extends { id: string }>(
   load: (cursor?: string) => Promise<{ items: T[]; next: string | null }>,
   key: string,
 ) {
-  const first = useLoad(() => load(), key);
+  const [checking, setChecking] = useState(false);
+  const first = useLoad(async () => {
+    try {
+      return await readPastEmptyPages(load, undefined, { onEmpty: () => setChecking(true) });
+    } finally {
+      setChecking(false);
+    }
+  }, key);
   const toast = useToast();
   const [more, setMore] = useState<T[]>([]);
   const [next, setNext] = useState<string | null | undefined>(undefined);
@@ -155,21 +167,35 @@ function usePages<T extends { id: string }>(
     rows,
     cursor,
     loading,
+    checking,
+    /** AU32: the list's empty state only once no next page is left. */
+    empty: showsEmpty(rows.length, cursor),
     async showMore() {
       if (!cursor) return;
       setLoading(true);
       try {
-        const r = await load(cursor);
+        const r = await readPastEmptyPages(load, cursor, { onEmpty: () => setChecking(true) });
         setMore((m) => [...m, ...r.items.filter((x) => !m.some((y) => y.id === x.id))]);
-        setNext(r.items.length > 0 ? r.next : null);
+        setNext(r.next);
       } catch (e) {
         // Code re-check of M6.5, finding 7: a failed "Show more" says so; the cursor stays, so the button can be pressed again
         toast("error", payErrorText(e));
       } finally {
         setLoading(false);
+        setChecking(false);
       }
     },
   };
+}
+
+/** AU32: the line while empty pages are read on (a plain hint; the designer places it). */
+function Checking(props: { on: boolean }) {
+  if (!props.on) return null;
+  return (
+    <p className="hint" role="status">
+      {CHECKING_OLDER_LINE}
+    </p>
+  );
 }
 
 function ShowMore(props: { cursor: string | null; loading: boolean; onMore: () => void }) {
@@ -296,13 +322,16 @@ function Settlements({ owner }: { owner: boolean }) {
             loading={pages.first.state === "loading"}
             skeletonRows={4}
             empty={
-              <EmptyState icon={<Landmark />} title={ZO_UI.noSettlements}>
-                <p>{ZO_UI.noSettlementsBody}</p>
-              </EmptyState>
+              pages.empty ? (
+                <EmptyState icon={<Landmark />} title={ZO_UI.noSettlements}>
+                  <p>{ZO_UI.noSettlementsBody}</p>
+                </EmptyState>
+              ) : undefined
             }
           />
         </div>
       )}
+      <Checking on={pages.checking} />
       <ShowMore cursor={pages.cursor} loading={pages.loading} onMore={() => void pages.showMore()} />
       {open && <SettlementDialog row={open} onClose={() => setOpen(null)} />}
       {ticking && (
@@ -361,11 +390,12 @@ function SettlementDialog(props: { row: SettlementRow; onClose: () => void }) {
           <span className="skeleton" style={{ width: "80%" }} />
         ) : one.state === "failed" ? (
           <LoadFailed error={one.error} onRetry={() => one.reload()} />
-        ) : pages.rows.length === 0 ? (
+        ) : pages.empty ? (
           <p className="pay-lines__meta">{ZO_UI.itemsEmpty}</p>
         ) : (
           <>
-            <ItemLines rows={pages.rows} currency={r.currency} />
+            {pages.rows.length > 0 && <ItemLines rows={pages.rows} currency={r.currency} />}
+            <Checking on={pages.checking} />
             <ShowMore cursor={pages.cursor} loading={pages.loading} onMore={() => void pages.showMore()} />
           </>
         )}
@@ -555,13 +585,16 @@ function Unmatched(props: { which: UnmatchedTab; owner: boolean; onWhich: (w: Un
                 : undefined
             }
             empty={
-              <EmptyState icon={<CheckCircle />} title={empty.replace(/\.$/, "")}>
-                {null}
-              </EmptyState>
+              pages.empty ? (
+                <EmptyState icon={<CheckCircle />} title={empty.replace(/\.$/, "")}>
+                  {null}
+                </EmptyState>
+              ) : undefined
             }
           />
         </div>
       )}
+      <Checking on={pages.checking} />
       <ShowMore cursor={pages.cursor} loading={pages.loading} onMore={() => void pages.showMore()} />
       {ticking && (
         <TickDialog
