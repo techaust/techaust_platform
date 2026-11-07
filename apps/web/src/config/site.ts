@@ -58,7 +58,7 @@ export const site = {
    * 2026-10-22). Empty blocks the production deploy; the lead sets this and every `effective` in content/legal.ts
    * together before production (scripts/check-prod-readiness.mjs).
    */
-  launchDate: "" as string,
+  launchDate: "2026-11-08" as string,
   /**
    * `Expires` of /.well-known/security.txt (RFC 9116), ISO 8601, set to one year after it was written. The dist check
    * fails when it is in the past or more than 365 days away: renew it before it lapses.
