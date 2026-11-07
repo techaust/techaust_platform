@@ -52,9 +52,9 @@ export const TIMEOUT_MS = 10_000;
 
 /**
  * One answer judged against one check: null when it passes, else the reason. `body` is the parsed JSON body, or undefined when the
- * answer is not JSON.
+ * answer is not JSON. `env` is the environment the health body must name (P7: scripts/prod-health.mjs passes "production").
  */
-export function judge(check, { status, location, json, body }) {
+export function judge(check, { status, location, json, body }, env = "staging") {
   if (status >= 300 && status < 400)
     return /cloudflareaccess\.com/.test(location ?? "")
       ? `${status} to the Cloudflare Access sign-in page: Access did not accept the service token for this app`
@@ -70,22 +70,34 @@ export function judge(check, { status, location, json, body }) {
     if (body?.ok !== true) return "the health body does not say ok";
     if (body?.service !== check.service)
       return `the health body names ${String(body?.service)}, expected ${check.service}`;
-    if (body?.env !== "staging") return `the health body says env ${String(body?.env)}, expected staging`;
+    if (body?.env !== env) return `the health body says env ${String(body?.env)}, expected ${env}`;
   }
   return null;
 }
 
-/** Runs every check of one app with retries. `fetchImpl` and `sleep` are injectable for tests. Resolves to the failures (empty = ok). */
+/**
+ * Runs every check of one app with retries. `fetchImpl` and `sleep` are injectable for tests. Resolves to the failures (empty = ok).
+ * P7 (scripts/prod-health.mjs): `checks`, `base` (the app's origin), `env` and `delays` default to staging's.
+ */
 export async function checkApp(
   app,
-  { headers, fetchImpl = fetch, sleep, log = console.log, delays = DELAYS_MS } = {},
+  {
+    headers,
+    fetchImpl = fetch,
+    sleep,
+    log = console.log,
+    delays = DELAYS_MS,
+    checks: table = CHECKS,
+    base = urlOf(app),
+    env = "staging",
+  } = {},
 ) {
-  const checks = CHECKS[app];
+  const checks = table[app];
   if (!checks) return [`unknown app ${app}`];
   const wait = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const failures = [];
   for (const check of checks) {
-    const url = `${urlOf(app)}${check.path}`;
+    const url = `${base}${check.path}`;
     let reason = "not tried";
     for (const [i, delay] of delays.entries()) {
       if (delay > 0) await wait(delay);
@@ -100,7 +112,7 @@ export async function checkApp(
         const body = json ? await res.json().catch(() => undefined) : undefined;
         if (!json) await res.body?.cancel();
         reason =
-          judge(check, { status: res.status, location: res.headers.get("location"), json, body }) ?? "";
+          judge(check, { status: res.status, location: res.headers.get("location"), json, body }, env) ?? "";
       } catch (e) {
         reason = `request failed: ${e instanceof Error ? e.name : "error"}`;
       }

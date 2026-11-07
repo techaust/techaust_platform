@@ -327,7 +327,10 @@ describe("the real build (skipped until apps/web/dist exists)", () => {
   it.skipIf(!existsSync(`${webDir}/dist/404.html`))(
     "passes every check",
     () => {
-      expect(c.checkWeb(webDir)).toEqual([]);
+      // P7: dist/_headers carries noindex unless the build was a production one, which its robots.txt shows (production allows crawling).
+      const robots = readFileSync(`${webDir}/dist/robots.txt`, "utf8");
+      const env = /^Disallow: \/\s*$/m.test(robots) ? undefined : "production";
+      expect(c.checkWeb(webDir, { env })).toEqual([]);
     },
     30_000,
   );

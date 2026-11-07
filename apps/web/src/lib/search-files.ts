@@ -22,8 +22,8 @@ export function buildSitemap(pages: readonly SitePage[], origin: string = ORIGIN
 
 /**
  * robots.txt: everything is disallowed unless this is the production build (CLOUDFLARE_ENV=production), which allows
- * all and names the sitemap. Staging and local builds stay closed to crawlers (the static `_headers` also sends
- * X-Robots-Tag: noindex until Phase 7).
+ * all and names the sitemap. Staging and local builds stay closed to crawlers (their built `dist/_headers` also sends
+ * X-Robots-Tag: noindex; a production build's does not, scripts/web-noindex.mjs).
  */
 export function buildRobots(production: boolean, origin: string = ORIGIN): string {
   return production

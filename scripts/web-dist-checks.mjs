@@ -8,6 +8,7 @@ import { hasTypedAmount, STRAIGHT_APOSTROPHE, UNRENDERED } from "../packages/cor
 import { parseCsp, parseHeaders } from "./headers-shared.mjs";
 import { lintBuiltPage, lintSource, readAllowList, visibleText } from "./web-content-lint.mjs";
 import { checkLinks } from "./web-link-check.mjs";
+import { builtHeadersFor, hasRobotsHeader, wantsNoindex } from "./web-noindex.mjs";
 import { checkOgImage, readDist } from "./web-og.mjs";
 import {
   checkSeoTags,
@@ -387,8 +388,29 @@ export function checkExternalLinks(name, html) {
   return problems;
 }
 
-/** Everything: `webDir` is apps/web. Returns a list of problems (empty = all good). */
-export function checkWeb(webDir) {
+/**
+ * P7: the built dist/_headers against public/_headers for a build for `env` (CLOUDFLARE_ENV): public/_headers has no X-Robots-Tag, and the
+ * built file is public/_headers plus `X-Robots-Tag: noindex` off production, and exactly public/_headers on production (scripts/web-noindex.mjs).
+ */
+export function checkBuiltHeaders(publicText, builtText, env) {
+  if (hasRobotsHeader(publicText))
+    return ["public/_headers sets X-Robots-Tag: remove it (the build adds noindex off production only)"];
+  if (builtText === null) return ["dist/_headers is missing: the build copies public/_headers there"];
+  if (builtText === builtHeadersFor(publicText, env)) return [];
+  return wantsNoindex(env)
+    ? [
+        `dist/_headers is not public/_headers plus X-Robots-Tag: noindex (a ${env || "local"} build must stay out of search; build with the same CLOUDFLARE_ENV the check runs with)`,
+      ]
+    : [
+        "dist/_headers differs from public/_headers on a production build (it must carry no X-Robots-Tag: build with CLOUDFLARE_ENV=production)",
+      ];
+}
+
+/**
+ * Everything: `webDir` is apps/web. Returns a list of problems (empty = all good). `env` is the CLOUDFLARE_ENV the site was built with (the
+ * build scripts set it on the check too), which decides whether dist/_headers must carry noindex.
+ */
+export function checkWeb(webDir, { env = process.env.CLOUDFLARE_ENV || undefined } = {}) {
   const problems = [];
   const dist = join(webDir, "dist");
   if (!existsSync(dist)) return [`${dist} does not exist: run the build first`];
@@ -403,11 +425,7 @@ export function checkWeb(webDir) {
   for (const file of walk(dist)) {
     const name = relative(dist, file).split(sep).join("/");
     if (/^preview(\/|\.|$)/i.test(name)) problems.push(`${name}: preview pages must not be in the build`);
-    if (name === "_headers") {
-      if (readFileSync(file, "utf8") !== headersText)
-        problems.push("dist/_headers differs from public/_headers");
-      continue;
-    }
+    if (name === "_headers") continue;
     if (!TEXT_EXT.test(name)) continue;
     const text = readFileSync(file, "utf8");
     problems.push(...checkText(name, text, { ga4Id }));
@@ -428,6 +446,14 @@ export function checkWeb(webDir) {
       );
     }
   }
+  const builtHeaders = join(dist, "_headers");
+  problems.push(
+    ...checkBuiltHeaders(
+      headersText,
+      existsSync(builtHeaders) ? readFileSync(builtHeaders, "utf8") : null,
+      env,
+    ),
+  );
   problems.push(...checkUniqueTitles(pages));
   for (const f of ["sitemap.xml", "robots.txt", "llms.txt"])
     if (!existsSync(join(dist, f))) problems.push(`${f}: not built (WEB-G-11)`);
