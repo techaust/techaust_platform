@@ -371,3 +371,49 @@ No critical or high finding.
 `deploy-workflow` and `prod-deploy` tests: 110 passed.
 - Usage: reviewer agent-a382bb1a19b7a1935, claude-opus-5-5/high, skills `cloudflare:workers-best-practices`, `cloudflare:wrangler` (`code-review` and `security-review` were not run: they start helpers, and the 2-agent limit was full).
 - Usage: builders P7-A agent-ae9750c8eb5cfc8ab and P7-B agent-ae5ba8ba1fa6812ce, claude-opus-5-5/high; P7-C was a cloud session.
+
+## P7-N: nightly encrypted backups before launch (builder, Tier B; owner, 2026-11-07: "Nightly backups before launch")
+Why: the privacy notice and /security promise "encrypted, off-site backups" kept on a rolling basis for up to 90 days, and `check-prod-readiness.mjs` blocks production until `scripts/backup-verified.json` records a restored backup.
+
+**Lead's decisions (recorded in 13 at the end of the day):**
+- **Encryption** is an OpenSSL envelope, not `age`: OpenSSL is on the runner and in Git for Windows, so the owner installs nothing.
+  - A random 32-byte key encrypts the dump with `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt`.
+  - The key is wrapped with the owner's RSA-4096 public key (`openssl pkeyutl -encrypt -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256`).
+  - The public key is the repo variable `BACKUP_PUBLIC_KEY_PEM`. The private key never leaves the owner's offline folder.
+- Tier B: no money, tax or deletion logic; a scheduled export and an upload.
+
+**Files:**
+- `.github/workflows/backup.yml`: rewrite or create it; keep any existing owner-only guard.
+- `scripts/backup-encrypt.sh`: the envelope.
+- `scripts/backup-decrypt.ps1`: the owner's local decrypt, prompting for the private key path; no secret is printed.
+- `docs/runbooks/restore.md`: the backup and restore section.
+- tests in `apps/web/test` (workflow shape, like `deploy-workflow.test.ts`).
+
+1. **`backup.yml`**:
+   - Triggers: `schedule` at 21:30 UTC (03:00 IST; jobs' 22:00 UTC cron runs after, and a remote export blocks D1), and `workflow_dispatch`, owner-only (actor `techaust`).
+   - `permissions: { contents: read, id-token: write }`; `environment: backup`, which holds the secret `CF_API_TOKEN_BACKUP` (D1 only).
+   - Steps:
+     - check out; install wrangler only (as `deploy-prod.yml`'s deploy job does);
+     - `wrangler d1 export DB --remote --env production --output "$RUNNER_TEMP/techaust-prod-<UTC date-time>.sql"`, from `apps/jobs`, with `CLOUDFLARE_API_TOKEN` from the secret;
+     - fail if the file is empty;
+     - encrypt with `scripts/backup-encrypt.sh`, giving one `.tar` holding `dump.sql.enc`, `key.bin.enc` and a `manifest.json` (UTC time, byte sizes, SHA-256 of the plaintext dump, the format version);
+     - delete the plaintext at once;
+     - `aws-actions/configure-aws-credentials`, pinned by SHA (pick the latest release at least a day old; pnpm's 1-day age rule applies in spirit), with `role-to-assume: ${{ vars.AWS_BACKUP_ROLE_ARN }}` and region `ap-south-1`;
+     - `aws s3 cp` to `s3://${{ vars.BACKUP_BUCKET }}/daily/`;
+     - confirm the object exists and its size matches, using `aws s3api list-objects-v2 --prefix` (the role has ListBucket on `daily/` only and no GetObject).
+   - No plaintext and no key ever goes in an artifact or a log.
+   - It fails clearly when a variable or secret is missing.
+2. **`backup-decrypt.ps1`**: the owner runs it on their PC with the downloaded `.tar` and the path of `backup-private.pem`. It unwraps the key with `openssl pkeyutl -decrypt` (the OpenSSL from Git for Windows, found automatically), decrypts the dump, checks the SHA-256 against the manifest, and writes the `.sql` next to the archive. The output says "keep this file private, delete it after the drill".
+3. **`docs/runbooks/restore.md`**:
+   - **Backups**: where they are, 90-day expiry by the bucket's lifecycle rule, how to download one in the AWS console, how to decrypt it.
+   - **Restore drill**:
+     - create a scratch D1 `techaust-restore-<date>` (lead, connector);
+     - `wrangler d1 execute techaust-restore-<date> --remote --file <sql>`;
+     - `pnpm drill:verify` (read `scripts/drill-verify.mjs` and make the runbook match what it actually needs);
+     - delete the scratch D1;
+     - set `scripts/backup-verified.json`.
+4. **Tests**:
+   - the workflow shape: guard, permissions, the environment, SHA pins, no plaintext upload, the order (export → encrypt → delete plaintext → upload → verify);
+   - a test of `backup-encrypt.sh` round-tripping a small file with a throwaway key pair generated in the test (it runs only where `openssl` exists; skip with a message otherwise).
+
+**Done when:** the web tests and `pnpm check` are green. Append "## P7-N report" here and push `fix/p7-n-backup`.
