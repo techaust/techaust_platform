@@ -370,6 +370,7 @@ describe("readRazorpayLink and readRazorpayPayment (whitelisted fields)", () => 
       payments: [{ paymentRef: "pay_Test0001", amountMinor: 118_000, status: "captured" }],
       shortUrl: "https://rzp.io/i/abc",
       expiresAt: 1_793_604_800_000,
+      envMark: null,
     });
     expect(readRazorpayLink({ ...linkEntity(), payments: null, expire_by: 0 })).toMatchObject({
       payments: [],
@@ -524,6 +525,7 @@ describe("linkRequestOf [ADM-PAY-02, L2, L3, L10]", () => {
     expiresAt: now + LINK_LIFETIME_MS,
     callbackUrl: "https://portal.example.test/invoices/abc?pay=return",
     now,
+    env: "staging",
   };
 
   it("asks for a fixed-amount INR link with no customer, no Razorpay notifications or reminders, our reference and notes", () => {
@@ -539,7 +541,7 @@ describe("linkRequestOf [ADM-PAY-02, L2, L3, L10]", () => {
         expire_by: (now + LINK_LIFETIME_MS) / 1000,
         notify: { sms: false, email: false },
         reminder_enable: false,
-        notes: { document_id: base.documentId, checkout_id: base.checkoutId },
+        notes: { document_id: base.documentId, checkout_id: base.checkoutId, techaust_env: "staging" },
         callback_url: base.callbackUrl,
         callback_method: "get",
       },

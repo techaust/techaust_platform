@@ -25,7 +25,7 @@
 import { istDate, toIsoDate } from "./dates.ts";
 import { sha256Hex } from "./hash.ts";
 import { isUuidV7 } from "./ids.ts";
-import { liveModeAllowed, type ProviderEventType, type ProviderMode } from "./payments.ts";
+import { isEnvMark, liveModeAllowed, type ProviderEventType, type ProviderMode } from "./payments.ts";
 
 type RsaKey = Awaited<ReturnType<typeof crypto.subtle.importKey>>;
 type Obj = Record<string, unknown>;
@@ -161,6 +161,8 @@ export type OrderRequestInput = {
   readonly cancelUrl: string;
   /** Settings › Company's trade name (07-ZN line 15: "TecHaust Technologies"). */
   readonly brandName: string;
+  /** P7: this Worker's `ENVIRONMENT`, carried in `custom_id` after the checkout id (`payPalCustomIdOf`). */
+  readonly env: string;
 };
 
 export const ORDER_REQUEST_REFUSALS = [
@@ -225,7 +227,7 @@ export const payPalReturnMarkers = (id: string) =>
 
 /**
  * The body of `POST /v2/checkout/orders` (run file B; L3, L10) and its `PayPal-Request-Id`, or a refusal: intent CAPTURE; one purchase unit in USD whose
- * `reference_id` and `custom_id` are our checkout id and whose `invoice_id` is `<number>-<last 12 of the checkout id>` (unique per merchant account, and it
+ * `reference_id` is our checkout id, whose `custom_id` is our checkout id with this Worker's environment after it (P7, `payPalCustomIdOf`), and whose `invoice_id` is `<number>-<last 12 of the checkout id>` (unique per merchant account, and it
  * survives a staging database reset); the description of 07-ZN line 15; PayPal's hosted page only (`payment_source.paypal.experience_context`: no shipping, Pay
  * now, no preferred landing page, immediate payment required so an eCheck is not offered, our brand name, the two return URLs). No payer, shipping, customer or
  * vault field is ever sent. The amount is at least PayPal's 1 cent; our floor and the online maximum (`overseasOnlineMaxUsdMinor`, L11) are `payAmountVerdict`'s.
@@ -238,7 +240,8 @@ export function orderRequestOf(
   const no = (code: OrderRequestRefusal) => ({ ok: false, code }) as const;
   const value = usdMinorToValue(i.amountMinor);
   if (value === null || i.amountMinor < PAYPAL_MIN_AMOUNT_MINOR) return no("amount_invalid");
-  if (!isUuidV7(i.checkoutId) || !DOC_NUMBER.test(i.documentNumber)) return no("reference_invalid");
+  if (!isUuidV7(i.checkoutId) || !DOC_NUMBER.test(i.documentNumber) || !isEnvMark(i.env))
+    return no("reference_invalid");
   if (!Object.hasOwn(PAYPAL_DESCRIPTION_WORDS, i.documentType)) return no("reference_invalid");
   const description = payPalDescriptionOf(i.documentType, i.documentNumber);
   if (description.length > PAYPAL_DESCRIPTION_MAX) return no("description_too_long");
@@ -253,7 +256,7 @@ export function orderRequestOf(
       purchase_units: [
         {
           reference_id: i.checkoutId,
-          custom_id: i.checkoutId,
+          custom_id: payPalCustomIdOf(i.checkoutId, i.env),
           invoice_id: `${i.documentNumber}-${i.checkoutId.slice(-12)}`,
           description,
           amount: { currency_code: "USD", value },
@@ -279,19 +282,48 @@ export function orderRequestOf(
 /**
  * Whether `v` is PayPal's hosted approval page (L17, Vendor facts row 7: the `payer-action` link `…/checkoutnow?token=<order id>`): https, host exactly
  * `www.sandbox.paypal.com` or `www.paypal.com` (never a bare or look-alike host), path `/checkoutnow`, no credentials, port or fragment, at most 200 characters;
- * with `orderId`, its `token` must be that order. The portal and the finance Worker refuse anything else (502), so a wrong answer never sends a browser elsewhere.
+ * with `orderId`, its `token` must be that order; with `mode` (P7 A2.1), only that mode's host (`PAYPAL_CHECKOUT_HOSTS`). The portal and the finance Worker
+ * refuse anything else (502), so a wrong answer never sends a browser elsewhere.
  */
-export function isPayPalApproveUrl(v: unknown, orderId?: string): boolean {
+export function isPayPalApproveUrl(v: unknown, orderId?: string, mode?: ProviderMode): boolean {
   if (typeof v !== "string" || v.length > PAYPAL_APPROVE_URL_MAX) return false;
   try {
     const u = new URL(v);
     if (u.protocol !== "https:" || u.username || u.password || u.port || u.hash) return false;
     if (u.hostname !== "www.sandbox.paypal.com" && u.hostname !== "www.paypal.com") return false;
+    // P7 A2.1: with a mode, only that mode's page (sandbox in test, live in live).
+    if (mode !== undefined && u.hostname !== PAYPAL_CHECKOUT_HOSTS[mode]) return false;
     if (u.pathname !== "/checkoutnow") return false;
     return orderId === undefined || u.searchParams.get("token") === orderId;
   } catch {
     return false;
   }
+}
+
+/** P7 A2.1: PayPal's hosted page per mode (sandbox only in test mode, live only in live mode). */
+export const PAYPAL_CHECKOUT_HOSTS = { test: "www.sandbox.paypal.com", live: "www.paypal.com" } as const;
+
+// ---- the environment mark (P7, the analyst's Phase 7 finding 5) --------------------------------------------------------------------------------------------
+// PayPal copies a purchase unit's `custom_id` to its captures (and so to the capture events), so the mark rides there: `<checkout id>-<environment>`, at most
+// 36 + 1 + 16 characters (PayPal allows 127). The readers below split it again, so every `customId` downstream is still the bare checkout id (every existing
+// comparison with our row's id is unchanged) and the environment is its own field, `envMark`. A `custom_id` without the suffix (an order made before P7, or a
+// refund's own `custom_id`, our refund id) reads with `envMark` null: today's path.
+
+/** `custom_id` of an order we make: our checkout id (a UUIDv7) and this Worker's environment. */
+export const payPalCustomIdOf = (checkoutId: string, env: string): string => `${checkoutId}-${env}`;
+
+const MARKED_CUSTOM_ID = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})-([a-z]{1,16})$/;
+
+/** A `custom_id` as PayPal sends it, split: the checkout id and the environment mark when it is `<UUIDv7>-<env>`, else the text as it is with no mark. */
+export function readPayPalMark(raw: string | null): {
+  readonly customId: string | null;
+  readonly envMark: string | null;
+} {
+  if (raw === null) return { customId: null, envMark: null };
+  const m = MARKED_CUSTOM_ID.exec(raw);
+  return m && isUuidV7(m[1])
+    ? { customId: m[1] as string, envMark: m[2] as string }
+    : { customId: raw, envMark: null };
 }
 
 // ---- reading what PayPal answers ---------------------------------------------------------------------------------------------------------------------
@@ -333,7 +365,10 @@ export type PayPalCapture = {
   readonly finalCapture: boolean | null;
   /** `create_time` as UTC ms. */
   readonly createdAt: number;
+  /** Our checkout id from `custom_id` (the environment suffix split off: `readPayPalMark`). */
   readonly customId: string | null;
+  /** P7: the environment `custom_id` names, or null (made before P7). */
+  readonly envMark: string | null;
   readonly invoiceId: string | null;
   /** `supplementary_data.related_ids.order_id`, or null. */
   readonly orderId: string | null;
@@ -348,7 +383,10 @@ export type PayPalOrder = {
   readonly status: PayPalOrderStatus;
   /** The first purchase unit's marks and amount; null when the answer has no purchase unit (`Prefer: return=minimal`). */
   readonly referenceId: string | null;
+  /** Our checkout id from `custom_id` (the environment suffix split off: `readPayPalMark`). */
   readonly customId: string | null;
+  /** P7: the environment `custom_id` names, or null (made before P7). */
+  readonly envMark: string | null;
   readonly invoiceId: string | null;
   readonly currency: string | null;
   readonly amountMinor: number | null;
@@ -421,7 +459,7 @@ export function readPayPalCapture(obj: unknown): PayPalCapture | null {
     amountMinor: amount.minor,
     finalCapture: typeof obj.final_capture === "boolean" ? obj.final_capture : null,
     createdAt,
-    customId: str(obj.custom_id, MARK),
+    ...readPayPalMark(str(obj.custom_id, MARK)),
     invoiceId: str(obj.invoice_id, MARK),
     orderId: related ? str(related.order_id, PAYPAL_ORDER_ID) : null,
     fee,
@@ -443,10 +481,10 @@ function countryAt(o: unknown, path: readonly string[]): string | null {
 /**
  * An order (`GET /v2/checkout/orders/{id}`, the capture's `return=representation` answer, or the create's `return=minimal` answer), else null when its id or
  * status is missing or unknown, or a field we read is malformed (a purchase unit's amount, a capture). A missing purchase unit is not an error (the minimal
- * answer has none): its fields are null and there are no captures. Whitelist: the id, status, our marks, the amount, the approval link, how the payer paid, the
+ * answer has none): its fields are null and there are no captures. With `mode` (P7 A2.1), an approval link on the other mode's host is not read. Whitelist: the id, status, our marks, the amount, the approval link, how the payer paid, the
  * reported country codes and the captures; never the payer's name, email, address, phone or ids.
  */
-export function readPayPalOrder(obj: unknown): PayPalOrder | null {
+export function readPayPalOrder(obj: unknown, mode?: ProviderMode): PayPalOrder | null {
   if (!isObj(obj)) return null;
   const id = str(obj.id, PAYPAL_ORDER_ID);
   const status = (PAYPAL_ORDER_STATUSES as readonly unknown[]).includes(obj.status)
@@ -454,7 +492,7 @@ export function readPayPalOrder(obj: unknown): PayPalOrder | null {
     : null;
   if (!id || !status) return null;
   let referenceId: string | null = null;
-  let customId: string | null = null;
+  let rawCustomId: string | null = null;
   let invoiceId: string | null = null;
   let currency: string | null = null;
   let amountMinor: number | null = null;
@@ -464,7 +502,7 @@ export function readPayPalOrder(obj: unknown): PayPalOrder | null {
     if (!Array.isArray(units) || units.length !== 1 || !isObj(units[0])) return null;
     const u = units[0];
     referenceId = str(u.reference_id, MARK);
-    customId = str(u.custom_id, MARK);
+    rawCustomId = str(u.custom_id, MARK);
     invoiceId = str(u.invoice_id, MARK);
     if (u.amount !== undefined) {
       const m = moneyOf(u.amount);
@@ -487,7 +525,11 @@ export function readPayPalOrder(obj: unknown): PayPalOrder | null {
   let payerActionUrl: string | null = null;
   if (Array.isArray(obj.links))
     for (const l of obj.links)
-      if (isObj(l) && (l.rel === "payer-action" || l.rel === "approve") && isPayPalApproveUrl(l.href, id)) {
+      if (
+        isObj(l) &&
+        (l.rel === "payer-action" || l.rel === "approve") &&
+        isPayPalApproveUrl(l.href, id, mode)
+      ) {
         payerActionUrl = l.href as string;
         break;
       }
@@ -511,7 +553,7 @@ export function readPayPalOrder(obj: unknown): PayPalOrder | null {
     id,
     status,
     referenceId,
-    customId,
+    ...readPayPalMark(rawCustomId),
     invoiceId,
     currency,
     amountMinor,
@@ -790,22 +832,30 @@ export const isPayPalWebhookId = (v: unknown): v is string =>
 
 /** The certificate's path (Step 0.4 row 17's sandbox example `/v1/notifications/certs/CERT-360caa42-fca2a594-ab66f33d`). */
 const CERT_PATH = /^\/v1\/notifications\/certs\/CERT-[A-Za-z0-9-]{1,64}$/;
+/** P7 A2.1: the certificate host per mode (the sandbox's from Step 0.4 row 17; the live one re-read before go-live). */
+export const PAYPAL_CERT_HOSTS = { test: "api.sandbox.paypal.com", live: "api.paypal.com" } as const;
 /** The local simulator's certificate (`scripts/pay-simulate.mjs --paypal`), accepted only with `local` (the hook passes `ENVIRONMENT === "local"`). */
 const LOCAL_CERT = /^http:\/\/localhost:\d{2,5}\/__paypal-test-cert$/;
 
 /**
  * Whether `PAYPAL-CERT-URL` may be fetched (L20: the host allow-list and TLS authenticate the source; PayPal documents no chain check): https, host exactly
  * `api.sandbox.paypal.com` (Step 0.4 row 17) or `api.paypal.com` (the live host, re-read at Phase 7), path `/v1/notifications/certs/CERT-…`, no credentials,
- * port, query or fragment, at most 500 characters. With `local`, also the local simulator's `http://localhost:<port>/__paypal-test-cert`.
+ * port, query or fragment, at most 500 characters. With `local`, also the local simulator's `http://localhost:<port>/__paypal-test-cert`. With `mode` (P7 A2.1:
+ * the hook passes the mode it runs in), only that mode's host: `api.sandbox.paypal.com` in test, `api.paypal.com` in live (`PAYPAL_CERT_HOSTS`).
  */
-export function isPayPalCertUrl(v: unknown, opts: { readonly local?: boolean } = {}): v is string {
+export function isPayPalCertUrl(
+  v: unknown,
+  opts: { readonly local?: boolean; readonly mode?: ProviderMode } = {},
+): v is string {
   if (typeof v !== "string" || v.length > 500) return false;
   if (opts.local === true && LOCAL_CERT.test(v)) return true;
   try {
     const u = new URL(v);
     return (
       u.protocol === "https:" &&
-      (u.hostname === "api.sandbox.paypal.com" || u.hostname === "api.paypal.com") &&
+      (opts.mode === undefined
+        ? u.hostname === PAYPAL_CERT_HOSTS.test || u.hostname === PAYPAL_CERT_HOSTS.live
+        : u.hostname === PAYPAL_CERT_HOSTS[opts.mode]) &&
       !u.username &&
       !u.password &&
       !u.port &&
@@ -865,6 +915,8 @@ export type PayPalSignatureInput = {
   readonly keyFor: (certUrl: string) => Promise<RsaKey | null>;
   /** Accept the local simulator's certificate URL (`ENVIRONMENT === "local"` only). */
   readonly local?: boolean;
+  /** P7 A2.1: the mode the hook runs in; only that mode's certificate host is accepted (absent: either host, the M6.4 rule). */
+  readonly mode?: ProviderMode;
 };
 
 /**
@@ -903,7 +955,7 @@ export async function verifyPayPalSignature(i: PayPalSignatureInput): Promise<Pa
   if (!sig) return "signature_missing";
   // Review part 1, finding 12: every other header present and well formed, only the certificate URL refused: counted (a misrouted or forged signed post, or
   // PayPal moving its certificates to a host we don't allow), never fetched.
-  if (!isPayPalCertUrl(certUrl, { local: i.local === true }))
+  if (!isPayPalCertUrl(certUrl, { local: i.local === true, ...(i.mode ? { mode: i.mode } : {}) }))
     return certUrl !== null && algo !== null ? "cert_url_refused" : "signature_missing";
   let key: RsaKey | null;
   try {
@@ -1087,8 +1139,10 @@ export type PayPalEvent = {
   readonly captureRef: string | null;
   /** A refund's own id (a refund event whose resource is the refund). */
   readonly refundRef: string | null;
-  /** Our mark: the capture's `custom_id`, or the order's first purchase unit's. */
+  /** Our mark: the capture's `custom_id`, or the order's first purchase unit's (the environment suffix split off: `readPayPalMark`). */
   readonly customId: string | null;
+  /** P7: the environment `custom_id` names, or null (made before P7, or a refund's own `custom_id`). */
+  readonly envMark: string | null;
   readonly invoiceId: string | null;
   /** `resource.status` (a plain code), or null. */
   readonly status: string | null;
@@ -1164,7 +1218,7 @@ export function parsePayPalEvent(obj: unknown): ParsedPayPalEvent {
       orderRef,
       captureRef,
       refundRef,
-      customId: str(unit ? unit.custom_id : r.custom_id, MARK),
+      ...readPayPalMark(str(unit ? unit.custom_id : r.custom_id, MARK)),
       invoiceId: str(unit ? unit.invoice_id : r.invoice_id, MARK),
       status: str(r.status, WORD),
       currency: money?.currency ?? null,
@@ -1176,9 +1230,14 @@ export function parsePayPalEvent(obj: unknown): ParsedPayPalEvent {
 /**
  * Whether an event is ours (reviewer X3, L13; the hook's step 9): `ours` when its `custom_id` is a UUIDv7 (our checkout ids); `by_capture` for a refund or
  * reversal without a mark but with its capture (re-check N3: kept as received, and the finance Worker finds the payment by the capture, or ignores it);
- * `not_ours` otherwise (200 with nothing written: another use of the same PayPal account).
+ * `not_ours` otherwise (200 with nothing written: another use of the same PayPal account). P7 (finding 5): with `env` (this Worker's `ENVIRONMENT`), an event
+ * whose mark names another environment is `other_env` first (the hook stores it `ignored`, nothing else); an unmarked one keeps the rules above.
  */
-export function payPalEventOwnership(e: PayPalEvent): "ours" | "by_capture" | "not_ours" {
+export function payPalEventOwnership(
+  e: PayPalEvent,
+  env?: string,
+): "ours" | "by_capture" | "not_ours" | "other_env" {
+  if (env !== undefined && e.envMark !== null && e.envMark !== env) return "other_env";
   if (isUuidV7(e.customId)) return "ours";
   if ((e.type === "refund.processed" || e.type === "payment.reversed") && e.captureRef !== null)
     return "by_capture";
@@ -1211,6 +1270,8 @@ export function payPalEventFacts(e: PayPalEvent): Record<string, string | number
   }
   if (e.status) f.status = e.status;
   if (isUuidV7(e.customId)) f.checkoutId = e.customId;
+  // P7: the environment mark, so the finance Worker can refuse another environment's event too (defence in depth; the hook already does).
+  if (e.envMark !== null) f.env = e.envMark;
   // Review part 1, finding 4: a refund's `invoice_id` (ours is `<number>-<last 12 of the checkout id>`, L3), kept only in a safe shape so the finance Worker can
   // match its tail; not personal data (Settled by the lead on the safest reading, 2026-11-01 (08-C RB-40)).
   if (e.invoiceId !== null && PAYPAL_INVOICE_ID_FACT.test(e.invoiceId)) f.invoiceId = e.invoiceId;

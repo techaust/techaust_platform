@@ -22,7 +22,7 @@ import type {
   ProviderEvent,
   ProviderEventType,
 } from "./payments.ts";
-import { liveModeAllowed, type ProviderMode } from "./payments.ts";
+import { ENV_MARK_KEY, isEnvMark, liveModeAllowed, type ProviderMode } from "./payments.ts";
 
 /** The only host the client calls (the live guard runs before any call). */
 export const RAZORPAY_API_ORIGIN = "https://api.razorpay.com";
@@ -118,6 +118,8 @@ export type RazorpayEvent = ProviderEvent & {
   readonly name: string;
   readonly accountId: string | null;
   readonly method: string | null;
+  /** P7: the link's `notes.techaust_env` (the environment that made it), or null (a link made before P7, or not a link event). */
+  readonly envMark: string | null;
 };
 
 export type ParsedEvent =
@@ -155,6 +157,7 @@ export function parseRazorpayEvent(obj: unknown, eventId: string): ParsedEvent {
         occurredAt,
         accountId,
         method: null,
+        envMark: null,
       },
     };
   const payload = obj.payload;
@@ -165,6 +168,7 @@ export function parseRazorpayEvent(obj: unknown, eventId: string): ParsedEvent {
   const linkAmount = amount(link.amount);
   const linkCurrency = currencyOf(link.currency);
   if (!linkId || linkAmount === null || !linkCurrency) return INVALID;
+  const envMark = envMarkOfNotes(link.notes);
   if (type === "checkout.expired" || type === "checkout.cancelled")
     return {
       ok: true,
@@ -180,6 +184,7 @@ export function parseRazorpayEvent(obj: unknown, eventId: string): ParsedEvent {
         occurredAt,
         accountId,
         method: null,
+        envMark,
       },
     };
   const payment = isObj(payload.payment) ? payload.payment.entity : undefined;
@@ -202,8 +207,31 @@ export function parseRazorpayEvent(obj: unknown, eventId: string): ParsedEvent {
       occurredAt,
       accountId,
       method: str(payment.method, METHOD),
+      envMark,
     },
   };
+}
+
+/** `notes.techaust_env` of a Razorpay entity when it is a well-formed mark, else null. */
+const envMarkOfNotes = (notes: unknown): string | null => {
+  if (!isObj(notes)) return null;
+  const v = notes[ENV_MARK_KEY];
+  return isEnvMark(v) ? v : null;
+};
+
+/**
+ * P7 (finding 5): the environment mark of a VERIFIED webhook body, read from the raw object so every event the hook may keep (parsed, read leniently, or a refund)
+ * is covered: the payment link's `notes.techaust_env`, else the payment's (Razorpay may copy a link's notes to its payment; not relied on), else null (no mark:
+ * made before P7, or not ours). Only the mark is read.
+ */
+export function razorpayEnvMarkOf(obj: unknown): string | null {
+  if (!isObj(obj) || !isObj(obj.payload)) return null;
+  const p = obj.payload;
+  const link = isObj(p.payment_link) ? p.payment_link.entity : undefined;
+  const fromLink = isObj(link) ? envMarkOfNotes(link.notes) : null;
+  if (fromLink) return fromLink;
+  const payment = isObj(p.payment) ? p.payment.entity : undefined;
+  return isObj(payment) ? envMarkOfNotes(payment.notes) : null;
 }
 
 /**
@@ -241,6 +269,8 @@ export type RazorpayLink = CheckoutStatusReport & {
   readonly shortUrl: string | null;
   /** `expire_by` in UTC ms, or null when Razorpay sent 0 or none. */
   readonly expiresAt: number | null;
+  /** P7: `notes.techaust_env`, the environment that made the link, or null (made before P7). */
+  readonly envMark: string | null;
 };
 
 export function readRazorpayLink(obj: unknown): RazorpayLink | null {
@@ -280,6 +310,7 @@ export function readRazorpayLink(obj: unknown): RazorpayLink | null {
     payments,
     shortUrl,
     expiresAt: expire === 0 ? null : expire,
+    envMark: envMarkOfNotes(obj.notes),
   };
 }
 
@@ -405,6 +436,8 @@ export type LinkRequestInput = {
   readonly callbackUrl: string;
   /** The instant the request is made (UTC ms), for the expiry bounds. */
   readonly now: number;
+  /** P7: this Worker's `ENVIRONMENT`, sent as `notes.techaust_env` so the other environment's webhook ignores the link's events. */
+  readonly env: string;
 };
 
 /** The body of `POST /v1/payment_links` (INR only, L12). */
@@ -417,7 +450,11 @@ export type RazorpayLinkRequest = {
   readonly expire_by: number;
   readonly notify: { readonly sms: false; readonly email: false };
   readonly reminder_enable: false;
-  readonly notes: { readonly document_id: string; readonly checkout_id: string };
+  readonly notes: {
+    readonly document_id: string;
+    readonly checkout_id: string;
+    readonly techaust_env: string;
+  };
   readonly callback_url: string;
   readonly callback_method: "get";
 };
@@ -430,12 +467,15 @@ export const LINK_REQUEST_REFUSALS = [
   "note_too_long",
   "callback_invalid",
   "type_invalid",
+  // P7: the environment mark is not 1 to 16 lower-case letters.
+  "env_invalid",
 ] as const;
 export type LinkRequestRefusal = (typeof LINK_REQUEST_REFUSALS)[number];
 
 /**
  * The payment link we ask Razorpay for (L2, L3, L10): a fixed amount (`accept_partial: false`: the client picks a part in the portal), no Razorpay customer, no SMS
  * or email from Razorpay, no reminders, our checkout id as `reference_id` (Razorpay wants it unique per link and at most 40 characters) and in `notes` with the
+ * environment mark `techaust_env` (P7) and the
  * document id (each note at most 255 characters, at most 15 notes), the description by document type (07-ZI 17 to 19), `expire_by` in Unix seconds 15 minutes to 6 months ahead,
  * at least 100 paise, and the callback (an https URL with no query: the portal's return page, which never carries a token). `callback_method` "get" goes with
  * `callback_url` (Razorpay's create-link parameters; not checked against a live call: tests never call Razorpay).
@@ -453,6 +493,7 @@ export function linkRequestOf(
   if (ahead < LINK_MIN_AHEAD_MS || ahead > LINK_MAX_AHEAD_MS) return no("expiry_out_of_bounds");
   if (!REFERENCE.test(i.checkoutId)) return no("reference_invalid");
   if (!Object.hasOwn(LINK_DESCRIPTION_WORDS, i.documentType)) return no("type_invalid");
+  if (!isEnvMark(i.env)) return no("env_invalid");
   if (
     i.documentId.length < 1 ||
     i.documentId.length > NOTE_MAX ||
@@ -483,7 +524,7 @@ export function linkRequestOf(
       expire_by: Math.trunc(i.expiresAt / 1000),
       notify: { sms: false, email: false },
       reminder_enable: false,
-      notes: { document_id: i.documentId, checkout_id: i.checkoutId },
+      notes: { document_id: i.documentId, checkout_id: i.checkoutId, techaust_env: i.env },
       callback_url: i.callbackUrl,
       callback_method: "get",
     },
