@@ -32,7 +32,6 @@ import {
   lutBellFor,
   lutCheckMessage,
   lutFor,
-  lutForFy,
   lutReminder,
   lutsFromStoredTax,
   normaliseReference,
@@ -47,13 +46,7 @@ import {
   voidBlockers,
   weekMondayOf,
 } from "../src/invoices.ts";
-import {
-  foldLegacyLut,
-  legacyLutFate,
-  resolveSetting,
-  SETTINGS_DEFAULTS,
-  SETTINGS_SCHEMAS,
-} from "../src/schemas/settings.ts";
+import { resolveSetting, SETTINGS_DEFAULTS, SETTINGS_SCHEMAS } from "../src/schemas/settings.ts";
 import { lutsOf } from "../src/tax/supply.ts";
 
 // ---- the exchange rate --------------------------------------------------------------------------------------------------------------------
@@ -223,62 +216,74 @@ describe("lutFor and lutReminder [ADM-INV-18; Q22]", () => {
   });
 });
 
-describe("exportModeFromStoredTax and the one rule for the legacy LUT [review 2, findings 9 and 13]", () => {
+describe("exportModeFromStoredTax [review 2, finding 13]", () => {
   it("reads the route without zod: igst_paid only when it says so, the LUT route otherwise, never throws", () => {
     expect(exportModeFromStoredTax({ exportMode: "igst_paid" })).toBe("igst_paid");
     expect(exportModeFromStoredTax({ exportMode: "lut" })).toBe("lut");
     for (const junk of [null, undefined, 3, "x", [], {}, { exportMode: 5 }, { exportMode: "other" }])
       expect(exportModeFromStoredTax(junk)).toBe("lut");
   });
-  it("the three readers agree on every legacy shape: folded, listed, invalid (ARN or year), full, none", () => {
-    const entry = (n: number) => ({ fy: `${20 + n}${21 + n}`, arn: `A${n}`, filedOn: null });
-    const twenty = Array.from({ length: 20 }, (_, n) => entry(n));
-    const base = { ...SETTINGS_DEFAULTS.tax, luts: [entry(0)] };
-    const cases: { lut: { arn: string | null; fy: string | null }; luts?: typeof twenty }[] = [
-      { lut: { arn: "ad 1", fy: "2627" } }, // folded, normalised
-      { lut: { arn: "AD1", fy: "2021" } }, // listed
-      { lut: { arn: "AD-1", fy: "2627" } }, // invalid ARN
-      { lut: { arn: "AD1", fy: "2628" } }, // invalid year
-      { lut: { arn: "AD1", fy: "2627" }, luts: twenty }, // full
-      { lut: { arn: null, fy: null } }, // none
-    ];
-    for (const c of cases) {
-      const tax = { ...base, ...(c.luts ? { luts: c.luts } : {}), lut: c.lut };
-      const fate = legacyLutFate(tax);
-      const expected = [
-        ...tax.luts.map(({ fy, arn }) => ({ fy, arn })),
-        ...(fate.fate === "folded" ? [{ fy: fate.entry.fy, arn: fate.entry.arn }] : []),
-      ];
-      expect(lutsOf(tax), JSON.stringify(c)).toEqual(expected);
-      expect(lutsFromStoredTax(tax), JSON.stringify(c)).toEqual(expected);
-      expect(
-        foldLegacyLut(tax).luts.map(({ fy, arn }) => ({ fy, arn })),
-        JSON.stringify(c),
-      ).toEqual(expected);
-    }
+});
+
+describe("P7 LUT fold: the one letter of M3 (`tax.lut`) is read by no one [ADM-INV-18; 08-C RA-19]", () => {
+  const entry = (n: number) => ({ fy: `${20 + n}${21 + n}`, arn: `A${n}`, filedOn: null });
+  /** Every shape the old key ever had (folded, listed, invalid ARN or year, full, none, garbage): after migration 0089 none of them counts anywhere. */
+  const LEGACY: unknown[] = [
+    { arn: "ad 1", fy: "2627" },
+    { arn: "AD1", fy: "2021" },
+    { arn: "AD-1", fy: "2627" },
+    { arn: "AD1", fy: "2628" },
+    { arn: null, fy: null },
+    { arn: "OLD", fy: null },
+    "garbage",
+    7,
+    null,
+  ];
+  it("a stored row that still has `lut` parses, the key is dropped, and only the list counts (so a rollback's row never crashes a read)", () => {
+    for (const lut of LEGACY)
+      for (const luts of [[], [entry(0)], Array.from({ length: 20 }, (_, n) => entry(n))]) {
+        const stored = { ...SETTINGS_DEFAULTS.tax, luts, lut };
+        const what = JSON.stringify({ lut, n: luts.length });
+        const tax = resolveSetting("tax", stored);
+        expect(Object.hasOwn(tax, "lut"), what).toBe(false);
+        const listOnly = luts.map(({ fy, arn }) => ({ fy, arn }));
+        expect(lutsOf(tax), what).toEqual(listOnly);
+        expect(lutsFromStoredTax(stored), what).toEqual(listOnly);
+      }
+  });
+  it("a Tax save that still sends `lut` (a tab opened before the deploy) is accepted and the key is never written", () => {
+    const parsed = SETTINGS_SCHEMAS.tax.safeParse({
+      ...SETTINGS_DEFAULTS.tax,
+      lut: { arn: "AD1", fy: "2627" },
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && Object.hasOwn(parsed.data, "lut")).toBe(false);
+    expect(parsed.success && parsed.data.luts).toEqual([]);
+  });
+  it("the defaults (what the seed writes) carry no `lut` key", () => {
+    expect(Object.hasOwn(SETTINGS_DEFAULTS.tax, "lut")).toBe(false);
+    expect(Object.hasOwn(SETTINGS_SCHEMAS.tax.parse(SETTINGS_DEFAULTS.tax), "lut")).toBe(false);
+  });
+  it("a row from before M5.2 with only `lut` has no letter (0089 moved it into the list first)", () => {
+    expect(lutsOf(resolveSetting("tax", { lut: { arn: "TESTARN", fy: "2627" } }))).toEqual([]);
+    expect(lutsFromStoredTax({ lut: { arn: "TESTARN", fy: "2627" } })).toEqual([]);
   });
 });
 
 describe("lutsFromStoredTax: the reader without zod [finding 7]", () => {
-  it("reads the list and the one legacy letter of M3 (unless its FY is listed)", () => {
+  it("reads the list, the first entry of a year, and never throws on garbage", () => {
     expect(
       lutsFromStoredTax({
-        luts: [{ fy: "2627", arn: "A1", filedOn: null }],
-        lut: { arn: "OLD", fy: "2526" },
+        luts: [
+          { fy: "2627", arn: "A1", filedOn: null },
+          { fy: "2526", arn: "B1", filedOn: "2025-03-20" },
+          { fy: "2627", arn: "A2", filedOn: null },
+        ],
       }),
     ).toEqual([
       { fy: "2627", arn: "A1" },
-      { fy: "2526", arn: "OLD" },
+      { fy: "2526", arn: "B1" },
     ]);
-    expect(lutsFromStoredTax({ luts: [{ fy: "2627", arn: "A1" }], lut: { arn: "OLD", fy: "2627" } })).toEqual(
-      [{ fy: "2627", arn: "A1" }],
-    );
-  });
-  it("reads a row from before M5.2 (only `lut`), and never throws on garbage", () => {
-    expect(lutsFromStoredTax({ lut: { arn: "TESTARN", fy: "2627" } })).toEqual([
-      { fy: "2627", arn: "TESTARN" },
-    ]);
-    expect(lutsFromStoredTax({ lut: { arn: null, fy: null } })).toEqual([]);
     for (const junk of [
       null,
       undefined,
@@ -286,83 +291,50 @@ describe("lutsFromStoredTax: the reader without zod [finding 7]", () => {
       "x",
       [],
       { luts: "no" },
-      { luts: [null, 3, { fy: 1 }, { fy: "26", arn: "A" }] },
+      { luts: [null, 3, { fy: 1 }, { fy: "26", arn: "A" }, { fy: "2627", arn: "  " }] },
       { lut: 7 },
     ])
       expect(lutsFromStoredTax(junk)).toEqual([]);
   });
-  it("agrees with `lutsOf` over the parsed settings", () => {
-    const tax = resolveSetting("tax", {
-      ...SETTINGS_DEFAULTS.tax,
-      luts: [{ fy: "2627", arn: "ad 12 34", filedOn: "2026-03-20" }],
-      lut: { arn: "OLD", fy: "2526" },
-    });
-    expect(lutsFromStoredTax(tax)).toEqual(lutsOf(tax));
-  });
-});
-
-describe("lutForFy: the debit note's LUT, failing closed against db LUT_FOR_FY_SQL [rt1 re-check 1; ADM-INV-18; Q39]", () => {
-  const tax = (luts: { fy: string; arn: string }[], lut: { arn: string | null; fy: string | null }) => ({
-    luts,
-    lut,
-  });
-  const none = { arn: null, fy: null };
-  it("a list entry of that FY with an ARN counts; another FY or a blank ARN does not", () => {
-    expect(lutForFy("2728", tax([{ fy: "2728", arn: "AD1" }], none))).toEqual({
-      fy: "2728",
-      arn: "AD1",
-    });
-    expect(lutForFy("2728", tax([{ fy: "2627", arn: "AD1" }], none))).toBeNull();
-    expect(lutForFy("2728", tax([{ fy: "2728", arn: "   " }], none))).toBeNull();
-    expect(lutForFy("2728", tax([], none))).toBeNull();
-  });
-  it("the legacy `lut` of that FY counts only when `legacyLutFate` folds it, normalised as the list keeps an ARN", () => {
-    expect(lutForFy("2728", tax([], { arn: "ad 19 03", fy: "2728" }))).toEqual({
-      fy: "2728",
-      arn: "AD1903",
-    });
-  });
-  it("a legacy `lut` that would not fold never counts (SQL counts these; this refuses them: fail closed)", () => {
-    // invalid for the list (a hyphen; more than 30 characters; only a tab, which SQLite's trim leaves)
-    for (const arn of ["AD-1903", "A".repeat(31), "\t"]) {
-      expect(legacyLutFate({ lut: { arn, fy: "2728" }, luts: [] }).fate).toBe("invalid");
-      expect(lutForFy("2728", tax([], { arn, fy: "2728" }))).toBeNull();
-    }
-    // the list is full of other years
-    const full = Array.from({ length: 20 }, (_, i) => ({ fy: `${30 + i}${31 + i}`, arn: `A${i}` }));
-    expect(legacyLutFate({ lut: { arn: "OLD1", fy: "2728" }, luts: full }).fate).toBe("full");
-    expect(lutForFy("2728", tax(full, { arn: "OLD1", fy: "2728" }))).toBeNull();
-  });
-  it("the legacy `lut` of another FY, without an ARN, or blank does not count; a listed FY's entry wins", () => {
-    expect(lutForFy("2728", tax([], { arn: "OLD", fy: "2627" }))).toBeNull();
-    expect(lutForFy("2728", tax([], { arn: null, fy: "2728" }))).toBeNull();
-    expect(lutForFy("2728", tax([], { arn: "  ", fy: "2728" }))).toBeNull();
-    expect(lutForFy("2728", tax([], { arn: "", fy: "2728" }))).toBeNull();
-    expect(lutForFy("2728", tax([{ fy: "2728", arn: "NEW" }], { arn: "OLD", fy: "2728" }))).toEqual({
-      fy: "2728",
-      arn: "NEW",
-    });
-  });
-  it("is exactly `lutFor(lutsOf)` over parsed settings (the rule of the M5.2 export and advance paths)", () => {
+  it("is exactly `lutsOf` over the parsed settings, whatever the old key holds", () => {
     fc.assert(
       fc.property(
-        fc.subarray(["2526", "2627", "2728"]),
-        fc.constantFrom("2526", "2627", "2728", "2729", null),
-        fc.constantFrom("OLD1", "ad 12", "AD-12", "A".repeat(31), "\t", "  ", "", null),
-        fc.constantFrom("2526", "2627", "2728"),
-        (listed, legacyFy, legacyArn, fy) => {
-          const t = resolveSetting("tax", {
+        fc.subarray(["2526", "2627", "2728", "2829"]),
+        fc.constantFrom<unknown>(
+          { arn: "OLD1", fy: "2930" },
+          { arn: "ad 12", fy: "2728" },
+          { arn: "AD-12", fy: "2728" },
+          { arn: null, fy: null },
+          undefined,
+        ),
+        (listed, lut) => {
+          const stored = {
             ...SETTINGS_DEFAULTS.tax,
-            luts: listed.map((y) => ({ fy: y, arn: `L${y}`, filedOn: null })),
-            lut: { arn: legacyArn, fy: legacyFy },
-          });
-          expect(lutForFy(fy, t)).toEqual(lutFor(fy, lutsOf(t)));
+            luts: listed.map((y) => ({ fy: y, arn: `l ${y}`, filedOn: null })),
+            ...(lut === undefined ? {} : { lut }),
+          };
+          const tax = resolveSetting("tax", stored);
+          expect(lutsFromStoredTax(tax)).toEqual(lutsOf(tax));
+          expect(lutsFromStoredTax(stored).map((l) => l.fy)).toEqual(listed);
         },
       ),
     );
   });
 });
 
+describe("the debit note's LUT is `lutFor(fy, lutsOf(tax))`, the export and advance rule [rt1 re-check 1; P7 LUT fold; ADM-INV-18; Q39]", () => {
+  it("a list entry of that FY with an ARN counts; another FY, a blank ARN or the old key does not", () => {
+    const tax = (luts: { fy: string; arn: string; filedOn: null }[], lut?: unknown) =>
+      resolveSetting("tax", { ...SETTINGS_DEFAULTS.tax, luts, ...(lut === undefined ? {} : { lut }) });
+    expect(lutFor("2728", lutsOf(tax([{ fy: "2728", arn: "AD1", filedOn: null }])))).toEqual({
+      fy: "2728",
+      arn: "AD1",
+    });
+    expect(lutFor("2728", lutsOf(tax([{ fy: "2627", arn: "AD1", filedOn: null }])))).toBeNull();
+    expect(lutFor("2728", [{ fy: "2728", arn: "   " }])).toBeNull();
+    expect(lutFor("2728", lutsOf(tax([], { arn: "AD1903", fy: "2728" })))).toBeNull();
+  });
+});
 describe("the daily LUT check: the message, the week and the bell [B3, ADM-INV-18, Q22, LD27]", () => {
   const luts = (...fys: string[]) => fys.map((fy) => ({ fy, arn: `ARN${fy}` }));
 
@@ -1169,90 +1141,29 @@ describe("the tax settings of M5.2 [ADM-SET-03, LD31, Q24]", () => {
     expect(SETTINGS_DEFAULTS.tax.fxMaxAgeDays).toBe(4);
     expect(schema.safeParse(SETTINGS_DEFAULTS.tax).success).toBe(true);
   });
-  it("a stored pre-M5.2 tax row resolves with the new keys filled in, and a saved letter is read", () => {
+  it("a stored pre-M5.2 tax row resolves with the new keys filled in; its old `lut` key is dropped (P7 LUT fold: 0089 moved it into the list)", () => {
     const { luts: _l, invoiceChecklist: _c, fxMaxAgeDays: _f, ...old } = SETTINGS_DEFAULTS.tax;
     const stored = { ...old, lut: { arn: "AD0000000000001", fy: "2627" } };
     const tax = resolveSetting("tax", stored);
     expect(tax.luts).toEqual([]);
+    expect(Object.hasOwn(tax, "lut")).toBe(false);
     expect(tax.invoiceChecklist).toEqual({ bankDetails: true, paymentLink: false });
     expect(tax.fxMaxAgeDays).toBe(4);
-    expect(lutsOf(tax)).toEqual([{ fy: "2627", arn: "AD0000000000001" }]);
+    expect(lutsOf(tax)).toEqual([]);
   });
-  it("`lut` is optional on input (the old screen may omit it), and the list wins when both name one FY", () => {
-    const { lut: _lut, ...noLut } = SETTINGS_DEFAULTS.tax;
-    const parsed = schema.safeParse(noLut);
-    expect(parsed.success).toBe(true);
+  it("`lut` is no field: a body without it parses, a body with it parses with the key dropped, and the list alone names a year's letter", () => {
+    expect(schema.safeParse(SETTINGS_DEFAULTS.tax).success).toBe(true);
     const tax = resolveSetting("tax", {
       ...SETTINGS_DEFAULTS.tax,
       luts: [{ fy: "2627", arn: "NEW1", filedOn: null }],
       lut: { arn: "OLD1", fy: "2627" },
     });
     expect(lutsOf(tax)).toEqual([{ fy: "2627", arn: "NEW1" }]);
-  });
-  it("`foldLegacyLut` moves the old single letter into the list (unless its FY is listed) and clears it: a deleted letter cannot come back [early check 3]", () => {
-    const legacy = { ...SETTINGS_DEFAULTS.tax, lut: { arn: "OLD1", fy: "2627" } };
-    const folded = foldLegacyLut(legacy);
-    expect(folded.luts).toEqual([{ fy: "2627", arn: "OLD1", filedOn: null }]);
-    expect(folded.lut).toEqual({ arn: null, fy: null });
-    // the letters read are the same before and after (a saved letter never vanishes)
-    expect(lutsOf(folded)).toEqual(lutsOf(legacy));
-    // the list wins for the same FY, and the old key is dropped
-    const both = foldLegacyLut({
-      ...legacy,
-      luts: [{ fy: "2627", arn: "NEW1", filedOn: "2026-03-20" }],
-    });
-    expect(both.luts).toEqual([{ fy: "2627", arn: "NEW1", filedOn: "2026-03-20" }]);
-    expect(both.lut).toEqual({ arn: null, fy: null });
-    // an empty old key changes nothing; the owner deleted the list entry and the old key is empty: no letter
-    expect(foldLegacyLut(SETTINGS_DEFAULTS.tax).luts).toEqual([]);
-    expect(lutsOf(foldLegacyLut({ ...SETTINGS_DEFAULTS.tax, luts: [] }))).toEqual([]);
-    // folding twice is the same as once, and the result still parses
-    expect(foldLegacyLut(folded)).toEqual(folded);
-    expect(schema.safeParse(folded).success).toBe(true);
-  });
-  it("`foldLegacyLut` normalises the old ARN like a list entry's and drops one the list would refuse, so a Tax save never fails on it [review 8]", () => {
-    const base = SETTINGS_DEFAULTS.tax;
-    const fold = (lut: { arn: string | null; fy: string | null }, luts: typeof base.luts = []) =>
-      foldLegacyLut({ ...base, luts, lut });
-    // spaces and lower case are the list's normal form
-    expect(fold({ arn: " ad 12 x ", fy: "2627" }).luts).toEqual([
-      { fy: "2627", arn: "AD12X", filedOn: null },
-    ]);
-    // a character the list refuses, an empty-after-trim ARN, a year of two non-consecutive years: dropped, and the result always parses
-    for (const lut of [
-      { arn: "AD-12/3", fy: "2627" },
-      { arn: "   ", fy: "2627" },
-      { arn: "A".repeat(31), fy: "2627" },
-      { arn: "AD123", fy: "2629" },
-    ]) {
-      const folded = fold(lut);
-      expect(folded.luts, JSON.stringify(lut)).toEqual([]);
-      expect(folded.lut).toEqual({ arn: null, fy: null });
-      expect(schema.safeParse(folded).success).toBe(true);
-    }
-    // the fate says which case it was (the route logs it, never the ARN)
-    expect(legacyLutFate({ ...base, lut: { arn: null, fy: null } })).toEqual({ fate: "none" });
-    expect(legacyLutFate({ ...base, lut: { arn: "AD-1", fy: "2627" } })).toEqual({ fate: "invalid" });
-    expect(
-      legacyLutFate({
-        ...base,
-        lut: { arn: "AD1", fy: "2627" },
-        luts: [{ fy: "2627", arn: "NEW", filedOn: null }],
-      }),
-    ).toEqual({ fate: "listed" });
-    expect(legacyLutFate({ ...base, lut: { arn: "ad 1", fy: "2627" } })).toEqual({
-      fate: "folded",
-      entry: { fy: "2627", arn: "AD1", filedOn: null },
-    });
-    // a full list (20 years) takes no more: dropped, not an invalid save
-    const twenty = Array.from({ length: 20 }, (_, i) => {
-      const a = String(10 + i).padStart(2, "0");
-      return { fy: `${a}${String(11 + i).padStart(2, "0")}`, arn: `AD${i}`, filedOn: null };
-    });
-    expect(legacyLutFate({ ...base, luts: twenty, lut: { arn: "AD99", fy: "3031" } })).toEqual({
-      fate: "full",
-    });
-    expect(fold({ arn: "AD99", fy: "3031" }, twenty).luts).toHaveLength(20);
+    expect(Object.hasOwn(tax, "lut")).toBe(false);
+    // a malformed old key (a type the old schema refused) no longer fails the read either
+    expect(() =>
+      resolveSetting("tax", { ...SETTINGS_DEFAULTS.tax, lut: { arn: 5, fy: "26" } }),
+    ).not.toThrow();
   });
   it("a letter: consecutive years, an ARN of letters and digits (spaces dropped, upper case), a real filing date or none", () => {
     const one = (over: Record<string, unknown>) =>
