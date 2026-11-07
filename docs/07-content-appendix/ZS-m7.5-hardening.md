@@ -25,5 +25,5 @@ Where they live: the tile's words in `apps/admin/src/lib/usage.ts` (`USAGE_COPY`
 - **ZS14** the readout under the day: "{share} of the limit"
 - **ZS15** the table: toggle "Show the 30 days as a table" / "Hide the table"; caption (screen readers) "Free plan usage over the last 30 days, newest first"; columns "Day (UTC)", the four metric names, "Stopped at a limit"
 
-## The token bell (drafted by the builder for the lead, review 1 L55; not yet approved)
+## The token bell (drafted by the builder, review 1 L55; approved by the lead, L56)
 - **ZS16** (approved by the lead, L56) bell `usage.token` (Owners, once per IST day, from the 06:00 IST usage reading when no analytics token is set outside local, or Cloudflare answers 401 or 403): "Free plan usage for {UTC date} (UTC) wasn't read: the Cloudflare analytics token is missing or was refused. Make a new read-only token and set it again.", e.g. "Free plan usage for 2026-11-06 (UTC) wasn't read: …". The date is ISO, as the `usage.limit` bell writes it. Link: the dashboard.
