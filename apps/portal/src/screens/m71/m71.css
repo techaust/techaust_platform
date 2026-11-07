@@ -67,12 +67,6 @@
   color: var(--color-text-accent);
 }
 
-.m71-money__empty {
-  margin: 0;
-  padding: var(--space-5) 0;
-  border-block: 1px solid var(--color-border);
-}
-
 .m71-rows {
   margin: 0;
   padding: 0;
@@ -628,11 +622,13 @@
   margin-top: 0.2em;
 }
 
+/* "New request" sits beside the heading (audit AU14): the section is narrower than the profile grid above it, so a button pushed to the section's far edge
+   floated mid-page at wide screens, aligned with nothing. On a narrow screen it wraps under the heading. */
 .m71-requests__head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--space-3) var(--space-4);
   margin-bottom: var(--space-5);
 }

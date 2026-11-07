@@ -12,7 +12,7 @@ import { LoadProblemScreen } from "../../components/load-problem.tsx";
 import { PageTitle } from "../../components/shell/portal-shell.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { COPY } from "../../copy.ts";
-import { GAP, ZP } from "../../copy-zp.ts";
+import { GAP, ZP, ZP_PENDING } from "../../copy-zp.ts";
 import {
   DETAILS_MAX,
   DETAILS_REQUIRED,
@@ -24,6 +24,7 @@ import {
 } from "../../lib/m71.ts";
 import { useMe } from "../../session.tsx";
 import { MoreButton, ScreenSkeleton } from "../home.tsx";
+import { EmptyLine } from "./shared.tsx";
 import "./m71.css";
 
 // M7.4 (E, L9): the two kinds 07-A §6 promises, after M7.1's five; their labels are 07-ZR C5 and C6 (the owner's, "[Placeholder]" until approved)
@@ -284,7 +285,9 @@ function Requests(props: { first: RequestItem[]; next: string | null }) {
           <Notice tone="success">{ZP.requestSent}</Notice>
         </div>
       )}
-      {items.length > 0 && (
+      {items.length === 0 ? (
+        <EmptyLine icon={<MessageSquare size={24} />}>{ZP_PENDING.requestsEmpty}</EmptyLine>
+      ) : (
         <ul className="m71-reqs">
           {items.map((r) => (
             <RequestRow key={r.id} r={r} />

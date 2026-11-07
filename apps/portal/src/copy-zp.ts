@@ -171,6 +171,15 @@ export const GAP = {
   noteRefused: "We couldn't save this note. Remove any unusual characters and try again.",
 } as const;
 
+/**
+ * Lines a screen needs that the owner hasn't given yet: each shows the "[Placeholder] " mark (scripts/check-prod-readiness.mjs blocks production while one
+ * is on a page). Kept out of `zpAllText` (every approved line is unmarked).
+ */
+export const ZP_PENDING = {
+  // TODO(07-ZP, owner's copy page, audit AU14 / B3 M6): the words for Profile › Requests with no request yet.
+  requestsEmpty: "[Placeholder] Requests empty line (owner's words, 07-ZP)",
+} as const;
+
 /** Every line as text, for the tests (banned words, no "&"). */
 export const zpAllText = (): readonly string[] => {
   const out: string[] = [];

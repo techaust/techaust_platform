@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { RequestError } from "./api.ts";
 import { COPY } from "./copy.ts";
 import { INV } from "./copy-invoices.ts";
-import { APPROVED_07ZP, GAP, ZP, zpAllText } from "./copy-zp.ts";
+import { APPROVED_07ZP, GAP, ZP, ZP_PENDING, zpAllText } from "./copy-zp.ts";
 import {
   checkNotice,
   forText,
@@ -29,6 +29,9 @@ describe("07-ZP, owner-approved [POR-04, POR-06 to POR-11]", () => {
     expect(GAP.fileSize("1.8 MB")).toBe("1.8 MB");
     // re-check 6: the owner's new G12 words (a refusal is a pasted control character; the box stops more than 300)
     expect(GAP.noteRefused).toBe("We couldn't save this note. Remove any unusual characters and try again.");
+  });
+  it("marks every line still waiting for the owner's words (audit AU14: the Requests empty line)", () => {
+    for (const line of Object.values(ZP_PENDING)) expect(line.startsWith(`${MARK} `), line).toBe(true);
   });
   it("pass the banned-phrase list (07 §1.3), say 'and', never '&', and name no card or bank field to fill in", () => {
     for (const line of zpAllText()) {
