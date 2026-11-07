@@ -172,3 +172,85 @@ All ran through `tools/heavy.sh`, except single-file core runs.
 ### Not verified
 - Any sandbox behaviour: PayPal echoing the `custom_id` suffix, and Razorpay copying link notes to payments. No hosted service was touched.
 - The full `pnpm check` and `pnpm lint` (the final step).
+
+## Builder report 2
+
+Builder `fix/p7-payments-b1` (Opus 5.5, high), 2026-11-07. This round applies the analyst's early check (CHANGE), as the lead passed it on. No skill was added: the two loaded in round 1 still fit.
+
+### What changed, by the lead's items
+1. **M (`hookModeOf` returns null on a failed read):** `hookModeOf` (`apps/jobs/src/hooks/shared.ts`) now answers `"test" | "live" | null`.
+   - Null means the Settings read failed. A missing row or field still means test, and with the flag off there is still no read.
+   - Stripe answers 503 `mode_unavailable` with nothing written and no failure counted.
+   - PayPal answers the same, through a new verifier verdict `mode_unavailable` (core `PAYPAL_SIGNATURE_VERDICTS`).
+   - The test "a failed read is test" is now "a failed read is null". Two new hook tests (Stripe, PayPal) check 503, no row, no `hook_failures` change and no message.
+2. **L (lazy PayPal mode read):** the PayPal verifier takes `modeOf` (core `PayPalSignatureInput.modeOf`).
+   - It calls `modeOf` only after the webhook id, transmission id, time and base64 signature are well formed.
+   - The hook passes it lazily, and `keyFor` re-checks the URL against the mode it read.
+   - New test: a post with malformed headers is 400 `signature_missing` with no D1 statement prepared at all.
+3. **L (marked stubs):** the local PayPal simulator now marks `custom_id` as `<checkoutId>-local`, so every finance PayPal test (capture, re-fetch, judge, refund) runs through the split on the real paths. That is `stubCapture` and `stubOrder` in `apps/admin/worker/gateway/paypal.ts`, and `scripts/pay-simulate-paypal.mjs` (approved and captured events).
+4. **L (adapter `env` required):** both the Razorpay and Stripe adapters now require `env`, with no default.
+   - **`razorpayProvider`:** a malformed mark is refused before any call.
+     - It answers `provider_error`, because the provider contract has no `env_invalid` code.
+     - The live guard is checked first, as in Stripe's adapter.
+   - **`stripeProvider`:** its `sessionRequestOf` already refuses a bad mark, so it also answers `provider_error`, with no call.
+   - Contract tests pass `env: "local"`. New tests cover a bad mark (no call) and a good one (`notes.techaust_env` sent).
+   - The `stripe.ts` ~423 line the lead named is the simulator's `stubSession`. It keeps reading the mark the request sent.
+5. **Lead's decision on finding 5 (refunds and reconciliation stay refused):** `refundGwOf` and `fetchSettlements` / "Fetch now" read Settings' own mode again (no `env`). While Settings says live and the flag is off, they stay 503 `live_not_allowed` with zero calls.
+   - `refunds.test.ts` is back to its original assertions.
+   - A new test checks all three refund gateways and the reconciliation fetch.
+   - **Scope, my reading (please confirm):** "only new checkouts fall back" covers the checkout's whole life. That is making the link or order, and settling it: webhook processing, refresh, "Try again", PayPal capture and cancel. Otherwise a test checkout made in fallback could never settle. Refunds and reconciliation do not fall back.
+6. **Bell text (D4):** the lead's approved wording is now `BELL_LIVE_REVERTED` (`apps/admin/worker/gateway/messages.ts`).
+7. **A2.5 "Before going live":** `GO_LIVE` in `apps/admin/src/lib/gateway.ts` (the gateways copy module, not a shared settings file), shown on `apps/admin/src/routes/settings/gateways.tsx`. It uses the existing `Notice` (info tone), placed under the keys notice; no new CSS and no new component. **Staff-only draft, marked for the lead:**
+   > **Before going live**
+   > Switch a gateway to Live only when all of this is done, in this order:
+   > 1. Set the gateway's live keys, and its webhook at https://hooks.techaust.com/<gateway> with the live webhook secret.
+   > 2. The owner sets PAYMENTS_LIVE_ALLOWED to "true" and deploys.
+   > 3. Only then switch each gateway to Live here.
+   >
+   > Online payments may fail for a short time between these steps.
+
+   The designer may want to check the screen; it is the only screen change.
+8. **D5 (follow-up, not done):** the Settings screen shows the saved mode ("Live") while new checkouts run in test. Fixing that touches the shared `apps/admin/worker/settings.ts`, which is not mine.
+
+### Files (this round)
+- **Core:** `packages/core/src/paypal.ts` (`modeOf`, the `mode_unavailable` verdict).
+- **Jobs:**
+  - `apps/jobs/src/hooks/{shared,stripe,paypal}.ts`
+  - `apps/jobs/test/p7-env-marks.test.ts`
+- **Admin finance:**
+  - `apps/admin/worker/gateway/{paypal,razorpay,stripe,refund-gw,messages}.ts`
+  - `apps/admin/worker/recon.ts`
+- **Admin tests:** `apps/admin/worker/{p7-env-marks,refunds,gateway,stripe-gateway}.test.ts`
+- **Admin screen and copy:**
+  - `apps/admin/src/lib/gateway.ts`
+  - `apps/admin/src/routes/settings/gateways.tsx`
+- **Script:** `scripts/pay-simulate-paypal.mjs`
+- **Not touched:** no migration, no wrangler config. `PAYMENTS_LIVE_ALLOWED` is still "false" everywhere.
+
+### Commands and results (all through `tools/heavy.sh`, one at a time)
+- **Typecheck:** `pnpm --filter @techaust/admin typecheck` and `pnpm --filter @techaust/jobs typecheck`, both exit 0.
+- **Admin suite** (`pnpm --filter @techaust/admin test`): **200 files, 5,321 passed, 0 failed**.
+- **Jobs suite** (`pnpm --filter @techaust/jobs test`): **53 files, 796 passed, 0 failed**.
+- **Core suite** (`pnpm --filter @techaust/core test`, with the coverage gate): **133 files, 2,728 passed**.
+- **Db suite:** unchanged this round. Round 1 ran it: 62 files, 1,092 passed.
+- **Admin build** (`pnpm --filter @techaust/admin build`, worker budget):
+
+  | Worker | Bytes | Ceiling | Plan line |
+  |---|---|---|---|
+  | front | 121,871 | 150,000 | none |
+  | API | 560,633 | 800,000 | none |
+  | finance | 438,304 | 800,000 | 500,000 |
+  | invoices | 567,389 | 800,000 | 650,000 |
+
+  Start-up 41–104 ms (limit 200).
+- **Jobs build** (`pnpm --filter @techaust/jobs build`): the first run failed the start-up limit at 215.6 ms. Another agent's `pnpm check` was running and free memory was about 300 MB. The re-run on a quiet machine passed: **874,208 bytes** (limit 1,000,000), start-up 84.7 ms.
+- **`pnpm check`:** exit 0. It covers the full `biome check` lint, typecheck in every package, the web binding guard, web content lint, worker config guard, SPA headers, the migration guard (87, none rebuilds) and CSS collisions.
+  - The repository-wide lint ran this once, inside `pnpm check`. I did not run `pnpm lint` a second time, to keep to the once-only rule; it is the same `biome check`.
+
+### Not verified
+- Sandbox behaviour: PayPal echoing the `custom_id` suffix, and Razorpay copying link notes to payments.
+- A visual check of the A2.5 notice. No dev server or browser was started.
+
+### Open questions for the lead
+- **The scope of "only new checkouts fall back" (item 5):** I read it as including the settlement of those checkouts.
+- **Wording:** the A2.5 text.
