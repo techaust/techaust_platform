@@ -69,7 +69,8 @@ export type RefundInsertArgs = {
  * The main statement of a refund (C step 2): one `INSERT ... SELECT` whose WHERE holds every guard: the id is new; the session is a live Owner's with a fresh
  * step-up (`refunds.issue`); the client is live; no refund of the payment is open (L8); and the source, as `payment_refunds_bounds` holds it: from `credit`,
  * confirmed money received with at least the amount free (`paymentFreeSql`); from `document`, at most the document's excess and what this payment holds on it (the
- * document issued, live, payable and the client's, the credit note one of its own; a lost dispute, origin `chargeback`, needs no excess: L40); from `pending`
+ * document issued, live, payable and the client's, the credit note one of its own, issued on or after the day the payment arrived and covering the refund (RA-40;
+ * M6–M7 audit B0 4: the route's rule, held here and in trigger `payment_refunds_bounds` of 0082); a lost dispute, origin `chargeback`, needs no excess: L40); from `pending`
  * (L33), a pending gateway payment's whole amount through its own gateway, while none of its refunds stands (early check 1, finding 1). Zero rows: the route re-reads and answers 409 (`exceeds_refundable`, `exceeds_holding`, `refund_in_progress`, `client_gone`, `payment_not_confirmed`).
  * Binds `?1`..`?16` (`?15` for a gateway refund, which is not settled yet).
  */
@@ -86,7 +87,8 @@ export function refundInsertStatement(db: D1Database, a: RefundInsertArgs): D1Pr
         ? `p.status = 'confirmed' AND p.kind = 'payment' AND EXISTS (SELECT 1 FROM documents d WHERE d.id = ?3 AND d.client_id = p.client_id AND d.currency = p.currency
              AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.type IN ${PAYABLE_TYPES_SQL}
              AND (?5 <= ${livePaidSql("d.id")} + d.credited_minor + ${liveTdsSql("d.id")} - d.total_minor OR ?6 = 'chargeback') AND ?5 <= ${paymentNetSql("p.id", "d.id")})
-           AND (?4 IS NULL OR EXISTS (SELECT 1 FROM documents cn WHERE cn.id = ?4 AND cn.type = 'credit_note' AND cn.parent_id = ?3 AND cn.frozen_at IS NOT NULL))`
+           AND (?4 IS NULL OR EXISTS (SELECT 1 FROM documents cn WHERE cn.id = ?4 AND cn.type = 'credit_note' AND cn.parent_id = ?3 AND cn.frozen_at IS NOT NULL
+             AND cn.issue_date >= p.received_on AND cn.total_minor >= ?5))`
         : `p.status = 'pending_verification' AND p.kind = 'payment' AND p.provider <> 'manual' AND ?3 IS NULL AND ?4 IS NULL AND ?5 = p.amount_minor
            AND NOT EXISTS (SELECT 1 FROM payment_refunds pr INDEXED BY payment_refunds_payment WHERE pr.payment_id = p.id AND pr.status <> 'failed')${w.kind === "manual" ? " AND 1 = 0" : ""}`;
   const provider = w.kind === "manual" ? "'manual'" : "p.provider";
@@ -221,6 +223,24 @@ export function refundMoveStatement(
       ...gs.params,
     );
 }
+
+/**
+ * M6–M7 audit AU1 (B0 1): a GATEWAY refund that `succeeded` came back failed (Stripe: the bank returned it, up to 30 days later; `failed`, or `requires_action`
+ * after success), as a re-fetch from the gateway just confirmed: `failed` with the gateway's code and `reversed_at` = now, once. Only our own or an outside refund
+ * (never a lost dispute, never a manual one), only the one the gateway named (`?5`, its id). The settled time and day stay (trigger `payment_refunds_status_flow`
+ * of 0082). No ledger row moves: every reader counts refunds that succeeded or are not failed, so the money is the client's credit again (a refund from an
+ * invoice's excess keeps its release, so the money is credit, not back on the invoice). Zero rows: already reversed, or not in that state. Binds `?1`..`?5`.
+ */
+export const refundReverseStatement = (
+  db: D1Database,
+  a: { refundId: string; providerRefundId: string; failureCode: string; providerStatus: string | null; now: number },
+): D1PreparedStatement =>
+  db
+    .prepare(
+      `UPDATE payment_refunds SET status = 'failed', failure_code = ?2, provider_status = coalesce(?3, provider_status), reversed_at = ?4, updated_at = max(?4, updated_at)
+       WHERE id = ?1 AND status = 'succeeded' AND provider <> 'manual' AND origin <> 'chargeback' AND provider_refund_id = ?5 AND reversed_at IS NULL`,
+    )
+    .bind(a.refundId, a.failureCode, a.providerStatus, a.now, a.providerRefundId);
 
 /**
  * A refund's review item of `kind` opens once per refund (early check 2, findings 1c, 2 and 1d: the tenth check, every later one, the dead-letter queue and L42's
@@ -394,7 +414,7 @@ export function receiptVoidStatement(
 
 const REFUND_COLS = `r.id, r.payment_id, r.client_id, r.document_id, r.credit_note_id, r.provider, r.origin, r.status, r.mode, r.paid_to, r.reason_code, r.currency,
        r.amount_minor, r.inr_refunded_minor, r.reference_norm, r.paid_on, r.provider_refund_id, r.provider_status, r.failure_code, r.requested_by, r.requested_at,
-       r.attempts, r.last_attempt_at, r.settled_at, r.settled_on, r.updated_at`;
+       r.attempts, r.last_attempt_at, r.settled_at, r.settled_on, r.updated_at, r.reversed_at`;
 
 /** One refund by id (`?1`), with its payment's gateway reference and status (what `checkRefund` and the routes read). */
 export const REFUND_READ_SQL = `SELECT ${REFUND_COLS}, p.provider_payment_id, p.status AS payment_status, p.amount_minor AS payment_amount_minor
@@ -603,10 +623,14 @@ export function bankMatchStatement(
     .prepare(
       `INSERT INTO bank_matches (id, target_kind, payment_id, settlement_id, refund_id, statement_on, statement_ref, matched_by, matched_at)
        SELECT ?1, ?2, CASE ?2 WHEN 'payment' THEN ?3 END, CASE ?2 WHEN 'settlement' THEN ?3 END, CASE ?2 WHEN 'refund' THEN ?3 END, ?4, ?5, ${sessionUser("?6")}, ?7
-       WHERE ${target} AND ${ownerSessionSql("?6", "?7", false)}`,
+       WHERE NOT EXISTS (SELECT 1 FROM bank_matches xm WHERE xm.id = ?1) AND ${target} AND ${ownerSessionSql("?6", "?7", false)}`,
     )
     .bind(a.id, a.kind, a.targetId, a.statementOn, a.statementRef, a.sessionId, a.now);
 }
+
+/** M6–M7 audit AU3 (B0 6): a bank match by its id (`?1`), to tell a repeat of the same request (200) from a refusal (409) after a write of zero rows. */
+export const BANK_MATCH_BY_ID_SQL =
+  "SELECT id, target_kind, payment_id, settlement_id, refund_id, statement_on, statement_ref FROM bank_matches WHERE id = ?1";
 
 /** The undo of a match, once, by the Owner, with a reason. Binds `?1` match, `?2` reason, `?3` session, `?4` now. */
 export const bankMatchRemoveStatement = (
@@ -649,7 +673,8 @@ export function realisationReductionStatement(
     .prepare(
       `INSERT INTO realisation_reductions (id, document_id, currency, amount_minor, approved_on, bank_ref, declaration, note, recorded_by, created_at)
        SELECT ?1, d.id, d.currency, ?3, ?4, ?5, ?6, ?7, ${sessionUser("?8")}, ?9 FROM documents d JOIN clients k ON k.id = d.client_id
-       WHERE d.id = ?2 AND d.type = 'export_invoice' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL AND k.anonymised_at IS NULL
+       WHERE d.id = ?2 AND NOT EXISTS (SELECT 1 FROM realisation_reductions xr WHERE xr.id = ?1)
+         AND d.type = 'export_invoice' AND d.frozen_at IS NOT NULL AND d.status <> 'void' AND d.voided_at IS NULL AND k.anonymised_at IS NULL
          AND ?3 + (SELECT coalesce(sum(x.amount_minor), 0) FROM realisation_reductions x WHERE x.document_id = d.id) <= d.total_minor
          AND (?6 = 0 OR coalesce(CASE WHEN d.currency = 'INR' THEN ${declared}
                WHEN d.fx_rate_micros > 0 THEN ((${declared}) * d.fx_rate_micros + 999999) / 1000000 END <= ?10, 0))
@@ -669,14 +694,26 @@ export function realisationReductionStatement(
     );
 }
 
-/** The bank's letter of a reduction, set once (DOCS key `reductions/<id>/letter-<sha256>`, written first, write-once), by the Owner. */
+/**
+ * M6–M7 audit AU3 (B0 6): a reduction by its id (`?1`) as the POST stored it, to tell a repeat of the same request (200) from a refusal (409) after a write of
+ * zero rows.
+ */
+export const REDUCTION_BY_ID_SQL =
+  "SELECT id, document_id, amount_minor, approved_on, bank_ref, declaration FROM realisation_reductions WHERE id = ?1";
+
+/**
+ * The bank's letter of a reduction, set once (DOCS key `reductions/<id>/letter-<sha256>`, written first, write-once), by the Owner. M6–M7 audit AU3 (B0 5): never
+ * for a reduction of an anonymised client's invoice (the route refuses it first with 409 `client_gone`).
+ */
 export const reductionLetterStatement = (
   db: D1Database,
   a: { id: string; r2Key: string; sha256: string; mime: string; sessionId: string; now: number },
 ): D1PreparedStatement =>
   db
     .prepare(
-      `UPDATE realisation_reductions SET letter_r2_key = ?2, letter_sha256 = ?3, letter_mime = ?4 WHERE id = ?1 AND letter_r2_key IS NULL AND ${ownerSessionSql("?5", "?6", false)}`,
+      `UPDATE realisation_reductions SET letter_r2_key = ?2, letter_sha256 = ?3, letter_mime = ?4 WHERE id = ?1 AND letter_r2_key IS NULL
+         AND NOT EXISTS (SELECT 1 FROM documents ld JOIN clients lk ON lk.id = ld.client_id WHERE ld.id = realisation_reductions.document_id AND lk.anonymised_at IS NOT NULL)
+         AND ${ownerSessionSql("?5", "?6", false)}`,
     )
     .bind(a.id, a.r2Key, a.sha256, a.mime, a.sessionId, a.now);
 

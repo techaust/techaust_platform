@@ -568,6 +568,20 @@
       "when": 1793999733534,
       "tag": "0080_fk_child_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1794016045122,
+      "tag": "0081_audit_money",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1794016152977,
+      "tag": "0082_audit_money_triggers",
+      "breakpoints": true
     }
   ]
 }

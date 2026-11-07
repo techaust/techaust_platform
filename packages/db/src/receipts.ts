@@ -121,14 +121,51 @@ export const RECEIPT_ALLOCATIONS_SQL = `SELECT a.document_id, d.number_display, 
    FROM payment_allocations a INDEXED BY payment_allocations_payment JOIN documents d ON d.id = a.document_id
    WHERE a.payment_id = ?1 GROUP BY a.document_id, d.number_display, d.type ORDER BY d.number_display, a.document_id`;
 
+/** M6–M7 audit AU3 (B0 7, B6 L4): after this many refused issues under the same numbering settings, the sweep leaves a payment out (one owners' bell). */
+export const RECEIPT_ISSUE_MAX_FAILURES = 3;
+
 /**
- * `receipt.sweep` (L3): confirmed money received still without a receipt, confirmed before `?1` (UTC ms), oldest first, at most 20, through `payments_receipt_due`.
+ * `receipt.sweep` (L3): confirmed money received still without a receipt, confirmed before `?1` (UTC ms), at most 20, through `payments_receipt_due`.
  * A client anonymised never gets a receipt, so its payments are left out (early check 2, finding 5: otherwise 20 of them would fill every sweep for ever).
+ * M6–M7 audit AU3 (B0 7, B6 L4): never tried first, then the least recently tried (`receipt_tried_at`), then the oldest confirmation; a payment whose issue was
+ * refused `RECEIPT_ISSUE_MAX_FAILURES` times under the current numbering settings is left out (a full series no longer blocks every other receipt for ever),
+ * and comes back once the numbering settings change (a wider format).
  */
 export const RECEIPTS_DUE_SQL = `SELECT p.id FROM payments p INDEXED BY payments_receipt_due
    WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.receipt_document_id IS NULL AND p.verified_at < ?1
      AND NOT EXISTS (SELECT 1 FROM clients k WHERE k.id = p.client_id AND k.anonymised_at IS NOT NULL)
-   ORDER BY p.verified_at, p.id LIMIT 20`;
+     AND (p.receipt_failures < ${RECEIPT_ISSUE_MAX_FAILURES} OR p.receipt_fail_version IS NOT (SELECT version FROM settings WHERE key = 'numbering'))
+   ORDER BY coalesce(p.receipt_tried_at, 0), p.verified_at, p.id LIMIT 20`;
+
+/**
+ * M6–M7 audit AU3 (B0 7, B6 L4): a refused receipt issue (`issueReceipt` answered `not_eligible` for a payment that is due): one more failure under the numbering
+ * settings' version `?4` (a new version starts the count again at 1), the time and the reason (`series_full`, `changed`, a header code). Then, in the same
+ * batch, ONE owners' bell when this very write made it the `RECEIPT_ISSUE_MAX_FAILURES`th failure (kind `receipt.blocked`, the payment, `?2` the title):
+ * guarded on the row now holding exactly that count at exactly this instant, so a later try writes no second bell. Binds `?1` payment, `?2` reason, `?3` now,
+ * `?4` version; the bell `?1` payment, `?2` title, `?3` now, `?4` link.
+ */
+export function receiptFailureStatements(
+  db: D1Database,
+  a: { paymentId: string; reason: string; numberingVersion: number | null; now: number; bellTitle: string; link: string },
+): D1PreparedStatement[] {
+  return [
+    db
+      .prepare(
+        `UPDATE payments SET receipt_failures = CASE WHEN receipt_fail_version IS ?4 THEN receipt_failures + 1 ELSE 1 END, receipt_tried_at = ?3,
+           receipt_fail_reason = ?2, receipt_fail_version = ?4
+         WHERE id = ?1 AND status = 'confirmed' AND kind = 'payment' AND receipt_document_id IS NULL`,
+      )
+      .bind(a.paymentId, a.reason.slice(0, 32), a.now, a.numberingVersion),
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+         SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'receipt.blocked', 'payment', ?1, ?2, ?4 FROM staff_users u
+         WHERE u.status = 'active' AND u.role = 'owner'
+           AND EXISTS (SELECT 1 FROM payments bp WHERE bp.id = ?1 AND bp.receipt_failures = ${RECEIPT_ISSUE_MAX_FAILURES} AND bp.receipt_tried_at = ?3)`,
+      )
+      .bind(a.paymentId, a.bellTitle, a.now, a.link),
+  ];
+}
 
 /**
  * A payment's receipt (`?1` payment): its number, day, status and PDF state (the Payments panel's "Receipt being prepared"), and whether the payment has been
