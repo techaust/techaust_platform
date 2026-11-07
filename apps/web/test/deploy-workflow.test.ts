@@ -335,10 +335,19 @@ describe("deploy-prod.yml: build without secrets, deploy with wrangler only, sev
   it("runs from main or a v* tag only (the production environment's deployment refs), main by default", () => {
     expect(text).toMatch(/ {6}tag:\n[\s\S]*?default: main\n/);
     expect(guard).toContain("main|v*) ;;");
-    for (const job of [guard, build, deploy]) {
-      const checkout = stepsOf(job).find((s) => s.includes("actions/checkout@"));
-      if (checkout) expect(checkout).toContain(["ref: $", "{{ inputs.tag }}"].join(""));
-    }
+    const checkoutOf = (job: string) => stepsOf(job).find((s) => s.includes("actions/checkout@"));
+    expect(checkoutOf(build)).toContain(["ref: $", "{{ inputs.tag }}"].join(""));
+    // P7 review M1, L3: the build records the commit it built and refuses one not on main; the deploy checks out exactly that commit.
+    expect(build).toContain(["sha: $", "{{ steps.sha.outputs.sha }}"].join(""));
+    expect(build).toContain('git merge-base --is-ancestor "$sha" origin/main');
+    expect(checkoutOf(deploy)).toContain(["ref: $", "{{ needs.build.outputs.sha }}"].join(""));
+    expect(checkoutOf(deploy)).not.toContain("inputs.tag");
+  });
+
+  it("a failed Time Travel bookmark fails its step (P7 review M2: pipefail before the tee)", () => {
+    const step = stepsOf(deploy).find((s) => s.includes("time-travel info")) ?? "";
+    expect(step.indexOf("set -o pipefail")).toBeGreaterThan(-1);
+    expect(step.indexOf("set -o pipefail")).toBeLessThan(step.indexOf("time-travel info"));
   });
 
   it("only the deploy job holds the token, through the production environment's secret", () => {

@@ -68,7 +68,7 @@ foreach ($c in $workers.Keys) {
     # Standard output only: wrangler writes its warnings (with "[" in them) to standard error.
     try { $names = @(($r.Std.Trim() | ConvertFrom-Json) | ForEach-Object { $_.name }) }
     catch { try { [Console]::InputEncoding = $prevEncoding } catch { }; Write-Host "RESULT: FAILED: couldn't read the secret list of $($workers[$c]). Nothing was stored. Tell the lead."; exit 1 }
-  } elseif ($r.Out -notmatch "10007|does not exist|not found|If this is a new Worker") {
+  } elseif ($r.Out -notmatch "10007|If this is a new Worker") {
     $said = (($r.Out) -replace "\s+", " ").Trim(); if ($said.Length -gt 300) { $said = $said.Substring(0, 300) + " ..." }
     try { [Console]::InputEncoding = $prevEncoding } catch { }
     Write-Host "RESULT: FAILED: couldn't list the secrets of $($workers[$c]) (not signed in to Cloudflare?). Nothing was stored. Wrangler said: $said"

@@ -178,7 +178,7 @@ Builder P7-A (Opus 5.5, high), branch `fix/p7-a-config` from `origin/feat/p7-pro
 - **GitHub environment `production`** (lead, through `gh api`): required reviewer `techaust`; deployment refs branch `main` and tags `v*`.
 - **Access for production admin** (connector, Q2):
   - the app `techaust-platform-admin (production)` on `admin.techaust.com` uses the reusable "Cloudflare account members" policy;
-  - the app `admin production health` on `admin.techaust.com/api/health` uses "Bypass everyone".
+  - the app `admin production health` uses "Bypass everyone", on `admin.techaust.com/api/v1/health`. The path was corrected from `/api/health` after P7-B found the admin's health route; it was checked in Cloudflare.
 
   Portal, hooks and web stay public.
 - **DNS list:** the owner said yes (2026-11-07); the records are added at the step each belongs to.
@@ -354,3 +354,20 @@ Session note: the cloud set-up installed before the branch switch, so `packages/
    - add a test with both shapes, plus the real files (expect no postal problem).
 2. **The jobs bundle still holds one `[Placeholder] ${e}`.** It is the 07-ZJ deed-email gate's template (`packages/email/src/deeds.ts`, `ZJ`, `APPROVED_07ZJ_EMAIL` true). esbuild keeps the dead branch (the bundle reads `_T=!0,cs=…_T?e:\`[Placeholder] ${e}\``). P7-B's new jobs-bundle scan for `[Placeholder` will flag it. The other gates (zo, zq, zr, zt) are tree-shaken from jobs today. Either the scan skips this gate template (`[Placeholder] ${` followed by an identifier), or the gate gets folded at build time. Your call when you integrate P7-B. The postal fallback is gone from the bundle (checked: `Pirozpur` once, no `[Placeholder] postal`).
 3. Docs only the main session edits: CLAUDE.md's Commands block (`pnpm invite … --production`, `pnpm admin:reset-2fa … --production`) and docs/08 §3.2 (break-glass on production). On launch day the first production Owner is `pnpm invite --email <owner> --role owner --production`, run from the PC's own PowerShell after `wrangler login` and P7-A's production `DB` binding. It needs no `CLOUDFLARE_API_TOKEN` in that window.
+
+## Review (reviewer, Opus 5.5 high, 2026-11-07): APPROVE
+No critical or high finding.
+- **M1:** the deploy job re-checked-out `inputs.tag`, so it could mix two commits. Fixed: the build records the commit it built, and the deploy checks out exactly that commit.
+- **M2:** the Time Travel bookmark step could pass after a failed read. Fixed: `set -o pipefail`.
+- **L3:** a `v*` branch, or a commit off main, passed the guard. Fixed: the build refuses a commit that isn't on main.
+- **L5:** the Access path in the hosted log was wrong. Corrected above.
+- **L6:** checked: 4 crons in the account (staging 2 plus production 2), within the Free plan's 5.
+- **L8:** the secrets script took a failed list as "nothing set" on any "not found" message. Fixed: it now matches only `10007` or "If this is a new Worker".
+- **Kept:**
+  - **L4:** check the trailing-slash forms of the four redirects on launch day.
+  - **L7:** the plan's D3 needs `PRODUCTION_ENABLED=true` already for `stage=database`. Applied on the day.
+  - **L9:** the admin's bound Workers are proved by the owner's first sign-in and dashboard visit, not by the health check.
+
+`deploy-workflow` and `prod-deploy` tests: 110 passed.
+- Usage: reviewer agent-a382bb1a19b7a1935, claude-opus-5-5/high, skills `cloudflare:workers-best-practices`, `cloudflare:wrangler` (`code-review` and `security-review` were not run: they start helpers, and the 2-agent limit was full).
+- Usage: builders P7-A agent-ae9750c8eb5cfc8ab and P7-B agent-ae5ba8ba1fa6812ce, claude-opus-5-5/high; P7-C was a cloud session.
