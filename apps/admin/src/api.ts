@@ -620,6 +620,8 @@ export type ProjectPage = {
   milestones: MilestoneView[];
   /** The client is an anonymised individual: the screens are read-only. */
   clientAnonymised: boolean;
+  /** Full audit AU23: the client is under a legal hold (no note or file can be deleted). Optional: an older API answer lacks it. */
+  clientLegalHold?: boolean;
   milestoneTotals: { totalMinor: number; mismatch: boolean };
   recentNotes: NoteView[];
   recentFiles: FileView[];

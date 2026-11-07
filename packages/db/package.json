@@ -14,6 +14,7 @@
     "./advices": "./src/advices.ts",
     "./deeds": "./src/deeds.ts",
     "./digest": "./src/digest.ts",
+    "./dp-shared": "./src/dp-shared.ts",
     "./documents": "./src/documents.ts",
     "./email-events": "./src/email-events.ts",
     "./gateway": "./src/gateway.ts",

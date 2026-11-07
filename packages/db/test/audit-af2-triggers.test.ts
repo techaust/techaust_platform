@@ -4,9 +4,10 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { describe, expect, it } from "vitest";
+import { CONSENT_WITHDRAW_ACTION_SQL } from "../src/dp-shared.ts";
 import { HELD_EMAIL_SQL } from "../src/retention.ts";
 import { triggerMigrationSql } from "../src/triggers.ts";
-import { auditAf2Backfill, HELD_EMAIL_AF2 } from "../src/triggers-audit-af2.ts";
+import { auditAf2Backfill, CONSENT_ACTION_AF2, HELD_EMAIL_AF2 } from "../src/triggers-audit-af2.ts";
 import { mkClientRow, mkContact, mkMember } from "./billing-helpers.ts";
 import {
   first,
@@ -59,6 +60,9 @@ describe("0081 and 0082", () => {
   });
   it("the frozen held-address rule equals the runtime one (the clean-up's and the lead erase's)", () => {
     expect(HELD_EMAIL_AF2("x.e")).toBe(HELD_EMAIL_SQL("x.e"));
+  });
+  it("the frozen consent-withdrawal proof equals the close route's (AU26)", () => {
+    expect(CONSENT_ACTION_AF2).toBe(CONSENT_WITHDRAW_ACTION_SQL("NEW.", "NEW.action_audit_id"));
   });
 });
 

@@ -25,6 +25,7 @@ import {
   retentionLiveVerdict,
   TRIAL_REPORT_FRESH_SQL,
 } from "@techaust/core/retention";
+import { HELD_EMAIL_SQL } from "@techaust/db/dp-shared";
 import { Hono } from "hono/tiny";
 import { auditFirstRow } from "./audit-row.ts";
 import { type AppEnv, actor, BAD_REQUEST, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
@@ -156,8 +157,8 @@ export const suppressions = new Hono<AppEnv>().post("/lift", body(suppressionLif
     action: "suppression.lift",
     entityType: "email_suppression",
     entityId: null,
-    // The hash only, never the address (L20).
-    summary: { hash },
+    // Full audit AU25 L6 (B5 L6): neither the address nor its keyed hash (the audit log is kept for good; the hash would outlive the stop it lifted).
+    summary: { reason: "erased" },
   });
   if (!done) return err(c, NOT_SUPPRESSED, 409);
   return c.json({ ok: true });
@@ -180,7 +181,8 @@ export const retention = new Hono<AppEnv>()
   .get("/report", async (c) => {
     const db = c.env.DB;
     const now = Date.now();
-    const deletable = leadDeletableSql("l");
+    // Full audit AU25 L1: the leads due soon leave out a lead whose address a hold protects (the purge never takes it).
+    const deletable = `${leadDeletableSql("l")} AND NOT ${HELD_EMAIL_SQL("l.contact_email")}`;
     const [runs, counts, sw, leads, dry] = await db.batch([
       db.prepare(
         "SELECT id, as_of, mode, started_at, finished_at, families FROM retention_runs INDEXED BY retention_runs_started ORDER BY started_at DESC, id DESC LIMIT 5",

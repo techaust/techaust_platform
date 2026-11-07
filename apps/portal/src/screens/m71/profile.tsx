@@ -1,6 +1,6 @@
 // Profile (M7.1; POR-09, POR-10, POR-11; run file G.6, Q1 A, L8, L15): the contact's own details (name and phone saved here, Q1 A; the email is how they
-// sign in, so a change of it is a request), the organisation's people with portal access (names and titles only; OPEN (08-C RB-45): is a colleague's title
-// needed for the purpose, or is the name enough under DPDP s.8(7) data minimisation?), and the contact's own requests with a "New request" dialog (the
+// sign in, so a change of it is a request), the organisation's people with portal access (names and titles only; Settled by the lead on the safest reading,
+// 2026-11-05 (08-C RB-45): name and title serve the purpose, never an email, phone or id), and the contact's own requests with a "New request" dialog (the
 // five kinds, one channel per DPDP s.11 to s.13 right; Researched 2026-10-29, 08-C RB-36; RB-13 for the reply within a month). A stale save says so (C17)
 // and offers to reload. Words: copy-zp.ts C16 to C24 (marked until approved), G2 to G5.
 import { NEW_KIND_LABELS, PORTAL_REQUEST_COPY } from "@techaust/core/copy-zr";

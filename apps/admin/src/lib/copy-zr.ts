@@ -172,6 +172,8 @@ export const ZR_DETAIL = {
   exportSentRow: "Export emailed",
   noteRow: "Note",
   erasureGuide: "Erase or anonymise them first, then close this request and link that action.",
+  /** Full audit AU26 (builder's draft for the lead). */
+  withdrawalGuide: "Withdraw their marketing consent first, then close this request and link that change.",
   openContact: "Open the client's contacts",
   openLead: "Open the lead",
   ownerOnly: "Only the Owner can close a request about personal data.",
@@ -192,6 +194,18 @@ export const ZR_CLOSE = {
   identityFirst: "Record the identity check before closing this as done.",
   unmatchedErasure:
     "Nothing in our records was erased against this address, so this request can only be declined.",
+  // Full audit AU26 (builder's drafts for the lead): the consent withdrawal's close.
+  unmatchedWithdrawal:
+    "This request names no contact or lead whose consent we could withdraw, so it can only be declined.",
+  withdrawalAction: "The consent withdrawal that fulfilled it",
+  withdrawalMissing: "Choose the consent withdrawal that fulfilled it.",
+  withdrawalLoading: "Looking for the consent withdrawal…",
+  withdrawalNone:
+    "No consent withdrawal for this person since the request arrived. Withdraw it first, then close the request.",
+  withdrawalOption: (date: string, by: string | null) =>
+    `Consent withdrawn on ${date}${by ? `, by ${by}` : ""}`,
+  /** Full audit AU25 L3 (builder's draft for the lead). */
+  exportSentEarly: "The day can't be before the request arrived.",
   reason: "Why it's declined",
   reasonMissing: "Choose why it's declined.",
   reasons: {
@@ -231,6 +245,10 @@ export const ZR_CLOSE = {
       "Only a done request for a copy of their data records when the export was emailed.",
     request_closed: "This request is already closed. The list has been refreshed.",
     close_refused: "The request changed while you were closing it. Check it and try again.",
+    // Full audit AU26, AU25 L3 (builder's drafts for the lead).
+    withdrawal_required:
+      "Choose the consent withdrawal that fulfilled it, or decline the request with a reason.",
+    export_before_received: "The day can't be before the request arrived.",
   } as Record<string, string>,
 } as const;
 

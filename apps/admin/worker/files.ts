@@ -33,7 +33,7 @@ import {
 } from "./context.ts";
 import { body, idParam, limitOf, param } from "./http.ts";
 import { decodeCursor, keysetSql, pageOf } from "./keyset.ts";
-import type { Scope } from "./notes.ts";
+import { HELD_ROW_SQL, heldNow, LEGAL_HOLD, type Scope } from "./notes.ts";
 
 const LENGTH_REQUIRED: ApiError = { code: "length_required", message: "The file's length is required" };
 const FILE_TOO_LARGE: ApiError = { code: "file_too_large", message: "The file is larger than 25 MB" };
@@ -319,7 +319,8 @@ export const files = new Hono<AppEnv>()
       .first<{ r2_key: string; client_id: string; project_id: string | null }>();
     if (!row) return err(c, NOT_FOUND, 404);
     const done = await mutate(c, {
-      main: c.env.DB.prepare("DELETE FROM files WHERE id = ?1").bind(id),
+      // Full audit AU23: never a file of a client under a legal hold (409 `legal_hold` below, not the trigger's 500).
+      main: c.env.DB.prepare(`DELETE FROM files WHERE id = ?1 AND NOT ${HELD_ROW_SQL("files")}`).bind(id),
       action: "file.delete",
       entityType: "file",
       entityId: id,
@@ -328,7 +329,7 @@ export const files = new Hono<AppEnv>()
         ...(row.project_id ? { projectId: row.project_id } : { clientId: row.client_id }),
       },
     });
-    if (!done) return err(c, NOT_FOUND, 404);
+    if (!done) return (await heldNow(c, "files", id)) ? err(c, LEGAL_HOLD, 409) : err(c, NOT_FOUND, 404);
     c.executionCtx.waitUntil(dropObject(c.env, row.r2_key, "file deleted"));
     return c.json({ ok: true });
   })

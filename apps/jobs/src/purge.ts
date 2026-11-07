@@ -22,6 +22,7 @@ import {
 import { LEAD_NO_OPEN_REQUEST_SQL } from "@techaust/core/lead-lifecycle";
 import { RETENTION_SWITCH_SQL, SWITCH_LIVE_SQL } from "@techaust/core/retention";
 import { PURGE_RECEIPTS_SQL } from "@techaust/db/consent";
+import { HELD_EMAIL_SQL } from "@techaust/db/dp-shared";
 import { erasureHashOf } from "./erasure.ts";
 import { logEvent } from "./log.ts";
 
@@ -29,10 +30,12 @@ import { logEvent } from "./log.ts";
 export const PURGE_CRON = "0 22 * * *";
 
 /** The conditions of a due lead (`?1` is the lead id, `?2` the time). */
-const DUE = `delete_after IS NOT NULL AND delete_after <= ?2 AND ${LEAD_DELETABLE_SQL} AND ${LEAD_NO_OPEN_REQUEST_SQL("leads.id")}`;
+// Full audit M6–M7 AU25 L1 (B5 L1): never a lead whose ADDRESS is held (a held contact or client with it, or a held lead with it), as the triggers
+// `leads_held_no_delete` / `leads_held_no_erase` (0082) hold too.
+const DUE = `delete_after IS NOT NULL AND delete_after <= ?2 AND ${LEAD_DELETABLE_SQL} AND ${LEAD_NO_OPEN_REQUEST_SQL("leads.id")} AND NOT ${HELD_EMAIL_SQL("leads.contact_email")}`;
 
 /** The scan, exported so a test can EXPLAIN it (it must use the partial index `leads_delete_due`). */
-export const SCAN_SQL = `SELECT id, ref, delete_after AS at FROM leads INDEXED BY leads_delete_due WHERE delete_after <= ?1 AND ${LEAD_DELETABLE_SQL} AND ${LEAD_NO_OPEN_REQUEST_SQL("leads.id")} AND (delete_after, id) > (?2, ?3) ORDER BY delete_after, id LIMIT ${LEAD_PURGE_PAGE + 1}`;
+export const SCAN_SQL = `SELECT id, ref, delete_after AS at FROM leads INDEXED BY leads_delete_due WHERE delete_after <= ?1 AND ${LEAD_DELETABLE_SQL} AND ${LEAD_NO_OPEN_REQUEST_SQL("leads.id")} AND NOT ${HELD_EMAIL_SQL("leads.contact_email")} AND (delete_after, id) > (?2, ?3) ORDER BY delete_after, id LIMIT ${LEAD_PURGE_PAGE + 1}`;
 
 type Cursor = { at: number; id: string };
 

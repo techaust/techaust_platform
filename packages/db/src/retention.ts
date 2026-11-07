@@ -10,7 +10,7 @@
 // but bound), `?3` the run id, `?4` the family name. `bindsOf` gives them.
 import { istDate, toIsoDate } from "@techaust/core";
 import { type RetentionCutoff, type RetentionFamily, SWITCH_LIVE_SQL } from "@techaust/core/retention";
-import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079, auditIpDueSql } from "./dp-shared.ts";
+import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079, auditIpDueSql, HELD_EMAIL_SQL } from "./dp-shared.ts";
 
 /** How a table's rows end. */
 export type RetentionRule =
@@ -179,10 +179,10 @@ type FamilyTable = {
 /** A held contact (itself or its client) by an id expression. */
 export const HELD_CONTACT_SQL = (contactId: string) =>
   `EXISTS (SELECT 1 FROM contacts hc JOIN clients hk ON hk.id = hc.client_id WHERE hc.id = ${contactId} AND (hc.legal_hold = 1 OR hk.legal_hold = 1))`;
-/** An address held by a contact (itself or its client) or a lead under a legal hold (`email` any expression; compared lower-cased). */
-export const HELD_EMAIL_SQL = (email: string) =>
-  `(EXISTS (SELECT 1 FROM contacts hc JOIN clients hk ON hk.id = hc.client_id WHERE hc.email = lower(${email}) AND (hc.legal_hold = 1 OR hk.legal_hold = 1))
-    OR EXISTS (SELECT 1 FROM leads hl WHERE lower(hl.contact_email) = lower(${email}) AND hl.legal_hold = 1))`;
+// An address held by a contact (itself or its client) or a lead under a legal hold: in `dp-shared.ts` since the full audit (AU25 L1), so the admin API and
+// the jobs purge read it without bundling the retention matrix; re-exported here unchanged.
+export { HELD_EMAIL_SQL };
+
 const HELD_CLIENT = (clientId: string) =>
   `EXISTS (SELECT 1 FROM clients hk WHERE hk.id = ${clientId} AND hk.legal_hold = 1)`;
 const HELD_LEAD = (leadId: string) =>
