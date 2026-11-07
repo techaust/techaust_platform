@@ -644,3 +644,33 @@ Copied by the lead (the reviewer couldn't commit). Reviewer claude-opus-5-5/high
   - **L6:** delete the dead column and fix both comments.
   - **L7:** check the send window first. One shared capped body reader (in `packages/core` or a shared fetch helper the three packages can import without a new package). One shared bounded-window paging helper for `creditHeldSql` and recon.
 - **AU49** stays a follow-up.
+
+## Review fixes (builder): AU61, builder claude-opus-5-5/high, 2026-11-07, branch `fix/audit-rev` from `origin/fix/audit-m6-m7` (f42bc7f6)
+Skills: `cloudflare:workers-best-practices` (L1, L2, L4, L7: no buffering of unbounded bodies, no gateway call on a routine event, no key work outside the send window), `cloudflare:wrangler` (loaded per docs/14 §9; no config or binding changed, so nothing of it applied), `frontend-design` (L5: the fade's width named once, as the row's `scroll-padding-inline`, read by the frame). Commits 871d3e94, f9271d51, 2610d41d, 8662f22e.
+
+### What changed, by item
+- **L1:** core `mayReverseRefund(provider, eventType)` (`refund-gateways.ts`): Stripe `refund.failed` / `refund.updated`, Razorpay `refund.failed`. PayPal: the only refund event this branch reads is `PAYMENT.CAPTURE.REFUNDED` (a success; PayPal names no refund-failed event, and `PAYMENT.CAPTURE.REVERSED` is M6.4's capture path, not a refund), so none re-fetches. `gateway/refund-events.ts`: a succeeded refund on any other event closes as `refund_settled` with no gateway call. Tests: core (the mapped names), admin `audit-money.test.ts` (Razorpay `refund.processed` / `refund.created` with the gateway down: `processed`, `refund_settled`, 0 fetches; `refund.failed` still re-fetches and reverses; Stripe `refund.created` 0 fetches, `refund.updated` re-fetches).
+- **L2:** `apps/jobs/src/email.ts`: `refund.reversed` named in `DEAD_LETTER_KIND_NAMES` ("returned-refund email to a client", builder's words for the lead, staff-only) and rings the same `refund.email_failed` bell through `parseRefundReversed` (one per owner and refund, so a refund whose notify and reversal emails both dead-letter rings once). Test in `m72-jobs.test.ts` (named, belled once, a malformed body rings nothing).
+- **L3:** `ERASURE_ACTION_0079` / `CLOSE_BAD_0079` take 0079's own indentation back; the generator now reproduces 0079 byte for byte. Every trigger set was compared byte for byte: only 0079 had drifted (0072, 0074, 0082, 0084, 0086 and the rest were exact; 0001 keeps its known prefix exception). **0084 (unapplied, on this branch only, not on `main`) is regenerated** with `scripts/write-triggers.ts audit_af2_triggers`, whitespace only, because it embeds `CLOSE_BAD_0079`. 0079 itself is untouched (also not on `main` yet). Drift tests now compare exact text: `triggers.test.ts` reads every migration with Vite's eager `?raw` glob (typed in `test/env.d.ts`), and the 0079 test in `data-protection-triggers.test.ts` likewise.
+- **L4:** `refundRowSql(statusClause)` builds `REFUND_ROW_SQL` and `REFUND_REVERSED_ROW_SQL`; test that both equal the builder's output and share every byte but the clause.
+- **L5:** `revealScrollLeft` (lib/reports.ts, `nearestScrollLeft` with the fade's inset, clamped for wide links) used by the frame for the open report and, new, on `focusin` inside `.report-nav`; `reports.css` gives `.report-nav` `scroll-padding-inline: var(--space-10)` (the fade's width; the frame reads it from the computed style). Unit test of the decision (7 cases).
+- **L6:** `p.rowid AS rid` and its `& { rid }` type gone from the payments list; the list's doc comment now names every variant's index and says no cursor uses rowid; `sql-rules.ts:27` names `refundsOutSql`'s second branch. The payments list is a finance hot route, so the start-up dry run fixtures were regenerated (`node scripts/cpu-probe.mjs --write-fixtures` after admin, jobs and portal builds; 7 files, made-up data only).
+- **L7:**
+  - `processRefundNotify` / `processRefundReversed`: no contacts → `none`; then the send window; only then `withoutErased`. Test: outside the window both answer `delayed` with no erasure key set; inside it the missing key still throws (retried).
+  - core `@techaust/core/body` (`readBodyCapped`, `readTextCapped`, pure over `ReadableStream`): used by `gateway/answer.ts` (keeps its no-body `json()` path for the dry run and its `{ok:false}` mapping), `packages/email` (re-exports it as `readTextCapped`, same cap and `.catch`), `packages/auth/src/turnstile.ts` (same cap, fails closed). **`packages/auth` gains `"@techaust/core": "workspace:*"`** (a workspace link, no npm package; lockfile +3 lines): auth imported nothing from core before, and no other place is shared by all three. Core test `body.test.ts`.
+  - `boundedWindowSql` (`@techaust/db/refunds`) builds `creditHeldSql` and recon's `windowSql`. Twin tests run the hand-written windows (kept in the tests) against the shared ones on every page: db `credit-held-rows.test.ts` (scan 1,000 and 50 at 5,007 payments), admin `audit-money.test.ts` (both recon lists at 5,000 payments): identical rows.
+
+### Commands and results (all through `tools/heavy.sh`, logs `.logs/au61-*`)
+- Tests: core 2,713/2,713 (coverage 98.1 % statements); db 1,092/1,092; auth 156/156; email 205/205; jobs 780/780; admin 5,310/5,310 (199 files, worker and SPA).
+- Typecheck: core, db, auth, email, jobs, admin, portal, web: all exit 0.
+- Builds: admin (budgets ok: front 121,871, API 561,095, finance 435,938, invoices 567,389 bytes), jobs (871,132), portal (163,583: the build's note says past its 160,000 plan line; not caused here, the shared reader replaced turnstile's own copy).
+- `node scripts/check-migrations.mjs`: ok (87 migrations).
+- Final `pnpm lint` (once): exit 0, 0 errors; 14 warnings and 8 infos, all in files this round didn't touch (pdf tests, portal CSS, core `public-text.ts`, web `catalogue.ts`, admin `reports.test.ts`).
+
+### Not verified
+- L5 in a browser (no live check at 390 px; the scroll decision is unit-tested and the CSS is one property). A designer or reviewer pass should confirm a tabbed link clears the fade.
+- Other capped readers outside the brief remain separate: `apps/jobs/src/hooks/shared.ts`, `apps/jobs/src/usage.ts`, `apps/web/src/forms.ts` (a follow-up if the lead wants one reader everywhere).
+
+### Questions
+- The auth → core workspace link (L7): keep it, or should the Turnstile reader stay its own copy?
+- L2's alert words "returned-refund email to a client" are mine; approve or replace.
