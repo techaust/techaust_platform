@@ -62,9 +62,13 @@ export const CRON_BRANCHES = [
   {
     branch: "daily",
     cron: "0 22 * * *",
-    what: "03:30 IST: lead clean-up, PDF sweep, statistics, expiry, statement purge, data-protection start, usage",
+    what: "03:30 IST: lead clean-up, PDF sweep, statistics, expiry, statement purge, data-protection start",
   },
-  { branch: "h06", cron: "30 * * * *", what: "06:00 to 08:00 IST: the care scan with the hourly messages" },
+  {
+    branch: "h06",
+    cron: "30 * * * *",
+    what: "06:00 to 08:00 IST: the care scan with the hourly messages; at 06:00 the Free-plan usage reading (L50)",
+  },
   {
     branch: "h09",
     cron: "30 * * * *",
@@ -137,6 +141,19 @@ export const QUEUE_KINDS = [
   "usage.daily",
 ];
 export const QUEUE_EXTRA = ["lead", "email", "leads-dlq", "email-dlq", "pdf-dlq"];
+
+/**
+ * L55 (audit B6 L10): the queue row a test invocation's label `queue <queue> <kind>` belongs to (apps/jobs/test/setup.ts names the queue without its
+ * `techaust-<env>-` prefix and the body by its `kind`, else its `template`, else "other"). Every email, whatever its template, is the `email` row (a template
+ * name can equal a queue kind, `deed.signed`); a leads message with no kind is a form submission, the `lead` row; a dead-letter queue is its own row,
+ * whatever it carries. Pure (the jobs tests run it in workerd).
+ */
+export function queueRowOf(queue, kind) {
+  if (queue === "email") return "email";
+  if (/^(leads|email|pdf)-dlq$/.test(queue)) return queue;
+  if (queue === "leads" && kind === "other") return "lead";
+  return kind;
+}
 
 /** `<METHOD> <path pattern>` keys. */
 const key = (method, path) => `${method} ${path}`;

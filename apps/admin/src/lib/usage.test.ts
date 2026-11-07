@@ -84,7 +84,53 @@ describe("usageView", () => {
     ]);
   });
 
-  it("a newest reading older than yesterday is stale (the nightly reading stopped)", () => {
+  it("L50: a healthy day never shows stale, an empty last slot or a 'Not read' top row (the reading runs at 00:30 UTC)", () => {
+    const month = (newest: string) =>
+      tile(
+        Array.from({ length: 31 }, (_, k) => ({
+          date: new Date(Date.parse(`${newest}T00:00:00Z`) - k * 86_400_000).toISOString().slice(0, 10),
+          values: { "cf.requests": 1_000 + k },
+        })).reverse(),
+      );
+    const cases: [string, number, string][] = [
+      // 23:59 UTC on 7 Nov: the 06:00 IST reading of that morning recorded 6 Nov
+      ["23:59 UTC, 6 Nov read", Date.parse("2026-11-07T23:59:00Z"), "2026-11-06"],
+      // 00:31 UTC on 8 Nov, the reading of 7 Nov not in yet (queued at 00:30): still fresh, the window still ends on 6 Nov
+      ["00:31 UTC, 7 Nov not yet read", Date.parse("2026-11-08T00:31:00Z"), "2026-11-06"],
+      // 00:31 UTC on 8 Nov, the reading of 7 Nov in
+      ["00:31 UTC, 7 Nov read", Date.parse("2026-11-08T00:31:00Z"), "2026-11-07"],
+    ];
+    for (const [name, now, newest] of cases) {
+      const v = usageView(month(newest), now);
+      if (!v) throw new Error("expected a view");
+      expect([v.stale, v.to, v.newest], name).toEqual([false, newest, newest]);
+      expect(v.days, name).toHaveLength(30);
+      expect(v.days[0]?.date, name).toBe(newest);
+      expect(Object.keys(v.days[0]?.values ?? {}), name).toEqual(["cf.requests"]);
+      // every one of the 30 days was read: no gap anywhere, and the strip's last point is the newest day
+      expect(
+        v.days.every((d) => Object.keys(d.values).length > 0),
+        name,
+      ).toBe(true);
+      expect(v.rows[0]?.points.at(-1)?.date, name).toBe(newest);
+      expect(v.rows[0]?.points, name).toHaveLength(30);
+    }
+  });
+
+  it("L50: a reading missing past the day before yesterday is stale, and the window ends yesterday with the missed days as gaps", () => {
+    const v = usageView(
+      tile([{ date: "2026-11-06", values: { "cf.requests": 10 } }]),
+      Date.parse("2026-11-09T00:31:00Z"),
+    );
+    expect([v?.stale, v?.to]).toEqual([true, "2026-11-08"]);
+    expect(v?.days.slice(0, 3)).toEqual([
+      { date: "2026-11-08", values: {} },
+      { date: "2026-11-07", values: {} },
+      { date: "2026-11-06", values: { "cf.requests": 10 } },
+    ]);
+  });
+
+  it("a newest reading older than the day before yesterday is stale (the reading stopped)", () => {
     const v = usageView(tile([{ date: "2026-11-02", values: { "cf.requests": 10 } }]), NOW);
     expect(v?.stale).toBe(true);
     expect(v?.stopped).toBeNull();

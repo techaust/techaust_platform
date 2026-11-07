@@ -2,11 +2,19 @@
 // Failure paths: a GraphQL error, a timeout, a 5xx, partial data, no token, and no alert without data. Nothing here reaches Cloudflare: fetch is a fake
 // that builds workerd's own Request (so a refused option fails, #168).
 import { env } from "cloudflare:workers";
-import { parseUsage, usageCrossings, usageDayOf, usageMessageOf } from "@techaust/core/usage";
+import {
+  parseUsage,
+  USAGE_HOUR_IST,
+  usageCrossings,
+  usageDayOf,
+  usageMessageOf,
+  usageTokenBellTitle,
+} from "@techaust/core/usage";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ringUsageBells } from "../src/alerts.ts";
+import { cronBranchOf, HOURLY_CRON, hourlyMessages } from "../src/billing.ts";
 import { PURGE_CRON } from "../src/purge.ts";
-import { GRAPHQL_URL, processUsage } from "../src/usage.ts";
+import { GRAPHQL_URL, MAX_ANSWER_BYTES, processUsage, readCapped } from "../src/usage.ts";
 
 const DAY = "2026-11-06";
 const MSG = { v: 1, kind: "usage.daily", day: DAY } as const;
@@ -59,17 +67,35 @@ function fakeFetch(respond: (req: Request) => Response | Promise<Response>) {
   });
 }
 
+const tokenBells = async () =>
+  (
+    await env.DB.prepare(
+      "SELECT user_id, entity_id, title, link FROM notifications WHERE kind = 'usage.token' ORDER BY entity_id, user_id",
+    ).all<{ user_id: string; entity_id: string; title: string; link: string }>()
+  ).results;
+
 beforeEach(async () => {
   await env.DB.prepare("DELETE FROM stats_daily WHERE metric LIKE 'cf.%'").run();
-  await env.DB.prepare("DELETE FROM notifications WHERE kind = 'usage.limit'").run();
+  await env.DB.prepare("DELETE FROM notifications WHERE kind IN ('usage.limit', 'usage.token')").run();
 });
 afterEach(() => vi.restoreAllMocks());
 
 describe("usage.daily (M7.5 D1)", () => {
-  it("the 03:30 IST cron's message names the UTC day that ended (22:00 UTC: today isn't over)", () => {
-    expect(usageDayOf(Date.UTC(2026, 10, 7, 22, 0))).toBe("2026-11-06");
-    expect(usageMessageOf(Date.UTC(2026, 10, 7, 22, 0))).toEqual(MSG);
-    expect(PURGE_CRON).toBe("0 22 * * *");
+  it("L50: the 06:00 IST tick (00:30 UTC) queues the UTC day that has just ended, once a day; the 03:30 IST cron no longer carries it", () => {
+    const tick = Date.UTC(2026, 10, 7, 0, 30); // 06:00 IST on 7 Nov
+    expect(usageMessageOf(tick)).toEqual(MSG);
+    const at = (h: number, m = 30) =>
+      hourlyMessages(Date.UTC(2026, 10, 7, h, m)).filter((b) => b.kind === "usage.daily");
+    expect(at(0)).toEqual([MSG]);
+    for (const h of [1, 2, 3, 4, 5, 21, 22, 23]) expect(at(h), `${h}:30 UTC`).toEqual([]);
+    expect(cronBranchOf(HOURLY_CRON, tick, PURGE_CRON)).toBe("h06");
+    expect(USAGE_HOUR_IST).toBe(6);
+  });
+
+  it("L50: at 23:59 UTC the newest day that can be read is yesterday; at 00:31 UTC the day that just ended", () => {
+    expect(usageDayOf(Date.UTC(2026, 10, 7, 23, 59))).toBe("2026-11-06");
+    expect(usageDayOf(Date.UTC(2026, 10, 8, 0, 31))).toBe("2026-11-07");
+    expect(usageDayOf(Date.UTC(2026, 0, 1, 0, 31))).toBe("2025-12-31");
   });
 
   it("one POST with the token, no redirect followed and a timeout; the day's totals and splits written", async () => {
@@ -161,6 +187,74 @@ describe("usage.daily (M7.5 D1)", () => {
     expect(await processUsage({ ...withToken, CF_ACCOUNT_TAG: "" } as unknown as Env, MSG)).toBe("ack");
     expect(await processUsage(withToken, { kind: "usage.daily", day: "yesterday" })).toBe("ack");
     expect(calls).toHaveLength(0);
+    expect(await rowsOf()).toEqual([]);
+    // L55: locally there is never a token, so no bell
+    expect(await tokenBells()).toEqual([]);
+  });
+
+  it("L55: outside local, a missing token, a 401 and a 403 ring the owners' bell once per IST day; a 400 or a 5xx doesn't", async () => {
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO staff_users (id, email, name, role, status) VALUES ('u_usage_t1', 't1@example.test', 'Owner T', 'owner', 'active')",
+    ).run();
+    const owners =
+      (
+        await env.DB.prepare(
+          "SELECT count(*) AS n FROM staff_users WHERE role = 'owner' AND status = 'active'",
+        ).first<{ n: number }>()
+      )?.n ?? 0;
+    const staging = { ...withToken, ENVIRONMENT: "staging" } as unknown as Env;
+    const noToken = { ...env, ENVIRONMENT: "staging", CF_ACCOUNT_TAG: "acct" } as unknown as Env;
+    const morning = Date.UTC(2026, 10, 7, 0, 31); // 06:01 IST on 7 Nov
+    fakeFetch(() => new Response("{}", { status: 400 }));
+    expect(await processUsage(staging, MSG, morning)).toBe("ack");
+    fakeFetch(() => new Response("", { status: 503 }));
+    expect(await processUsage(staging, MSG, morning)).toBe("retry");
+    expect(await tokenBells()).toEqual([]);
+    // no token: one bell per owner, nothing fetched
+    fakeFetch(() => new Response(answer(FULL)));
+    expect(await processUsage(noToken, MSG, morning)).toBe("ack");
+    expect(calls).toHaveLength(0);
+    let got = await tokenBells();
+    expect(got).toHaveLength(owners);
+    expect(new Set(got.map((b) => b.entity_id))).toEqual(new Set(["token|2026-11-07"]));
+    expect(got[0]?.title).toBe(usageTokenBellTitle(DAY));
+    expect(got[0]?.title).toBe(
+      "Free plan usage for 2026-11-06 (UTC) wasn't read: the Cloudflare analytics token is missing or was refused. Make a new read-only token and set it again.",
+    );
+    // a 401 and a 403 the same IST day: no second bell
+    for (const status of [401, 403]) {
+      fakeFetch(() => new Response('{"errors":[{"message":"Unauthorized"}]}', { status }));
+      expect(await processUsage(staging, MSG, morning + 3_600_000)).toBe("ack");
+    }
+    expect(await tokenBells()).toHaveLength(owners);
+    // the next IST day: one more
+    fakeFetch(() => new Response("", { status: 403 }));
+    expect(await processUsage(staging, { ...MSG, day: "2026-11-07" }, morning + 86_400_000)).toBe("ack");
+    got = await tokenBells();
+    expect(got).toHaveLength(2 * owners);
+    expect(new Set(got.map((b) => b.entity_id))).toEqual(new Set(["token|2026-11-07", "token|2026-11-08"]));
+    expect(await rowsOf()).toEqual([]);
+  });
+
+  it("L53: the answer is read with a byte count and refused past the cap, whatever Content-Length says (none here: a stream)", async () => {
+    const chunk = new TextEncoder().encode("x".repeat(64 * 1024));
+    let pulled = 0;
+    const endless = () =>
+      new ReadableStream<Uint8Array>({
+        pull(c) {
+          pulled++;
+          c.enqueue(chunk);
+        },
+      });
+    expect(await readCapped(new Response(endless()))).toBeNull();
+    // it stopped just past the cap: never read the whole (endless) answer
+    expect(pulled).toBeLessThanOrEqual(MAX_ANSWER_BYTES / chunk.byteLength + 2);
+    expect(await readCapped(new Response("small"))).toBe("small");
+    expect(await readCapped(new Response("ab"), 1)).toBeNull();
+    expect(await readCapped(new Response(null))).toBe("");
+    // through the consumer: logged and acknowledged, nothing written
+    fakeFetch(() => new Response(endless(), { headers: { "content-type": "application/json" } }));
+    expect(await processUsage(withToken, MSG)).toBe("ack");
     expect(await rowsOf()).toEqual([]);
   });
 });

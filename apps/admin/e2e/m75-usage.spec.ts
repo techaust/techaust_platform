@@ -33,8 +33,13 @@ function d1(sql: string) {
 
 const SHOTS = process.env.M75_SHOTS ?? "";
 const DAY = 86_400_000;
-/** Yesterday's UTC day (Cloudflare's daily limits reset at 00:00 UTC), and the 29 before it. */
-const utcDay = (back: number) => new Date(Date.now() - (back + 1) * DAY).toISOString().slice(0, 10);
+/**
+ * The newest day the real job has read by now, and the 29 before it (L50: as the jobs Worker does it). `usage.daily` runs at 06:00 IST (00:30 UTC) and
+ * reads the UTC day that has just ended, so from 00:30 UTC the newest is yesterday (UTC), before it the day before (Cloudflare's limits reset at 00:00 UTC).
+ */
+const READ_AT_MS = 30 * 60_000;
+const utcDay = (back: number) =>
+  new Date(Date.now() - READ_AT_MS - (back + 1) * DAY).toISOString().slice(0, 10);
 
 /** Made-up daily totals (sample only): a quiet month, a busy day nine days back, and a heavy yesterday (the benchmark day). */
 function sample(back: number): Record<string, number> | null {

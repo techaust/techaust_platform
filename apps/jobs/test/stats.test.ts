@@ -227,9 +227,9 @@ describe("the date and the cron [item 6]", () => {
     const stats = calls.find((c) => c.bodies.some((b) => (b as { kind?: string }).kind === "stats.metric"));
     // one message per metric, the daily expiry message (M4.3) and the clean-up scan (FX-1), in the one batch (the LUT check moved to the 09:00 IST alerts in M5.4, LD61)
     // M7.4 (changed on purpose): the clean-up's start rides the same batch (this night is no IST Sunday and no 1st, so no R2 sweep).
-    // M7.5 D1 (changed on purpose): and yesterday's (UTC) Free-plan usage, one message.
-    expect(stats?.bodies).toHaveLength(STATS_METRICS.length + 4);
-    expect(stats?.bodies.filter((b) => (b as { kind?: string }).kind === "usage.daily")).toHaveLength(1);
+    // M7.5 L50 (changed on purpose): the Free-plan usage reading left this batch for the 06:00 IST hourly tick.
+    expect(stats?.bodies).toHaveLength(STATS_METRICS.length + 3);
+    expect(stats?.bodies.filter((b) => (b as { kind?: string }).kind === "usage.daily")).toHaveLength(0);
     expect(stats?.bodies.filter((b) => (b as { kind?: string }).kind === "lead.purge.scan")).toEqual([
       { kind: "lead.purge.scan", asOf: NOW },
     ]);

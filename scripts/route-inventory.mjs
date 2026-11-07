@@ -29,6 +29,7 @@ import {
   portalRows,
   QUEUE_EXTRA,
   QUEUE_KINDS,
+  queueRowOf,
   rpcRows,
   webRows,
 } from "./route-inventory-lib.mjs";
@@ -100,7 +101,10 @@ export function budgetsOf(report) {
   return out;
 }
 
-/** The suite's labels joined to rows: `METHOD /path` to the suite's route rows by pattern; jobs `queue <q> <kind>` to the kind's row. Worst figures kept. */
+/**
+ * The suite's labels joined to rows: `METHOD /path` to the suite's route rows by pattern; jobs `queue <q> <kind>` to its row (`queueRowOf`: emails to
+ * `email`, a form submission to `lead`, a dead letter to its queue's row, else the kind's row). Worst figures kept.
+ */
 export function applyBudgets(rows, suite, budgets) {
   const workers =
     suite === "admin"
@@ -113,8 +117,10 @@ export function applyBudgets(rows, suite, budgets) {
   for (const b of budgets) {
     const [first, second, third] = String(b.label).split(" ");
     let row;
-    if (first === "queue") row = candidates.find((r) => r.kind === "queue" && r.path === third);
-    else if (first === "scheduled") row = undefined;
+    if (first === "queue") {
+      const path = queueRowOf(second, third);
+      row = candidates.find((r) => r.kind === "queue" && r.path === path);
+    } else if (first === "scheduled") row = undefined;
     else
       row = candidates.find(
         (r) =>

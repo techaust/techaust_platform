@@ -1,6 +1,6 @@
 // M7.5 D1/G (Q4 A): the data of the dashboard's Free-plan usage tile (the designer builds the tile): the account's daily Cloudflare totals of the last 30 UTC
 // days that the jobs Worker's `usage.daily` recorded in `stats_daily` (`cf.*`, dimension "" = the account), with the Free limits and the alert lines.
-// Owner and Accountant only (`usage.read`). One indexed read (`stats_daily_metric` (metric, date)), at most 5 metrics x 30 days = 150 rows; nothing written.
+// Owner and Accountant only (`usage.read`). One indexed read (`stats_daily_metric` (metric, date)), at most 5 metrics x 31 days = 155 rows (L50); nothing written.
 // A day the job could not read is absent (a gap on the tile), never a zero.
 import {
   EXCEEDED_METRIC,
@@ -29,8 +29,9 @@ export type UsageTile = {
 };
 
 export const dashboardUsage = new Hono<AppEnv>().get("/", async (c) => {
-  // A UTC day on purpose (Cloudflare's daily limits reset at 00:00 UTC): the day USAGE_TILE_DAYS back.
-  const since = usageDayOf(Date.now() - (USAGE_TILE_DAYS - 1) * 86_400_000);
+  // A UTC day on purpose (Cloudflare's daily limits reset at 00:00 UTC). L50: one day more than the tile's 30, because before the 06:00 IST reading the
+  // tile's window ends the day before yesterday (apps/admin/src/lib/usage.ts); at most 5 metrics x 31 days = 155 rows.
+  const since = usageDayOf(Date.now() - USAGE_TILE_DAYS * 86_400_000);
   const rows = (
     await c.env.DB.prepare(USAGE_TILE_SQL).bind(since).all<{ date: string; metric: string; value: number }>()
   ).results;

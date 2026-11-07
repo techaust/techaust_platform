@@ -4,7 +4,7 @@ import { type EmailMessage, uuidv7 } from "@techaust/core";
 import { fromIst, parseIsoDate } from "@techaust/core/dates";
 import { INVOICE_EMAIL_DATA } from "@techaust/core/invoice-email";
 import { beforeEach, describe, expect, it } from "vitest";
-import { processAlertsDaily } from "../src/alerts.ts";
+import { processAlertsDaily, USAGE_TOTALS_SQL } from "../src/alerts.ts";
 import { processBilling } from "../src/billing.ts";
 import { emailLogId } from "../src/email.ts";
 import {
@@ -247,6 +247,27 @@ describe("more than 50 rows: a continuation message; a finished list has no curs
     expect(second).toMatchObject({ unbilled: 2, continued: false });
     expect(new Set(queued().map((e) => e.entity.id))).toEqual(new Set(ids.slice(50)));
     expect(fakes.leads).toEqual([]);
+  });
+
+  it("L53: a usage bell that throws is logged and the next page of the alerts is still queued", async () => {
+    for (let i = 0; i < 51; i++) await milestone({ deliveredAt: at("2026-10-01", 12) + i * 1000 });
+    const base = makeEnv();
+    const db = base.DB;
+    const trapped = new Proxy(db, {
+      get(target, key) {
+        if (key === "prepare")
+          return (sql: string) => {
+            if (sql === USAGE_TOTALS_SQL) throw new Error("usage read failed");
+            return target.prepare(sql);
+          };
+        const v = Reflect.get(target, key);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    });
+    const out = await run1(FIRST, NOW, { ...base, DB: trapped } as Env);
+    expect(out).toMatchObject({ unbilled: 50, continued: true });
+    expect(fakes.leads[0]?.body).toMatchObject({ kind: "alerts.daily", first: false });
+    expect(await bells("milestone.unbilled")).toHaveLength(100);
   });
 
   it("on a continuation a null cursor means that list is FINISHED: a proforma-due milestone is not read again", async () => {

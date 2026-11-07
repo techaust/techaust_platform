@@ -24,3 +24,7 @@ Where they live: the tile's words in `apps/admin/src/lib/usage.ts` (`USAGE_COPY`
 - **ZS13** each strip's name (screen readers): "{metric} over the last 30 days: highest {figure} on {date} ({share} of the limit); {n} of 30 days read." · with no day read: "{metric} over the last 30 days: no day read."
 - **ZS14** the readout under the day: "{share} of the limit"
 - **ZS15** the table: toggle "Show the 30 days as a table" / "Hide the table"; caption (screen readers) "Free plan usage over the last 30 days, newest first"; columns "Day (UTC)", the four metric names, "Stopped at a limit"
+
+## The token bell (drafted by the builder for the lead, review 1 L55; not yet approved)
+- **ZS16** bell `usage.token` (Owners, once per IST day, from the 06:00 IST usage reading when no analytics token is set outside local, or Cloudflare answers 401 or 403): "Free plan usage for {UTC date} (UTC) wasn't read: the Cloudflare analytics token is missing or was refused. Make a new read-only token and set it again.", e.g. "Free plan usage for 2026-11-06 (UTC) wasn't read: …". The date is ISO, as the `usage.limit` bell writes it. Link: the dashboard.
+- Note for the lead (not changed, approved words): ZS3 and ZS10 speak of the "nightly reading"; since L50 it runs at 06:00 IST (00:30 UTC), which is night only in UTC.

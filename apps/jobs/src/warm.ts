@@ -497,7 +497,7 @@ export function warmM72Messages(): number {
 /** M7.5 D1: the usage job's pure path on a made-up answer (the shape the GraphQL API sends); returns the rows parsed. Never throws. */
 export function warmUsage(): number {
   try {
-    const msg = usageMessageOf(Date.UTC(2026, 10, 1, 22));
+    const msg = usageMessageOf(Date.UTC(2026, 10, 2, 0, 30));
     if (!isUsageMessage(msg)) return 0;
     usageVariables("warm", msg.day);
     const parsed = parseUsage(

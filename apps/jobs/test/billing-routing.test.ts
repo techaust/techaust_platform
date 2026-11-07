@@ -52,6 +52,8 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
         "bells.sweep",
         // M7.4 (changed on purpose): the request clock at 09:00 IST.
         ...(h === 9 ? ["requests.clock"] : []),
+        // M7.5 L50 (changed on purpose): the Free-plan usage reading at 06:00 IST only (00:30 UTC), once.
+        ...(h === 6 ? ["usage.daily"] : []),
       ];
       expect(kinds, `hour ${h}`).toEqual(expected);
     }
@@ -68,9 +70,10 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
     const dead = new Proxy({}, { get: () => () => Promise.reject(new Error("D1 must not be read")) });
     const env = makeEnv({ DB: dead });
     // M6.5 (changed on purpose): four bodies in the one sendBatch, and the receipt sweep on the PDF queue (its consumer reads D1, never the cron).
-    expect(await enqueueHourly(env, istTick("2026-11-10", 6))).toBe(7);
+    // M7.5 L50 (changed on purpose): the 06:00 IST tick also carries the usage reading: seven bodies, still one call.
+    expect(await enqueueHourly(env, istTick("2026-11-10", 6))).toBe(8);
     // M7.2 (changed on purpose): six bodies, still one call.
-    expect(fakes.leads.map((s) => s.via)).toEqual(Array(6).fill("sendBatch"));
+    expect(fakes.leads.map((s) => s.via)).toEqual(Array(7).fill("sendBatch"));
     expect(fakes.leads.map((s) => (s.body as { kind: string }).kind)).toEqual([
       "care.scan",
       "reminder.scan",
@@ -78,6 +81,7 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
       "refund.sweep",
       "signin.unfinished",
       "bells.sweep",
+      "usage.daily",
     ]);
     expect(fakes.email).toEqual([]);
     expect(fakes.pdf.map((s) => (s.body as { kind: string }).kind)).toEqual(["receipt.sweep"]);
