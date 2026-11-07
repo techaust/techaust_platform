@@ -252,10 +252,11 @@ describe("AU1: the email about a refund that came back (`refund.reversed`, 07-ZT
     expect(emailsOf("refund.reversed")).toHaveLength(0);
   });
 
-  it("held outside local while 07-ZT is unapproved; outside the window the same message comes back delayed", async () => {
+  it("held outside local while the gate is off (07-ZT approved 2026-11-07, so forced off here); outside the window the same message comes back delayed", async () => {
     const r = await refundOf({ reversed: true });
     await mkContact(r.clientId);
-    expect(APPROVED_07ZT).toBe(false);
+    expect(APPROVED_07ZT).toBe(true);
+    const gate = vi.spyOn(refundReversedCopyGate, "approved").mockReturnValue(false);
     expect(
       await processRefundReversed(
         makeEnv({ ENVIRONMENT: "staging" }),
@@ -264,7 +265,7 @@ describe("AU1: the email about a refund that came back (`refund.reversed`, 07-ZT
       ),
     ).toBe("held");
     expect(fakes.email).toHaveLength(0);
-    const gate = vi.spyOn(refundReversedCopyGate, "approved").mockReturnValue(true);
+    gate.mockReturnValue(true);
     const night = Date.parse("2026-11-05T16:00:00Z"); // 21:30 IST
     expect(
       await processRefundReversed(

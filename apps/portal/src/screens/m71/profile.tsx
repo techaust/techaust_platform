@@ -12,7 +12,7 @@ import { LoadProblemScreen } from "../../components/load-problem.tsx";
 import { PageTitle } from "../../components/shell/portal-shell.tsx";
 import { FieldError, Notice } from "../../components/ui.tsx";
 import { COPY } from "../../copy.ts";
-import { GAP, ZP, ZP_PENDING } from "../../copy-zp.ts";
+import { GAP, ZP } from "../../copy-zp.ts";
 import {
   DETAILS_MAX,
   DETAILS_REQUIRED,
@@ -286,7 +286,7 @@ function Requests(props: { first: RequestItem[]; next: string | null }) {
         </div>
       )}
       {items.length === 0 ? (
-        <EmptyLine icon={<MessageSquare size={24} />}>{ZP_PENDING.requestsEmpty}</EmptyLine>
+        <EmptyLine icon={<MessageSquare size={24} />}>{GAP.requestsEmpty}</EmptyLine>
       ) : (
         <ul className="m71-reqs">
           {items.map((r) => (

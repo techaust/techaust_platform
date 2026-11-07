@@ -169,15 +169,8 @@ export const GAP = {
    * more than 300 characters, so a refusal means a pasted control character. Never the reference's G8.
    */
   noteRefused: "We couldn't save this note. Remove any unusual characters and try again.",
-} as const;
-
-/**
- * Lines a screen needs that the owner hasn't given yet: each shows the "[Placeholder] " mark (scripts/check-prod-readiness.mjs blocks production while one
- * is on a page). Kept out of `zpAllText` (every approved line is unmarked).
- */
-export const ZP_PENDING = {
-  // TODO(07-ZP, owner's copy page, audit AU14 / B3 M6): the words for Profile › Requests with no request yet.
-  requestsEmpty: "[Placeholder] Requests empty line (owner's words, 07-ZP)",
+  /** G13 (audit AU14 / B3 M6; the owner's words, 2026-11-07): Profile › Requests with no request yet. */
+  requestsEmpty: "You haven't sent any requests yet.",
 } as const;
 
 /** Every line as text, for the tests (banned words, no "&"). */

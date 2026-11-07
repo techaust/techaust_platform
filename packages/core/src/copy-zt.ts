@@ -1,11 +1,11 @@
 // The M6–M7 audit's new words for the money core (run file docs/runs/full-audit-m6-m7.md, lead's triage AU1; drafted in docs/07-content-appendix/ZT-audit-money.md),
 // in ONE place for the jobs Worker and the email template. The CLIENT lines (C1 to C3: the email about a refund that came back) are the owner's: until the owner
-// approves them word for word they show the "[Placeholder] " mark, and the jobs Worker sends no `refund.reversed` outside "local" while `APPROVED_07ZT` is false
-// (`refundReversedCopyGate`, the `refundCopyGate` pattern). The staff lines (the review reason, the receipt bells, the Withdraw line) live with their screens and
+// approved them word for word on 2026-11-07, so `APPROVED_07ZT` is true and the jobs Worker sends `refund.reversed` (the gate `refundReversedCopyGate`, the
+// `refundCopyGate` pattern, stays for any later line). The staff lines (the review reason, the receipt bells, the Withdraw line) live with their screens and
 // are the lead's under the owner's delegation. No line is legal wording.
 
-/** The owner's approval of 07-ZT's client lines C1 to C3. Off until the owner approves them. */
-export const APPROVED_07ZT: boolean = false;
+/** The owner's approval of 07-ZT's client lines C1 to C3: approved word for word by the owner, 2026-11-07. */
+export const APPROVED_07ZT: boolean = true;
 const zt = (line: string): string => (APPROVED_07ZT ? line : `[Placeholder] ${line}`);
 
 /** `refund.reversed` (C1 to C3): the refund came back to us, so the money is the client's credit again. */

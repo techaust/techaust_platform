@@ -100,14 +100,17 @@ describe("AU1: a refund that succeeded and came back", () => {
     expect(isProcessEventResult({ result: "needs_review", refundReversed: 5 })).toBe(false);
   });
 
-  it("07-ZT's client lines are held: the gate is off and every line is marked; the template is registered", () => {
-    expect(APPROVED_07ZT).toBe(false);
-    for (const line of [
-      REFUND_REVERSED_COPY.subject("₹1.00", "TH/INV/2627/0001"),
-      REFUND_REVERSED_COPY.body("Asha", "₹1.00", "TH/INV/2627/0001"),
-      REFUND_REVERSED_COPY.next,
-    ])
-      expect(line.startsWith("[Placeholder] ")).toBe(true);
+  it("07-ZT's client lines are the owner's approved words (2026-11-07): the gate is on and no line is marked; the template is registered", () => {
+    expect(APPROVED_07ZT).toBe(true);
+    expect(REFUND_REVERSED_COPY.subject("₹1.00", "TH/INV/2627/0001")).toBe(
+      "Your refund of ₹1.00 for TH/INV/2627/0001 came back to us",
+    );
+    expect(REFUND_REVERSED_COPY.body("Asha", "₹1.00", "TH/INV/2627/0001")).toBe(
+      "Hi Asha, the refund of ₹1.00 for TH/INV/2627/0001 was returned to us by the bank or card network, so it didn't reach you. The amount is held as credit on your account.",
+    );
+    expect(REFUND_REVERSED_COPY.next).toBe(
+      "We'll contact you to agree how to send it again. Reply to this email if your bank details have changed.",
+    );
     expect(EMAIL_TEMPLATES).toContain("refund.reversed");
   });
 });

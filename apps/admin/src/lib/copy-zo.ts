@@ -241,9 +241,8 @@ export const ZO_UI = {
   matchState: { matched: "Matched", unmatched: "Not matched", ignored: "Ignored" } as Record<string, string>,
   settlementItems: "Lines in this settlement",
   close: "Close",
-  /** Open item: GST on the gateway's fee is shown absorbed (OPEN (08-C RA-29): is it invoiced to our GSTIN?). */
-  feesNote:
-    "Fees and their GST are shown as absorbed. Whether Razorpay invoices the GST to our GSTIN is still open.",
+  /** Open item: GST on the gateway's fee is shown absorbed (OPEN (08-C RA-29): is it invoiced to our GSTIN?). Wording approved by the owner, 2026-11-07. */
+  feesNote: "We show Razorpay's fees and their GST as absorbed until we confirm how Razorpay invoices them.",
 
   // ---- FEMA reductions (RB-43) ----
   reductions: "Bank-approved reductions",

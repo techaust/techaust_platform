@@ -325,10 +325,10 @@ describe("accessibility statement version (07-A §8)", () => {
       { version: "0.2", date: "2026-10-22", note: "First published version." },
     ]);
     // 07-A v0.3 (2026-10-28) moved the privacy notice and the refund policy to 0.2; T6 (07-ZE, 2026-10-31) the website terms; the rest stay
-    // at 0.1, but Delivery, which T11 (07-ZE line 16) moved to 0.2 with the deed.
-    expect(legal.privacy.version).toBe("0.2");
+    // at 0.1, but Delivery, which T11 (07-ZE line 16) moved to 0.2 with the deed. The owner's copy of 2026-11-07 moved privacy and terms to 0.3.
+    expect(legal.privacy.version).toBe("0.3");
     expect(legal["refund-policy"].version).toBe("0.2");
-    expect(legal.terms.version).toBe("0.2");
+    expect(legal.terms.version).toBe("0.3");
     expect(legal["delivery-policy"].version).toBe("0.2");
   });
 });
@@ -357,14 +357,19 @@ describe("website terms 0.2 (07-ZE lines 13, 14, 15 and 6; T6) [WEB-LEGAL]", () 
 
   it("its version line and Changes entry are 07-ZE's, word for word", () => {
     expect(legal.terms).toEqual({
-      version: "0.2",
-      effective: "2026-10-31",
+      version: "0.3",
+      effective: "2026-11-07",
       changes: [
         { version: "0.1", date: "2026-10-22", note: "First published draft." },
         {
           version: "0.2",
           date: "2026-10-31",
           note: "How to accept a proposal or estimate, and that a newer version replaces earlier ones; your rights as a consumer are not limited; arbitration for clients outside India.",
+        },
+        {
+          version: "0.3",
+          date: "2026-11-07",
+          note: "Removed the sentence about files you upload, as the client portal has no uploads.",
         },
       ],
     });
@@ -387,5 +392,39 @@ describe("website terms 0.2 (07-ZE lines 13, 14, 15 and 6; T6) [WEB-LEGAL]", () 
       "These terms are governed by the laws of India. The courts at **Balurghat, Dakshin Dinajpur, West Bengal** have exclusive jurisdiction, except where your accepted proposal, estimate or signed contract says otherwise (for clients outside India, it provides for arbitration).",
       "If you are a consumer under the Consumer Protection Act, 2019, nothing in these terms limits your rights under that Act, including where you may bring a complaint.",
     ]);
+  });
+});
+
+describe("privacy 0.3 and terms 0.3 (the owner's copy, 2026-11-07: audit B3 M4, M5, L6; 07-ZR C7) [WEB-LEGAL]", () => {
+  const paras = (page: "privacy" | "terms", id: string) =>
+    (legalPages[page]?.sections?.find((s) => s.id === id)?.blocks ?? [])
+      .map((b) => ("p" in b ? b.p : ""))
+      .filter((p) => p !== "");
+
+  it("privacy names what colleagues see, what an erasure keeps, and the portal's real request control", () => {
+    expect(paras("privacy", "sharing")).toContain(
+      "Other people at your organisation who have client portal access can see your name and job title. They can’t see your email address or phone number.",
+    );
+    expect(paras("privacy", "retention")).toContain(
+      "If you ask us to erase your data, we keep only a scrambled form of your email address for 3 years, so that we don’t email you and can show what you agreed to.",
+    );
+    const [rights] = paras("privacy", "your-rights").slice(-1);
+    expect(rights).toContain(
+      "or, if you use the client portal, go to Profile, then Requests, and choose “New request”.",
+    );
+    expect(rights).not.toContain("Request my data");
+    expect(legal.privacy.changes.at(-1)).toEqual({
+      version: "0.3",
+      date: "2026-11-07",
+      note: "What colleagues can see about you in the client portal; what we keep after you ask us to erase your data; how to make a request in the client portal.",
+    });
+  });
+
+  it("terms §7 no longer mentions uploads", () => {
+    const [portal] = paras("terms", "client-portal");
+    expect(portal).not.toMatch(/upload/i);
+    expect(portal).toMatch(
+      /^Access is for authorised contacts of our clients\. Keep sign-in links private and don’t forward them\. \*\*Accepting/,
+    );
   });
 });
