@@ -12,7 +12,7 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
       {
         r: [
           {
-            id: "0037d131-9259-42a0-852e-13d700c57682",
+            id: "2a7ac8ba-aff1-473c-96af-b6f6c76005ec",
             code: "C-PROBEADV1",
             legal_name: "Riverside Traders Private Limited (sample)",
             display_name: "Riverside Traders (sample)",
@@ -28,7 +28,7 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
             attach_pdf: 0,
             anonymised_at: null,
             payment_terms_days: null,
-            updated_at: 1793916184696,
+            updated_at: 1794024809694,
           },
         ],
         c: 0,
@@ -43,14 +43,14 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
             provider: "razorpay",
             kind: "payment",
             status: "pending_verification",
-            client_id: "0037d131-9259-42a0-852e-13d700c57682",
+            client_id: "2a7ac8ba-aff1-473c-96af-b6f6c76005ec",
             currency: "INR",
             amount_minor: 10620000,
-            received_on: "2026-11-06",
-            reference_norm: "PAY-A10620000R01A1ADBCAC7B7A0F8C8FE58BD0ECD149",
+            received_on: "2026-11-07",
+            reference_norm: "PAY-A10620000R01A1B436292F7EA488480CF35E4BB1B1",
             requested_allocations:
-              '[{"documentId":"01a1adbc-ac5b-72b3-a9b8-189210f61426","amountMinor":10620000}]',
-            checkout_id: "01a1adbc-ac7b-7a0f-8c8f-e58bd0ecd149",
+              '[{"documentId":"01a1b436-2912-756d-a9c1-55ff2d97adcf","amountMinor":10620000}]',
+            checkout_id: "01a1b436-292f-7ea4-8848-0cf35e4bb1b1",
             advance_receipt_id: null,
             invoice_number: null,
             live_refund: 0,
@@ -63,10 +63,10 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
       {
         r: [
           {
-            id: "01a1adbc-ac5b-72b3-a9b8-189210f61426",
+            id: "01a1b436-2912-756d-a9c1-55ff2d97adcf",
             type: "proforma",
             status: "issued",
-            client_id: "0037d131-9259-42a0-852e-13d700c57682",
+            client_id: "2a7ac8ba-aff1-473c-96af-b6f6c76005ec",
             version_group_id: null,
             version: 1,
             series: "proforma",
@@ -74,8 +74,8 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
             number: 6,
             number_display: "TH/PI/2627/0006",
             currency: "INR",
-            issue_date: "2026-11-06",
-            due_date: "2026-11-13",
+            issue_date: "2026-11-07",
+            due_date: "2026-11-14",
             parent_id: null,
             paid_minor: 0,
             credited_minor: 0,
@@ -92,7 +92,7 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
             header_extras:
               '{"proforma":{"notice":"This is not a tax invoice. A tax invoice will be issued when payment is received.","gstEstimate":true}}',
             ims_status: null,
-            valid_until: "2026-11-13",
+            valid_until: "2026-11-14",
             supply_type: "intra",
             place_of_supply_code: "19",
             subtotal_minor: 9000000,
@@ -105,18 +105,18 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
             total_minor: 10620000,
             terms_version_id: null,
             snapshot_r2_key: null,
-            snapshot_sha256: "6bd6ffd775ea46834aeb8fc60fabd51eeaa73978adfef5187307bc5aa81f30ab",
+            snapshot_sha256: "7664fa389c3a10b8fda521453a709d4bc155b9aa77d6ebeef8e08ff0d5539e19",
             pdf_r2_key: null,
             pdf_sha256: null,
-            frozen_at: 1793916185712,
-            issued_by: "01a1adbc-a754-7b96-a195-cd9910b73989",
+            frozen_at: 1794024810789,
+            issued_by: "01a1b436-23ac-7b75-bb7f-9d3b0507fafd",
             title: null,
-            contact_id: "ba933645-814f-4d51-866e-8759763d4f91",
+            contact_id: "5a6e8224-0afe-4d07-b7a1-4fc958502f41",
             validity_days: null,
             discount_kind: null,
             discount_value: null,
             export_mode: null,
-            content_sha256: "e2ba7caac0cdbbf9b3a6a72fa5ba17872c4ca699e97f72a8d71196e947de7c7d",
+            content_sha256: "e7cd30e2f44f8447c9a80ec5a99ad9e7ef33e8f2df7db8f76926706f317ae78d",
             catalogue_reference_minor: null,
             source_document_id: null,
             source_step: null,
@@ -127,13 +127,13 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
             decision_note: null,
             decided_contact_id: null,
             redacted_at: null,
-            created_by: "01a1adbc-a754-7b96-a195-cd9910b73989",
-            created_at: 1793916185691,
-            updated_at: 1793916185712,
+            created_by: "01a1b436-23ac-7b75-bb7f-9d3b0507fafd",
+            created_at: 1794024810770,
+            updated_at: 1794024810789,
             recipient:
-              '{"legalName":"Riverside Traders Private Limited (sample)","displayName":"Riverside Traders (sample)","country":"IN","clientType":"business","gstStatus":"unregistered","stateCode":"19","address":{"line1":"5 Sample Market Street","city":"Kolkata","state":"West Bengal","stateCode":"19","postalCode":"700001","country":"IN"},"email":"advance1@example.test","contactId":"ba933645-814f-4d51-866e-8759763d4f91","contactName":"Asha Rao (sample)"}',
+              '{"legalName":"Riverside Traders Private Limited (sample)","displayName":"Riverside Traders (sample)","country":"IN","clientType":"business","gstStatus":"unregistered","stateCode":"19","address":{"line1":"5 Sample Market Street","city":"Kolkata","state":"West Bengal","stateCode":"19","postalCode":"700001","country":"IN"},"email":"advance1@example.test","contactId":"5a6e8224-0afe-4d07-b7a1-4fc958502f41","contactName":"Asha Rao (sample)"}',
             issuer:
-              '{"company":{"tradeName":"TecHaust Technologies","legalName":"Sample Proprietor trading as TecHaust Technologies (sample)","address":"1 Sample Road, Balurghat, West Bengal 733101","gstin":"19AAAPS1234Z1ZT","stateCode":"19","logo":"logo-primary-color.svg","email":"contact@techaust.com","phone":"+91 90000 00000","principalPlace":"1 Sample Road, Balurghat"},"bank":{"inr":{"accountName":"TecHaust Technologies (sample)","accountNo":"SAMPLEBANK0001","ifsc":"SAMP0000001","bankName":"SAMPLE BANK","branch":"Sample branch"}},"signature":{"key":"settings/signature-289eba305785b821.png","sha256":"289eba305785b8213befc0c32b9b534cf3b8a96063f97ba81153e1922798b0ce","mime":"image/png"},"reverseChargeText":"Tax payable on reverse charge: No","sender":{"staffId":"01a1adbc-a754-7b96-a195-cd9910b73989","name":"Probe Owner (sample)","email":"billing@techaust.com"}}',
+              '{"company":{"tradeName":"TecHaust Technologies","legalName":"Sample Proprietor trading as TecHaust Technologies (sample)","address":"1 Sample Road, Balurghat, West Bengal 733101","gstin":"19AAAPS1234Z1ZT","stateCode":"19","logo":"logo-primary-color.svg","email":"contact@techaust.com","phone":"+91 90000 00000","principalPlace":"1 Sample Road, Balurghat"},"bank":{"inr":{"accountName":"TecHaust Technologies (sample)","accountNo":"SAMPLEBANK0001","ifsc":"SAMP0000001","bankName":"SAMPLE BANK","branch":"Sample branch"}},"signature":{"key":"settings/signature-289eba305785b821.png","sha256":"289eba305785b8213befc0c32b9b534cf3b8a96063f97ba81153e1922798b0ce","mime":"image/png"},"reverseChargeText":"Tax payable on reverse charge: No","sender":{"staffId":"01a1b436-23ac-7b75-bb7f-9d3b0507fafd","name":"Probe Owner (sample)","email":"billing@techaust.com"}}',
             computed:
               '{"currency":"INR","supply":{"type":"intra","placeOfSupplyCode":"19","supplierStateCode":"19"},"fxRateMicros":null,"lines":[{"index":0,"sac":"998313","grossMinor":4000000,"lineDiscountMinor":0,"documentDiscountMinor":0,"discountMinor":0,"taxableMinor":4000000,"gstRateBp":1800,"effectiveRateBp":1800,"cgstMinor":360000,"sgstMinor":360000,"igstMinor":0,"lineTotalMinor":4720000,"inr":null},{"index":1,"sac":"998313","grossMinor":5000000,"lineDiscountMinor":0,"documentDiscountMinor":0,"discountMinor":0,"taxableMinor":5000000,"gstRateBp":1800,"effectiveRateBp":1800,"cgstMinor":450000,"sgstMinor":450000,"igstMinor":0,"lineTotalMinor":5900000,"inr":null}],"summary":[{"sac":"998313","gstRateBp":1800,"effectiveRateBp":1800,"taxableMinor":9000000,"cgstMinor":810000,"sgstMinor":810000,"igstMinor":0}],"subtotalMinor":9000000,"discountMinor":0,"taxableMinor":9000000,"cgstMinor":810000,"sgstMinor":810000,"igstMinor":0,"roundOffMinor":0,"totalMinor":10620000,"words":"Rupees One Lakh Six Thousand Two Hundred Only","inr":null}',
           },
@@ -145,7 +145,7 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
       {
         r: [
           {
-            id: "01a1adbc-ac5b-7213-bbda-e4d9515439ef",
+            id: "01a1b436-2912-7205-97b8-aeb8bef46cc2",
             position: 1,
             catalogue_item_id: "47b3e950-00ba-8a50-8f27-23da5060b34c",
             description: "Discovery Sprint",
@@ -178,11 +178,11 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
       {
         r: [
           {
-            id: "ba933645-814f-4d51-866e-8759763d4f91",
+            id: "5a6e8224-0afe-4d07-b7a1-4fc958502f41",
             name: "Asha Rao (sample)",
             email: "advance1@example.test",
             anonymised_at: null,
-            updated_at: 1793916184696,
+            updated_at: 1794024809710,
           },
         ],
         c: 0,
@@ -194,7 +194,7 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
           {
             key: "company",
             value:
-              '{"tradeName":"TecHaust Technologies","legalName":"Sample Proprietor trading as TecHaust Technologies (sample)","gstin":"19AAAPS1234Z1ZT","stateCode":"19","address":"1 Sample Road, Balurghat, West Bengal 733101","documentsEmail":"contact@techaust.com","documentsPhone":"+91 90000 00000","principalPlace":"1 Sample Road, Balurghat","logoLight":"logo-primary-color.svg","logoDark":"logo-primary-dark.svg","signature":{"key":"settings/signature-289eba305785b821.png","mime":"image/png","size":679,"sha256":"289eba305785b8213befc0c32b9b534cf3b8a96063f97ba81153e1922798b0ce","width":240,"height":80,"updatedAt":1793916184661},"udyam":null}',
+              '{"tradeName":"TecHaust Technologies","legalName":"Sample Proprietor trading as TecHaust Technologies (sample)","gstin":"19AAAPS1234Z1ZT","stateCode":"19","address":"1 Sample Road, Balurghat, West Bengal 733101","documentsEmail":"contact@techaust.com","documentsPhone":"+91 90000 00000","principalPlace":"1 Sample Road, Balurghat","logoLight":"logo-primary-color.svg","logoDark":"logo-primary-dark.svg","signature":{"key":"settings/signature-289eba305785b821.png","mime":"image/png","size":679,"sha256":"289eba305785b8213befc0c32b9b534cf3b8a96063f97ba81153e1922798b0ce","width":240,"height":80,"updatedAt":1794024809662},"udyam":null}',
             version: 3,
           },
         ],
@@ -215,7 +215,7 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
             bank_address: null,
             intermediary: null,
             purpose_code: null,
-            updated_at: 1793916124685,
+            updated_at: 1794024749689,
           },
         ],
         c: 0,
@@ -244,11 +244,11 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
       {
         r: [
           {
-            id: "ba933645-814f-4d51-866e-8759763d4f91",
+            id: "5a6e8224-0afe-4d07-b7a1-4fc958502f41",
             name: "Asha Rao (sample)",
             email: "advance1@example.test",
             anonymised_at: null,
-            updated_at: 1793916184696,
+            updated_at: 1794024809710,
             is_billing: 1,
             is_primary: 1,
             portal_access: 1,
@@ -260,7 +260,7 @@ export const INVOICES_RPC_WARM: WarmAdvanceFixture = {
     ],
     cfb06237: [{ r: [{ ok: 1 }], c: 0 }],
     "2a13fb1e": [{ r: [], c: 1 }],
-    "17c144fc": [{ r: [], c: 1 }],
+    "5cac04f5": [{ r: [], c: 1 }],
     fe5ced70: [{ r: [], c: 0 }],
     f8e0eff0: [{ r: [], c: 0 }],
     "7f473a84": [{ r: [], c: 1 }],
