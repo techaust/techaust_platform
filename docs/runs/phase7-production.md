@@ -139,7 +139,7 @@ Already in the config: the postal address, the LinkedIn link, the headshot. Stil
 5. `PRODUCTION_ENABLED=true`; `deploy-prod.yml stage=full check_web=false`.
    - Check: the health checks for admin, portal and jobs.
    - Rollback: each Worker back to its previous version, in reverse order.
-6. (Q1) Attach `launch-check.techaust.com` to web for 30 minutes or less, check web, then detach.
+6. (Q1) Attach a temporary hostname to web for 30 minutes or less, check web, then detach.
 7. The first Owner invite. The owner enrols, fills in Settings and publishes the catalogue.
 8. **The owner's explicit "go"**: delete `techaust-web`, then attach `techaust.com` (and `www`).
    - Checks: home 200; `/api/health`; no noindex; `robots.txt`, `sitemap.xml` and `security.txt`; the four old URLs answer 301; contact form → lead → email with logos; `www` 301.
