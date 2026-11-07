@@ -231,7 +231,26 @@ export const PAY_ERRORS = {
   not_an_export_invoice: ZH("Only an issued export invoice has a realisation date."),
   // second early check: a Staff request naming a proforma puts the whole payment on that one proforma (L5)
   proforma_ask_whole: ZH("A payment for a proforma goes on that proforma alone, in full."),
+  // M6–M7 audit AU4 (B0 9; staff line, the builder's draft for the lead, 07-ZT line 7)
+  payment_linked:
+    "This payment is ticked as seen in the bank statement or linked to a remittance advice. Remove that first, then withdraw it.",
+  // M6.5 (L10; the server's own line) and AU16 (B2 4)
+  refunds_exist: "This payment has a refund, so it can't be withdrawn.",
 } as const;
+
+/**
+ * M6–M7 audit AU16 (B2 4) and AU4 (B0 9): why a confirmed bank entry can't be withdrawn now (shown beside the actions instead of a Withdraw the server would
+ * refuse); null when nothing stands in the way. Staff lines, the builder's drafts for the lead (07-ZT lines 7 and 8).
+ */
+export function withdrawBlockedLine(d: {
+  hasLiveRefund?: boolean;
+  bankTicked?: boolean;
+  advice?: unknown;
+}): string | null {
+  if (d.hasLiveRefund) return PAY_ERRORS.refunds_exist;
+  if (d.bankTicked || d.advice) return PAY_ERRORS.payment_linked;
+  return null;
+}
 
 /** Line 25 (second early check): the void blocker `payment_recorded`, a payment put on this invoice, even one withdrawn later (line 21 is `payment_pending`). */
 export const VOID_PAYMENT_RECORDED = ZH(
