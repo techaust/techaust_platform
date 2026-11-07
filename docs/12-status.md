@@ -3,102 +3,54 @@
 _Replaced (never appended) at the end of every session._
 
 ## Date
-**2026-11-07** (end of the day that began on 2026-11-06; the lead worked overnight on the owner's word). The next conversation starts with "start the day" (or "continue").
+**2026-11-07, late night.** The launch on 2026-11-08 is in progress. The next conversation starts with "continue" (the memory note `launch-2026-11-08` holds the exact state and steps).
 
 ## Done
-- **Phases 1–5, M1–M6 (37 milestones) approved.** Details in [runs/](runs/) and [13-decisions.md](13-decisions.md).
-- **On `main` and on staging, awaiting the owner's check:**
-  - **M7.1, the full client portal:** [#182](https://github.com/techaust/techaust_platform/pull/182).
-  - **M7.2, notifications and digest:** [#184](https://github.com/techaust/techaust_platform/pull/184); the owner did H1–H4 and approved 07-ZQ.
-  - **M7.3, reports and dashboard v2:** [#186](https://github.com/techaust/techaust_platform/pull/186); [run file](runs/m7.3-reports.md).
-- **Dependency allow-list renewed to 2026-12-13:** [#188](https://github.com/techaust/techaust_platform/pull/188). CI would otherwise have failed from 2026-11-14.
-- **M7.4, data protection: built, reviewed (APPROVE), re-checked (APPROVE).** The lead's final run is green. [#187](https://github.com/techaust/techaust_platform/pull/187) is CI green and **held**.
-- **M7.5, hardening: built, reviewed and re-checked (both APPROVE).** [#189](https://github.com/techaust/techaust_platform/pull/189) is CI green and **held**.
-  - Audits A1 (ASVS 5.0.0 L2 and Top 10:2025: no critical or high finding) and A2 (headers and budget); four runbooks; two analyst checks.
-  - The lead's final run passed every package suite (≈ 12,980 tests), build and check; every Worker is under its limits.
-- **M6–M7 full audit: all seven areas audited and every finding fixed or decided** (AU1–AU64; there was no critical finding).
-  - The fixes passed two analyst early checks and a re-check, then review APPROVE and its re-check APPROVE; the lead's final run passed every package suite.
-  - [#190](https://github.com/techaust/techaust_platform/pull/190) is **held**.
+- **Phases 1–6 and M7.1–M7.5 are approved,** with the M6–M7 audit included (owner's blanket approval, 13 2026-11-07). Merged: #187, #189, #190, #192–#196.
+- **Phase 7 preparation:**
+  - Production wiring and the deploy workflow (#193): a database stage, one owner approval, health checks.
+  - Production resources and all 24 production secrets.
+  - Admin Access.
+  - GitHub environments `production` and `backup`.
+  - The old site deleted.
+  - Nightly encrypted backups to S3.
+  - **Production D1 created:** 87 migrations and the seed (`deploy-prod stage=database`).
+  - **First backup and restore drill passed (L7).**
+  - The monthly 10-year copy and production catalogue prices (#195).
+  - Test-payment environment marks and live-payment readiness (#196).
+  - AU45 (#194).
+  - Launch content: the launch date and legal effective dates set to 2026-11-08, the aliases confirmed, the founder bio, redirects, the favicon.
 
 ## In progress
-- Three held PRs, stacked: [#187](https://github.com/techaust/techaust_platform/pull/187) (M7.4), then [#189](https://github.com/techaust/techaust_platform/pull/189) (M7.5), then [#190](https://github.com/techaust/techaust_platform/pull/190) (the audit).
-  - They merge in that order. Each later branch takes `main` in after the earlier squash (CLAUDE.md's pre-squash-head rule).
-  - Auto-fix is on for all three; auto-merge is off.
-  - Each carries its own CLAUDE.md section and run file (with its Handover).
-- Side worktrees: `../m74-side`, `../m75-side`, `../audit-side` (one per held branch). No agent is running.
+- **#197 Rebuild PDF** (migrations 0087–0088): approved, auto-merge on, CI running.
+- **The legacy LUT fold** (`feat/p7-lut-fold`): approved. After #197 merges it renumbers its migration (regenerate as 0089), gets a quick re-check, then a PR with auto-merge.
 
-## Next
-1. **The owner's staging check of M7.1–M7.3**, then their approval. Then the lead reads the new routes' first-run CPU.
-2. **#187 (M7.4):** the owner's three steps. The lead then turns on auto-merge. After the deploy come the staging steps (in the M7.4 run file).
-3. **#189 (M7.5):** the owner's two steps. After its merge:
-   - the owner runs the benchmark workflow (`suite=routes` three times, then `load`);
-   - the lead reads I1 and I2 and runs the staging restore drill;
-   - the owner decides between $5 and Free (J).
-4. **#190 (the audit):** merges after #189. It has no owner step.
-5. **Owner's copy page, then Phase 7** ([09](09-roadmap.md) L1–L11). Before L1:
-   - the backup pipeline (N8; needs the owner's AWS bucket);
-   - a "Rebuild PDF" tool;
-   - the "refund returned" statement line, if the owner says yes.
+## Next (launch, "as soon as ready")
+1. Attach the Custom Domains admin., portal. and hooks.techaust.com (the owner's DNS yes is given).
+2. `deploy-prod.yml stage=full check_web=false`; the owner approves.
+3. `launch-check.techaust.com` for 30 minutes or less; then the owner's "go"; attach techaust.com; run the post-launch checks.
+4. The owner's first sign-in (`pnpm.cmd invite … --production`) and production Settings.
+5. Gateway TEST webhooks to hooks.techaust.com: check staging for open checkouts first.
+6. L10, with the owner's yes: TLS 1.2, a WAF rate-limit rule, CAA. Switch the Access sign-in logo to techaust.com.
+7. L11: the two-week watch. Live payments (L9) when the owner says so.
 
 ## Waits on the owner
-- **The M7.1–M7.3 staging check** (about 30–40 minutes; the lead gives each command in full).
-  - **M7.1:**
-    1. Run `pnpm portal:link --email <the sample finance contact> --staging` and open the link it prints.
-    2. Home → a project → download a shared file.
-    3. Profile → change the phone number → Save.
-    4. Requests → "Get a copy of my personal data" → Send.
-    5. Invoices → Pay (a sandbox payment) until it shows Paid.
-    6. On an emailed "View & pay" link, press "I've paid".
-    7. As the Owner in the staging admin, open Payments → Notices and the client's Requests tab.
-    8. Check that a contact without "can see finance" sees no money.
-  - **M7.2:** a simulator bounce and complaint, the digest (the first one arrives on Monday 9 November, 09:00–11:00 IST), the unsubscribe link, the unfinished sign-in email, and DKIM `h=`. Also confirm the custom event bus was deleted, and report the SES suppression-list setting.
-  - **M7.3:** each report, and the Accountant role as read-only.
-- **#187 (M7.4):**
-  1. Run once: `powershell -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\m74-side\scripts\set-erasure-hash-key.ps1"`, then copy back only the RESULT line.
-  2. Say yes to the jobs Worker's `FILES` binding (list and delete only).
-  3. Approve 07-ZR C1–C7 and the Rule 9 block. The postal address is still missing.
-- **#189 (M7.5):**
-  - **Q4:** create a read-only Cloudflare Account Analytics token, then run `scripts/set-cf-analytics-token.ps1` (the lead gives the clicks).
-  - **Q2:** an Access Service Auth policy for the benchmark token on the portal and web staging apps.
-  - **Questions:**
-    - L47: the portal is at 163,583 bytes, past its 160,000 plan line (recommended: raise the line to 180,000 and don't split).
-    - QA: where incident evidence is kept (recommended: a folder outside the repository).
-    - QB: when to do the staging Time Travel rehearsal, with the owner present.
-- **The owner's copy page** (one page of numbered lines, with the lead's recommendations):
-  - 07-ZT C1–C3, the refund-came-back email;
-  - the 07-ZP Requests empty line;
-  - the RB-45 privacy line, so contacts know colleagues see their name and title;
-  - the privacy notice's "New request" wording;
-  - the Terms upload sentence;
-  - the RA-29 fees note;
-  - AU45, a "refund returned" statement line (recommended: build it before launch).
-- **Hosted, on the owner's yes:** SES runbook Part 9, on the #190 branch: `techaust-marketing` suppression set to BOUNCE only, so a digest complaint never stops an owner's security alerts.
-- **Before launch:**
-  - the $5 Workers Paid decision (after M7.5's measurement);
-  - the founder's bio facts;
-  - the Zoho aliases (`billing@`, `hello`, `no-reply`, `privacy@`, `security@`);
-  - the postal address;
-  - the AWS backup bucket (N8);
-  - SES production access;
-  - the live gateway applications.
-- **Earlier tests still open:**
-  - the SES simulator test (it also checks `SES_EVENTS_TOKEN`; if `/ses` rejects the token, re-run `tools/set-gateway-keys.ps1 -Gateway ses-events`, now BOM-safe);
-  - the unfinished sign-in email.
-- **Optional:** a one-off CA view on 08-C RA-36/RA-41; the AD bank's written word before the first export refund (RB-43).
-- **Dated duties** (steps in [settle-08c](runs/settle-08c.md)):
-  - by 13 November, the October IFF, if an October credit note relies on it;
-  - before the next export invoice, the FY 2026-27 LUT;
-  - by 30 November, the October EDF, if any export invoice was raised in October;
-  - monthly, reverse charge on foreign services;
-  - every April, the turnover check;
-  - once each: the Offline Tool test import, the CERT-In point of contact, the trademark search.
-- **Renewals:**
-  - the dependency allow-list by 2026-12-13 (M7.5 binds each entry to its versions and path);
-  - the staging SES key `techaust-ses-sender-staging` by 2027-01-21;
-  - the Access tokens `staging-cpu-benchmark` by 2027-10-17 and `staging-deploy-check` by 2027-10-30.
-- **Model menu:** Opus 5.5, high, for every conversation.
+- **At launch:** the deploy approval, the "go", the first sign-in, the Settings data (GSTIN, Udyam, bank details, signature PNG, LUT FY 2026-27 ARN, payment terms, invoice series numbers), the gateway logins for the webhooks.
+- **After launch:** Search Console sitemap, a free uptime monitor, signing the AWS connection in to TecHaust (Sentry and AWS back on, Q11).
+- **Dated duties:** the October IFF by 13 Nov (only if needed); the October EDF by 30 Nov (only if needed); the FY 2026-27 LUT before the next export invoice.
+- **Live payments (L9):** live accounts and keys, then the go-live order in `docs/runbooks/payment-gateways.md`.
+- **Usage:** the weekly all-models limit was at 85 % (resets 12 Nov). Extra usage is off; the owner's choice.
 
 ## Open follow-ups
+- **2026-11-07 night (P7; run files p7-launch, p7-ops, p7-payments, p7-lut-fold, rebuild-pdf, au45-statement):**
+  - **Before L9:** on staging, one sandbox PayPal order and one Razorpay link, to confirm the `custom_id` suffix and `notes.techaust_env` come back; Settings › Gateways shows the saved mode, not the mode in use (D5).
+  - **A test of `scripts/drill-split.mjs`;** the first quarterly drill on real data (deferred foreign keys, statement sizes).
+  - **The warm fixtures still hold `lut`:** they drop at the next `cpu-probe --write-fixtures`.
+  - **Notices:** extra bottom spacing in `.notice` (biome specificity).
+  - **Production health:** proves only the admin front, not its bound Workers (the owner's first sign-in does that).
+  - **`backup` environment:** accepts `main` only, so start production deploys from `main`.
+  - **The AU45 cloud session's `.dev.vars`** was copied into a build `dist`; a build guard follow-up.
+  - **Model audit:** cloud agents loaded no Cloudflare skills (unavailable in the cloud); the code-review helper ran at low effort once (recorded in runs/m7.4).
 - **2026-11-07, new (the M6–M7 audit; its run file is on #190):**
   - AU45: the "refund returned" statement line (the owner's decision);
   - AU49: a partial index for reversed refunds if staging's rows read grow;
