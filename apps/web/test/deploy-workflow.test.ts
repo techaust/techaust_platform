@@ -127,8 +127,10 @@ describe("deploy-staging.yml: three jobs, the token only where nothing but wrang
     expect(build).not.toMatch(/CLOUDFLARE_API_TOKEN/);
   });
 
-  it("the build job writes no pnpm cache the token jobs could restore (L51)", () => {
+  it("no job uses a pnpm cache: the build writes none, and the token jobs restore none (L51, L56)", () => {
     expect(build).not.toMatch(/^\s*cache:/m);
+    expect(prepare).not.toMatch(/^\s*cache:/m);
+    expect(deploy).not.toMatch(/^\s*cache:/m);
   });
 
   it.each([
@@ -260,6 +262,7 @@ describe("deploy-prod.yml: build without secrets, deploy with wrangler only (M7.
     expect(build).toContain("needs: guard");
     expect(build).not.toMatch(/secrets\.|environment:/);
     expect(build).not.toMatch(/^\s*cache:/m); // L51
+    expect(deploy).not.toMatch(/^\s*cache:/m); // L56
     expect(build).toContain("node scripts/check-prod-readiness.mjs");
     expect(build).toContain("node scripts/check-staging-build.mjs dev-vars");
     expect(build).toContain("actions/upload-artifact@");

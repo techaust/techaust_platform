@@ -25,7 +25,7 @@ export const USAGE_COPY = {
   title: "Free plan usage",
   /** ZS2: the newest reading is yesterday's (the usual morning). */
   intro: (day: string) => `Use on ${day} (UTC) against each daily limit, with the last 30 days.`,
-  /** ZS3: the newest reading is older than yesterday (the nightly reading stopped, or the token was removed). */
+  /** ZS3: the newest reading is older than yesterday (the daily reading stopped, or the token was removed). */
   stale: (day: string) => `No reading since ${day} (UTC). The figures are from that day.`,
   /** ZS4: "{figure} of {limit}". */
   ofLimit: (value: string, limit: string) => `${value} of ${limit}`,
@@ -39,9 +39,9 @@ export const USAGE_COPY = {
   mark: (t: number) => `${t} %`,
   /** ZS9: invocations Cloudflare stopped for CPU time or memory (`exceededResources`), counted with no limit. */
   stopped: "Requests stopped at a Free-plan limit",
-  /** ZS10: before the first nightly reading, or while there is no analytics token. */
+  /** ZS10: before the first daily reading, or while there is no analytics token. */
   empty:
-    "No readings yet. Figures arrive each morning once the Cloudflare analytics token is set and the nightly reading has run.",
+    "No readings yet. Figures arrive each morning once the Cloudflare analytics token is set and the first morning reading has run.",
   /** ZS11: screen readers, while it loads. */
   loading: "Loading Free plan usage",
   /** ZS12: it didn't load. */

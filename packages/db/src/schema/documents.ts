@@ -304,7 +304,7 @@ export const documents = sqliteTable(
       .on(t.sourceDocumentId, t.sourceStep)
       .where(sql`${t.sourceDocumentId} is not null`),
     index("documents_contact").on(t.contactId),
-    // M7.5 L38 (B2 sweep finding S1): SQLite's foreign-key check on `DELETE FROM contacts` looks up `decided_contact_id`; without an index it scans
+    // M7.5 L38 (B2 sweep finding S1): SQLite's foreign-key check when a contact is deleted looks up `decided_contact_id`; without an index it scans
     // documents. Partial: the column is set only on a decided offer (every invoice and every open offer leaves it NULL), and `= ?` implies NOT NULL.
     index("documents_decided_contact").on(t.decidedContactId).where(sql`${t.decidedContactId} is not null`),
     // M5.3 (LD38): one open (unfrozen) note draft per parent and type. A draft discarded, issued or deleted with its parent frees the slot.

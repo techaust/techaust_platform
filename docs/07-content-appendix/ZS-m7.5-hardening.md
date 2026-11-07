@@ -18,7 +18,7 @@ Where they live: the tile's words in `apps/admin/src/lib/usage.ts` (`USAGE_COPY`
 - **ZS7** status words beside the share (status colours with a flag icon): "50 % reached" · "80 % reached" · "Limit reached"
 - **ZS8** the marks on each 30-day strip: "50 %" · "80 %"
 - **ZS9** the line under the rows (invocations Cloudflare stopped for CPU time or memory that day): "Requests stopped at a Free-plan limit"
-- **ZS10** empty (before the first nightly reading, or no analytics token): "No readings yet. Figures arrive each morning once the Cloudflare analytics token is set and the nightly reading has run."
+- **ZS10** empty (before the first reading, or no analytics token): "No readings yet. Figures arrive each morning once the Cloudflare analytics token is set and the first morning reading has run." ("nightly" changed to "first morning" by the lead, L56, since the reading runs at 06:00 IST)
 - **ZS11** loading (screen readers): "Loading Free plan usage"
 - **ZS12** error: "The usage figures didn't load. Try again in a moment." · button "Try again" (the app's existing word)
 - **ZS13** each strip's name (screen readers): "{metric} over the last 30 days: highest {figure} on {date} ({share} of the limit); {n} of 30 days read." · with no day read: "{metric} over the last 30 days: no day read."
@@ -26,5 +26,4 @@ Where they live: the tile's words in `apps/admin/src/lib/usage.ts` (`USAGE_COPY`
 - **ZS15** the table: toggle "Show the 30 days as a table" / "Hide the table"; caption (screen readers) "Free plan usage over the last 30 days, newest first"; columns "Day (UTC)", the four metric names, "Stopped at a limit"
 
 ## The token bell (drafted by the builder for the lead, review 1 L55; not yet approved)
-- **ZS16** bell `usage.token` (Owners, once per IST day, from the 06:00 IST usage reading when no analytics token is set outside local, or Cloudflare answers 401 or 403): "Free plan usage for {UTC date} (UTC) wasn't read: the Cloudflare analytics token is missing or was refused. Make a new read-only token and set it again.", e.g. "Free plan usage for 2026-11-06 (UTC) wasn't read: …". The date is ISO, as the `usage.limit` bell writes it. Link: the dashboard.
-- Note for the lead (not changed, approved words): ZS3 and ZS10 speak of the "nightly reading"; since L50 it runs at 06:00 IST (00:30 UTC), which is night only in UTC.
+- **ZS16** (approved by the lead, L56) bell `usage.token` (Owners, once per IST day, from the 06:00 IST usage reading when no analytics token is set outside local, or Cloudflare answers 401 or 403): "Free plan usage for {UTC date} (UTC) wasn't read: the Cloudflare analytics token is missing or was refused. Make a new read-only token and set it again.", e.g. "Free plan usage for 2026-11-06 (UTC) wasn't read: …". The date is ISO, as the `usage.limit` bell writes it. Link: the dashboard.
