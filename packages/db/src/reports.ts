@@ -20,9 +20,12 @@ import {
 } from "./realisation.ts";
 import {
   istDayEndMsSql,
+  istDayOfMsSql,
   paymentFreeSql,
   refundOutAtSql,
+  refundReturnedSql,
   refundsOutSql,
+  refundWentOutSql,
   SQL_CURRENCIES,
 } from "./sql-rules.ts";
 
@@ -189,7 +192,10 @@ export const REALISATION_BELLS_SQL = `SELECT n.user_id, n.kind, n.entity_id FROM
 // ---- the statement of account (LD78) ----------------------------------------------------------------------------------------------------------------
 
 const DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note')";
-/** M6.5: the statement LINE kinds that add to what the client owes: the debit documents and a `refund` (money we paid back lowers the client's credit). */
+/**
+ * M6.5: the statement LINE kinds that add to what the client owes: the debit documents and a `refund` (money we paid back lowers the client's credit). AU45: a
+ * `refund_returned` line is a credit (the money is the client's credit again), so this list is unchanged; core `STATEMENT_DEBIT_TYPES` is its twin.
+ */
 const LINE_DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note', 'refund')";
 
 /**
@@ -199,9 +205,13 @@ const LINE_DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note', 'refun
  * a `tds` line for tax the client deducted (T8; dated by its advice; the number is the invoice it is on). A pending, rejected or withdrawn payment is never a line.
  * M6.5 (L9): a `refund` line (a debit, core `STATEMENT_DEBIT_TYPES`) for each SUCCEEDED refund of a confirmed payment, dated by the IST day it succeeded
  * (`settled_on`); its number is the bank reference of a manual refund, else the gateway's refund id, else ''. A refund still with the gateway is not a line.
- * M6–M7 audit AU37 (Settled by the lead on the safest reading, 2026-11-07 (08-C RA-41)): the whole statement is as at the end of its last day `?4` (bound by
- * every statement read, the balance before a page too): a refund that came back after that day is still a line, so a past statement never moves.
- * `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt, 4 a TDS line, 5 a refund; `sk` is `date|ord`, the keyset key with `id`. Proformas are not here
+ * M6–M7 audit AU45 (replacing AU37's "as at the range's last day"; AU37's rule that a past statement never moves is kept by the dates themselves): a refund
+ * that went out (`refundWentOutSql`: succeeded, or succeeded and came back) stays a `refund` debit on its `settled_on`; one that came back
+ * (`refundReturnedSql`: a reversed gateway refund, never a lost dispute or a manual refund) is ALSO a `refund_returned` credit of the same amount and number,
+ * dated by the IST day of `reversed_at` (`istDayOfMsSql`). A statement ending before that day lists the debit only, so its closing never changes, and every
+ * statement's opening is the sum of the dated lines before its first day, so closing(N) = opening(N + 1). No statement binds a "last day" outside `cond`.
+ * `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt, 4 a TDS line, 5 a refund, 6 a refund that came back; `sk` is `date|ord`, the keyset key
+ * with `id` (a returned refund's two lines share the refund's `id`; their `sk` differs, so `(sk, id)` stays unique). Proformas are not here
  * (LD78: not a tax document; their payment shows through the tax invoice). `cond` is a SQL fragment over a date expression, e.g. `x BETWEEN ?3 AND ?4`. With
  * `withParent`, a credit or debit note carries the number of the invoice it is against (`parent`; FX-4, full audit A5 7: debit notes too); every other line NULL.
  */
@@ -220,7 +230,12 @@ const statementSource = (cond: (dateExpr: string) => string, withParent = false)
     UNION ALL
     SELECT f.id, 'refund', f.settled_on, 5, coalesce(f.reference_norm, f.provider_refund_id, ''), f.amount_minor, f.settled_on || '|5'${withParent ? ", NULL" : ""}
       FROM payment_refunds f INDEXED BY payment_refunds_client JOIN payments fp ON fp.id = f.payment_id
-      WHERE f.client_id = ?1 AND f.currency = ?2 AND ${refundOutAtSql("f", istDayEndMsSql("?4"))} AND fp.status = 'confirmed' AND ${cond("f.settled_on")}) u`;
+      WHERE f.client_id = ?1 AND f.currency = ?2 AND ${refundWentOutSql("f")} AND fp.status = 'confirmed' AND ${cond("f.settled_on")}
+    UNION ALL
+    SELECT g.id, 'refund_returned', ${istDayOfMsSql("g.reversed_at")}, 6, coalesce(g.reference_norm, g.provider_refund_id, ''), g.amount_minor,
+           ${istDayOfMsSql("g.reversed_at")} || '|6'${withParent ? ", NULL" : ""}
+      FROM payment_refunds g INDEXED BY payment_refunds_client JOIN payments gp ON gp.id = g.payment_id
+      WHERE g.client_id = ?1 AND g.currency = ?2 AND ${refundReturnedSql("g")} AND gp.status = 'confirmed' AND ${cond(istDayOfMsSql("g.reversed_at"))}) u`;
 
 /**
  * One page of a statement: `?1` the client, `?2` the currency, `?3` and `?4` the range (inclusive), and for a next page `?5` and `?6` the last row's `(sk, id)`.
@@ -233,7 +248,8 @@ export const STATEMENT_PAGE_SQL = (after: boolean): string =>
 
 /**
  * The balance before a page: everything dated before the range's first day (`?3`), or, for a next page, everything up to and including the cursor row (`?5`
- * and `?6` as above; pre-range lines are always before it). Debits add, credit notes and receipts subtract.
+ * and `?6` as above; pre-range lines are always before it). Debits add, credit notes, receipts, TDS lines and refunds that came back subtract. AU45: the first
+ * form's highest parameter is `?3` (nothing reads the range's last day), so its binds are three values (`statementBalanceBeforeBinds`).
  */
 export const STATEMENT_BALANCE_BEFORE_SQL = (after: boolean): string =>
   after
@@ -264,9 +280,11 @@ export const STATEMENT_COUNT_SQL = /* @__PURE__ */ (() =>
  * What a statement made today must close at (`?1` client, `?2` currency), from the ledger itself (M6.1, run file B): Σ (total − paid − credited − TDS) over the
  * client's issued, not voided debit documents, minus the client's credit (what its confirmed payments hold unallocated). Not Σ `balance_minor`: a document's
  * balance stops at zero, while an excess on it (paid, credited and TDS above its total) is money the client is owed, so it lowers the closing balance. Equal to
- * debits − credit notes − receipts − TDS lines + refund lines (a test proves the two agree). M6.5 (L35): each payment's free money through `paymentFreeSql` with the
+ * debits − credit notes − receipts − TDS lines + refund lines − refund-came-back lines (a test proves the two agree). M6.5 (L35): each payment's free money through `paymentFreeSql` with the
  * refunds that went out only (`succeeded`, the ones the statement lists): while a refund is still with the gateway its money is neither credit nor a line, so the
- * statement closes higher than `balance − excess − credit` of `CLIENT_FIGURES_SQL` by exactly the refunds in flight.
+ * statement closes higher than `balance − excess − credit` of `CLIENT_FIGURES_SQL` by exactly the refunds in flight. AU45: a refund that came back is no longer
+ * `succeeded`, so the ledger counts its money as the client's again, and the statement agrees: its `refund` debit and its `refund_returned` credit net to zero
+ * (also for a refund of an invoice's excess with its release allocation: the reversal moves only `payment_refunds`; a test pins both sides before and after).
  */
 export const STATEMENT_LEDGER_SQL = /* @__PURE__ */ (() =>
   `SELECT (SELECT coalesce(sum(d.total_minor - d.paid_minor - d.credited_minor - d.tds_minor), 0) FROM documents d INDEXED BY documents_client_issued
@@ -287,15 +305,17 @@ export const statementPageBinds = (
   cursor?: StatementCursor,
 ): (string | null)[] =>
   cursor ? [clientId, currency, from, to, cursor.sk, cursor.id] : [clientId, currency, from, to];
-/** M6–M7 audit AU37: `to` (the range's last day, `?4`) is bound too: the balance before a page is as at that day's end, as the page's own lines. */
+/**
+ * M6–M7 audit AU45 (back to the shape before AU37): the balance before a page reads no "last day", so the first page binds `?1` to `?3` and a next page binds
+ * `?1`, `?2`, two unused `null`s and the cursor (`?5`, `?6`).
+ */
 export const statementBalanceBeforeBinds = (
   clientId: string,
   currency: string,
   from: string,
-  to: string,
   cursor?: StatementCursor,
 ): (string | null)[] =>
-  cursor ? [clientId, currency, null, to, cursor.sk, cursor.id] : [clientId, currency, from, to];
+  cursor ? [clientId, currency, null, null, cursor.sk, cursor.id] : [clientId, currency, from];
 export const statementTotalsBinds = (
   clientId: string,
   currency: string,

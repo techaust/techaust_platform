@@ -148,14 +148,8 @@ describe("EXPLAIN: every report statement uses an index", () => {
     for (const [sql, binds] of [
       [STATEMENT_PAGE_SQL(false), statementPageBinds("c", "INR", "2026-04-01", "2027-03-31")],
       [STATEMENT_PAGE_SQL(true), statementPageBinds("c", "INR", "2026-04-01", "2027-03-31", cursor)],
-      [
-        STATEMENT_BALANCE_BEFORE_SQL(false),
-        statementBalanceBeforeBinds("c", "INR", "2026-04-01", "2027-03-31"),
-      ],
-      [
-        STATEMENT_BALANCE_BEFORE_SQL(true),
-        statementBalanceBeforeBinds("c", "INR", "2026-04-01", "2027-03-31", cursor),
-      ],
+      [STATEMENT_BALANCE_BEFORE_SQL(false), statementBalanceBeforeBinds("c", "INR", "2026-04-01")],
+      [STATEMENT_BALANCE_BEFORE_SQL(true), statementBalanceBeforeBinds("c", "INR", "2026-04-01", cursor)],
       [STATEMENT_TOTALS_SQL, statementTotalsBinds("c", "INR", "2026-04-01", "2027-03-31")],
       [STATEMENT_COUNT_SQL, statementTotalsBinds("c", "INR", "2026-04-01", "2027-03-31")],
     ] as const) {
@@ -164,6 +158,51 @@ describe("EXPLAIN: every report statement uses an index", () => {
       expect(p).toMatch(/USING (COVERING )?INDEX payments_client/);
       expect(scansTable(p), p).toBe(false);
     }
+  });
+
+  it("AU45: every statement read seeks `payment_refunds_client` for the refunds (`f`) and the refunds that came back (`g`), never a scan", async () => {
+    const cursor = { sk: "2026-10-05|6", id: "x" };
+    for (const [sql, binds] of [
+      [STATEMENT_PAGE_SQL(false), statementPageBinds("c", "INR", "2026-04-01", "2027-03-31")],
+      [STATEMENT_PAGE_SQL(true), statementPageBinds("c", "INR", "2026-04-01", "2027-03-31", cursor)],
+      [STATEMENT_BALANCE_BEFORE_SQL(false), statementBalanceBeforeBinds("c", "INR", "2026-04-01")],
+      [STATEMENT_BALANCE_BEFORE_SQL(true), statementBalanceBeforeBinds("c", "INR", "2026-04-01", cursor)],
+      [STATEMENT_TOTALS_SQL, statementTotalsBinds("c", "INR", "2026-04-01", "2027-03-31")],
+      [STATEMENT_COUNT_SQL, statementTotalsBinds("c", "INR", "2026-04-01", "2027-03-31")],
+      [STATEMENT_ENTRIES_SQL(201), statementTotalsBinds("c", "INR", "2026-04-01", "2027-03-31")],
+    ] as const) {
+      const p = await plan(sql, ...binds);
+      expect(p).toMatch(/SEARCH f USING INDEX payment_refunds_client \(client_id=\?\)/);
+      expect(p).toMatch(/SEARCH g USING INDEX payment_refunds_client \(client_id=\?\)/);
+      expect(p).not.toMatch(/SCAN (f|g|fp|gp|payment_refunds|payments)\b(?! USING)/);
+    }
+  });
+
+  it("AU45: the binds match each statement's highest parameter (D1 refuses any other count); the balance before reads no last day", async () => {
+    const cursor = { sk: "2026-10-05|5", id: "x" };
+    expect(statementBalanceBeforeBinds("c", "INR", "2026-04-01")).toEqual(["c", "INR", "2026-04-01"]);
+    expect(statementBalanceBeforeBinds("c", "INR", "2026-04-01", cursor)).toEqual([
+      "c",
+      "INR",
+      null,
+      null,
+      "2026-10-05|5",
+      "x",
+    ]);
+    const highest = (sql: string) => Math.max(0, ...[...sql.matchAll(/\?(\d+)/g)].map((m) => Number(m[1])));
+    expect(highest(STATEMENT_BALANCE_BEFORE_SQL(false))).toBe(3);
+    expect(highest(STATEMENT_BALANCE_BEFORE_SQL(true))).toBe(6);
+    expect(highest(STATEMENT_PAGE_SQL(false))).toBe(4);
+    expect(highest(STATEMENT_PAGE_SQL(true))).toBe(6);
+    expect(highest(STATEMENT_TOTALS_SQL)).toBe(4);
+    expect(highest(STATEMENT_ENTRIES_SQL(201))).toBe(4);
+    // the bind count D1 checks: four values for the three-parameter balance is refused
+    await expect(
+      all(STATEMENT_BALANCE_BEFORE_SQL(false), "c", "INR", "2026-04-01", "2027-03-31"),
+    ).rejects.toThrow();
+    await expect(all(STATEMENT_BALANCE_BEFORE_SQL(false), "c", "INR", "2026-04-01")).resolves.toEqual([
+      { balance: 0 },
+    ]);
   });
 
   it("the ledger sum reads the client's documents by an index", async () => {
@@ -237,7 +276,7 @@ describe("EXPLAIN: every report statement uses an index", () => {
     );
     const before = await plan(
       STATEMENT_BALANCE_BEFORE_SQL(true),
-      ...statementBalanceBeforeBinds("c", "INR", "2026-04-01", "2027-03-31", cursor),
+      ...statementBalanceBeforeBinds("c", "INR", "2026-04-01", cursor),
     );
     expect(before).toMatch(/SEARCH d USING INDEX documents_client_issued \(client_id=\?\)/);
     const ledger = await plan(STATEMENT_LEDGER_SQL, "c", "INR");
@@ -689,7 +728,7 @@ describe("a statement closes at the ledger", () => {
     const ledger = await first<{ balance: number }>(STATEMENT_LEDGER_SQL, c, "INR");
     const opening = await first<{ balance: number }>(
       STATEMENT_BALANCE_BEFORE_SQL(false),
-      ...statementBalanceBeforeBinds(c, "INR", ...range),
+      ...statementBalanceBeforeBinds(c, "INR", range[0]),
     );
     expect(opening?.balance).toBe(0);
     expect((opening?.balance ?? 0) + debits - credits).toBe(ledger?.balance);
@@ -716,7 +755,7 @@ describe("a statement closes at the ledger", () => {
     // the range's opening: everything before 2026-06-01 is inv1 + inv2
     const before = await first<{ balance: number }>(
       STATEMENT_BALANCE_BEFORE_SQL(false),
-      ...statementBalanceBeforeBinds(c, "INR", "2026-06-01", range[1]),
+      ...statementBalanceBeforeBinds(c, "INR", "2026-06-01"),
     );
     expect(before?.balance).toBe(inv1.computed.totalMinor + inv2.computed.totalMinor);
     // the balance before a page's cursor includes the cursor row itself
@@ -724,7 +763,7 @@ describe("a statement closes at the ledger", () => {
     const cursor = { sk: `${second.date}|1`, id: second.id };
     const upTo = await first<{ balance: number }>(
       STATEMENT_BALANCE_BEFORE_SQL(true),
-      ...statementBalanceBeforeBinds(c, "INR", ...range, cursor),
+      ...statementBalanceBeforeBinds(c, "INR", range[0], cursor),
     );
     expect(upTo?.balance).toBe(inv1.computed.totalMinor + inv2.computed.totalMinor);
     const rest = await all<{ id: string }>(

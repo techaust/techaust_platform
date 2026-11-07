@@ -14,6 +14,7 @@ import {
   renderDocumentHtml,
   renderStatementHtml,
 } from "../../src/render.ts";
+import { type StatementInputEntry, statementView as statementViewOf } from "../../src/statement-view.ts";
 import { DEFAULT_VIEW_CONFIG, toPdfView } from "../../src/view.ts";
 import { deedFixture } from "./deed.ts";
 import { buildFixture, type FixtureName } from "./index.ts";
@@ -294,10 +295,73 @@ function statementView(entries: number, longNames = false): StatementLayoutView 
     closing: "₹1,18,000.00",
     amountDue: "₹1,18,000.00",
     entries: rows,
+    returnedNote: null,
     generatedOn: "28 Oct 26",
     email: "billing@techaust.com",
     footerBrand: footerLine("billing@techaust.com"),
   };
+}
+
+/**
+ * AU45: an overpayment refunded on 06 Nov that the card network returned on 05 Dec, between two invoices, a payment and a TDS line; built through the
+ * jobs Worker's own view (`statementView`), so the note (07-ZU U2) is set as in production. Made-up numbers and refund id.
+ */
+function statementRefundReturned(): StatementLayoutView {
+  const line = (
+    kind: StatementInputEntry["kind"],
+    date: string,
+    number: string,
+    side: "debit" | "credit",
+    amountMinor: number,
+    balanceMinor: number,
+  ): StatementInputEntry => ({
+    kind,
+    date,
+    number,
+    amountMinor,
+    debitMinor: side === "debit" ? amountMinor : 0,
+    creditMinor: side === "credit" ? amountMinor : 0,
+    balanceMinor,
+  });
+  return statementViewOf({
+    company: {
+      tradeName: "TecHaust Technologies",
+      legalName: null,
+      address: "Sample address line (fake), Balurghat, West Bengal 733101",
+      gstin: "19ABCDE1234F1ZX",
+      stateCode: "19",
+      logo: "logo-primary-color.svg",
+    },
+    client: {
+      code: "SAMPLE01",
+      legalName: "Sample client A (fake)",
+      address: {
+        line1: "1 Sample Road",
+        city: "Kolkata",
+        state: "West Bengal",
+        postalCode: "700001",
+        country: "IN",
+      },
+      gstin: "19ABCDE1234F1ZX",
+    },
+    currency: "INR",
+    from: "2026-11-01",
+    to: "2026-12-31",
+    openingMinor: 0,
+    entries: [
+      line("tax_invoice", "2026-11-02", "TH/INV/2627/0007", "debit", 1_18_000_00, 1_18_000_00),
+      line("receipt", "2026-11-04", "TH/INV/2627/0007", "credit", 1_38_000_00, -20_000_00),
+      line("refund", "2026-11-06", "rfnd_SAMPLE0001", "debit", 20_000_00, 0),
+      line("tax_invoice", "2026-11-18", "TH/INV/2627/0009", "debit", 59_000_00, 59_000_00),
+      line("tds", "2026-11-25", "TH/INV/2627/0009", "credit", 1_000_00, 58_000_00),
+      line("refund_returned", "2026-12-05", "rfnd_SAMPLE0001", "credit", 20_000_00, 38_000_00),
+    ],
+    debitMinor: 1_97_000_00,
+    creditMinor: 1_59_000_00,
+    closingMinor: 38_000_00,
+    billingEmail: "billing@techaust.com",
+    generatedOn: "2026-12-31",
+  });
 }
 
 // ---- the acceptance certificate -----------------------------------------------------------------------------------------------------------
@@ -469,6 +533,12 @@ export const AUDIT_CASES: AuditCase[] = [
     case: "long names",
     closing: ".stm-foot",
     html: async () => renderStatementHtml(statementView(12, true)),
+  },
+  {
+    kind: "statement",
+    case: "refund returned",
+    closing: ".stm-foot",
+    html: async () => renderStatementHtml(statementRefundReturned()),
   },
   {
     kind: "deed",
