@@ -187,3 +187,47 @@ Builder (Opus 5.5, high), branch `fix/p7-ops-b1` from `origin/feat/p7-ops` (cd5a
 3. Gap 1 above (`acceptances` IP and browser in the 10-year copy).
 
 Usage: builder for P7 ops, claude-opus-5-5/high (the lead fills in the agent id from `node tools/model-audit.mjs`).
+
+## Builder report 2
+The lead's change (2026-11-07, settled on the safest reading): no contact's personal data in the 10-year copy. Commit 940dc303, plus this report; pushed to `fix/p7-ops-b1`. The lead answered open questions 1 and 2 with no change (launches run from main; stage database runs first).
+
+### What changed
+- **`packages/db/src/backup-scope.ts`** (the header cites "Settled by the lead on the safest reading, 2026-11-07 (08-C RB-12)"; RB-12 is the IP, browser and country of acceptance evidence. The lead decides whether 08-C needs its own row for the name and email):
+  - **`acceptances`:** `ACCEPTANCE_EXPORT_COLUMNS` = `id`, `document_id`, `contact_id`, `session_id`, `accepted_at`, `pdf_sha256`, `terms_version_id`, `certificate_r2_key`, `via`, `offer_link_hash`, `snapshot_sha256`. `ACCEPTANCE_PERSONAL_COLUMNS` = `typed_name`, `email`, `ip`, `user_agent`, `country`, never exported. The column names were read from the migrated schema. A db test fails if a new acceptances column is in neither list.
+  - **`documents`** (found in the check below): the export now names every column. The list comes from the Drizzle schema (`getTableColumns`), so a new column still joins the copy. `recipient` becomes `json_remove(recipient, '$.email', '$.contactName')` when it is valid JSON.
+  - The client's `legalName`, `gstin`, `stateCode`, `address`, `country`, `contactId`, `clientType` and `deliveryAddress` stay. `contactName` is the "Attn:" line the invoice PDF prints (`packages/pdf/src/invoice-view.ts`). Rule 46 doesn't need it, and the PDFs in R2 are not part of this backup. The email isn't printed.
+- **`scripts/backup-monthly.mjs`:** each table's definition in the copy is now its own (`copyTableSql`): exactly the columns the query returns, with production's declared types, and no constraint, index or trigger.
+  - Why: production's `acceptances` declares `typed_name` and `email` NOT NULL, so production's own definition would refuse the stripped rows. In the copy, a left-out column isn't a column at all; `audit_log` there has no `ip` or `user_agent` column either.
+  - Consequence: the copy no longer loads onto a schema built from the migrations. Its plain `CREATE TABLE` refuses over existing tables, so nothing is half-loaded. The runbook (restore.md §3.6.1, §3.6.3 step 5) says so; reading it with `backup-monthly.mjs restore` is unchanged.
+  - `ifNotExists` is removed.
+- **`scripts/backup-monthly-scope.json`:** regenerated (`UPDATE_BACKUP_SCOPE=1`); the drift test passes.
+- **Tests:**
+  - `apps/web/test/backup-monthly.test.ts` (27):
+    - the acceptance row is kept with its ids, time, way, hashes and terms; its columns equal `ACCEPTANCE_EXPORT_COLUMNS`; none of the five personal columns exists; the typed name, email, IP, browser and country appear nowhere in the file;
+    - the invoice's recipient block equals the original minus `email` and `contactName`, and neither value appears in the file; every documents column is still present;
+    - `audit_log` has no `ip` or `user_agent` column in the copy;
+    - the definitions hold no NOT NULL, PRIMARY KEY, REFERENCES or CHECK;
+    - the copy refuses to run over a migrated schema (this replaces the "loads onto migrations" test).
+  - `packages/db/test/retention.test.ts`, in workerd on D1:
+    - the L48 test now also checks that the exported acceptance has only the kept columns and no name or email;
+    - a new test checks that the acceptances columns are fully classified, that the export SQL names no personal column and no `SELECT *`, and that an issued invoice's exported recipient loses exactly `email` and `contactName` while keeping every documents column.
+
+### Every other monthly table, checked column by column (all 26, from the migrated schema)
+No other **column** holds a contact's name, email, phone, IP or browser. `payment_refunds.paid_to` is an enum (`original` or `own_account`); the `*_by` columns are staff ids; `audit_log.summary` holds ids, numbers, amounts and codes (core `FINANCE_AUDIT_ACTIONS`).
+
+**Free-text fields that could contain such data, not stripped.** Each is part of the record itself; stripping it would need text redaction, not a column list. They are listed for the lead:
+1. **`document_sections.body_md` of an accepted proposal or estimate:** the Acceptance text is filled with the contact's name when the draft is made (CLAUDE.md M4.3 "the contact token"). This is the accepted contract's text.
+2. **`documents.decision_note`:** the client's optional free-text note when deciding (an accepted offer only, in this copy). It is not a tax record, so it is the likeliest candidate to blank (`NULL AS decision_note`, a one-line change) if the lead wants it.
+3. **`deeds.snapshot` and `sched_*`:** the sealed deed text, which names the parties.
+4. Staff-written notes: `payments.note`, `proof_ref`, `decision_note`, `withdraw_reason`; `payment_refunds.note`; the `realisation_*` notes; `bank_matches.statement_ref`; and document line and schedule `detail`.
+5. **`documents.issuer`:** our own sender's name and email (staff, not a contact).
+
+### Commands and results
+- `bash tools/heavy.sh --log p7ops-db-test pnpm --filter @techaust/db test`: **exit 0, 62 files, 1093 passed**.
+- `bash tools/heavy.sh --log p7ops-web-test2 pnpm --filter @techaust/web test`: **exit 0, 48 files, 1181 passed, 21 skipped**.
+- `bash tools/heavy.sh --log p7ops-check2 pnpm check`: **exit 0** (lint, typecheck, every guard).
+- `packages/core` `test/verify-tags.test.ts test/zod-import.test.ts`: 5 passed (the new comment tag is in the accepted form).
+
+### Not verified
+Unchanged from report 1: no hosted run. `json_remove` was checked on D1 (the workerd db test) and on node:sqlite (the builder).
+
