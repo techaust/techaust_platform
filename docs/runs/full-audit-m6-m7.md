@@ -1,4 +1,4 @@
-Status: audits B0–B4 and B6 done, B5 running; fix round starting (2026-11-07)
+Status: all seven areas audited (2026-11-07); fix round running (AF1 money and gateways; AF2 jobs, portal, notifications, data protection; then the designer)
 Tier: A (it covers money, gateways, refunds, client scoping, staff auth and deletion)
 Usage:
 
@@ -214,3 +214,38 @@ The tab focus-ring finding (B2 1) doesn't reach these screens: they have no tabl
   - L3: one label for that time on both screens.
   - L4: an edge fade on the strip, or wrap it.
   - L5: cards below about 900 px.
+
+### B5 Data protection and the 2026-10-31/11-01 tasks: reviewer claude-opus-5-5/high, 2026-11-07, on 00ae8fbf
+Skills: `cloudflare:workers-best-practices`, `frontend-design`. No helper. Verdict: APPROVE, with nothing critical or high.
+
+Ran:
+- admin: 126/126;
+- db: 135/135;
+- jobs: 28/28;
+- core: 65/65;
+- e2e `m74-data-protection` and `t11-deed`: 22/22.
+
+**Findings:**
+- **M1:** deleting a note or file of a held client answers 500 (`notes.ts:185`, `files.ts:322`). The triggers `notes_held_no_delete` / `files_held_no_delete` raise, nothing catches it, and the SPA still offers Delete.
+- **M2:** the lead export lacks `processors` and the lead's own `client_requests` (`lead-data.ts:138-147`); the contact export has both. DPDP s.11(1)(b); RB-36.
+- **L1:** a hold on a client or contact doesn't stop the erase or purge of an unconverted lead with the same address (`lead-data.ts:76-87`, `leads_held_no_*`, `LEAD_DELETABLE_SQL`).
+- **L2:** `documents_held_no_redact` fires only on the first redaction (`0079:72`).
+- **L3:** a done access request accepts an export date before `received_at` (`client-requests.ts:90`, `0079:190`).
+- **L4:** a `consent_withdrawal` request can close `done` without proof of the withdrawal.
+- **L5:** the lead erase dialog's staff line understates what is kept (`copy-zr.ts:378`).
+- **L6:** the `suppression.lift` audit row keeps the keyed hash for good; anonymising keeps the staff `close_note` on requests and payment notices.
+- **L7:** at 768 px the lead page's h1 wraps beside three buttons.
+
+**Lead's triage (2026-11-07):**
+- **AU23 (M1):** the DELETE WHERE gets `NOT EXISTS (held)` and answers 409 `legal_hold` with the S1 line. The SPA hides Delete while held. Worker tests and an e2e step.
+- **AU24 (M2):** `processors: processorsBlock()` and a paged `client_requests` part in the lead export, with tests.
+- **AU25 (L1, L2, L3, L6):** in a new trigger migration (never editing 0079):
+  - L1: `HELD_EMAIL_SQL` in the lead erase's first row and the purge's due rule, mirrored in the two lead triggers;
+  - L2: the redaction hold fires on every redaction;
+  - L3: export date ≥ `received_at` in the route and the trigger;
+  - L6: the audit summary of `suppression.lift` drops the hash, and anonymising clears both `close_note`s.
+
+  Tests for each.
+- **AU26 (L4):** settled on the safest reading (DPDP s.6(4)–(6)): a `consent_withdrawal` request closes `done` only with a linked `lead.consent_withdraw` audit row or a contact consent-change row after the request arrived (route, WHERE and trigger). Otherwise it's declined with a reason.
+- **AU27 (L5):** staff line, reworded by the lead: "A scrambled form of the address is kept only to stop emails to it and to prove what they agreed to. Email records keep the address until they expire."
+- **AU28 (L7):** designer. The actions wrap under the title below about 900 px.
