@@ -194,7 +194,7 @@ Rules:
 - Then run the health checks: `node scripts/staging-health.mjs admin` (and `jobs`, `portal`, `web`) with the deploy-check token.
 
 ## Step 3. Assess and keep the evidence (within hours)
-Save everything in the evidence folder (question QA). It holds IP addresses: never commit it. Keep it as long as the security log (13 months, owner 2026-10-21).
+Save everything in the evidence folder, `D:\Business\1. Parent Project\TecHaust Technologies\Incidents\<date>\`, outside the repository (owner, 2026-11-07, QA). It holds IP addresses: never commit it. Keep it as long as the security log (13 months, owner 2026-10-21).
 
 1. `audit_log` and `access_log`, the whole tables. **The database is unavailable while a remote export runs** (wrangler's prompt), so expect a short pause.
 ```
