@@ -2,6 +2,7 @@
 // GST error code, the periods, the urgency order and the stage pills, the statement's words, the tax form's round trip (early check H2), and the files
 // the screens make from register rows through the gst core (the sums are core's; these tests only check that the screens pass them on whole).
 import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
+import { STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
 import { heldRowOf, type RegisterApiRow, type ReportMeta } from "@techaust/core/gst";
 import { GSTR1_FREQUENCIES, realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
@@ -390,7 +391,11 @@ describe("statement words", () => {
     expect(statementKindText("tds")).toBe(`${M}TDS deducted`);
     // M6.5: a refund that went out (07-ZO lacks the word: the builder's draft, marked "[Placeholder]" until the owner approves it).
     expect(statementKindText("refund")).toBe(STATEMENT_REFUND_WORD);
-    expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(7);
+    // AU45 (07-ZU U1, approved 2026-11-07): a refund that came back to us, unmarked; the CSV names it too
+    expect(statementKindText("refund_returned")).toBe("Refund came back");
+    expect(statementKindText("refund_returned")).toBe(STATEMENT_REFUND_RETURNED_WORD);
+    expect(statementCsvLabels().kinds.refund_returned).toBe("Refund came back");
+    expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(8);
   });
 
   it("the Details cell of a credit note names the invoice the API sent (review 2)", () => {

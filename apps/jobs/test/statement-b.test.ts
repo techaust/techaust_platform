@@ -264,6 +264,75 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
     expect(html).not.toContain("null");
   });
 
+  it("AU45: a refund and its return (a reversed gateway refund) print as a debit and a credit that agree with SQL: rendered, never totals_mismatch", async () => {
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    await run("UPDATE clients SET country = 'IN', gst_status = 'unregistered' WHERE id = ?1", clientId);
+    const inv = await mkDoc(clientId, null, { issueDate: "2026-10-05", total: 118_000, balance: 118_000 });
+    const T = Date.parse("2026-10-10T05:00:00Z");
+    const ck = uuidv7();
+    await run(
+      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
+       VALUES (?1, 'razorpay', ?2, ?3, ?4, 'staff', 'INR', 50000, 'creating', ?5, ?6, ?6)`,
+      ck,
+      inv.id,
+      clientId,
+      owner.id,
+      T + DAY,
+      T,
+    );
+    await run(
+      "UPDATE checkout_sessions SET status = 'live', provider_link_id = ?2, short_url = 'https://rzp.io/i/x', updated_at = ?3 WHERE id = ?1",
+      ck,
+      `plink_AU45${ck.slice(-8)}`,
+      T + 1,
+    );
+    const pay = uuidv7();
+    await run(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, fee_tax_minor, received_on, mode, reference_norm, recorded_at, provider_payment_id, checkout_id, refetched_at)
+       VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', 50000, 0, 0, '2026-10-10', 'upi', ?3, ?4, ?3, ?5, ?4)`,
+      pay,
+      clientId,
+      `pay_AU45${pay.slice(-8)}`,
+      T,
+      ck,
+    );
+    await run(
+      "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = ?3 WHERE id = ?1",
+      pay,
+      owner.id,
+      T + 5,
+    );
+    const refund = uuidv7();
+    const ref = `rfnd_AU45${refund.slice(-8)}`;
+    const settledAt = Date.parse("2026-10-12T06:00:00Z");
+    await run(
+      `INSERT INTO payment_refunds (id, payment_id, client_id, provider, origin, status, paid_to, reason_code, currency, amount_minor, provider_refund_id,
+         requested_by, requested_at, settled_at, settled_on, updated_at)
+       VALUES (?1, ?2, ?3, 'razorpay', 'outside', 'succeeded', 'original', 'duplicate', 'INR', 20000, ?4, ?5, ?6, ?6, '2026-10-12', ?6)`,
+      refund,
+      pay,
+      clientId,
+      ref,
+      owner.id,
+      settledAt,
+    );
+    // it came back at 10:00 IST on 20 Oct (the columns `refundReverseStatement` writes)
+    await run(
+      "UPDATE payment_refunds SET status = 'failed', failure_code = 'stripe_failed', reversed_at = ?2, updated_at = ?2 WHERE id = ?1",
+      refund,
+      Date.parse("2026-10-20T04:30:00Z"),
+    );
+    const row = await mkStatement(clientId, owner.id);
+    const b = browser();
+    expect(await processStatementPdf(mkEnv(b), message(row.id), NOW, clock)).toBe("rendered");
+    expect(await statementRow(row.id)).toMatchObject({ failed_at: null, fail_code: null });
+    const html = (b.pages[0] as string).replace(/<style>[\s\S]*?<\/style>/, "");
+    // the refund id on both lines (the debit on 12 Oct, the credit on 20 Oct)
+    expect(html.split(ref).length - 1).toBe(2);
+    expect(html).not.toContain("null");
+  });
+
   it("the same data asked for again on the same IST day is ADOPTED: no second render, the same object, the same view hash", async () => {
     const { owner, clientId } = await seed();
     const first = await mkStatement(clientId, owner.id);
