@@ -3,6 +3,7 @@
 //
 // A principal is who acts and for which organisation: a signed-in contact (the session, via `scope(c)`) or a live offer link (its
 // contact and organisation come from the link row, read by the server). Nothing about either comes from the request body.
+import { downloadHeaders } from "@techaust/core/file-types";
 import { uuidv7 } from "@techaust/core/ids";
 import { LOST_REASON_OF_DECLINE } from "@techaust/core/lead-lifecycle";
 import { formatMoney, money } from "@techaust/core/money";
@@ -247,19 +248,15 @@ export async function loadOffer(
   return { body, viewWrites, viewAuditId };
 }
 
-/** Streams an R2 object as a download: attachment, no sniffing, sandboxed, never cached. */
+/**
+ * Streams an R2 object as a download: attachment, no sniffing, sandboxed, never cached, never indexed. M7.5 (C3b, L12; A1 F9): the shared download headers
+ * (`default-src 'none'; sandbox` and `contentDisposition()`, which quotes and encodes the name) in place of a bare `sandbox` and a hand-built filename.
+ */
 export async function streamPdf(c: Ctx, key: string, fileName: string): Promise<Response> {
   const object = await c.env.DOCS.get(key);
   if (!object) return err(c, NOT_FOUND, 404);
   return new Response(object.body, {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="${fileName}"`,
-      "Content-Length": String(object.size),
-      "Cache-Control": "no-store",
-      "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "sandbox",
-    },
+    headers: downloadHeaders({ contentType: "application/pdf", size: object.size, filename: fileName }),
   });
 }
 

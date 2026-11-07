@@ -32,7 +32,7 @@ import { ROUTES } from "./guard.ts";
 import { fetchSettlements } from "./recon.ts";
 import { checkRefund, toCheckRefundResult } from "./refund-flow.ts";
 import { mountFinance } from "./routes-finance.ts";
-import { rpcId, rpcLog } from "./rpc.ts";
+import { rpcId, rpcLogged } from "./rpc.ts";
 import { FINANCE_WARM } from "./warm-fixtures/finance.ts";
 import { FINANCE_RPC_WARM } from "./warm-fixtures/finance-rpc.ts";
 import { warmAtStartup } from "./warm-routes.ts";
@@ -59,45 +59,61 @@ export default app satisfies ExportedHandler<Env>;
  * `issueGatewayAdvance` to the invoices Worker's `GatewayAdvance`; split.test.ts); every id 1 to 64 characters; one id-only log line each.
  */
 export class GatewayEvents extends WorkerEntrypoint<Env> implements GatewayEventsApi {
+  // M7.5 L20: every method writes its line through `rpcLogged`, also when it throws (an id check's TypeError included).
   async processEvent(args: { eventId: string }): Promise<ProcessEventResult> {
-    const eventId = rpcId(args?.eventId, "GatewayEvents");
-    const answer = await processEvent(this.env, eventId);
-    rpcLog("processEvent", answer.result);
-    return answer;
+    return rpcLogged(
+      "processEvent",
+      () => processEvent(this.env, rpcId(args?.eventId, "GatewayEvents")),
+      (a) => a.result,
+    );
   }
 
   /** M6.3 (L13): the hourly sweep's `gateway.refresh {checkoutId}`. */
   async refreshCheckout(args: { checkoutId: string }): Promise<RefreshResult> {
-    const checkoutId = rpcId(args?.checkoutId, "GatewayEvents");
-    const answer = await refreshCheckoutById(this.env, checkoutId);
-    rpcLog("refreshCheckout", answer.result);
-    return answer;
+    return rpcLogged(
+      "refreshCheckout",
+      () => refreshCheckoutById(this.env, rpcId(args?.checkoutId, "GatewayEvents")),
+      (a) => a.result,
+    );
   }
 
   /** M6.5 (L34, L37): the sweep's `refund.check {refundId}`: the refund found at its gateway (by its id, else ours) and moved; the tenth try raises `refund_stuck`. */
   async checkRefund(args: { refundId: string }): Promise<CheckRefundResult> {
-    const refundId = rpcId(args?.refundId, "GatewayEvents");
-    const answer = toCheckRefundResult(await checkRefund(this.env, refundId, Date.now(), { repost: true }));
-    rpcLog("checkRefund", answer.result);
-    return answer;
+    return rpcLogged(
+      "checkRefund",
+      async () =>
+        toCheckRefundResult(
+          await checkRefund(this.env, rpcId(args?.refundId, "GatewayEvents"), Date.now(), { repost: true }),
+        ),
+      (a) => a.result,
+    );
   }
 
   /** M6.5 (L11): one page of Razorpay's settlement recon for an IST day (`recon.fetch`). */
   async fetchSettlements(args: FetchSettlementsArgs): Promise<FetchSettlementsResult> {
-    if (!isFetchSettlementsArgs(args))
-      throw new TypeError("GatewayEvents: malformed fetchSettlements arguments");
-    const answer = await fetchSettlements(this.env, args);
-    rpcLog("fetchSettlements", answer.result);
-    return answer;
+    return rpcLogged(
+      "fetchSettlements",
+      async () => {
+        if (!isFetchSettlementsArgs(args))
+          throw new TypeError("GatewayEvents: malformed fetchSettlements arguments");
+        return fetchSettlements(this.env, args);
+      },
+      (a) => a.result,
+    );
   }
 }
 
 /** M6.2: the portal's Pay now, called by the portal Worker ONLY (`ADMIN_PAY`, entrypoint `PortalPayments`). Exactly these three public methods. */
 export class PortalPayments extends WorkerEntrypoint<Env> implements PortalPaymentsApi {
   async createLink(args: CreateLinkArgs): Promise<CreateLinkResult> {
-    if (!isCreateLinkArgs(args)) throw new TypeError("PortalPayments: malformed createLink arguments");
-    const r = await createLinkFor(this.env, args);
-    rpcLog("createLink", r.ok ? (r.reused ? "reused" : "created") : r.error);
+    const r = await rpcLogged(
+      "createLink",
+      async () => {
+        if (!isCreateLinkArgs(args)) throw new TypeError("PortalPayments: malformed createLink arguments");
+        return createLinkFor(this.env, args);
+      },
+      (x) => (x.ok ? (x.reused ? "reused" : "created") : x.error),
+    );
     // The answer carries only what the portal shows: never the checkout id or a Razorpay id.
     if (!r.ok) {
       const { stale: _stale, ...refusal } = r;
@@ -112,16 +128,21 @@ export class PortalPayments extends WorkerEntrypoint<Env> implements PortalPayme
     documentId: string;
     checkoutId?: string;
   }): Promise<RefreshResult> {
-    const clientId = rpcId(args?.clientId, "PortalPayments");
-    const documentId = rpcId(args?.documentId, "PortalPayments");
-    const checkoutId = args?.checkoutId === undefined ? undefined : rpcId(args.checkoutId, "PortalPayments");
-    const answer = await refreshForClient(this.env, {
-      clientId,
-      documentId,
-      ...(checkoutId === undefined ? {} : { checkoutId }),
-    });
-    rpcLog("refreshForClient", answer.result);
-    return answer;
+    return rpcLogged(
+      "refreshForClient",
+      () => {
+        const clientId = rpcId(args?.clientId, "PortalPayments");
+        const documentId = rpcId(args?.documentId, "PortalPayments");
+        const checkoutId =
+          args?.checkoutId === undefined ? undefined : rpcId(args.checkoutId, "PortalPayments");
+        return refreshForClient(this.env, {
+          clientId,
+          documentId,
+          ...(checkoutId === undefined ? {} : { checkoutId }),
+        });
+      },
+      (a) => a.result,
+    );
   }
 
   /**
@@ -129,10 +150,14 @@ export class PortalPayments extends WorkerEntrypoint<Env> implements PortalPayme
    * decline, PayPal's own approval page for the same order); never an amount, a name or a document id.
    */
   async capturePayPalReturn(args: CapturePayPalReturnArgs): Promise<CapturePayPalReturnResult> {
-    if (!isCapturePayPalReturnArgs(args))
-      throw new TypeError("PortalPayments: malformed capturePayPalReturn arguments");
-    const answer = await capturePayPalReturn(this.env, { checkoutId: args.checkoutId, token: args.token });
-    rpcLog("capturePayPalReturn", answer.state);
-    return answer;
+    return rpcLogged(
+      "capturePayPalReturn",
+      async () => {
+        if (!isCapturePayPalReturnArgs(args))
+          throw new TypeError("PortalPayments: malformed capturePayPalReturn arguments");
+        return capturePayPalReturn(this.env, { checkoutId: args.checkoutId, token: args.token });
+      },
+      (a) => a.state,
+    );
   }
 }

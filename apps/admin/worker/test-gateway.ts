@@ -28,7 +28,11 @@ export function stub(over?: (path: string, method: string, body: unknown) => Res
 }
 
 /** An issued INR tax invoice (₹1,180) or proforma whose primary contact has portal and finance access. */
-export async function issued(s: Session, kind: "invoice" | "proforma" = "invoice") {
+export async function issued(
+  s: Session,
+  kind: "invoice" | "proforma" = "invoice",
+  opts: { services?: { catalogueItemId: string }[] } = {},
+) {
   const c = await mkInvoiceClient();
   await env.DB.prepare(
     "UPDATE contacts SET portal_access = 1, can_see_finance = 1, is_billing = 1 WHERE id = ?1",
@@ -38,7 +42,7 @@ export async function issued(s: Session, kind: "invoice" | "proforma" = "invoice
   const made =
     kind === "invoice"
       ? await mkInvoice(s, { clientId: c.clientId, contactId: c.contactId })
-      : await mkProforma(s, { clientId: c.clientId });
+      : await mkProforma(s, { clientId: c.clientId, ...(opts.services ? { services: opts.services } : {}) });
   const res = await issueInvoice(s, made.id);
   if (res.status !== 200) throw new Error(`not issued: ${res.status} ${await res.text()}`);
   const doc = await one<{ updated_at: number; total_minor: number }>(

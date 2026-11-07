@@ -11,15 +11,62 @@ export const FIRST_CHECKED = 7;
 
 const NAME = "[`\"']?([A-Za-z0-9_]+)[`\"']?";
 const normal = (table) => table.replace(/^__new_/, "");
-// Comments are stripped first (the drizzle breakpoint is itself a comment), then the SQL is split on every `;`, so
-// two statements on one line, or a comment before a DROP, cannot hide it. A `;` inside a trigger body only cuts
-// that body into pieces; none of the pieces we look for (CREATE/ALTER/DROP TABLE) occurs inside one.
-const statements = (sql) =>
-  sql
-    .replace(/--[^\n]*/g, "")
-    .split(";")
-    .map((s) => s.trim())
-    .filter(Boolean);
+// The SQL is read once, left to right, knowing quotes (M7.5 section F, earlier-work audit): `--` line comments and
+// `/* */` block comments are dropped (the drizzle breakpoint is itself a comment), a string literal ('…', with ''
+// inside) keeps only its quotes, so a `--`, `;` or "DROP TABLE" inside a string neither hides nor fakes a statement,
+// and quoted identifiers ("x", `x`, [x]) are kept whole. The text is then cut on every `;` outside quotes and comments,
+// so two statements on one line, or a comment before a DROP, cannot hide it. A `;` inside a trigger body only cuts that
+// body into pieces; none of the pieces we look for (CREATE/ALTER/DROP TABLE) occurs inside one.
+export function statements(sql) {
+  const out = [];
+  let cur = "";
+  let i = 0;
+  const n = sql.length;
+  while (i < n) {
+    const ch = sql[i];
+    const next = sql[i + 1];
+    if (ch === "-" && next === "-") {
+      while (i < n && sql[i] !== "\n") i++;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const end = sql.indexOf("*/", i + 2);
+      i = end < 0 ? n : end + 2;
+      cur += " ";
+      continue;
+    }
+    if (ch === "'") {
+      // A string literal: skip its content ('' is an escaped quote inside it).
+      i++;
+      while (i < n) {
+        if (sql[i] === "'" && sql[i + 1] === "'") i += 2;
+        else if (sql[i] === "'") break;
+        else i++;
+      }
+      i++;
+      cur += "''";
+      continue;
+    }
+    if (ch === '"' || ch === "`" || ch === "[") {
+      const close = ch === "[" ? "]" : ch;
+      const end = sql.indexOf(close, i + 1);
+      const stop = end < 0 ? n : end + 1;
+      cur += sql.slice(i, stop);
+      i = stop;
+      continue;
+    }
+    if (ch === ";") {
+      out.push(cur);
+      cur = "";
+      i++;
+      continue;
+    }
+    cur += ch;
+    i++;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim()).filter(Boolean);
+}
 
 /** parent table -> the other tables that reference it, from every CREATE TABLE and ALTER TABLE in the migrations. */
 export function referencedBy(migrations) {

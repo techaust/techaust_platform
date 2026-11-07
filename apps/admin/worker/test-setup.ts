@@ -1,6 +1,7 @@
 import { applyD1Migrations } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { beforeAll, beforeEach, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, vi } from "vitest";
+import { budgetHooks } from "../../../packages/testing/src/budget.ts";
 
 await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 
@@ -18,3 +19,8 @@ if (Number.isFinite(shiftTo)) {
   beforeAll(shift);
   beforeEach(shift);
 }
+
+// M7.5 L18: the shared counting env (packages/testing/src/budget.ts). Each request a test sends through `sendTo` (test-helpers.ts) is one invocation:
+// a batch over 45 statements, or more than 45 D1 calls plus subrequests in one invocation, fails the test; after each file the SQL its requests ran
+// gets the EXPLAIN sweep (a bare SCAN fails unless allowed with a reason).
+budgetHooks({ env, afterEach, afterAll });

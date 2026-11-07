@@ -111,7 +111,7 @@ Both scripts take values with hidden input or make them on your PC, hand them st
 3. Press the **Windows key**, type `powershell`, open **Windows PowerShell**, paste this line and press **Enter**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\m2.4-web-secrets.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\owner\m2.4-web-secrets.ps1"
 ```
 
 4. It asks for the Turnstile **Secret Key**: copy it from the Cloudflare page and paste it (the typing stays hidden), **Enter**. It also makes a random `FORMS_IP_PEPPER` (used to hash visitors' addresses) by itself.
@@ -121,7 +121,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJE
 1. In PowerShell, paste this line and press **Enter**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\m2.4-ses-keys.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\scripts\set-ses-keys.ps1"
 ```
 
 2. It asks for the **Access key** (`AKIA…`), then the **Secret access key**: copy each from the AWS page and paste it, **Enter**.
@@ -130,7 +130,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJE
 If a result says you are not logged in to Cloudflare, run these two lines one at a time (a browser window opens; approve it), then the script again:
 
 ```powershell
-cd "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\apps\jobs"
+cd "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\apps\jobs"
 ```
 
 ```powershell
@@ -178,14 +178,14 @@ The staging key of `techaust-ses-sender-staging` was made on 2026-10-23, so **th
 1. Press the **Windows key**, type `powershell`, open **Windows PowerShell**, paste this line and press **Enter**:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File "D:\BUSINESS\1. PARENT PROJECT\TECHAUST TECHNOLOGIES\WEBSITE\techaust_platform\.logs\owner\m2.4-ses-keys.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\scripts\set-ses-keys.ps1"
 ```
 
 2. It asks for the **Access key**, then the **Secret access key**: copy each from the AWS page, paste it (the typing stays hidden), **Enter**.
 3. Copy back **only** the `RESULT:` line. If it says you are not logged in, use the two login lines at the end of Part 5, then run the script again.
-4. Close the AWS page only after `RESULT: OK - SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY set on techaust-platform-jobs-staging`.
-   - `RESULT: FAIL - could not set SES_SECRET_ACCESS_KEY`: the new key ID is stored but the secret is still the old one, so **no email can be sent** until it is fixed. Run the script again straight away with the same new key (the AWS page is still open), then tell me both result lines.
-   - `NOT LOGGED IN`, or a `FAIL` about the shape of a key: nothing was changed and the old key is still in use. Log in as at the end of Part 5 (or copy the key again) and run the script again.
+4. Close the AWS page only after `RESULT: SES_ACCESS_KEY_ID and SES_SECRET_ACCESS_KEY stored on techaust-platform-jobs-staging; nothing to paste anywhere`.
+   - `RESULT: FAILED storing SES_SECRET_ACCESS_KEY … stored before it: SES_ACCESS_KEY_ID`: the new key ID is stored but the secret is still the old one, so **no email can be sent** until it is fixed. Run the script again straight away with the same new key (the AWS page is still open), then tell me both result lines.
+   - A `FAILED` that says nothing was stored (the shape of a key, or wrangler says you are not logged in): the old key is still in use. Copy the key again, or log in as at the end of Part 5, and run the script again.
    - Any other result: tell me the result line before doing anything else.
 
 **C. Check that email still works (I check the records)**

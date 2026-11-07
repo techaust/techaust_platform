@@ -30,6 +30,14 @@ import {
   verifyRazorpaySignature,
 } from "@techaust/core/razorpay";
 import { type StatementKind, statementEntries } from "@techaust/core/statement";
+import {
+  isUsageMessage,
+  parseUsage,
+  usageBellTitle,
+  usageCrossings,
+  usageMessageOf,
+  usageVariables,
+} from "@techaust/core/usage";
 import { renderEmail } from "@techaust/email";
 import {
   renderCertificateHtml,
@@ -346,6 +354,8 @@ export function warmConsumers(): number {
   // M7.4 (J): the new consumers' message checks, one run's cut-offs and the bell words; the acknowledgement email's first render. Not counted (warm.test.ts
   // pins the earlier families' counts); `warmDp` is tested on its own.
   warmDp();
+  // M7.5 D1: the usage job's message check, query variables, answer parser, crossings and bell title on a made-up answer (no fetch, nothing stored).
+  warmUsage();
   try {
     renderEmail(
       "request.received",
@@ -482,4 +492,33 @@ export function warmM72Messages(): number {
     // never stop a Worker from starting
   }
   return n;
+}
+
+/** M7.5 D1: the usage job's pure path on a made-up answer (the shape the GraphQL API sends); returns the rows parsed. Never throws. */
+export function warmUsage(): number {
+  try {
+    const msg = usageMessageOf(Date.UTC(2026, 10, 2, 0, 30));
+    if (!isUsageMessage(msg)) return 0;
+    usageVariables("warm", msg.day);
+    const parsed = parseUsage(
+      JSON.stringify({
+        data: {
+          viewer: {
+            accounts: [
+              {
+                w: [{ sum: { requests: 60_000 }, dimensions: { scriptName: "warm", status: "success" } }],
+                d: [{ sum: { rowsRead: 1, rowsWritten: 1 }, dimensions: { databaseId: "warm" } }],
+                q: [{ sum: { billableOperations: 1 }, dimensions: { actionType: "WriteMessage" } }],
+              },
+            ],
+          },
+        },
+      }),
+    );
+    if (!parsed.ok) return 0;
+    for (const c of usageCrossings(parsed.rows.filter((r) => r.dimension === ""))) usageBellTitle(c, msg.day);
+    return parsed.rows.length;
+  } catch {
+    return 0;
+  }
 }

@@ -3,7 +3,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { findRebuildViolations, loadMigrations, referencedBy } from "../../../scripts/migration-guard.mjs";
+import {
+  findRebuildViolations,
+  loadMigrations,
+  referencedBy,
+  statements,
+} from "../../../scripts/migration-guard.mjs";
 
 type Migration = { name: string; sql: string };
 const violations = (
@@ -120,6 +125,40 @@ describe("referenced-table rebuild guard", () => {
       sql: "-- DROP TABLE `clients`;\nALTER TABLE `lines` ADD `note` text;",
     };
     expect(violations([BASE, onlyComment])).toEqual([]);
+  });
+
+  it("knows quotes: a `--` or `;` inside a string literal cannot hide the DROP after it (M7.5 section F)", () => {
+    // Before M7.5 the `--` inside the string stripped the rest of the line, DROP included.
+    const inString: Migration = {
+      name: "0007_string.sql",
+      sql: "INSERT INTO `invites` (`token`) VALUES ('a--b'); DROP TABLE `clients`;",
+    };
+    expect(violations([BASE, inString])).toHaveLength(1);
+    const escaped: Migration = {
+      name: "0007_escaped.sql",
+      sql: "INSERT INTO `invites` (`token`) VALUES ('it''s -- ; fine'); DROP TABLE `clients`;",
+    };
+    expect(violations([BASE, escaped])).toHaveLength(1);
+  });
+
+  it("ignores a DROP that is only inside a string literal or a block comment", () => {
+    const literal: Migration = {
+      name: "0007_literal.sql",
+      sql: "CREATE TRIGGER `t` BEFORE DELETE ON `invites` BEGIN SELECT RAISE(ABORT, 'never DROP TABLE clients'); END;",
+    };
+    expect(violations([BASE, literal])).toEqual([]);
+    const block: Migration = {
+      name: "0007_block.sql",
+      sql: "/* DROP TABLE `clients`; */ ALTER TABLE `lines` ADD `note` text;",
+    };
+    expect(violations([BASE, block])).toEqual([]);
+  });
+
+  it("splits on `;` only outside quotes and comments", () => {
+    expect(statements("SELECT 'a;b'; -- c;d\nSELECT \"x;y\" /* ; */ ;")).toEqual([
+      "SELECT ''",
+      'SELECT "x;y"',
+    ]);
   });
 
   it("matches a DROP anywhere in the statement, not only at its start", () => {

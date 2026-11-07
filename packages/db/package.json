@@ -32,6 +32,7 @@
     "./retention": "./src/retention.ts",
     "./signin-pending": "./src/signin-pending.ts",
     "./sql-rules": "./src/sql-rules.ts",
+    "./warm": "./src/warm.ts",
     "./catalogue": "./src/seed/catalogue.ts",
     "./seed-templates": "./src/seed/templates.ts"
   },

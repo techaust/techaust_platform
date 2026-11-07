@@ -84,7 +84,6 @@ describe("signing in with a recovery code [ADM-AUTH-04]", () => {
 
   it("accepts lower case, spaces and hyphens in any place", async () => {
     const e = await enrol("rc-forms@example.com");
-    const challenge = await challengeFor(e.email, e.clientHash);
     const [a, b, c] = e.recoveryCodes as [string, string, string];
     const spelled = [
       a.toLowerCase(), // abcd-efgh-...
@@ -94,7 +93,9 @@ describe("signing in with a recovery code [ADM-AUTH-04]", () => {
         .toLowerCase()
         .replace(/(.{4})/g, "$1 ")}`, // spaces, lower case, no hyphens
     ];
-    for (const s of spelled) expect((await recover(e, s, challenge)).status, s).toBe(200);
+    // M7.5 (L4): a login challenge works once, so each sign-in takes a fresh one.
+    for (const s of spelled)
+      expect((await recover(e, s, await challengeFor(e.email, e.clientHash))).status, s).toBe(200);
   });
 
   it("refuses a wrong, a malformed and another member's code, all with the generic answer", async () => {

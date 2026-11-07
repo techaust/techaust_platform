@@ -19,7 +19,7 @@
   "assets": {
     "directory": "./dist",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/api/geo", "/api/forms/*"]
+    "run_worker_first": ["/api/health", "/api/geo", "/api/forms/*"]
   },
   // Local values. TURNSTILE_SITE_KEY is Cloudflare's always-pass TEST key (public); the matching test secret is written
   // to .dev.vars by `pnpm dev:secrets`. FORMS_ALLOWED_ORIGINS: the page origins that may POST a form (FRM-03).
@@ -34,7 +34,9 @@
   // Leads queue (producer): the jobs Worker consumes it. 2 submissions per 60 s per address is the first rate-limit layer
   // (the exact 5 per 10 min and 50 per day are enforced by the consumer, docs/13 2026-10-23).
   "queues": { "producers": [{ "binding": "LEADS_QUEUE", "queue": "techaust-local-leads" }] },
-  "ratelimits": [{ "name": "RL_FORMS", "namespace_id": "4001", "simple": { "limit": 2, "period": 60 } }],
+  // M7.5 (L22, the lead's B2 note): each scope its own namespace id (local 4101, staging 4201; production 4301 at Phase 7 L3), as the admin and portal
+  // limiters are numbered (scripts/check-worker-config.mjs keeps the website's ids apart from theirs).
+  "ratelimits": [{ "name": "RL_FORMS", "namespace_id": "4101", "simple": { "limit": 2, "period": 60 } }],
   "env": {
     "staging": {
       "name": "techaust-platform-web-staging",
@@ -63,7 +65,7 @@
       },
       "secrets": { "required": ["TURNSTILE_SECRET", "FORMS_IP_PEPPER"] },
       "queues": { "producers": [{ "binding": "LEADS_QUEUE", "queue": "techaust-staging-leads" }] },
-      "ratelimits": [{ "name": "RL_FORMS", "namespace_id": "4001", "simple": { "limit": 2, "period": 60 } }]
+      "ratelimits": [{ "name": "RL_FORMS", "namespace_id": "4201", "simple": { "limit": 2, "period": 60 } }]
     },
     "production": {
       "name": "techaust-platform-web",

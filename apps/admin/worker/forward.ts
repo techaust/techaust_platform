@@ -9,11 +9,23 @@
 // the front's own routes and middleware, so an undeclared path still gets the front's 404.
 
 import { firstRun } from "@techaust/auth";
+import { API_CSP } from "@techaust/core/file-types";
 import { TrieRouter } from "hono/router/trie-router";
 import { type App, requestFacts } from "./app.ts";
-import { err, type RouteDef } from "./context.ts";
+import { type Ctx, err, type RouteDef } from "./context.ts";
+import { forwardAllowed, tooMany } from "./rate-limit.ts";
 
 const BAD_GATEWAY = { code: "bad_gateway", message: "Something went wrong" };
+
+/**
+ * An answer the forwarder builds itself (the 502, the 429) runs outside the middleware chain, so the headers every other /api answer carries are set here:
+ * no caching, no sniffing, and (M7.5 C3a, L11) the API policy.
+ */
+function apiHeaders(c: Ctx): void {
+  c.header("Cache-Control", "no-store");
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("Content-Security-Policy", API_CSP);
+}
 
 /** Which Worker answers a forwarded row: `w` in the log lines ("api", "finance" or, since the fourth admin Worker, "invoices"). */
 export const workerOf = (row: RouteDef): "api" | "finance" | "invoices" =>
@@ -81,6 +93,15 @@ export function forwardRoutes(app: App, routes: readonly RouteDef[], warm = fals
     if (!row) return next();
     const w = workerOf(row);
     const { iso, n, rid } = requestFacts(warm, c.req.header("cf-ray"));
+    // M7.5 (A1 F2, L2): the per-session limit before the request leaves the front (no D1 work here or behind). Refused: 429 with every header an /api
+    // answer carries (this runs before the middleware chain), and the same `ev: "fwd"` line with its status.
+    if (!warm && !(await forwardAllowed(c))) {
+      c.set("rid", rid);
+      apiHeaders(c);
+      const refused = tooMany(c);
+      console.log(JSON.stringify({ ev: "fwd", r: row.path, w, s: 429, rid, iso, n }));
+      return refused;
+    }
     let res: Response;
     try {
       res = await bindingOf(c.env, w).fetch(c.req.raw);
@@ -98,9 +119,7 @@ export function forwardRoutes(app: App, routes: readonly RouteDef[], warm = fals
           }),
         );
       c.set("rid", rid);
-      // Built outside the middleware chain, so the headers every other /api answer carries are set here.
-      c.header("Cache-Control", "no-store");
-      c.header("X-Content-Type-Options", "nosniff");
+      apiHeaders(c);
       return err(c, BAD_GATEWAY, 502);
     }
     // M6.2 (CPU diagnosis, lead decision 4): `f: 1` on this isolate's first forward of the row.

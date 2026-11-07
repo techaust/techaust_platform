@@ -11,6 +11,7 @@ import {
 } from "@techaust/auth";
 import { uuidv7 } from "@techaust/core";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { invocation } from "../../../packages/testing/src/budget.ts";
 import type { RouteDef } from "./context.ts";
 import type { Fixtures, FxContact } from "./fixtures.ts";
 import app, { createApp } from "./index.ts";
@@ -179,10 +180,13 @@ export async function sendTo(
   init: RequestInit,
   e: Env = env,
 ): Promise<Response> {
-  const ctx = createExecutionContext();
-  const res = await target.request(url, init, e, ctx);
-  await waitOnExecutionContext(ctx);
-  return res;
+  // M7.5 L18: one invocation of the counting env (the waitUntil work included), labelled by method and path.
+  return invocation(`${init.method ?? "GET"} ${new URL(url, "http://x").pathname}`, async () => {
+    const ctx = createExecutionContext();
+    const res = await target.request(url, init, e, ctx);
+    await waitOnExecutionContext(ctx);
+    return res;
+  });
 }
 
 /** `sendTo` the real app. */

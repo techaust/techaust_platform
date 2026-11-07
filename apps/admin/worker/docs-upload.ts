@@ -4,7 +4,7 @@
 // the rest is piped through a `FixedLengthStream`; R2 checks the SHA-256 the browser sent (`X-File-Sha256`), and the key carries it
 // (`<prefix>-<sha256>`), so a retry of the same bytes lands on the same key. The put is conditional (`If-None-Match: *`): an object already there is never
 // replaced. Nothing here logs a file name or bytes: keys, sizes and MIME types only.
-import { extOf, SNIFF_BYTES, sniffFileType } from "@techaust/core/file-types";
+import { downloadHeaders, extOf, SNIFF_BYTES, sniffFileType } from "@techaust/core/file-types";
 import { type ApiError, BAD_REQUEST, type Ctx, err } from "./context.ts";
 import { PROOF_TOO_LARGE, PROOF_TYPE_NOT_ALLOWED } from "./payment-messages.ts";
 
@@ -186,14 +186,7 @@ export async function docDownload(
     return null;
   }
   return new Response(obj.body, {
-    headers: {
-      "Content-Type": mime,
-      "Content-Length": String(obj.size),
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "X-Content-Type-Options": "nosniff",
-      "Content-Security-Policy": "default-src 'none'; sandbox",
-      "Cache-Control": "no-store",
-    },
+    headers: downloadHeaders({ contentType: mime, size: obj.size, filename }),
   });
 }
 

@@ -40,6 +40,37 @@ export const CSRF_CORPUS: CsrfCase[] = [
   },
   { name: "HEAD from anywhere", input: { method: "HEAD", origin: EVIL }, verdict: "ok" },
   { name: "OPTIONS from anywhere", input: { method: "OPTIONS", origin: EVIL }, verdict: "ok" },
+  // M7.5 (L3): a GET or HEAD under /api/ that the browser marks as not from the app's own pages is refused (some GETs write).
+  {
+    name: "GET, Sec-Fetch-Site same-origin (the SPA's fetch, a PDF it opens)",
+    input: { method: "GET", origin: null, secFetchSite: "same-origin", contentType: null, hasBody: false },
+    verdict: "ok",
+  },
+  {
+    name: "GET, Sec-Fetch-Site cross-site (a link on another site)",
+    input: { method: "GET", origin: null, secFetchSite: "cross-site", contentType: null, hasBody: false },
+    verdict: "cross_site",
+  },
+  {
+    name: "GET, Sec-Fetch-Site same-site (a sibling sub-domain)",
+    input: { method: "GET", origin: null, secFetchSite: "same-site", contentType: null, hasBody: false },
+    verdict: "cross_site",
+  },
+  {
+    name: "GET, Sec-Fetch-Site none (a typed or bookmarked API address)",
+    input: { method: "GET", origin: null, secFetchSite: "none", contentType: null, hasBody: false },
+    verdict: "cross_site",
+  },
+  {
+    name: "HEAD, Sec-Fetch-Site cross-site",
+    input: { method: "HEAD", origin: null, secFetchSite: "cross-site", contentType: null, hasBody: false },
+    verdict: "cross_site",
+  },
+  {
+    name: "OPTIONS, Sec-Fetch-Site cross-site (no handler: judged as before)",
+    input: { method: "OPTIONS", origin: EVIL, secFetchSite: "cross-site", contentType: null, hasBody: false },
+    verdict: "ok",
+  },
   { name: "cross-origin POST", input: { origin: EVIL }, verdict: "cross_site" },
   { name: "a different port", input: { origin: "https://app.example:8443" }, verdict: "cross_site" },
   { name: "http instead of https", input: { origin: "http://app.example" }, verdict: "cross_site" },

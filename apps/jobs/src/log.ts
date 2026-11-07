@@ -15,6 +15,17 @@ export function noteInvocation(): void {
   invocations++;
 }
 
+/**
+ * M7.5 L20 (as the admin Workers' `firstRun` in @techaust/auth, which jobs does not bundle): the keys this isolate has run, so a line can say "first run here"
+ * (`f: 1`) per queue kind and per cron branch. Keys are codes (`q pdf pdf.render`, `cron h09`), never a value from a message. Bounded at 512 keys.
+ */
+const ran = new Set<string>();
+export function firstRun(key: string): 1 | undefined {
+  if (ran.has(key)) return undefined;
+  if (ran.size < 512) ran.add(key);
+  return 1;
+}
+
 export function logEvent(
   event: string,
   fields: Record<string, string | number | boolean | undefined> = {},

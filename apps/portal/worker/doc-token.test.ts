@@ -730,10 +730,13 @@ describe("the PDF behind the link [POR-06, M4.5 headers]", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("%PDF-1.4 test");
     expect(res.headers.get("Content-Type")).toBe("application/pdf");
-    expect(res.headers.get("Content-Disposition")).toMatch(/^attachment; filename="TH-T-\d+-v1\.pdf"$/);
+    // M7.5 (C3b, L12): the shared download headers (contentDisposition: both filename forms; `default-src 'none'; sandbox`)
+    expect(res.headers.get("Content-Disposition")).toMatch(
+      /^attachment; filename="TH-T-\d+-v1\.pdf"; filename\*=UTF-8''TH-T-\d+-v1\.pdf$/,
+    );
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(res.headers.get("Content-Security-Policy")).toBe("sandbox");
+    expect(res.headers.get("Content-Security-Policy")).toBe("default-src 'none'; sandbox");
   });
   it("FX-5 (early check 2; 08-C RA-10): opening the PDF through the link records the first view before the answer, once; a bad link writes none", async () => {
     const f = await fixtures();

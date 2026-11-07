@@ -1,0 +1,2 @@
+CREATE INDEX `documents_decided_contact` ON `documents` (`decided_contact_id`) WHERE "documents"."decided_contact_id" is not null;--> statement-breakpoint
+CREATE INDEX `payment_schedules_milestone` ON `payment_schedules` (`milestone_id`) WHERE "payment_schedules"."milestone_id" is not null;

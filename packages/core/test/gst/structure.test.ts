@@ -92,6 +92,8 @@ describe("src/gst: pure and deterministic", () => {
       "../tax/types.ts",
       // constants only, no imports of its own (test-hardening item 3: the realisation bounds held once)
       "../realisation-bounds.ts",
+      // the one CSV text-cell writer (M7.5 B1): pure, no imports of its own
+      "../csv-cell.ts",
       // types only (checked below): the summary and statement shapes
       "../invoices.ts",
       "../statement.ts",

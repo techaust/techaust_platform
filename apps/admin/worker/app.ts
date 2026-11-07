@@ -1,4 +1,5 @@
 import { answeringRow, firstRun, hex, randomBytes } from "@techaust/auth";
+import { API_CSP } from "@techaust/core/file-types";
 import { accessStmt, clipHeader, HEADER_LIMITS } from "@techaust/db/log";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
@@ -9,7 +10,7 @@ import { Hono } from "hono/tiny";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { type AppEnv, accessEntry, BAD_REQUEST, type Ctx, err, FORBIDDEN, NOT_FOUND } from "./context.ts";
 import { csrf } from "./csrf.ts";
-import { guard, routeFor } from "./guard.ts";
+import { guardWith, routeFor, type SessionLimit } from "./guard.ts";
 
 let isolateId: string | undefined;
 let isolateRequests = 0;
@@ -61,11 +62,14 @@ function warmJson(c: Ctx) {
  * compiles them before the first metered request. It differs only where a dry run must leave no trace and must not use what global scope refuses: no request
  * number, no `f: 1` first-run mark, no log line, no access row, a fixed request id, a body from `warmBodies`, `c.json` without a body, and errors answered silently.
  * A Worker's real app is always built without it.
+ *
+ * `sessionLimit` (M7.5 L2): the front's per-session limit (rate-limit.ts `sessionAllowed`), asked by the guard before the session read. Only the front passes it:
+ * the Workers behind it are reached through the front, which counted the request, and must not name its keys (the budget's SIGN_IN_TABLES marker).
  */
 export function createApp(
   mount: (app: App) => void,
   before?: (app: App) => void,
-  opts: { warm?: boolean } = {},
+  opts: { warm?: boolean; sessionLimit?: SessionLimit } = {},
 ) {
   const warm = opts.warm === true;
   const app: App = new Hono<AppEnv>().basePath("/api");
@@ -87,6 +91,13 @@ export function createApp(
       permissionsPolicy: { camera: [], microphone: [], geolocation: [], payment: [], usb: [] },
     }),
   );
+  // M7.5 (C3a, L11): every answer that set no policy of its own (JSON, errors, 404s) gets web's API policy, `default-src 'none'; frame-ancestors 'none'`.
+  // Set-if-absent AFTER the handler: Hono's `secureHeaders({ contentSecurityPolicy })` sets its header after the handler too and would overwrite a
+  // download's `default-src 'none'; sandbox` (core `downloadHeaders`).
+  app.use(async (c, next) => {
+    await next();
+    if (!c.res.headers.has("Content-Security-Policy")) c.res.headers.set("Content-Security-Policy", API_CSP);
+  });
 
   // One diagnostic line per /api request, to tell cold isolates from busy ones in Workers Logs. Exactly these keys
   // [NFR-6]: the route PATTERN (or "other"), the status, the request ID (`cf-ray` or random), a random per-isolate ID,
@@ -178,7 +189,7 @@ export function createApp(
         ? largeLimit(c, next)
         : jsonLimit(c, next);
   });
-  app.use(guard);
+  app.use(guardWith(opts.sessionLimit));
 
   mount(app);
 

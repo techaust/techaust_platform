@@ -1,7 +1,8 @@
 // Worker configuration guards. Runs in Node (it reads files).
 //  - L1 (audit 2026-10-22): only the routes the Worker implements run it; junk /api paths get the static 404.
 //  - M1: the preview-URL guard (scripts/check-worker-config.mjs) fails on a config that lets Preview URLs through.
-//  - M2.4: the no-data-bindings guard (scripts/check-web-bindings.mjs) still rejects D1/R2/KV/DO/Hyperdrive, and the
+//  - M2.4/M7.5: the web bindings guard (scripts/check-web-bindings.mjs, an allow list since M7.5) rejects every data or
+//    service binding, and the
 //    form bindings (queue, rate limiter, secrets) are declared where the staging deploy needs them.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -9,6 +10,8 @@ import { describe, expect, it } from "vitest";
 import * as bindingGuard from "../../../scripts/check-web-bindings.mjs";
 // @ts-expect-error plain .mjs without types
 import * as guard from "../../../scripts/check-worker-config.mjs";
+// @ts-expect-error plain .mjs without types
+import * as inventory from "../../../scripts/route-inventory-lib.mjs";
 import app from "../src/worker.ts";
 
 const config = guard.parseJsonc(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
@@ -21,7 +24,7 @@ const matches = (pattern: string, path: string) =>
 describe("web run_worker_first (audit L1)", () => {
   it("does not send every /api path to the Worker", () => {
     expect(patterns).not.toContain("/api/*");
-    expect(patterns).toEqual(["/api/geo", "/api/forms/*"]);
+    expect(patterns).toEqual(["/api/health", "/api/geo", "/api/forms/*"]);
   });
 
   it("covers every route the Worker implements", () => {
@@ -35,6 +38,24 @@ describe("web run_worker_first (audit L1)", () => {
         `${r.method} ${r.path} must be in run_worker_first`,
       ).toBe(true);
     }
+  });
+
+  it("the route inventory's web rows (scripts/route-inventory-lib.mjs) are the Worker's routes, each covered by run_worker_first (M7.5 B2)", () => {
+    const text = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
+    const rows = inventory.webRows(text("../src/worker.ts"), text("../src/forms.ts")) as {
+      method: string;
+      path: string;
+    }[];
+    const real = app.routes
+      .filter((r) => !r.path.endsWith("*"))
+      .map((r) => r.path)
+      .sort();
+    expect(rows.map((r) => r.path).sort()).toEqual(real);
+    for (const r of rows)
+      expect(
+        patterns.some((p) => matches(p, r.path.replace(/:kind$/, "contact"))),
+        r.path,
+      ).toBe(true);
   });
 
   it.each(["/api/nope", "/api/x", "/api", "/api/geo2", "/api/form/x"])(
@@ -52,17 +73,63 @@ describe("web binding guard (docs/05 §1.1)", () => {
     ).toEqual([]);
   });
 
-  it.each(["d1_databases", "r2_buckets", "kv_namespaces", "durable_objects", "hyperdrive"])(
-    "still rejects %s",
-    (key) => {
-      expect(bindingGuard.findForbidden(`{ "${key}": [] }`)).toEqual([key]);
-    },
-  );
+  it.each([
+    "d1_databases",
+    "r2_buckets",
+    "kv_namespaces",
+    "durable_objects",
+    "hyperdrive",
+    // M7.5 (section F): an allow list, so the binding types the old forbidden list missed fail too.
+    "services",
+    "browser",
+    "ai",
+    "vectorize",
+    "analytics_engine_datasets",
+    "workflows",
+    "send_email",
+    "dispatch_namespaces",
+    "unknown_future_binding",
+  ])("rejects %s at the top level and in an environment", (key) => {
+    expect(bindingGuard.findForbidden(`{ "${key}": [] }`)).toEqual([
+      `top level: "${key}" is not on the web Worker's allow list`,
+    ]);
+    expect(bindingGuard.findForbidden(`{ "env": { "staging": { "${key}": [] } } }`)).toEqual([
+      `env.staging: "${key}" is not on the web Worker's allow list`,
+    ]);
+  });
 
-  it("allows queues, rate limits and secrets", () => {
+  it("allows queue producers, rate limits, secrets, vars, assets and observability", () => {
     expect(
-      bindingGuard.findForbidden('{ "queues": {}, "ratelimits": [], "secrets": { "required": ["X"] } }'),
+      bindingGuard.findForbidden(
+        '{ "name": "x", "queues": { "producers": [] }, "ratelimits": [], "secrets": { "required": ["X"] }, "vars": {}, "assets": {}, "observability": {}, "env": { "staging": { "queues": { "producers": [] } } } }',
+      ),
     ).toEqual([]);
+  });
+
+  it("refuses a queue consumer (the web Worker only sends)", () => {
+    expect(bindingGuard.findForbidden('{ "queues": { "consumers": [] } }')).toEqual([
+      'top level: "queues.consumers" is not allowed (producers only)',
+    ]);
+  });
+});
+
+describe("the website's rate limiter ids (M7.5, L22)", () => {
+  it("each scope that declares RL_FORMS has its own namespace id, never the admin's or the portal's", () => {
+    const scopes = [config, ...Object.values(config.env as Record<string, typeof config>)];
+    const ids = scopes.flatMap((s) =>
+      (s.ratelimits ?? []).map((r: { namespace_id: string }) => r.namespace_id),
+    );
+    expect(ids).toEqual(["4101", "4201"]);
+    expect(new Set(ids).size).toBe(ids.length);
+    const others = ["../../admin/wrangler.jsonc", "../../portal/wrangler.jsonc"].map((p) =>
+      guard.parseJsonc(readFileSync(new URL(p, import.meta.url), "utf8")),
+    );
+    const theirs = others.flatMap((c) =>
+      [c, ...Object.values(c.env ?? {})].flatMap((s) =>
+        ((s as { ratelimits?: { namespace_id: string }[] }).ratelimits ?? []).map((r) => r.namespace_id),
+      ),
+    );
+    for (const id of ids) expect(theirs).not.toContain(id);
   });
 });
 

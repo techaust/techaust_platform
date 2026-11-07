@@ -4,7 +4,7 @@
 // queries per invocation. The numbers are logged for the staging reading. All names, references and amounts are invented test data.
 import { ALLOCATIONS_MAX } from "@techaust/core/ledger";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { D1_FREE_QUERIES, DEED_TOTAL, mkDeedProject, statementCounter } from "./test-deeds.ts";
+import { DEED_TOTAL, HOUSE_STATEMENTS, mkDeedProject, statementCounter } from "./test-deeds.ts";
 import { call, one, sessionFor } from "./test-helpers.ts";
 import { currentFy, lutOf, mkProforma, putSwiftBank, putTax, todayIso } from "./test-invoice-types.ts";
 import { issueBodyOf, issueInvoice, json, putBank, putCompany, requestIssue } from "./test-invoices.ts";
@@ -35,10 +35,10 @@ async function tenInvoices() {
 
 const within = (what: string, n: number) => {
   console.log(`D1 statements, ${what}: ${n}`);
-  expect(n, what).toBeLessThanOrEqual(D1_FREE_QUERIES);
+  expect(n, what).toBeLessThanOrEqual(HOUSE_STATEMENTS);
 };
 
-describe("the hooked batches stay within D1 Free's 50 queries [T11 L3, early check 9]", () => {
+describe("the hooked batches stay within the house rule of 45 statements (D1 Free allows 50) [T11 L3, early check 9; M7.5 L17]", () => {
   it(`record a confirmed payment over ${ALLOCATIONS_MAX} invoices (Owner): the deed is made in the same request`, async () => {
     const o = await owner();
     const f = await tenInvoices();

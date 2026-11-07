@@ -1,13 +1,51 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  API_CSP,
   contentDisposition,
+  DOWNLOAD_CSP,
+  downloadHeaders,
   extOf,
   fileKey,
   isAllowedExtension,
   sanitiseFilename,
   sniffFileType,
 } from "../src/file-types.ts";
+
+describe("downloadHeaders and the API policies [M7.5 C3, L11, L12]", () => {
+  it("serves a stored object as a sandboxed, unsniffed, uncached, unindexed attachment with a safe filename", () => {
+    const h = downloadHeaders({
+      contentType: "application/pdf",
+      size: 1234,
+      filename: 'TH "x", ₹.pdf',
+      etag: "abc",
+    });
+    expect(h).toEqual({
+      "Content-Type": "application/pdf",
+      "Content-Length": "1234",
+      "Content-Disposition": contentDisposition('TH "x", ₹.pdf'),
+      ETag: '"abc"',
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+      "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex",
+    });
+    expect(h["Content-Disposition"]).toMatch(/^attachment; filename="TH _x_, _\.pdf"; filename\*=UTF-8''/);
+  });
+
+  it("no filename: no Content-Disposition; no etag: no ETag; the policy is always the sandbox", () => {
+    const h = downloadHeaders({ contentType: "image/png", size: 1, filename: null });
+    expect(h["Content-Disposition"]).toBeUndefined();
+    expect(h.ETag).toBeUndefined();
+    expect(h["Content-Security-Policy"]).toBe(DOWNLOAD_CSP);
+    expect(downloadHeaders({ contentType: "x", size: 0, filename: "a", etag: null }).ETag).toBeUndefined();
+  });
+
+  it("the API policy loads nothing and can't be framed", () => {
+    expect(API_CSP).toBe("default-src 'none'; frame-ancestors 'none'");
+    expect(DOWNLOAD_CSP).toBe("default-src 'none'; sandbox");
+  });
+});
 
 const bytes = (...v: (number | string)[]) =>
   Uint8Array.from(v.flatMap((x) => (typeof x === "string" ? [...x].map((c) => c.charCodeAt(0)) : [x])));
