@@ -12,6 +12,9 @@
 //   9. one batch: the `rebuilt` result and the statistics; when the subject was redacted or anonymised meanwhile the result is refused by its guard, the object
 //      just stored is deleted and the result is `skipped` (the T7 pattern);
 //  10. the owners' `pdf.rebuilt` bell.
+// An object at the new key never outlives a request closed without a `rebuilt` result (early check change 3): every other result deletes it first (a
+// redacted offer's stray `-rN` would otherwise survive erasure, since the redaction outbox queues only rebuilt keys); the dead letter adopts it while the
+// subject may still be rebuilt.
 // The frozen row and the old object are never touched. Bells name the document by its number (else "Untitled"); copy 07-ZV lines 16 to 18 (approved 2026-11-07).
 // Ids, codes and counts only in logs.
 import type { PdfRebuildMessage } from "@techaust/core/pdf-jobs";
@@ -44,12 +47,15 @@ import {
 } from "./pdf.ts";
 import { receiptPlan, receiptRow } from "./receipts.ts";
 
-/** The owners' bells of a rebuild (07-ZV lines 16 to 18, word for word). */
+/** The owners' bells of a rebuild (07-ZV lines 16 to 18 and 22, word for word). */
 export const REBUILD_BELL = {
   rebuilt: (label: string) => `The PDF of ${label} was rebuilt.`,
   refused: (label: string) =>
     `The PDF of ${label} couldn't be rebuilt because its saved record didn't match. A developer needs to look at it.`,
   failed: (label: string) => `The PDF of ${label} couldn't be rebuilt. Open it to try again.`,
+  /** 07-ZV line 22 (early check change 6): the saved record is missing, so trying again can't help. */
+  envelopeMissing: (label: string) =>
+    `The PDF of ${label} couldn't be rebuilt because its saved record is missing. A developer needs to look at it.`,
 } as const;
 
 export type RebuildOutcome =
@@ -198,17 +204,21 @@ async function loadSubject(env: Env, req: RepairReadRow, htmlOf: HtmlOf): Promis
 
 // ---- the consumer ----------------------------------------------------------------------------------------------------------------------------------------
 
-/** The result of a request that ended without a rebuilt file (`RESULT_INSERT_SQL`; once per request). Returns whether it was written. */
+/**
+ * The result of a request that ended without a rebuilt file (`RESULT_INSERT_SQL`; once per request). Any object at the request's new key (a put whose result
+ * batch never ran) is deleted first, so it never outlives the request (change 3; R2's delete of a missing key is a no-op). Returns whether it was written.
+ */
 async function close(
   env: Env,
-  repairId: string,
+  req: Pick<RepairReadRow, "id" | "new_key">,
   outcome: "intact" | "refused" | "failed" | "skipped",
   code: string,
   now: number,
   bellStmt?: D1PreparedStatement,
 ): Promise<boolean> {
+  await env.DOCS.delete(req.new_key);
   const [r] = await env.DB.batch([
-    env.DB.prepare(RESULT_INSERT_SQL).bind(repairId, outcome, code, null, null, now),
+    env.DB.prepare(RESULT_INSERT_SQL).bind(req.id, outcome, code, null, null, now),
     ...(bellStmt ? [bellStmt] : []),
   ]);
   return (r?.meta.changes ?? 0) > 0;
@@ -248,11 +258,13 @@ async function settleRebuilt(
   // Not written: another run wrote the result, or the subject may no longer be rebuilt (redacted, anonymised): then the file just stored goes (T7).
   const again = await env.DB.prepare(REPAIR_READ_SQL).bind(req.id).first<RepairReadRow>();
   if (again && again.done_outcome === null && !again.live) {
-    await env.DOCS.delete(req.new_key);
     const now2 = await loadSubject(env, again, renderDocumentHtml);
     const code = now2.found ? "not_found" : now2.code;
-    await close(env, req.id, "skipped", code, now);
+    await close(env, req, "skipped", code, now);
     logEvent("pdf.rebuild_skipped", { why: code, after: "put" });
+  } else if (again && again.done_outcome !== null && again.done_outcome !== "rebuilt") {
+    // A parallel run closed the request without a file while this one stored it: the stray object goes too (change 3).
+    await env.DOCS.delete(req.new_key);
   }
   return false;
 }
@@ -279,13 +291,13 @@ export async function processRebuild(
   }
   const subject = await loadSubject(env, req, htmlOf);
   if (!subject.found) {
-    await close(env, req.id, "skipped", subject.code, now);
+    await close(env, req, "skipped", subject.code, now);
     logEvent("pdf.rebuild_skipped", { why: subject.code, kind: req.subject_kind });
     return "skipped";
   }
   // The old file came back (or was never lost): nothing is rebuilt.
   if ((await storedVerdict(env.DOCS, req.old_key, req.old_sha256)) === "intact") {
-    await close(env, req.id, "intact", "original_present", now);
+    await close(env, req, "intact", "original_present", now);
     logEvent("pdf.rebuild_intact", { kind: req.subject_kind });
     return "intact";
   }
@@ -307,7 +319,11 @@ export async function processRebuild(
   const plan = await subject.plan();
   if (!plan.ok) {
     const title =
-      plan.as === "refused" ? REBUILD_BELL.refused(subject.label) : REBUILD_BELL.failed(subject.label);
+      plan.as === "refused"
+        ? REBUILD_BELL.refused(subject.label)
+        : plan.code === "envelope_missing"
+          ? REBUILD_BELL.envelopeMissing(subject.label)
+          : REBUILD_BELL.failed(subject.label);
     const ring =
       plan.as === "skipped"
         ? undefined
@@ -319,7 +335,7 @@ export async function processRebuild(
             title,
             subject.link,
           );
-    await close(env, req.id, plan.as, plan.code, now, ring);
+    await close(env, req, plan.as, plan.code, now, ring);
     logEvent(plan.as === "refused" ? "pdf.refused" : "pdf.rebuild_failed", {
       stage: "rebuild",
       code: plan.code,
@@ -349,24 +365,42 @@ export async function processRebuild(
   return ok ? "rebuilt" : "skipped";
 }
 
-/** A `pdf.rebuild` that ran out of tries: the request ends `failed` / `dead_letter` and the owners get one bell (07-ZV line 18). Throws on D1 errors. */
+/**
+ * A `pdf.rebuild` that ran out of tries: the request ends `failed` / `dead_letter` and the owners get one bell (07-ZV line 18). A file already stored at the
+ * new key (its put went through, the result batch never did) is adopted while the subject may still be rebuilt, else deleted with the `failed` result
+ * (change 3). Throws on D1 errors.
+ */
 export async function processRebuildDeadLetter(
   env: Env,
   msg: PdfRebuildMessage,
   now = Date.now(),
-): Promise<void> {
+): Promise<"adopted" | "failed" | "done"> {
   const req = await env.DB.prepare(REPAIR_READ_SQL).bind(msg.repairId).first<RepairReadRow>();
   logEvent("pdf.rebuild_dead_letter", { found: req !== null, done: req?.done_outcome != null });
-  if (!req || req.done_outcome !== null) return;
+  if (!req || req.done_outcome !== null) return "done";
   const subject = await loadSubject(env, req, renderDocumentHtml);
+  if (subject.found) {
+    const already = await env.DOCS.get(req.new_key);
+    if (already !== null) {
+      const bytes = new Uint8Array(await already.arrayBuffer());
+      const sha256 = await sha256Bytes(bytes);
+      const ok = await settleRebuilt(env, req, { sha256, bytes: bytes.byteLength }, null, subject, now);
+      logEvent("pdf.rebuild_adopted", { kind: req.subject_kind, ok, after: "dead_letter" });
+      if (ok) return "adopted";
+      // Not written: settleRebuilt closed it (skipped) or another run did; nothing is left to end here.
+      const back = await env.DB.prepare(REPAIR_READ_SQL).bind(req.id).first<RepairReadRow>();
+      if (back?.done_outcome != null) return "done";
+    }
+  }
   const label = subject.found ? subject.label : "Untitled";
   const link = subject.found ? subject.link : "/";
   await close(
     env,
-    req.id,
+    req,
     "failed",
     "dead_letter",
     now,
     bell(env, "pdf.failed", "pdf_repair", req.id, REBUILD_BELL.failed(label), link),
   );
+  return "failed";
 }

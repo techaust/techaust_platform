@@ -19,6 +19,7 @@ import {
 } from "../../../packages/testing/src/pdf-rebuild.ts";
 import { stubPdf } from "../src/browser.ts";
 import { processDeedPdf } from "../src/deed-pdf.ts";
+import { attachmentFor } from "../src/email.ts";
 import type { Clock } from "../src/pacer.ts";
 import {
   certificatePlan,
@@ -385,7 +386,7 @@ describe("refusals, skips and the queue", () => {
     expect(await one("SELECT refused_at FROM pdf_failures WHERE document_id = ?1", s.id)).toBeNull();
   });
 
-  it("a missing envelope is failed / envelope_missing with a bell (never re-made from the rows)", async () => {
+  it("a missing envelope is failed / envelope_missing with its own bell, 07-ZV line 22 (never re-made from the rows)", async () => {
     const s = await renderedInvoice();
     await realEnv.DOCS.delete(s.key.replace(/\.pdf$/, ".json"));
     await realEnv.DOCS.delete(s.key);
@@ -395,9 +396,98 @@ describe("refusals, skips and the queue", () => {
     expect((await bellsOf(repairId)).results).toEqual([
       {
         kind: "pdf.failed",
-        title: `The PDF of ${s.numberDisplay} couldn't be rebuilt. Open it to try again.`,
+        title: `The PDF of ${s.numberDisplay} couldn't be rebuilt because its saved record is missing. A developer needs to look at it.`,
       },
     ]);
+  });
+
+  it("change 3: the original came back after a put whose result never ran: intact, and the stray object at the new key is deleted", async () => {
+    const s = await renderedInvoice();
+    const repairId = await request("invoice", s.id, s.key);
+    await putWithSha(realEnv.DOCS, repairKey(s.key, 1), ORIGINAL_PDF);
+    expect(await processRebuild(mkEnv(), msg(repairId), NOW, clock)).toBe("intact");
+    expect(await realEnv.DOCS.head(repairKey(s.key, 1))).toBeNull();
+    expect(await resultOf(repairId)).toMatchObject({ outcome: "intact", new_key: null });
+  });
+
+  it("change 3: redacted after a put whose result never ran: skipped, and the stray object is deleted (it would survive erasure)", async () => {
+    const s = await renderedOffer();
+    await realEnv.DOCS.delete(s.key);
+    const repairId = await request("offer", s.id, s.key);
+    await putWithSha(realEnv.DOCS, repairKey(s.key, 1), ORIGINAL_PDF);
+    await run(
+      "UPDATE documents SET recipient = json_object('legalName', 'Anonymised client', 'country', 'IN'), title = 'Anonymised client', redacted_at = ?2, updated_at = updated_at + 1 WHERE id = ?1",
+      s.id,
+      Date.now(),
+    );
+    expect(await processRebuild(mkEnv(), msg(repairId), NOW, clock)).toBe("skipped");
+    expect(await realEnv.DOCS.head(repairKey(s.key, 1))).toBeNull();
+    expect(await resultOf(repairId)).toMatchObject({ outcome: "skipped", code: "redacted" });
+  });
+
+  it("change 3: the dead letter adopts a stored object while the subject may be rebuilt; otherwise deletes it with the failed result", async () => {
+    const s = await renderedInvoice();
+    await realEnv.DOCS.delete(s.key);
+    const live = await request("invoice", s.id, s.key);
+    const sha = await putWithSha(realEnv.DOCS, repairKey(s.key, 1), ORIGINAL_PDF);
+    expect(await processRebuildDeadLetter(mkEnv(), msg(live), NOW)).toBe("adopted");
+    expect(await resultOf(live)).toMatchObject({ outcome: "rebuilt", new_sha256: sha });
+    expect((await bellsOf(live)).results).toEqual([
+      { kind: "pdf.rebuilt", title: `The PDF of ${s.numberDisplay} was rebuilt.` },
+    ]);
+
+    const t = await renderedInvoice();
+    await realEnv.DOCS.delete(t.key);
+    const gone = await request("invoice", t.id, t.key);
+    await putWithSha(realEnv.DOCS, repairKey(t.key, 1), ORIGINAL_PDF);
+    await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?1", t.clientId);
+    expect(await processRebuildDeadLetter(mkEnv(), msg(gone), NOW)).toBe("failed");
+    expect(await realEnv.DOCS.head(repairKey(t.key, 1))).toBeNull();
+    expect(await resultOf(gone)).toMatchObject({ outcome: "failed", code: "dead_letter", new_key: null });
+  });
+
+  it("change 8: the daily quota sends a delayed copy with the next hop, counts the hit and rings the pdf.quota bell", async () => {
+    const s = await renderedInvoice();
+    await realEnv.DOCS.delete(s.key);
+    const repairId = await request("invoice", s.id, s.key);
+    const quota = browser(() => new Response("Browser time limit exceeded for today", { status: 429 }));
+    expect(await processRebuild(mkEnv(quota), msg(repairId, 2), NOW, clock)).toBe("delayed");
+    expect(fakes.pdf.at(-1)).toMatchObject({ body: msg(repairId, 3) });
+    expect(await resultOf(repairId)).toBeNull();
+    expect(
+      await one<{ kind: string }>(
+        "SELECT kind FROM notifications WHERE kind = 'pdf.quota' AND entity_id = ?1 LIMIT 1",
+        new Date(NOW).toISOString().slice(0, 10),
+      ),
+    ).toEqual({ kind: "pdf.quota" });
+    expect(
+      (await one<{ value: number }>("SELECT value FROM stats_daily WHERE metric = 'pdf.quota_hits' LIMIT 1"))
+        ?.value,
+    ).toBeGreaterThan(0);
+  });
+
+  it("attachmentFor serves the rebuilt file for the original key, and the original again when the rebuilt object is gone", async () => {
+    const s = await renderedOffer();
+    await realEnv.DOCS.delete(s.key);
+    const repairId = await request("offer", s.id, s.key);
+    const env = mkEnv();
+    expect(await processRebuild(env, msg(repairId), NOW, clock)).toBe("rebuilt");
+    const rebuilt = new Uint8Array(
+      await ((await realEnv.DOCS.get(repairKey(s.key, 1))) as R2ObjectBody).arrayBuffer(),
+    );
+    const file = await attachmentFor(env, { key: s.key, filename: "x-v1.pdf" });
+    expect(file?.bytes).toEqual(rebuilt);
+    // the rebuilt object lost: the original (put back) is attached, logged without the key
+    await realEnv.DOCS.delete(repairKey(s.key, 1));
+    await putWithSha(realEnv.DOCS, s.key, ORIGINAL_PDF);
+    const back = await attachmentFor(env, { key: s.key, filename: "x-v1.pdf" });
+    expect(back?.bytes).toEqual(ORIGINAL_PDF);
+    expect(logs.some((l) => l.includes("email.attachment_rebuilt_missing"))).toBe(true);
+    expect(logs.some((l) => l.includes(s.key))).toBe(false);
+    // no repair at all: the original
+    const plain = await renderedInvoice();
+    const orig = new Uint8Array(await ((await realEnv.DOCS.get(plain.key)) as R2ObjectBody).arrayBuffer());
+    expect((await attachmentFor(env, { key: plain.key, filename: "y-v1.pdf" }))?.bytes).toEqual(orig);
   });
 
   it("the original came back: intact / original_present, no render; a result already there: no render", async () => {

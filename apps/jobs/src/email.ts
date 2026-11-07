@@ -18,6 +18,7 @@ import { BELL_COPY } from "@techaust/core/copy-zr";
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { parseRefundNotify, parseRefundReversed } from "@techaust/core/notifications";
 import { ATTACHMENT_MAX_BYTES } from "@techaust/core/offers";
+import { servedObject } from "@techaust/db/pdf-served";
 import {
   type Attachment,
   dlqAlert,
@@ -139,6 +140,9 @@ export async function processEmail(
  * the cap (the Free plan's 10 ms CPU: reading, base64 and signing the body all count), or this runtime has no native base64 (the fallback
  * costs about 37 ms per MB), or this is a redelivery (`attempts` above 1: a first try that ran out of CPU would do so again, and the link is
  * enough). Only keys on the allow-list reach here (the message schema). The reason is logged, never the key. One R2 read: the size comes with it.
+ * Rebuild PDF (JOB-PDF-02, L3): the object read is the one the readers serve for that key (`servedObject`, `@techaust/db/pdf-served`: the newest rebuilt
+ * file, else the original, and the original again when a recorded rebuild's object is gone), resolved here after the checks; the message keeps the
+ * original key, and nothing stores the served one.
  */
 export async function attachmentFor(
   env: Env,
@@ -153,7 +157,9 @@ export async function attachmentFor(
   if (!docs) return skip("no_binding");
   if (attempts > 1) return skip("redelivery");
   if (!hasNativeBase64()) return skip("no_native_base64");
-  const object = await docs.get(a.key);
+  const served = await servedObject(env.DB, docs, a.key);
+  if (served.fellBack) logEvent("email.attachment_rebuilt_missing", {});
+  const object = served.object;
   if (!object) return skip("missing");
   if (object.size > ATTACHMENT_MAX_BYTES) {
     await object.body.cancel();
