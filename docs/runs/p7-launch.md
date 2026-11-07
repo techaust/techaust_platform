@@ -1,6 +1,6 @@
 # P7 launch: production wiring for the launch on 2026-11-08
 
-Status: briefs written (lead, 2026-11-07 evening). Tasks P7-A (configs and guards), P7-B (deploy workflow and checks) and P7-C (jobs address, production CLIs) run in parallel.
+Status: briefs written (lead, 2026-11-07 evening). Tasks P7-A (configs and guards), P7-B (deploy workflow and checks) and P7-C (jobs address, production CLIs) run in parallel. **P7-C: done, report below** (cloud session, 2026-11-07; branch `fix/p7-c-address-cli`, not merged); one item for the lead: the readiness check must read the address from core (P7-C report, "For the lead" 1).
 
 ## Why and what (read first)
 - **The owner's decision (13, 2026-11-07):** production launches on Sunday 2026-11-08. techaust.com switches at the first production deploy, and the old Worker `techaust-web` is deleted at that moment, on the owner's explicit go (the lead does it, not code). The owner then tests everything on production. Payments stay on test keys (`PAYMENTS_LIVE_ALLOWED` stays `"false"` everywhere).
@@ -301,3 +301,56 @@ Builder P7-B, branch `fix/p7-b-deploy` (from `origin/feat/p7-production`, with P
 - **Left out because the brief leaves them out** (they are in phase7-production A1.3 and A1.4): "the run's IST day equals `site.launchDate`" and "staging has deployed that SHA". The guard does enforce running from `main` or a `v*` tag.
 - **Catalogue on production (not in the brief):** the production website is built from the seed catalogue. Once the owner publishes the catalogue on production, a later production deploy would still build from the seed. Fixing that needs a production version of the published-snapshot fetch (it needs the token, so a token job before the build, like staging's `prepare`) and a production twin of `publish-catalogue.yml`. The launch run is unaffected, because nothing is published yet. This is the owner's or the lead's decision.
 - **Runbook:** `docs/runbooks/environments.md` does not describe the production workflow yet; it was not in my file list.
+## P7-C report (cloud session lead, 2026-11-07)
+Branch `fix/p7-c-address-cli` from `origin/feat/p7-production` (2 commits plus this report; pushed; no PR, the PC lead merges). No agent was started: `docs/runs/usage-reading.md` has no reading today, so nothing new starts (docs/14 §5); the session lead did the work. Skills: the `cloudflare:*` skills aren't available in a cloud session (no plugins load there); none of the session's skills fits a builder's task (`code-review` and `security-review` are the reviewer's), so none was loaded. Usage: lead only, Opus 5.5 at high; no agent runs.
+
+**1. One postal address** (commit dab5c41)
+- `packages/core/src/company.ts` (new, export map `@techaust/core/company`): `POSTAL_ADDRESS`, the exact value that was in `site.ts`. No imports, so Node can load it from `site.ts` (the web build proves it).
+- `apps/web/src/config/site.ts`: `postalAddress: POSTAL_ADDRESS` (re-export; every reader of `site.postalAddress` is unchanged; the built contact, privacy, terms and refund pages print the address).
+- `packages/core/src/copy-zr.ts`: `RULE9_BLOCK(postalAddress: string)`, the address now required. The `"[Placeholder] postal address"` fallback is gone, so it can't reach the jobs bundle. 07-A §8's words are unchanged, and a test pins them to the appendix line.
+- `apps/jobs/src/portal-alerts.ts`: `RULE9_BLOCK(POSTAL_ADDRESS)` (was `RULE9_BLOCK(null)`).
+- `packages/email/src/fixtures.ts`: `rule9: RULE9_BLOCK(POSTAL_ADDRESS)`. The snapshots `request-received.{txt,html}` are updated.
+- Tests:
+  - `packages/core/test/company.test.ts` (new, 4): the value's shape, 07-A §8 word for word, site.ts and jobs read the one source, no marked gap left;
+  - `m74-b2.test.ts`: exact Rule 9 text;
+  - `apps/jobs/test/m74-dp.test.ts`: the queued `request.received` carries the address and no `[Placeholder`.
+
+**2. `--production` for the staff CLIs; the portal CLIs refuse it** (commit after dab5c41)
+- `scripts/cli-target.mjs` (new, with `.d.mts`): one scope rule for `pnpm invite` and `pnpm admin:reset-2fa`.
+  - `--staging` and `--production` together are refused.
+  - Production runs only with the operator's own `wrangler login`. It is refused when `CI`, `GITHUB_ACTIONS`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_API_KEY` or `CF_API_TOKEN` is set: wrangler would use the token instead of the login.
+  - It then asks for the typed word `PRODUCTION`, exact and in capitals. Any other answer, or stdin closing, prints "Stopped: you did not type PRODUCTION. Nothing was changed." and exits 1.
+  - All of this happens **before any remote read or write**.
+  - It targets `--remote --env production` (jobs' production `DB`, from P7-A) and prints links on `https://admin.techaust.com`. The local origin still follows `TECHAUST_PORT_OFFSET`.
+- `create-invite.mjs`, `reset-2fa.mjs`: use the module. Every existing safety check is unchanged: the existing-account refusal, the only-owner break-glass, the audit read-back and the cut-short clean-up. `checkBreakGlass` suggests the rerun with the same flag (`--production` too).
+- `portal-sample.mjs`, `portal-link.mjs`: `refuseProductionArgs` runs before option parsing. It refuses `--production`/`--prod` (any case, `=value`), `--env production`, `--env=production`, `-e prod` and `--remote`, with the reason "has no production mode". Before this, an unknown `--production` was only refused by `parseArgs` with no reason given.
+- `tools/cloud-guard.mjs`: `--production` on these four scripts is refused in a cloud session, as `--staging` already was (`model-guard.test.ts`: 5 probes and 1 message check).
+- Tests: `apps/web/test/staff-cli.test.ts` (new, 25):
+  - the pure rules: scope, D1 target, origin, the refusal by environment, the exact word;
+  - the prompt over in-memory streams;
+  - the gate's order in both scripts (before the first `rows(`, `runFile(` or `d1([...--file`);
+  - real child processes of all four scripts, in an environment with no login, home or token, so even a broken gate couldn't reach a remote database. Covered: CI refused before asking, a token refused, a wrong word or no answer stops, both flags refused, and the portal scripts refuse `--production`, `--env production` and `--remote` with empty stdout.
+- Run by hand on the local database: `create-invite.mjs` (local) printed its link on `http://localhost:5173`; `reset-2fa.mjs` behaves the same before and after the change.
+
+**3. Checks** (one at a time through `tools/heavy.sh`, logs in `.logs/p7c-*.log`)
+| Run | Result |
+|---|---|
+| `pnpm --filter @techaust/core test` | 133 files, 2,717 tests passed; coverage statements 98.11 %, lines 98.5 % |
+| `pnpm --filter @techaust/email test` | 17 files, 205 passed |
+| `pnpm --filter @techaust/jobs test` | 52 files, 780 passed |
+| `pnpm --filter @techaust/web build` | ok (astro, check-web-dist, wrangler dry run) |
+| `pnpm --filter @techaust/web test` (after the build) | 45 files, 1,045 passed, 2 skipped |
+| admin `worker/users.test.ts`, portal `worker/cli.test.ts` (they import the changed script modules) | 61 and 10 passed |
+| `pnpm --filter @techaust/jobs build` | ok: 871,142 bytes, start-up 73.2 ms |
+| `pnpm check` | ok (lint, typecheck, every guard) |
+
+Session note: the cloud set-up installed before the branch switch, so `packages/auth` lacked its link to core and the first web build failed on `@techaust/core/body`. `pnpm install --frozen-lockfile --offline` fixed it, with no lockfile change.
+
+**For the lead (not done: the files are P7-B's)**
+1. **The readiness check now reports the postal address as missing.** `checkSiteConfig` in `scripts/check-prod-readiness.mjs` reads `postalAddress: "…"` from the text of site.ts (`readSiteString`), and site.ts now says `postalAddress: POSTAL_ADDRESS`. Proven: on this branch it returns "The owner must supply the postal address … it is empty." The fix, for whoever integrates P7-B:
+   - read the value from `packages/core/src/company.ts` when site.ts re-exports it. In `checkProdReadiness`, pass `readFileSync(join(webDir, "..", "..", "packages", "core", "src", "company.ts"), "utf8")` to `checkSiteConfig(siteTs, companyTs)`.
+   - in `checkSiteConfig`, for `postalAddress`, when `/\bpostalAddress:\s*POSTAL_ADDRESS\b/` matches site.ts, read `/\bPOSTAL_ADDRESS(?::\s*string)?\s*=\s*"([^"]*)"/` from that text. Otherwise keep `readSiteString`.
+   - update the message to name `POSTAL_ADDRESS` in `packages/core/src/company.ts`;
+   - add a test with both shapes, plus the real files (expect no postal problem).
+2. **The jobs bundle still holds one `[Placeholder] ${e}`.** It is the 07-ZJ deed-email gate's template (`packages/email/src/deeds.ts`, `ZJ`, `APPROVED_07ZJ_EMAIL` true). esbuild keeps the dead branch (the bundle reads `_T=!0,cs=…_T?e:\`[Placeholder] ${e}\``). P7-B's new jobs-bundle scan for `[Placeholder` will flag it. The other gates (zo, zq, zr, zt) are tree-shaken from jobs today. Either the scan skips this gate template (`[Placeholder] ${` followed by an identifier), or the gate gets folded at build time. Your call when you integrate P7-B. The postal fallback is gone from the bundle (checked: `Pirozpur` once, no `[Placeholder] postal`).
+3. Docs only the main session edits: CLAUDE.md's Commands block (`pnpm invite … --production`, `pnpm admin:reset-2fa … --production`) and docs/08 §3.2 (break-glass on production). On launch day the first production Owner is `pnpm invite --email <owner> --role owner --production`, run from the PC's own PowerShell after `wrangler login` and P7-A's production `DB` binding. It needs no `CLOUDFLARE_API_TOKEN` in that window.

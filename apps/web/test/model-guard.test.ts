@@ -962,6 +962,14 @@ const ROUND4_REFUSED: Record<string, string[]> = {
     "node scripts/create-invite.mjs --email a@example.test --staging",
     "node scripts/reset-2fa.mjs --staging=true",
   ],
+  // P7-C: --production on the two staff scripts (and on the portal ones, which refuse it themselves too)
+  production: [
+    "pnpm invite --email a@example.test --role owner --production",
+    "pnpm admin:reset-2fa --email a@example.test --production",
+    "node scripts/create-invite.mjs --email a@example.test --production",
+    "node scripts/reset-2fa.mjs --production=true",
+    "pnpm portal:link --email a@example.test --production",
+  ],
   // 5: a command name built at run time
   builtName: [
     "{gh,} pr merge 1",
@@ -1056,6 +1064,9 @@ describe("model-guard in a cloud session: second re-check findings [CLOUD-1 fix 
     expect(check("source <(echo gh pr merge 1)")).toContain("output of <( … )");
     expect(check("printf 'ls\\n' | sh")).toContain("printf piped into a shell");
     expect(check("pnpm portal:link --email a@example.test --staging")).toContain("staging database");
+    expect(check("pnpm invite --email a@example.test --role owner --production")).toContain(
+      "production database",
+    );
   });
 
   it("keeps long input fast (a slow hook could time out, which lets the command through)", () => {
