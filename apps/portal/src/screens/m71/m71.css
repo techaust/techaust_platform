@@ -633,6 +633,11 @@
   margin-bottom: var(--space-5);
 }
 
+/* The empty line takes the width of the details panel above it, so the two left columns end on one edge. */
+.m71-requests .m71-empty {
+  max-width: 36rem;
+}
+
 .m71-requests__head .block__title {
   margin: 0;
 }
