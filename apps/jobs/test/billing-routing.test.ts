@@ -46,7 +46,8 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
         "gateway.sweep",
         // M6.5 (changed on purpose): the refund sweep every hour; yesterday's Razorpay settlements at 09:00 IST.
         "refund.sweep",
-        ...(h === 9 ? ["recon.fetch"] : []),
+        // Full audit AU11 (changed on purpose): yesterday's and the day before's settlements at 09:00 IST.
+        ...(h === 9 ? ["recon.fetch", "recon.fetch"] : []),
         // M7.2 (changed on purpose): the unfinished sign-in scan and the bells sweep every hour (the digest only on Mondays: m72-jobs.test.ts).
         "signin.unfinished",
         "bells.sweep",
@@ -100,6 +101,7 @@ describe("the hourly cron `30 * * * *` [LD61]", () => {
       "gateway.sweep", // M6.2, changed on purpose
       "refund.sweep", // M6.5, changed on purpose
       "recon.fetch",
+      "recon.fetch", // full audit AU11: the day before yesterday too, changed on purpose
       "signin.unfinished", // M7.2, changed on purpose
       "bells.sweep",
       "requests.clock", // M7.4, changed on purpose

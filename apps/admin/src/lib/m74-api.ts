@@ -118,6 +118,10 @@ export type RetentionCount = {
   heldSkipped: number;
   oldestAt: number | null;
   done: boolean;
+  /** Full audit AU9: the dry-run count reached its cap (the screen says "10,000 or more"). Optional: an older API answer lacks it. */
+  capped?: boolean;
+  /** Full audit AU9: a live family stopped at its nightly page budget; the next night carries on. */
+  moreTomorrow?: boolean;
 };
 export type RetentionRun = {
   id: string;

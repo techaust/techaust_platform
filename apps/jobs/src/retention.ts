@@ -204,13 +204,15 @@ async function retentionPage(env: Env, m: RetentionPageMessage, now: number): Pr
     ...work,
     db
       .prepare(
-        `SELECT done, ${SWITCH_LIVE_SQL} AS live FROM retention_run_counts WHERE run_id = ?1 AND family = ?2`,
+        `SELECT done, more_tomorrow, ${SWITCH_LIVE_SQL} AS live FROM retention_run_counts WHERE run_id = ?1 AND family = ?2`,
       )
       .bind(m.runId, m.family),
     db.prepare(RUN_FINISH_SQL).bind(m.runId, now),
     db.prepare(RUN_BELL_SQL).bind(m.runId, now, kind, title),
   ]);
-  const read = results[work.length]?.results[0] as { done?: number; live?: number } | undefined;
+  const read = results[work.length]?.results[0] as
+    | { done?: number; more_tomorrow?: number; live?: number }
+    | undefined;
   const done = read?.done === 1;
   // Early check 2 M2: the Owner turned real deletion off after this run started. The page's statements read the same switch in the same batch: they deleted
   // nothing and marked the family done, so nothing is sent again.
@@ -223,7 +225,14 @@ async function retentionPage(env: Env, m: RetentionPageMessage, now: number): Pr
     logEvent("retention.page", { family: m.family, mode: m.mode, more: true, f: 1 });
     return "continued";
   }
-  logEvent("retention.page", { family: m.family, mode: m.mode, more: false, f: 1 });
+  // Full audit AU9: a live family that reached its nightly page budget is done for tonight; the next night's run carries on.
+  logEvent("retention.page", {
+    family: m.family,
+    mode: m.mode,
+    more: false,
+    tomorrow: read?.more_tomorrow === 1,
+    f: 1,
+  });
   return "done";
 }
 

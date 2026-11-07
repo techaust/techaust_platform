@@ -16,6 +16,7 @@ import {
 import { jobFailedTitle } from "@techaust/core/copy-zq";
 import { BELL_COPY } from "@techaust/core/copy-zr";
 import { istDate, toIsoDate } from "@techaust/core/dates";
+import { parseRefundNotify } from "@techaust/core/notifications";
 import { ATTACHMENT_MAX_BYTES } from "@techaust/core/offers";
 import {
   type Attachment,
@@ -327,6 +328,31 @@ export const DEAD_LETTER_SQL =
 export const JOB_FAILED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), o.id, 'job.failed', 'queue', ?1, ?2, ?3 FROM staff_users o WHERE o.role = 'owner' AND o.status = 'active'`;
 
+/**
+ * Full audit M6–M7 AU11 (B6 L5): how the dead-letter alert names the M7.2 jobs that used to get only the generic alert (builder's words for the lead; never
+ * an id, a name or an address).
+ */
+export const DEAD_LETTER_KIND_NAMES: Readonly<Record<string, string>> = {
+  "refund.notify": "refund email to a client",
+  "staff.notify": "staff notification email",
+  "digest.weekly": "owners' weekly digest",
+  "signin.unfinished": "unfinished sign-in alert",
+  "bells.sweep": "hourly staff email check",
+};
+
+/** AU11 L5: the owners' bell of a refund email that ran out of tries (builder's draft for the lead), naming the client by its code only. */
+export const REFUND_EMAIL_FAILED_BELL =
+  "The email about a refund to {client_code} couldn't be sent. Tell the client about the refund yourself.";
+
+/**
+ * AU11 L5: one bell per active owner and refund (`?1` the refund, `?2` the title with `{client_code}`), unique per member, kind and refund; nothing for a
+ * refund that is not ours any more.
+ */
+export const REFUND_EMAIL_FAILED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+  SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'refund.email_failed', 'refund', r.id, replace(?2, '{client_code}', k.code), '/payments?tab=refunds'
+  FROM payment_refunds r JOIN clients k ON k.id = r.client_id JOIN staff_users u ON u.role = 'owner' AND u.status = 'active'
+  WHERE r.id = ?1`;
+
 /** Where the `job.failed` bell opens (the lead's answer to review 1): the email queue's on the email log's failed emails; the others on the dashboard. */
 export const jobFailedLink = (queue: string): string =>
   queue.endsWith("-email-dlq") ? "/emails?status=failed" : "/";
@@ -385,7 +411,27 @@ export async function processDeadLetter(
       rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: email.data.template, ref }, opts);
     }
   }
-  logEvent("queue.dead_letter", { queue, ref, readable: rendered !== undefined });
+  // Full audit M6–M7 AU11 (B6 L5): the M7.2 kinds are named in the alert (never their ids); a refund email that ran out of tries also rings the owners with
+  // the client's code, since the hourly sweep's 75-minute window has passed by then and the client would never hear of the refund.
+  const kind = (body as { kind?: unknown } | null)?.kind;
+  const named = typeof kind === "string" ? DEAD_LETTER_KIND_NAMES[kind] : undefined;
+  if (!rendered && named) {
+    rendered = dlqAlert({ queue, admin_url: env.ADMIN_URL, template: named }, opts);
+    if (kind === "refund.notify") {
+      const m = parseRefundNotify(body);
+      if (m)
+        await env.DB.prepare(REFUND_EMAIL_FAILED_BELL_SQL)
+          .bind(m.refundId, REFUND_EMAIL_FAILED_BELL)
+          .run()
+          .catch(() => logEvent("refund_notify.dead_letter_bell_failed", {}));
+    }
+  }
+  logEvent("queue.dead_letter", {
+    queue,
+    ref,
+    readable: rendered !== undefined,
+    ...(named ? { kind: named } : {}),
+  });
   rendered ??= dlqAlert({ queue, admin_url: env.ADMIN_URL }, opts);
   // M7.2 (run file D, L13): the owners' bell `job.failed`, once per queue per IST day (best effort; the alert email below is the record).
   await env.DB.prepare(JOB_FAILED_BELL_SQL)

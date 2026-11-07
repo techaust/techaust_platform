@@ -281,9 +281,36 @@ describe("closeVerdict (C.4; the trigger holds the same rules, A.6)", () => {
         { outcome: "declined", declineReason: "identity_not_confirmed" },
       ),
     ).toEqual({ ok: true });
-    for (const kind of ["grievance", "contact_change", "consent_withdrawal"])
+    for (const kind of ["grievance", "contact_change"])
       expect(closeVerdict({ ...access, ...unchecked, kind }, { outcome: "done" }), kind).toEqual({
         ok: true,
       });
+  });
+  it("full audit AU26: a consent withdrawal is done only naming its withdrawal, of its own lead or contact; else it is declined with a reason", () => {
+    const withdrawal = {
+      kind: "consent_withdrawal",
+      status: "open",
+      contactRef: "c1",
+      leadRef: null,
+      identityCheckedAt: null,
+    };
+    expect(closeVerdict(withdrawal, { outcome: "done" })).toEqual(no("withdrawal_required"));
+    expect(closeVerdict(withdrawal, { outcome: "done", actionAuditId: "" })).toEqual(
+      no("withdrawal_required"),
+    );
+    expect(closeVerdict(withdrawal, { outcome: "done", actionAuditId: "a1" })).toEqual({ ok: true });
+    expect(
+      closeVerdict(
+        { ...withdrawal, contactRef: null, leadRef: "l1" },
+        { outcome: "done", actionAuditId: "a1" },
+      ),
+    ).toEqual({
+      ok: true,
+    });
+    // naming only an address: never done
+    expect(
+      closeVerdict({ ...withdrawal, contactRef: null }, { outcome: "done", actionAuditId: "a1" }),
+    ).toEqual(no("withdrawal_required"));
+    expect(closeVerdict(withdrawal, { outcome: "declined", declineReason: "other" })).toEqual({ ok: true });
   });
 });

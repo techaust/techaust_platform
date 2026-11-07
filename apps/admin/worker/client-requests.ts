@@ -36,6 +36,7 @@ import {
 import { uuidv7 } from "@techaust/core/ids";
 import { decide } from "@techaust/core/permissions";
 import { REQUEST_STATUSES, STAFF_CLOSE_KINDS } from "@techaust/core/portal";
+import { CONSENT_WITHDRAW_ACTION_SQL, IST_DAY_START_SQL } from "@techaust/db/dp-shared";
 import { Hono } from "hono/tiny";
 import { type AppEnv, actor, BAD_REQUEST, err, FORBIDDEN, mutate, NOT_FOUND } from "./context.ts";
 import { body, idParam, param } from "./http.ts";
@@ -81,13 +82,17 @@ export const OPEN_REQUESTS_COUNT_SQL =
  * request, only a kind the role may close (the trigger `client_requests_owner_close` holds it too), L42's identity check for a `done` access, correction,
  * erasure or nomination request, and (round 4, round 6) a `done` erasure only against the erase or anonymise of its own contact (`contactId` in the audit
  * summary = `contact_ref`) or lead (the audit entity = `lead_ref`), written after it arrived. The export date is never in the future. The trigger
- * `client_requests_close_rules` holds the same rules.
+ * `client_requests_close_rules` holds the same rules. Full audit AU25 L3: the export date is never before the IST day the request arrived, and is stored no
+ * earlier than its arrival (the screen sends the start of the day it was emailed); AU26: a done consent withdrawal names its own withdrawal
+ * (`CONSENT_WITHDRAW_ACTION_SQL`).
  */
 export const REQUEST_CLOSE_SQL = `UPDATE client_requests SET status = 'closed', outcome = ?2, closed_by = ?3, closed_at = ?4, close_note = ?5, updated_at = max(updated_at, ?4),
-     decline_reason = ?7, action_audit_id = ?8, export_sent_at = ?9
+     decline_reason = ?7, action_audit_id = ?8,
+     export_sent_at = CASE WHEN ?9 IS NULL THEN NULL ELSE max(?9, coalesce(received_at, created_at)) END
    WHERE id = ?1 AND status = 'open' AND (?6 = 'owner' OR kind IN ${STAFF_KINDS_SQL})
      AND (?2 <> 'done' OR kind NOT IN ${IDENTITY_KINDS_SQL} OR identity_checked_at IS NOT NULL)
-     AND (?9 IS NULL OR ?9 <= ?4)
+     AND (?9 IS NULL OR (?9 <= ?4 AND ?9 >= ${IST_DAY_START_SQL("coalesce(received_at, created_at)")}))
+     AND (?2 <> 'done' OR kind <> 'consent_withdrawal' OR ${CONSENT_WITHDRAW_ACTION_SQL("client_requests.", "?8")})
      AND (?2 <> 'done' OR kind <> 'data_erasure' OR EXISTS (SELECT 1 FROM audit_log a WHERE a.id = ?8 AND a.at >= client_requests.received_at
        AND ((client_requests.contact_ref IS NOT NULL AND a.action IN ('contact.erase', 'contact.anonymise') AND json_extract(a.summary, '$.contactId') = client_requests.contact_ref)
          OR (client_requests.lead_ref IS NOT NULL AND a.action = 'lead.erase' AND a.entity_type = 'lead' AND a.entity_id = client_requests.lead_ref))))`;
@@ -158,6 +163,10 @@ const CLOSE_CODES: Record<string, string> = {
   action_not_allowed: "Only a done erasure request links an erase or anonymise",
   export_sent_not_allowed: "Only a done access request records when its export was sent",
   identity_not_checked: "Record the identity check before closing this request as done",
+  // Full audit AU26, AU25 L3 (builder's drafts for the lead).
+  withdrawal_required:
+    "Link the withdrawal of their consent that fulfilled the request, or decline it with a reason",
+  export_before_received: "The export can't have been emailed before the request arrived",
 };
 
 export type ClientRequestRow = {
@@ -260,6 +269,8 @@ type CloseRead = {
   contact_ref: string | null;
   lead_ref: string | null;
   identity_checked_at: number | null;
+  /** AU25 L3: the start of the IST day the request arrived. */
+  received_day: number | null;
 };
 
 export const clientRequests = new Hono<AppEnv>()
@@ -409,7 +420,7 @@ export const clientRequests = new Hono<AppEnv>()
     const read = () =>
       db
         .prepare(
-          "SELECT kind, status, contact_ref, lead_ref, identity_checked_at FROM client_requests WHERE id = ?1",
+          `SELECT kind, status, contact_ref, lead_ref, identity_checked_at, ${IST_DAY_START_SQL("coalesce(received_at, created_at)")} AS received_day FROM client_requests WHERE id = ?1`,
         )
         .bind(id)
         .first<CloseRead>();
@@ -475,6 +486,14 @@ export const clientRequests = new Hono<AppEnv>()
       if (f.outcome === "done" && again.identity_checked_at === null && before.identity_checked_at !== null)
         return err(c, { code: "identity_not_checked", message: CLOSE_CODES.identity_not_checked ?? "" }, 409);
       if (f.outcome === "done" && again.kind === "data_erasure") return err(c, ACTION_MISSING, 409);
+      if (f.outcome === "done" && again.kind === "consent_withdrawal")
+        return err(c, { code: "withdrawal_required", message: CLOSE_CODES.withdrawal_required ?? "" }, 409);
+      if (exportSentAt !== null && again.received_day !== null && exportSentAt < again.received_day)
+        return err(
+          c,
+          { code: "export_before_received", message: CLOSE_CODES.export_before_received ?? "" },
+          409,
+        );
       if (exportSentAt !== null && exportSentAt > now)
         return err(
           c,

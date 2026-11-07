@@ -598,8 +598,32 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
       "SELECT title FROM notifications WHERE kind = 'care.issued' AND entity_id = ?",
       d.documentId,
     );
-    expect(bell?.title).toContain("wasn't emailed");
+    expect(bell?.title).toContain("no billing contact can receive it");
     expect(bell?.title).not.toContain("issued and emailed");
+  });
+
+  it("full audit AU19: a billing contact whose emails are stopped is nobody to email: issued, notEmailed, no sends, no reminders, the bell says not emailed", async () => {
+    const w = await world();
+    clock(at("2026-11-05"));
+    const d = await draft(w);
+    expect(d.autoEligible).toBe(true);
+    await env.DB.prepare(
+      "INSERT OR IGNORE INTO email_suppressions (email, reason, at) SELECT lower(email), 'hard_bounce', 1 FROM contacts WHERE client_id = (SELECT client_id FROM documents WHERE id = ?1)",
+    )
+      .bind(d.documentId)
+      .run();
+    const r = await issueCareDraft(pdfQueue().env, { documentId: d.documentId as string });
+    expect(r).toMatchObject({ result: "issued", notEmailed: true });
+    expect(await rows("SELECT id FROM document_sends WHERE document_id = ?", d.documentId)).toEqual([]);
+    expect(await rows("SELECT id FROM reminders WHERE document_id = ?", d.documentId)).toEqual([]);
+    expect(
+      (
+        await one<{ title: string }>(
+          "SELECT title FROM notifications WHERE kind = 'care.issued' AND entity_id = ?",
+          d.documentId,
+        )
+      )?.title,
+    ).toContain("no billing contact can receive it");
   });
 
   it("with nobody to email it is still issued (the money is owed) and says notEmailed; no sends, no reminders", async () => {
@@ -618,7 +642,9 @@ describe("issueCareDraft: the system issues only what the Owner authorised [LD58
           d.documentId,
         )
       )?.title,
-    ).toMatch(/was issued, but no billing contact has portal access, so it wasn't emailed\.$/);
+    ).toMatch(
+      /was issued, but no billing contact can receive it \(they need portal access, finance access and an address that isn't stopped\)\.$/,
+    );
   });
 
   const refusals: [string, (w: World, documentId: string) => Promise<void>, string[]][] = [

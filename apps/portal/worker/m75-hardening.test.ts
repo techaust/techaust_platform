@@ -27,21 +27,30 @@ function limiter(success: boolean) {
 const LIMITED = ROUTES.filter((r) => r.method === "POST" && addressBindingOf(r.path) !== null);
 
 describe("C2: the sign-in and emailed-link rows are limited per address, before any D1 work and before Turnstile [ASVS 2.4.1]", () => {
-  it("covers both sign-in rows and every /t/* row, and nothing else", () => {
+  it("covers both sign-in rows, the sign-out, every /t/* row and the PayPal return (full audit AU13), and nothing else", () => {
     expect(LIMITED.map((r) => r.path).sort()).toEqual(
       ROUTES.filter(
         (r) =>
           r.path === "/api/v1/auth/magic" ||
           r.path === "/api/v1/auth/magic/verify" ||
+          r.path === "/api/v1/auth/logout" ||
+          r.path === "/api/v1/pay/paypal/return" ||
           r.path.startsWith("/api/v1/t/"),
       )
         .map((r) => r.path)
         .sort(),
     );
-    expect(LIMITED.length).toBeGreaterThanOrEqual(10);
+    expect(LIMITED.length).toBeGreaterThanOrEqual(12);
     expect(addressBindingOf("/api/v1/auth/magic")).toBe("RL_SIGNIN");
+    expect(addressBindingOf("/api/v1/auth/logout")).toBe("RL_SIGNIN");
     expect(addressBindingOf("/api/v1/t/offer/accept")).toBe("RL_LINKS");
-    expect(addressBindingOf("/api/v1/pay/paypal/return")).toBeNull();
+    expect(addressBindingOf("/api/v1/pay/paypal/return")).toBe("RL_LINKS");
+    // every public POST row that is not limited per address touches no D1 before its own checks: today, none is left
+    expect(
+      ROUTES.filter(
+        (r) => r.method === "POST" && r.access === "public" && addressBindingOf(r.path) === null,
+      ).map((r) => r.path),
+    ).toEqual([]);
   });
 
   for (const row of LIMITED) {

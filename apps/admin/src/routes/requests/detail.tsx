@@ -272,7 +272,7 @@ function RequestBody(props: {
         {r.status === "closed" && <ClosedFacts r={r} />}
         {r.status === "open" && opts.needsAction && (
           <Notice tone="info">
-            <p>{ZR_DETAIL.erasureGuide}</p>
+            <p>{r.kind === "consent_withdrawal" ? ZR_DETAIL.withdrawalGuide : ZR_DETAIL.erasureGuide}</p>
             {who.href && (
               <Link to={who.href} className="btn btn--secondary" onClick={props.onClose}>
                 {r.lead ? ZR_DETAIL.openLead : ZR_DETAIL.openContact}
@@ -375,6 +375,8 @@ function CloseForm(props: {
   const [failure, setFailure] = useState<string | null>(null);
   const [busy, setBusyLocal] = useState(false);
   const [erasures, setErasures] = useState<Erasures>({ state: "loading" });
+  // Full audit AU26: a consent withdrawal links its withdrawal, in its own words.
+  const withdrawal = r.kind === "consent_withdrawal";
   const [tries, setTries] = useState(0);
   const dates = useUnreadDates<"sent">();
   const refusal = useRefusalFocus();
@@ -412,7 +414,8 @@ function CloseForm(props: {
     const e: Record<string, string> = {};
     if (!outcome) e.outcome = ZR_CLOSE.outcomeMissing;
     if (outcome === "declined" && !reason) e.reason = ZR_CLOSE.reasonMissing;
-    if (outcome === "done" && opts.needsAction && !action) e.action = ZR_CLOSE.actionMissing;
+    if (outcome === "done" && opts.needsAction && !action)
+      e.action = withdrawal ? ZR_CLOSE.withdrawalMissing : ZR_CLOSE.actionMissing;
     let sentAt: number | null = null;
     if (outcome === "done" && opts.canRecordExport && exportSent) {
       const unread = dateError(dates.unread.sent);
@@ -420,6 +423,8 @@ function CloseForm(props: {
       if (unread) e.sent = unread;
       else if (v === null) e.sent = ZR_CLOSE.exportSentMissing;
       else if (v === "future") e.sent = ZR_CLOSE.exportSentFuture;
+      // Full audit AU25 L3: never before the IST day the request arrived (the server refuses it too).
+      else if (sentOn < toIsoDate(istDate(r.receivedAt ?? r.createdAt))) e.sent = ZR_CLOSE.exportSentEarly;
       else sentAt = v;
     }
     setErrors(e);
@@ -481,7 +486,11 @@ function CloseForm(props: {
           </label>
           {opts.done !== "ok" && (
             <p className="dp-close__why" id={`${id}-done-why`}>
-              {opts.done === "identity_first" ? ZR_CLOSE.identityFirst : ZR_CLOSE.unmatchedErasure}
+              {opts.done === "identity_first"
+                ? ZR_CLOSE.identityFirst
+                : opts.done === "unmatched_withdrawal"
+                  ? ZR_CLOSE.unmatchedWithdrawal
+                  : ZR_CLOSE.unmatchedErasure}
             </p>
           )}
           <label className="radio">
@@ -533,10 +542,10 @@ function CloseForm(props: {
             className="radios dp-close__group"
             aria-describedby={errors.action ? `${id}-action-error` : undefined}
           >
-            <legend>{ZR_CLOSE.action}</legend>
+            <legend>{withdrawal ? ZR_CLOSE.withdrawalAction : ZR_CLOSE.action}</legend>
             {erasures.state === "loading" && (
               <p className="muted" role="status">
-                {ZR_CLOSE.actionLoading}
+                {withdrawal ? ZR_CLOSE.withdrawalLoading : ZR_CLOSE.actionLoading}
               </p>
             )}
             {erasures.state === "failed" && (
@@ -548,7 +557,7 @@ function CloseForm(props: {
               </Notice>
             )}
             {erasures.state === "ready" && erasures.items.length === 0 && (
-              <p className="dp-close__why">{ZR_CLOSE.actionNone}</p>
+              <p className="dp-close__why">{withdrawal ? ZR_CLOSE.withdrawalNone : ZR_CLOSE.actionNone}</p>
             )}
             {erasures.state === "ready" &&
               erasures.items.map((a, i) => (
@@ -564,11 +573,13 @@ function CloseForm(props: {
                     }}
                   />
                   <span>
-                    {ZR_CLOSE.actionOption(
-                      a.action === "contact.anonymise" ? "anonymise" : "erase",
-                      dayText(a.at),
-                      a.actorName,
-                    )}
+                    {withdrawal
+                      ? ZR_CLOSE.withdrawalOption(dayText(a.at), a.actorName)
+                      : ZR_CLOSE.actionOption(
+                          a.action === "contact.anonymise" ? "anonymise" : "erase",
+                          dayText(a.at),
+                          a.actorName,
+                        )}
                   </span>
                 </label>
               ))}

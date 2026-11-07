@@ -193,9 +193,7 @@ describe("the sweep takes the notes", () => {
     const gone = await seedIssuedNote("credit_full");
     await realEnv.DB.prepare("UPDATE clients SET anonymised_at = 1 WHERE id = ?1").bind(gone.clientId).run();
     const refused = await seedIssuedNote("credit_other");
-    await realEnv.DB.prepare(
-      "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link) SELECT 'n-note-ref', id, 'pdf.refused', 'document', ?1, 't', '/' FROM staff_users LIMIT 1",
-    )
+    await realEnv.DB.prepare("INSERT INTO pdf_failures (document_id, nights, refused_at) VALUES (?1, 0, 1)")
       .bind(refused.id)
       .run();
     const { env, sent } = makeEnv({});

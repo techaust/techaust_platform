@@ -211,7 +211,13 @@ function Reports({ report }: { report: RetentionReport }) {
       align: "end",
       cell: (c) =>
         c.done || c.due > 0 ? (
-          <Count n={c.due} />
+          // Full audit AU9: a capped trial count is a floor; a live family that stopped at its nightly budget says so (the designer may restyle it).
+          <span className="dp-cell">
+            <Count n={c.due} atLeast={!live && c.capped === true} />
+            {live && c.moreTomorrow === true && (
+              <span className="dp-cell__meta">{ZR_RETENTION.moreTomorrow}</span>
+            )}
+          </span>
         ) : (
           <span className="muted">{ZR_RETENTION.partsPending}</span>
         ),
@@ -290,8 +296,9 @@ function Reports({ report }: { report: RetentionReport }) {
 }
 
 /** A count in the report: the figure, a zero muted so the rows with something to do stand out. */
-function Count({ n }: { n: number }) {
-  return <span className={n === 0 ? "num muted" : "num"}>{n.toLocaleString("en-IN")}</span>;
+function Count({ n, atLeast = false }: { n: number; atLeast?: boolean }) {
+  const text = n.toLocaleString("en-IN");
+  return <span className={n === 0 ? "num muted" : "num"}>{atLeast ? ZR_RETENTION.atLeast(text) : text}</span>;
 }
 
 function LeadsDue({ report }: { report: RetentionReport }) {

@@ -172,7 +172,8 @@ export type CloseRefusal =
   | "action_required"
   | "action_not_allowed"
   | "export_sent_not_allowed"
-  | "identity_not_checked";
+  | "identity_not_checked"
+  | "withdrawal_required";
 
 /**
  * Whether a close may go ahead, before the route's SQL checks it again (C.4; the trigger holds the same rules, A.6). A declined request names a known reason
@@ -209,6 +210,11 @@ export function closeVerdict(
     if (unmatched) return no("action_not_allowed");
     if (action === null || action.length === 0) return no("action_required");
   }
+  // Full audit M6–M7 AU26 (Researched 2026-11-07, DPDP Act 2023 s.6(4)–(6); Settled by the lead on the safest reading, 2026-11-07): a consent withdrawal is
+  // `done` only against the withdrawal it asked for, of its own lead or contact, made after it arrived (the SQL and the trigger match the row); one that
+  // names no lead or contact, or none yet withdrawn, is declined with a reason.
+  if (row.kind === "consent_withdrawal" && (unmatched || action === null || action.length === 0))
+    return no("withdrawal_required");
   if (
     exportSent !== null &&
     (row.kind !== "data_access" || !Number.isSafeInteger(exportSent) || exportSent < 0)

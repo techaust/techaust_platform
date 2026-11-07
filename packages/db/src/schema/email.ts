@@ -117,8 +117,11 @@ export const emailEvents = sqliteTable(
   ],
 );
 
-/** M7.2: how a member's weekly digest was switched off (trigger `staff_notification_prefs_values`). */
-export const DIGEST_OFF_VIA = ["settings", "one_click"] as const;
+/**
+ * M7.2: how a member's weekly digest was switched off (trigger `staff_notification_prefs_values`). Full audit M6–M7 AU20: `complaint`, a spam report on the
+ * digest itself (the SES hook switches the member's digest off instead of stopping every email to the address; triggers `audit_af2_triggers`, 0084).
+ */
+export const DIGEST_OFF_VIA = ["settings", "one_click", "complaint"] as const;
 
 /**
  * M7.2 (ADM-G-09; Q1 A, Q2 A): a member's email switches, one row per member (a missing row reads as the defaults). The flags are 0/1 (trigger); the defaults

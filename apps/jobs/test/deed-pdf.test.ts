@@ -221,6 +221,51 @@ describe("pdf.deed [T11 L4]", () => {
     expect(out).toEqual(["ack"]);
     expect((await deedRow(d.id))?.unsigned_r2_key).not.toBeNull();
   });
+
+  it("full audit AU11 L6: a pdf.deed that ran out of tries rings the owners once a day by its number; a deed with its PDF, a draft or none rings nothing", async () => {
+    const d = await mkDeed();
+    const dead = async (deedId: string) => {
+      const out: string[] = [];
+      await handleQueue(
+        {
+          queue: "techaust-local-pdf-dlq",
+          messages: [
+            {
+              id: uuidv7(),
+              body: msg(deedId),
+              attempts: 1,
+              ack: () => out.push("ack"),
+              retry: () => out.push("retry"),
+            },
+          ],
+        } as never,
+        mkEnv(),
+      );
+      return out;
+    };
+    const bellsOf = (deedId: string) =>
+      all<{ title: string; link: string }>(
+        "SELECT title, link FROM notifications WHERE kind = 'pdf.failed' AND entity_type = 'deed' AND entity_id LIKE ?1 AND user_id = ?2",
+        `${deedId}:%`,
+        d.owner.id,
+      );
+    expect(await dead(d.id)).toEqual(["ack"]);
+    expect(await dead(d.id)).toEqual(["ack"]);
+    expect(await bellsOf(d.id)).toEqual([
+      {
+        title: `The PDF of deed ${d.number} couldn't be made. Open the deed and make it again.`,
+        link: `/projects/${d.projectId}?tab=deed`,
+      },
+    ]);
+    const draft = await mkDeed({ status: "draft" });
+    expect(await dead(draft.id)).toEqual(["ack"]);
+    expect(await bellsOf(draft.id)).toEqual([]);
+    const done = await mkDeed();
+    expect(await processDeedPdf(mkEnv(), msg(done.id), NOW, clock)).toBe("rendered");
+    expect(await dead(done.id)).toEqual(["ack"]);
+    expect(await bellsOf(done.id)).toEqual([]);
+    expect(await dead("deed_missing")).toEqual(["ack"]);
+  });
 });
 
 describe("deed.signed [T11 L4, POR-05]", () => {

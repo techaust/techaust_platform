@@ -183,6 +183,12 @@ describe("the invoice snapshot step", () => {
         link: `/invoices/${s.id}`,
         entity_type: "document",
       });
+    // full audit AU10: the refusal is recorded outside the bells too (the sweep reads it)
+    const mark = await all<{ refused_at: number | null }>(
+      "SELECT refused_at FROM pdf_failures WHERE document_id = ?",
+      s.id,
+    );
+    expect(mark[0]?.refused_at).toBeGreaterThan(0);
   });
 
   it("skips a document whose client is anonymised (no envelope, no message, no bell), a missing one, a draft and one that already has its PDF", async () => {
@@ -467,7 +473,8 @@ describe("the sweep and the dead letter, for invoices", () => {
       .bind(refused.id)
       .run();
     await realEnv.DB.prepare(
-      "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link) SELECT 'n-ref', id, 'pdf.refused', 'document', ?1, 't', '/' FROM staff_users LIMIT 1",
+      // full audit AU10: a refusal is its `pdf_failures` mark (the bell alone no longer keeps it out)
+      "INSERT INTO pdf_failures (document_id, nights, refused_at) VALUES (?1, 0, 1)",
     )
       .bind(refused.id)
       .run();
@@ -492,10 +499,8 @@ describe("the sweep and the dead letter, for invoices", () => {
     for (let i = 0; i < 21; i++)
       refusedIds.push((await seedIssuedInvoice({ now: Date.now() - 86_400_000 + i })).id);
     for (const id of refusedIds)
-      await realEnv.DB.prepare(
-        "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link) SELECT ?2, id, 'pdf.refused', 'document', ?1, 't', '/' FROM staff_users LIMIT 1",
-      )
-        .bind(id, `n-${id}`)
+      await realEnv.DB.prepare("INSERT INTO pdf_failures (document_id, nights, refused_at) VALUES (?1, 0, 1)")
+        .bind(id)
         .run();
     const later = await seedIssuedInvoice();
     const { env, queue } = makeEnv({});
@@ -504,7 +509,7 @@ describe("the sweep and the dead letter, for invoices", () => {
     expect(ids).toContain(later.id);
     for (const id of refusedIds) expect(ids).not.toContain(id);
     // the sweep is a plain listing: a manual retry of a refused invoice still goes straight to its own snapshot message
-    await realEnv.DB.prepare("DELETE FROM notifications WHERE kind = 'pdf.refused'").run();
+    await realEnv.DB.prepare("DELETE FROM pdf_failures WHERE refused_at IS NOT NULL").run();
   });
 
   it("a message that ran out of tries rings the owners' bell with the invoice's page and no version", async () => {

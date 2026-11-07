@@ -1,5 +1,5 @@
 // What the M7.1 screens share (POR-04, POR-06 to POR-11): dates in IST, file sizes, the words of every refusal BY ITS CODE (never the server's message: the
-// new routes answer "[Placeholder] C15" and the like), and the checks "I've paid", Profile and a new request make before sending (the server checks again).
+// new routes' messages carry the same approved words since the full audit, AU13), and the checks "I've paid", Profile and a new request make before sending (the server checks again).
 // Money is parsed and formatted only through core (`parseMoney`, `formatMoney`): nothing here adds amounts up.
 import { formatDate, istDate } from "@techaust/core/dates";
 import { compare, formatMoney, money, parseMoney } from "@techaust/core/money";

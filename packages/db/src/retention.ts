@@ -10,7 +10,7 @@
 // but bound), `?3` the run id, `?4` the family name. `bindsOf` gives them.
 import { istDate, toIsoDate } from "@techaust/core";
 import { type RetentionCutoff, type RetentionFamily, SWITCH_LIVE_SQL } from "@techaust/core/retention";
-import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079, auditIpDueSql } from "./dp-shared.ts";
+import { ALERT_ACTIONS_0079, ALERT_SCRUB_KEYS_0079, auditIpDueSql, HELD_EMAIL_SQL } from "./dp-shared.ts";
 
 /** How a table's rows end. */
 export type RetentionRule =
@@ -67,7 +67,10 @@ export const RETENTION_MATRIX: Record<string, RetentionRule> = {
     "counters",
     "window older than 2 days (a counter, not a payment record: Step 0.1 placed it here, out of the M6.2 never-deleted list)",
   ),
-  notifications: fam("bells", "read and older than 90 days, or any older than 12 months (L13)"),
+  notifications: fam(
+    "bells",
+    "read and older than 90 days, or any older than 12 months (L13); never a once-only marker (`BELL_MARKER_KINDS`, full audit AU10)",
+  ),
   stats_daily: fam(
     "stats",
     "per-plan rows (care metrics) older than 24 months; the aggregate rows are kept (L15)",
@@ -176,10 +179,10 @@ type FamilyTable = {
 /** A held contact (itself or its client) by an id expression. */
 export const HELD_CONTACT_SQL = (contactId: string) =>
   `EXISTS (SELECT 1 FROM contacts hc JOIN clients hk ON hk.id = hc.client_id WHERE hc.id = ${contactId} AND (hc.legal_hold = 1 OR hk.legal_hold = 1))`;
-/** An address held by a contact (itself or its client) or a lead under a legal hold (`email` any expression; compared lower-cased). */
-export const HELD_EMAIL_SQL = (email: string) =>
-  `(EXISTS (SELECT 1 FROM contacts hc JOIN clients hk ON hk.id = hc.client_id WHERE hc.email = lower(${email}) AND (hc.legal_hold = 1 OR hk.legal_hold = 1))
-    OR EXISTS (SELECT 1 FROM leads hl WHERE lower(hl.contact_email) = lower(${email}) AND hl.legal_hold = 1))`;
+// An address held by a contact (itself or its client) or a lead under a legal hold: in `dp-shared.ts` since the full audit (AU25 L1), so the admin API and
+// the jobs purge read it without bundling the retention matrix; re-exported here unchanged.
+export { HELD_EMAIL_SQL };
+
 const HELD_CLIENT = (clientId: string) =>
   `EXISTS (SELECT 1 FROM clients hk WHERE hk.id = ${clientId} AND hk.legal_hold = 1)`;
 const HELD_LEAD = (leadId: string) =>
@@ -202,6 +205,21 @@ export const HASH_SETTLED_SQL = (h: string) =>
             AND NOT EXISTS (SELECT 1 FROM consent_receipts k WHERE k.subject_hash = ${h} AND (
               (k.lead_id IS NOT NULL AND (${LIVE_LEAD("k.lead_id")} OR EXISTS (SELECT 1 FROM consent_receipts yl WHERE yl.lead_id = k.lead_id AND yl.at >= ?1)))
               OR (k.contact_id IS NOT NULL AND (${LIVE_CONTACT("k.contact_id")} OR EXISTS (SELECT 1 FROM consent_receipts yc WHERE yc.contact_id = k.contact_id AND yc.at >= ?1)))))`;
+/**
+ * Full audit M6–M7 AU10 (B6 L1): the bell kinds a job reads back as a once-only marker ("rung once, ever"), so deleting one would make it ring again: the PDF
+ * refusal (`pdf.refused`; the PDF sweep reads `pdf_failures.refused_at` too), the daily alerts' unbilled work and proforma due (`alerts.ts` reads them), and
+ * the export realisation stages (`REALISATION_BELLS_SQL`). The `bells` family never deletes them; they are few (one per document or milestone and owner).
+ */
+export const BELL_MARKER_KINDS = [
+  "pdf.refused",
+  "milestone.unbilled",
+  "proforma.tax_invoice_due",
+  "export.fema_approaching",
+  "export.fema_overdue",
+  "export.gst_approaching",
+  "export.gst_overdue",
+] as const;
+
 /** The per-plan statistics (a care plan id in `dimension`). */
 export const PER_PLAN_METRICS = ["care.used_minutes", "care.available_minutes"] as const;
 
@@ -291,7 +309,7 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
   bells: [
     {
       table: "notifications",
-      age: "notifications.created_at < ?2 AND (notifications.read_at IS NOT NULL OR notifications.created_at < ?1)",
+      age: `notifications.created_at < ?2 AND (notifications.read_at IS NOT NULL OR notifications.created_at < ?1) AND notifications.kind NOT IN (${q(BELL_MARKER_KINDS)})`,
       held: null,
       oldest: "created_at",
       order: "created_at, id",
@@ -364,6 +382,13 @@ export const FAMILY_TABLES: Record<RetentionFamily, readonly FamilyTable[]> = {
 export const DRY_RUN_COUNT_CAP = 10_000;
 /** A live page removes at most this many rows of each table of the family. */
 export const LIVE_PAGE_ROWS = 500;
+/**
+ * Full audit M6–M7 AU9 (B6 M1; the lead's answer AU40): a live run takes at most this many pages a night across ALL its families (about 15,000 rows), so a
+ * backlog after months of dry runs never spends the account's daily D1 writes in one night. The page that reaches the cap with rows still due ends its family
+ * with `more_tomorrow`; a family whose page comes after the cap deletes nothing and is done with `capped` (and `more_tomorrow` when it has rows due). The next
+ * night's run carries on; this run still finishes and rings as before.
+ */
+export const RUN_PAGE_CAP = 30;
 
 /** The single predicate of a table (L5): old enough and not held. Both the dry-run count and the live page select with it. */
 export const dueWhere = (t: FamilyTable): string => (t.held ? `(${t.age}) AND NOT ${t.held}` : `(${t.age})`);
@@ -404,18 +429,23 @@ const minOf = (xs: string[]) =>
 
 /**
  * The dry run of a family (one batch, one statement): rows due (each table counted up to `DRY_RUN_COUNT_CAP`), rows held back by a legal hold, the oldest
- * due date, and `done`, into `retention_run_counts`. Writes nothing else. Binds: `?1`, `?2` (`bindsOf`), `?3` run id, `?4` family.
+ * due date, `done`, and (full audit AU9) `capped` when any table's due count reached the cap (the screen says "10,000 or more"), into
+ * `retention_run_counts`. Each table is counted once: the counts are columns of one sub-select, read by the sum and by the cap test. Writes nothing else.
+ * Binds: `?1`, `?2` (`bindsOf`), `?3` run id, `?4` family.
  */
 export function dryRunSql(family: RetentionFamily): string {
   const tables = FAMILY_TABLES[family];
-  const due = sum(tables.map((t) => countOf(t, dueWhere(t), DRY_RUN_COUNT_CAP)));
+  const cols = tables.map((t, i) => `${countOf(t, dueWhere(t), DRY_RUN_COUNT_CAP)} AS c${i}`);
+  const due = sum(tables.map((_, i) => `c${i}`));
+  const capped = tables.map((_, i) => `c${i} >= ${DRY_RUN_COUNT_CAP}`).join(" OR ");
   const helds = tables
     .map((t) => heldWhere(t))
     .flatMap((w, i) => (w ? [countOf(tables[i] as FamilyTable, w, DRY_RUN_COUNT_CAP)] : []));
   const held = helds.length ? sum(helds) : "0";
-  return `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done)
-    VALUES (?3, ?4, ${due}, ${held}, ${minOf(tables.map(oldestOf))}, 1)
-    ON CONFLICT(run_id, family) DO UPDATE SET due = excluded.due, held_skipped = excluded.held_skipped, oldest_at = excluded.oldest_at, done = 1`;
+  // An upsert fed by a SELECT needs a WHERE (SQLite's parsing rule for ON CONFLICT after a SELECT).
+  return `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done, capped)
+    SELECT ?3, ?4, ${due}, ${held}, ${minOf(tables.map(oldestOf))}, 1, (${capped}) FROM (SELECT ${cols.join(", ")}) WHERE 1
+    ON CONFLICT(run_id, family) DO UPDATE SET due = excluded.due, held_skipped = excluded.held_skipped, oldest_at = excluded.oldest_at, done = 1, capped = excluded.capped`;
 }
 
 /**
@@ -440,14 +470,29 @@ export function livePageSql(family: RetentionFamily): string[] {
   const onFirst = (x: string, otherwise: string) =>
     `CASE WHEN NOT EXISTS (SELECT 1 FROM retention_run_counts WHERE run_id = ?3 AND family = ?4) THEN ${x} ELSE ${otherwise} END`;
   const ifLive = (x: string, off: string) => `CASE WHEN ${SWITCH_LIVE_SQL} THEN ${x} ELSE ${off} END`;
-  const upsert = `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done)
-    VALUES (?3, ?4, ${ifLive(sum(tables.map(page)), "0")}, ${helds.length ? ifLive(onFirst(sum(helds), "0"), "0") : "0"}, ${ifLive(onFirst(minOf(tables.map(oldestOf)), "NULL"), "NULL")}, ${ifLive(`(${done})`, "1")})
-    ON CONFLICT(run_id, family) DO UPDATE SET due = retention_run_counts.due + excluded.due, done = excluded.done`;
+  // AU9 (AU40): `pages` counts the run's live pages, family by family; `spent` is the run's total BEFORE this page (the VALUES and the DO UPDATE read the same
+  // rows: one batch, one transaction). A page within the cap counts and acts; the page that reaches the cap with rows still due ends its family with
+  // `more_tomorrow`. A page after the cap counts nothing, acts on nothing (`capped` 1, which the deletes read), and ends its family, with `more_tomorrow`
+  // when rows are due. A stopped page (the switch went off) is done as before and never marks either.
+  const spent = "(SELECT coalesce(sum(rs.pages), 0) FROM retention_run_counts rs WHERE rs.run_id = ?3)";
+  const within = `${spent} < ${RUN_PAGE_CAP}`;
+  const reachesCap = `${spent} + 1 >= ${RUN_PAGE_CAP}`;
+  const anyDue = tables.map((t) => `EXISTS (SELECT 1 FROM ${t.table} WHERE ${dueWhere(t)})`).join(" OR ");
+  const upsert = `INSERT INTO retention_run_counts (run_id, family, due, held_skipped, oldest_at, done, pages, capped, more_tomorrow)
+    VALUES (?3, ?4, ${ifLive(`CASE WHEN ${within} THEN ${sum(tables.map(page))} ELSE 0 END`, "0")}, ${helds.length ? ifLive(onFirst(sum(helds), "0"), "0") : "0"}, ${ifLive(onFirst(minOf(tables.map(oldestOf)), "NULL"), "NULL")},
+      ${ifLive(`CASE WHEN ${within} THEN ((${done}) OR ${reachesCap}) ELSE 1 END`, "1")}, ${ifLive(`CASE WHEN ${within} THEN 1 ELSE 0 END`, "0")},
+      ${ifLive(`CASE WHEN ${within} THEN 0 ELSE 1 END`, "0")}, ${ifLive(`CASE WHEN ${within} THEN (NOT (${done}) AND ${reachesCap}) ELSE (${anyDue}) END`, "0")})
+    ON CONFLICT(run_id, family) DO UPDATE SET due = retention_run_counts.due + excluded.due, pages = retention_run_counts.pages + excluded.pages,
+      done = excluded.done, capped = max(retention_run_counts.capped, excluded.capped),
+      more_tomorrow = max(retention_run_counts.more_tomorrow, excluded.more_tomorrow)`;
+  // AU40: a page after the run's cap acts on nothing (its family's row says `capped`, written by the upsert above in the same batch).
+  const notCapped =
+    "NOT EXISTS (SELECT 1 FROM retention_run_counts cr WHERE cr.run_id = ?3 AND cr.family = ?4 AND cr.capped = 1)";
   const act = tables.map((t) => {
     const ids = `SELECT rowid FROM ${t.table} WHERE ${dueWhere(t)} ORDER BY ${t.order} LIMIT ${LIVE_PAGE_ROWS}`;
     return t.scrub
-      ? `UPDATE ${t.table} SET ${t.scrub} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL}`
-      : `DELETE FROM ${t.table} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL}`;
+      ? `UPDATE ${t.table} SET ${t.scrub} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL} AND ${notCapped}`
+      : `DELETE FROM ${t.table} WHERE rowid IN (${ids}) AND ${SWITCH_LIVE_SQL} AND ${notCapped}`;
   });
   return [upsert, ...act];
 }
