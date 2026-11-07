@@ -1,6 +1,6 @@
 # 07-ZV: Rebuild PDF (staff lines)
 
-Status: **drafted by the lead (rebuild-pdf, 2026-11-07); awaiting approval by the main session under the owner's delegation.** Staff-only lines (the admin and staff bells); no client sees any of them. If Q2 in the [run file](../runs/rebuild-pdf.md) is answered B, its one client-visible line is added here for the owner. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3), sentence case. `{number}` is the document number, `{label}` the number or "Untitled" (never the title), `{date}` as the admin writes dates, `{fp}` the first 12 characters of the SHA-256.
+Status: **lines 1–19 approved as written (the lead, under the owner's delegation for staff-only lines, 2026-11-07). Q2 was answered A (no mark), so no client-visible line is added; Q1 was answered B, so line 19 is used.** Staff-only lines (the admin and staff bells); no client sees any of them. If Q2 in the [run file](../runs/rebuild-pdf.md) is answered B, its one client-visible line is added here for the owner. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3), sentence case. `{number}` is the document number, `{label}` the number or "Untitled" (never the title), `{date}` as the admin writes dates, `{fp}` the first 12 characters of the SHA-256.
 
 Recommendation for every line: approve as written.
 
@@ -30,5 +30,5 @@ Recommendation for every line: approve as written.
 17. `pdf.refused` (rebuild): "The PDF of {label} couldn't be rebuilt because its saved record didn't match. A developer needs to look at it."
 18. `pdf.failed` (rebuild): "The PDF of {label} couldn't be rebuilt. Open it to try again."
 
-## Only if Q1 is answered B
+## The open-offer refusal (Q1 answered B)
 19. `offer_open`: "This offer can still be accepted. Send a new version instead."

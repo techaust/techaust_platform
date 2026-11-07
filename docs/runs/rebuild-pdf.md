@@ -1,4 +1,4 @@
-Status: WAITING ON OWNER (Q1, Q2, ZV); builder running (b1)
+Status: builder running (b1)
 Tier: A
 Usage: analyst claude-opus-5-5/high (brief draft; skills: none, the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder (b1) started at 5-h 14 %
 
@@ -11,6 +11,8 @@ Basis: [13](../13-decisions.md) 2026-10-29 ("Rebuild PDF … its own Tier A task
 Lead skills: none of docs/14 §9's Cloudflare skills load in a cloud session (no plugins there; CLAUDE.md "In a cloud session"); `code-review` and `security-review` are for the reviewer.
 
 ## Questions for the owner
+**Answers (owner, 2026-11-07, relayed by the main session):** Q1 **B** ("No, send a new version"): a rebuild of an offer the client can still accept is refused with 07-ZV line 19; the portal's accept path is not changed; accepted offers and the invoice family can still be rebuilt. Q2 **A** ("No mark"). 07-ZV lines 1–19 approved as written (the lead, under the owner's delegation for staff-only lines, 2026-11-07).
+
 Plain-English context: a rebuilt PDF is the same sealed content printed again through today's layout code. It is never the same file byte for byte (the PDF maker writes a new creation date and file ID every time), so its fingerprint (SHA-256) differs from the first file's. The printed "Content fingerprint" line inside the PDF stays the same.
 
 - **Q1. May the Owner rebuild the PDF of an offer the client can still accept** (sent or viewed, still valid, the newest version)?
@@ -245,4 +247,5 @@ CPU: the admin check hashes at most one PDF (native digest, ~300 KB typical) onl
 ## Handover
 - 2026-11-07 20:15 IST: branch made from `origin/main` (0ec9e8b); analyst drafting the Tier A brief.
 - 2026-11-07 20:30 IST: USAGE 14 at 20:29; origin/main (#193) taken in.
+- 2026-11-07: owner's answers recorded (Q1 B, Q2 A, 07-ZV approved); builder told.
 - 2026-11-07 21:00 IST: final brief written; Q1, Q2 and 07-ZV asked; builder starting on the parts the questions don't block.
