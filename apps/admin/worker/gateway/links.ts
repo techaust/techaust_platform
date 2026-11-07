@@ -322,6 +322,8 @@ async function makeRazorpayLink(
     expiresAt,
     callbackUrl,
     now,
+    // P7: the environment mark (`notes.techaust_env`), so the other environment's webhook ignores this link's events.
+    env: envText(env, "ENVIRONMENT") ?? "",
   });
   if (!body.ok) {
     await checkoutFailStatement(db, { id: checkoutId, now }).run();
@@ -433,7 +435,7 @@ export async function refreshCheckout(
     return { result: "no_open_link" };
   const claim = await checkoutRefreshClaimStatement(db, { id: checkout.id, now }).run();
   if (claim.meta.changes !== 1) return { result: "too_soon" };
-  const api = razorpayOf(env, await gatewayModeOf(db));
+  const api = razorpayOf(env, await gatewayModeOf(db, env));
   if (!api) return { result: "retry" };
   const linkR = await api.fetchLink(checkout.provider_link_id);
   if (!linkR.ok) return { result: "retry" };

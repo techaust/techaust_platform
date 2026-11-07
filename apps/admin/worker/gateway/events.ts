@@ -20,6 +20,7 @@ import {
   checkoutForLink,
   endCheckout,
   type GatewayEnv,
+  ignoredAsOtherEnv,
   reviewOnly,
   settlePayment,
 } from "./settle.ts";
@@ -145,7 +146,7 @@ export async function processEvent(
       { documentId: null, clientId: null, amountMinor: null },
       { event: row.event_type },
     );
-  const api = razorpayOf(env, await gatewayModeOf(db));
+  const api = razorpayOf(env, await gatewayModeOf(db, env));
   if (!api) return { result: "retry" };
   const cause = { kind: "event", eventId: row.id } as const;
   // (2) a link expired or cancelled at Razorpay: our checkout follows (guarded). The link is re-fetched so a forged-looking event cannot end a live link.
@@ -155,6 +156,8 @@ export async function processEvent(
       return linkR.code === "network" || linkR.code === "unconfigured" || linkR.code === "live_not_allowed"
         ? { result: "retry" }
         : endCheckout(env, { cause, checkout: null, status: "expired", now });
+    // P7: another environment's link is ignored quietly (no review, no bell).
+    if (await ignoredAsOtherEnv(env, { cause, now }, linkR.value.envMark)) return { result: "ignored" };
     const want = type === "payment_link.expired" ? "expired" : "cancelled";
     const checkout: CheckoutRow | null =
       linkR.value.state === want ? await checkoutForLink(env, linkR.value, now) : null;

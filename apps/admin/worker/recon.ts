@@ -60,6 +60,7 @@ export async function fetchSettlements(
 ): Promise<FetchSettlementsResult> {
   const q = reconQueryOf(a.day, a.skip);
   if (!q) return { result: "retry" };
+  // P7 (the lead's decision on finding 5): Settings' own mode, never the A2.3 test fallback (live while the flag is off stays `live_not_allowed`).
   const api = razorpayOf(env, await gatewayModeOf(env.DB));
   // Early check 2, finding 10: no Razorpay key here is not a failure to retry (the jobs Worker acknowledges it).
   if (!api || api.blocked === "unconfigured") return { result: "unconfigured" };

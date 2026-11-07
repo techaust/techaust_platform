@@ -269,6 +269,22 @@ export const GW_UI = {
 /** A window event the Needs review tab sends after a change, so the nav count reads again. */
 export const REVIEW_CHANGED = "ta:review-changed";
 
+/**
+ * P7 A2.5: Settings › Gateways' "Before going live" text, staff only. Builder's draft for the lead (run file docs/runs/p7-payments.md, Builder report 2), in
+ * the safe order of the early check's finding 6: keys and webhook secrets first, then the owner's flag and deploy, and only then each gateway to Live (a gateway
+ * set to Live while the flag is off runs its new checkouts in test mode and rings the owners; refunds stay refused until the flag is on).
+ */
+export const GO_LIVE = {
+  title: "Before going live",
+  lead: "Switch a gateway to Live only when all of this is done, in this order:",
+  steps: [
+    "Set the gateway's live keys, and its webhook at https://hooks.techaust.com/<gateway> with the live webhook secret.",
+    "The owner sets PAYMENTS_LIVE_ALLOWED to “true” and deploys.",
+    "Only then switch each gateway to Live here.",
+  ],
+  note: "Online payments may fail for a short time between these steps.",
+} as const;
+
 /** The resolutions, in words (designer's drafts). */
 export const RESOLUTION_LABELS: Record<ReviewResolution, string> = {
   confirmed: "The payment is confirmed",

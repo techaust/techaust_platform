@@ -263,18 +263,35 @@ describe("POST /stripe [JOB-HOOK-01..03, L5]", () => {
     expect(await failures()).toBe(before);
   });
 
-  it("AU7 L1: while PAYMENTS_LIVE_ALLOWED is true both modes are kept with `livemode` (the finance judge decides); while it is false a live event is dropped", async () => {
-    const live = eventBody({ livemode: true });
-    const res = await signed(live.body, {
-      e: makeEnv({ STRIPE_WEBHOOK_SECRET: SECRET, PAYMENTS_LIVE_ALLOWED: "true" }),
-    });
-    expect(res.status).toBe(200);
-    const rows = await rowsOf(live.eventId);
-    expect(rows).toHaveLength(1);
-    expect(JSON.parse(rows[0]?.facts ?? "{}")).toMatchObject({ livemode: 1 });
-    const test = eventBody({ livemode: false });
-    await signed(test.body, { e: makeEnv({ STRIPE_WEBHOOK_SECRET: SECRET, PAYMENTS_LIVE_ALLOWED: "true" }) });
-    expect(JSON.parse((await rowsOf(test.eventId))[0]?.facts ?? "{}")).toMatchObject({ livemode: 0 });
+  it("AU7 L1 as amended by P7 A2.2: with PAYMENTS_LIVE_ALLOWED true only the mode Settings › Gateways gives Stripe is kept (with `livemode`); while it is false a live event is dropped", async () => {
+    const on = () => makeEnv({ STRIPE_WEBHOOK_SECRET: SECRET, PAYMENTS_LIVE_ALLOWED: "true" });
+    const setStripe = (mode: string) =>
+      realEnv.DB.prepare(
+        "INSERT INTO settings (key, value, version) VALUES ('gateways', ?1, 1) ON CONFLICT(key) DO UPDATE SET value = excluded.value, version = version + 1",
+      )
+        .bind(JSON.stringify({ razorpay: { mode: "test" }, stripe: { mode }, paypal: { mode: "test" } }))
+        .run();
+    try {
+      await setStripe("live");
+      const live = eventBody({ livemode: true });
+      const res = await signed(live.body, { e: on() });
+      expect(res.status).toBe(200);
+      const rows = await rowsOf(live.eventId);
+      expect(rows).toHaveLength(1);
+      expect(JSON.parse(rows[0]?.facts ?? "{}")).toMatchObject({ livemode: 1 });
+      const testInLive = eventBody({ livemode: false });
+      expect((await signed(testInLive.body, { e: on() })).status).toBe(200);
+      expect(await rowsOf(testInLive.eventId)).toHaveLength(0);
+      await setStripe("test");
+      const test = eventBody({ livemode: false });
+      await signed(test.body, { e: on() });
+      expect(JSON.parse((await rowsOf(test.eventId))[0]?.facts ?? "{}")).toMatchObject({ livemode: 0 });
+      const liveInTest = eventBody({ livemode: true });
+      await signed(liveInTest.body, { e: on() });
+      expect(await rowsOf(liveInTest.eventId)).toHaveLength(0);
+    } finally {
+      await realEnv.DB.prepare("DELETE FROM settings WHERE key = 'gateways'").run();
+    }
     const dropped = eventBody({ livemode: true });
     await signed(dropped.body);
     expect(await rowsOf(dropped.eventId)).toHaveLength(0);
