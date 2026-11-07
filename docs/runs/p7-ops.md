@@ -297,3 +297,15 @@ Builder (Opus 5.5, high), branch `fix/p7-ops-b2` from `origin/feat/p7-ops` (d02a
 
 ### Open questions
 1. **H1's "Delete expired object delete markers" ticked** can't be done in `expire-daily-90d` or `monthly-10-years`, because AWS refuses it beside "Expire current versions" (quoted above), and it isn't needed: S3 removes those markers itself. If the owner already tried to tick it and the console refused, that's why. Only a separate rule with just that box would allow it. I did not add one to the runbook as a step; it is the lead's call.
+
+## Re-check (reviewer, Opus 5.5 high, 2026-11-07): APPROVE
+H1, M1, L1 and L2 are fixed; the drill work is sound. Lows:
+- **Marker timing:** fixed in restore.md §3.1 and §3.6.4 b.3.
+- **`drill-split.mjs`:** fixed: it now checks all three output paths before writing any.
+- **A dedicated test of `drill-split.mjs`:** kept as a follow-up. It is a hand-run tool, and its ordering is `loadOrder`, which drill-verify's tests already cover.
+- **Real-data drill paths:** kept as a follow-up for the first quarterly drill (12).
+
+Usage:
+- reviewers agent-a8579d7921586efaf (review) and agent-a92358b8667b001e8 (re-check);
+- builders agent-a4a91b2853eaea0f6 (b1) and agent-a3c4212722c6628ba (b2);
+- all claude-opus-5-5/high.

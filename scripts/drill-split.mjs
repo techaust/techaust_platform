@@ -4,7 +4,7 @@
 // that is created ON that view, so a straight `--file` load of the export stops with "no such table: main.issue_guard". The order is
 // drill-verify's own `loadOrder` (schema and views, then data with deferred foreign keys, then triggers; transactions dropped).
 // Usage: node scripts/drill-split.mjs <export.sql> <output folder>. Prints only the statement counts (no data).
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadOrder } from "./drill-verify.mjs";
 
@@ -15,6 +15,12 @@ if (!src || !outDir) {
 }
 const { schema, data, triggers } = loadOrder(readFileSync(src, "utf8"));
 mkdirSync(outDir, { recursive: true });
+const names = ["1-schema", "2-data", "3-triggers"].map((n) => join(outDir, `part-${n}.sql`));
+const taken = names.filter((f) => existsSync(f));
+if (taken.length > 0) {
+  console.error(`drill-split: refusing, already there: ${taken.join(", ")} (empty the folder first)`);
+  process.exit(1);
+}
 const write = (name, parts) =>
   writeFileSync(
     join(outDir, `part-${name}.sql`),
