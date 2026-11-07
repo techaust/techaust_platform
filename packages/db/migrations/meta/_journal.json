@@ -568,6 +568,20 @@
       "when": 1793999733534,
       "tag": "0080_fk_child_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1794017541442,
+      "tag": "0081_audit_af2",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "6",
+      "when": 1794017767822,
+      "tag": "0082_audit_af2_triggers",
+      "breakpoints": true
     }
   ]
 }

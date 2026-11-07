@@ -44,6 +44,7 @@ import {
   signedIssuerSql,
   taxOnlyNoteExactSql,
 } from "./sql-rules.ts";
+import { auditAf2TriggerStatements } from "./triggers-audit-af2.ts";
 import { dataProtectionTriggerStatements } from "./triggers-data-protection.ts";
 
 /**
@@ -2564,6 +2565,10 @@ export const TRIGGER_SETS = {
   data_protection_triggers: {
     what: "M7.4 data-protection tooling: the clock of existing requests and one consent receipt per lead back-filled, 366-day floors, legal hold, the anonymised lock, the R2 outbox, the erasure stop with the hash and end of the receipts, the request kinds, clock, steps and close, consent receipts, clean-up runs and the audit scrub",
     statements: dataProtectionTriggerStatements,
+  },
+  audit_af2_triggers: {
+    what: "Full audit M6–M7 fix round AF2: the PDF refusal kept outside the bells (back-filled, set once), the clean-up's page budget columns, a lead held by its address, the redaction hold on every redaction, the export date and the consent withdrawal's proof at a request's close, the digest switched off by a spam report, and the staff close notes cleared with a contact",
+    statements: auditAf2TriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

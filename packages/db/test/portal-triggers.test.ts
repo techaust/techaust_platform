@@ -23,6 +23,7 @@ import {
   REQUEST_STATUSES_0072,
   STAFF_CLOSE_KINDS_0072,
 } from "../src/triggers.ts";
+import { auditAf2TriggerStatements } from "../src/triggers-audit-af2.ts";
 import { dataProtectionTriggerStatements } from "../src/triggers-data-protection.ts";
 import { mkClientRow, mkContact, mkIssued, mkMember } from "./billing-helpers.ts";
 import {
@@ -42,10 +43,12 @@ const statementsOf = (name: string) =>
 
 /** Runs `fn` with trigger `name` dropped, then re-creates it exactly as 0072 does. */
 async function withoutTrigger(name: string, fn: () => Promise<unknown>): Promise<void> {
-  // The newest definition: M7.4 (0079) re-created some of 0072's triggers.
-  const create = [...dataProtectionTriggerStatements(), ...clientPortalTriggerStatements()].find((s) =>
-    s.startsWith(`CREATE TRIGGER \`${name}\``),
-  );
+  // The newest definition: the audit fix set (0082) and M7.4 (0079) re-created some of 0072's triggers.
+  const create = [
+    ...auditAf2TriggerStatements(),
+    ...dataProtectionTriggerStatements(),
+    ...clientPortalTriggerStatements(),
+  ].find((s) => s.startsWith(`CREATE TRIGGER \`${name}\``));
   if (!create) throw new Error(`no trigger ${name}`);
   await run(`DROP TRIGGER \`${name}\``);
   try {
@@ -575,8 +578,12 @@ describe("payment_notices [L10, ADM-PAY-05]", () => {
       dis,
       staff,
     );
-    for (const sql of ["close_note = 'other'", "close_note = NULL"])
-      await rejects(run(`UPDATE payment_notices SET ${sql} WHERE id = ?1`, dis), /payment_notices_fixed/);
+    await rejects(
+      run("UPDATE payment_notices SET close_note = 'other' WHERE id = ?1", dis),
+      /payment_notices_fixed/,
+    );
+    // Full audit M6–M7 AU25 L6 (0082): the staff note may only become empty (an anonymise or erase clears it).
+    await run("UPDATE payment_notices SET close_note = NULL WHERE id = ?1", dis);
     await withoutTrigger("payment_notices_fixed", () =>
       run("UPDATE payment_notices SET close_note = 'other' WHERE id = ?1", dis),
     );
@@ -755,6 +762,82 @@ describe("the writing triggers [run file A; the M6.2 pattern]", () => {
       amount_minor: 1000,
       reference: "ERASE1",
       status: "open",
+    });
+  });
+
+  it("full audit M6–M7 AU25 L6 (0082): anonymising or erasing a contact, or deleting a lead, clears the staff close notes of its requests and notices", async () => {
+    const staff = await mkMember("owner");
+    const closeReq = (id: string) =>
+      run(
+        "UPDATE client_requests SET status = 'closed', outcome = 'declined', decline_reason = 'other', closed_by = ?2, closed_at = 2000, close_note = 'Spoke to Asha on the phone' WHERE id = ?1",
+        id,
+        staff,
+      );
+    const dismiss = (id: string) =>
+      run(
+        "UPDATE payment_notices SET status = 'dismissed', closed_by = ?2, closed_at = 2000, close_note = 'Asha paid twice by mistake' WHERE id = ?1",
+        id,
+        staff,
+      );
+    const notesOf = async (req: string, notice: string) => [
+      (
+        await first<{ close_note: string | null }>(
+          "SELECT close_note FROM client_requests WHERE id = ?1",
+          req,
+        )
+      )?.close_note ?? null,
+      (
+        await first<{ close_note: string | null }>(
+          "SELECT close_note FROM payment_notices WHERE id = ?1",
+          notice,
+        )
+      )?.close_note ?? null,
+    ];
+    for (const how of ["anonymise", "erase"] as const) {
+      const client = await mkClientRow();
+      const doc = await mkIssued(client);
+      const contact = await mkContact(client);
+      const other = await mkContact(client);
+      const [req, otherReq, notice, otherNotice] = [uuidv7(), uuidv7(), uuidv7(), uuidv7()];
+      await insertRequest({ id: req, clientId: client, contactId: contact, kind: "grievance" });
+      await insertRequest({ id: otherReq, clientId: client, contactId: other, kind: "grievance" });
+      await closeReq(req);
+      await closeReq(otherReq);
+      await insertNotice({
+        id: notice,
+        clientId: client,
+        documentId: doc,
+        contactId: contact,
+        reference: `L6${how}A`,
+      });
+      await insertNotice({
+        id: otherNotice,
+        clientId: client,
+        documentId: doc,
+        contactId: other,
+        reference: `L6${how}B`,
+      });
+      await dismiss(notice);
+      await dismiss(otherNotice);
+      if (how === "anonymise") await run("UPDATE contacts SET anonymised_at = 9 WHERE id = ?1", contact);
+      else await run("DELETE FROM contacts WHERE id = ?1", contact);
+      expect(await notesOf(req, notice)).toEqual([null, null]);
+      // another contact's notes stay; the close itself never changes
+      expect(await notesOf(otherReq, otherNotice)).toEqual([
+        "Spoke to Asha on the phone",
+        "Asha paid twice by mistake",
+      ]);
+      expect(
+        await first("SELECT status, outcome, closed_by, closed_at FROM client_requests WHERE id = ?1", req),
+      ).toEqual({ status: "closed", outcome: "declined", closed_by: staff, closed_at: 2000 });
+    }
+    const lead = await mkLead();
+    const req = uuidv7();
+    await insertRequest({ id: req, leadId: lead, kind: "grievance" });
+    await closeReq(req);
+    await run("DELETE FROM leads WHERE id = ?1", lead);
+    expect(await first("SELECT close_note FROM client_requests WHERE id = ?1", req)).toEqual({
+      close_note: null,
     });
   });
 

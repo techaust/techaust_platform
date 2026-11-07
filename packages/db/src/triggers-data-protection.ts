@@ -111,11 +111,11 @@ export const PDF_STEM_SQL = (a: string) =>
  * A contact row `a` is held: itself, its client, or a lead of the person (the `HELD_LEAD_SQL` rule of `contact-access.ts`, over `a`; early check 1 M1: the
  * lead's address lower-cased, one EXISTS per index).
  */
-const contactHeld = (a: string) =>
+export const contactHeld = (a: string) =>
   `(${a}.legal_hold = 1 OR EXISTS (SELECT 1 FROM clients hc WHERE hc.id = ${a}.client_id AND hc.legal_hold = 1)
     OR EXISTS (SELECT 1 FROM leads hl WHERE hl.contact_id = ${a}.id AND hl.legal_hold = 1)
     OR EXISTS (SELECT 1 FROM leads hl WHERE lower(hl.contact_email) = lower(${a}.email) AND hl.legal_hold = 1 AND (hl.client_id IS NULL OR hl.client_id = ${a}.client_id)))`;
-const clientHeld = (client: string) =>
+export const clientHeld = (client: string) =>
   `EXISTS (SELECT 1 FROM clients hc WHERE hc.id = ${client} AND hc.legal_hold = 1)`;
 const clientGone = (client: string) =>
   `EXISTS (SELECT 1 FROM clients z WHERE z.id = ${client} AND z.anonymised_at IS NOT NULL)`;
@@ -183,6 +183,19 @@ export function dataProtectionBackfill(): string[] {
   ];
 }
 
+/** A done erasure names its own erase or anonymise, made after the request arrived (0079; the audit fix set reuses it, so 0079's text never changes). */
+export const ERASURE_ACTION_0079 = `EXISTS (SELECT 1 FROM audit_log a WHERE a.id = NEW.action_audit_id AND a.at >= NEW.received_at
+    AND ((NEW.contact_ref IS NOT NULL AND a.action IN ('contact.erase', 'contact.anonymise') AND json_extract(a.summary, '$.contactId') = NEW.contact_ref)
+      OR (NEW.lead_ref IS NOT NULL AND a.action = 'lead.erase' AND a.entity_type = 'lead' AND a.entity_id = NEW.lead_ref)))`;
+/** The close rules of 0079 (`client_requests_close_rules`), exported unchanged for the audit fix set, which adds its own rules after them. */
+export const CLOSE_BAD_0079 = `OLD.status = 'open' AND NEW.status = 'closed' AND (
+     (NEW.outcome = 'declined' AND (NEW.decline_reason IS NULL OR NEW.decline_reason NOT IN (${q(DECLINE_REASONS_0079)}) OR NEW.action_audit_id IS NOT NULL OR NEW.export_sent_at IS NOT NULL))
+  OR (NEW.outcome = 'done' AND NEW.decline_reason IS NOT NULL)
+  OR (NEW.outcome = 'done' AND NEW.kind IN (${q(IDENTITY_CHECKED_KINDS_0079)}) AND NEW.identity_checked_at IS NULL)
+  OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL
+      AND (NEW.outcome IS NOT 'declined' OR NEW.decline_reason NOT IN (${q(EMAIL_ONLY_DECLINE_REASONS_0079)})))
+  OR (NEW.kind = 'data_erasure' AND NEW.outcome = 'done' AND NOT ${ERASURE_ACTION_0079})
+  OR (NEW.export_sent_at IS NOT NULL AND NOT (NEW.kind = 'data_access' AND NEW.outcome = 'done' AND NEW.export_sent_at >= 0)))`;
 export function dataProtectionTriggerStatements(): string[] {
   // ---- 1. floors (366 days)
   const floors = [
@@ -301,23 +314,12 @@ export function dataProtectionTriggerStatements(): string[] {
     OR (NEW.identity_checked_by IS NOT NULL AND NEW.identity_checked_by IS NOT OLD.identity_checked_by AND NOT EXISTS (SELECT 1 FROM staff_users s WHERE s.id = NEW.identity_checked_by AND s.status = 'active'))
     OR (NEW.acknowledged_at IS NOT NULL AND NEW.acknowledged_at < NEW.received_at)
     OR (NOT (OLD.status = 'open' AND NEW.status = 'closed') AND (${changed(["decline_reason", "action_audit_id", "export_sent_at"])}))`;
-  const erasureAction = `EXISTS (SELECT 1 FROM audit_log a WHERE a.id = NEW.action_audit_id AND a.at >= NEW.received_at
-      AND ((NEW.contact_ref IS NOT NULL AND a.action IN ('contact.erase', 'contact.anonymise') AND json_extract(a.summary, '$.contactId') = NEW.contact_ref)
-        OR (NEW.lead_ref IS NOT NULL AND a.action = 'lead.erase' AND a.entity_type = 'lead' AND a.entity_id = NEW.lead_ref)))`;
-  const closeBad = `OLD.status = 'open' AND NEW.status = 'closed' AND (
-       (NEW.outcome = 'declined' AND (NEW.decline_reason IS NULL OR NEW.decline_reason NOT IN (${q(DECLINE_REASONS_0079)}) OR NEW.action_audit_id IS NOT NULL OR NEW.export_sent_at IS NOT NULL))
-    OR (NEW.outcome = 'done' AND NEW.decline_reason IS NOT NULL)
-    OR (NEW.outcome = 'done' AND NEW.kind IN (${q(IDENTITY_CHECKED_KINDS_0079)}) AND NEW.identity_checked_at IS NULL)
-    OR (NEW.kind = 'data_erasure' AND NEW.contact_ref IS NULL AND NEW.lead_ref IS NULL
-        AND (NEW.outcome IS NOT 'declined' OR NEW.decline_reason NOT IN (${q(EMAIL_ONLY_DECLINE_REASONS_0079)})))
-    OR (NEW.kind = 'data_erasure' AND NEW.outcome = 'done' AND NOT ${erasureAction})
-    OR (NEW.export_sent_at IS NOT NULL AND NOT (NEW.kind = 'data_access' AND NEW.outcome = 'done' AND NEW.export_sent_at >= 0)))`;
   const requests = [
     "DROP TRIGGER `client_requests_kind`;",
     `CREATE TRIGGER \`client_requests_kind\` BEFORE INSERT ON \`client_requests\` WHEN NEW.kind NOT IN (${q(REQUEST_KINDS_0079)}) BEGIN ${named("client_requests_kind", "a request is of a known kind")} END;`,
     `CREATE TRIGGER \`client_requests_clock_insert\` BEFORE INSERT ON \`client_requests\` WHEN ${clockInsertBad} BEGIN ${named("client_requests_clock_insert", "a request starts with its known channel, its clock (received, reply due, acknowledgement due) and no step or close detail (a portal request may start with its identity checked by the sign-in, when it arrived); staff log the requests that did not come through the portal; an erasure request names a contact, a lead or an address; a converted lead is never a subject")} END;`,
     `CREATE TRIGGER \`client_requests_steps\` BEFORE UPDATE ON \`client_requests\` WHEN ${stepsBad} BEGIN ${named("client_requests_steps", "a request keeps its clock and channel; it is acknowledged and its identity checked once each, the check by an active staff member (only a portal request is checked by its sign-in, when it arrived, with no staff member); the decline reason, the fulfilling action and the export date are set only by the close")} END;`,
-    `CREATE TRIGGER \`client_requests_close_rules\` BEFORE UPDATE OF status ON \`client_requests\` WHEN ${closeBad} BEGIN ${named("client_requests_close_rules", "a declined request has a known reason; an access, correction, erasure or nomination request is done only once its identity is checked; a done erasure names the erase or anonymise of its own contact or lead, made after it arrived; a request naming only an address is declined; only a done access request has an export date")} END;`,
+    `CREATE TRIGGER \`client_requests_close_rules\` BEFORE UPDATE OF status ON \`client_requests\` WHEN ${CLOSE_BAD_0079} BEGIN ${named("client_requests_close_rules", "a declined request has a known reason; an access, correction, erasure or nomination request is done only once its identity is checked; a done erasure names the erase or anonymise of its own contact or lead, made after it arrived; a request naming only an address is declined; only a done access request has an export date")} END;`,
   ];
 
   // ---- 7. consent receipts, the outbox and the run tables

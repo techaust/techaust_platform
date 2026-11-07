@@ -38,6 +38,7 @@ import {
   emailEventTriggerStatements,
   SUPPRESSION_REASONS_0074,
 } from "../src/triggers.ts";
+import { auditAf2TriggerStatements, DIGEST_OFF_VIA_AF2 } from "../src/triggers-audit-af2.ts";
 import { mkClientRow, mkContact, mkMember } from "./billing-helpers.ts";
 import { all, first, rejects, run } from "./helpers.ts";
 
@@ -45,9 +46,11 @@ const migration = (name: string) => env.TEST_MIGRATIONS.find((m) => m.name === n
 const statementsOf = (name: string) =>
   (migration(name)?.queries ?? []).map((q) => q.replace(/^--[^\n]*\n?/gm, "").trim()).filter((q) => q !== "");
 
-/** Runs `fn` with trigger `name` dropped, then re-creates it exactly as 0074 does. */
+/** Runs `fn` with trigger `name` dropped, then re-creates its newest definition (the audit fix set 0082 re-created the switches' two, else 0074's). */
 async function withoutTrigger(name: string, fn: () => Promise<unknown>): Promise<void> {
-  const create = emailEventTriggerStatements().find((s) => s.startsWith(`CREATE TRIGGER \`${name}\``));
+  const create = [...auditAf2TriggerStatements(), ...emailEventTriggerStatements()].find((s) =>
+    s.startsWith(`CREATE TRIGGER \`${name}\``),
+  );
   if (!create) throw new Error(`no trigger ${name}`);
   await run(`DROP TRIGGER \`${name}\``);
   try {
@@ -141,7 +144,9 @@ describe("0073 and 0074", () => {
     expect(BOUNCE_TYPES_0074).toEqual(BOUNCE_TYPES);
     expect(EMAIL_EVENT_OUTCOMES_0074).toEqual(EMAIL_EVENT_OUTCOMES);
     expect(SUPPRESSION_REASONS_0074).toEqual(SUPPRESSION_REASONS);
-    expect(DIGEST_OFF_VIA_0074).toEqual(DIGEST_OFF_VIA);
+    // AU20 (0082): the spam report of the digest is the third way; 0074's two come first.
+    expect(DIGEST_OFF_VIA_AF2).toEqual(DIGEST_OFF_VIA);
+    expect(DIGEST_OFF_VIA.slice(0, 2)).toEqual(DIGEST_OFF_VIA_0074);
   });
 
   it("the hook finds a row by message id through the partial index", async () => {

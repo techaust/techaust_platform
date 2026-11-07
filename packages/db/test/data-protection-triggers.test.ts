@@ -962,7 +962,8 @@ describe("client_requests: kinds, clock, steps and close (A.1, A.6, L28; RB-47)"
       close(erase, `outcome = 'done', action_audit_id = '${auditId}'`),
       /client_requests_close_rules/,
     );
-    for (const kind of ["grievance", "contact_change", "consent_withdrawal"])
+    // AU26 (0082): a done consent withdrawal needs its proof (audit-af2-triggers.test.ts); the other two close done as they are.
+    for (const kind of ["grievance", "contact_change"])
       await close(await mk(kind, false), "outcome = 'done'");
   });
 
