@@ -624,6 +624,13 @@
       "when": 1794064186472,
       "tag": "0088_pdf_repair_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "6",
+      "when": 1794075711578,
+      "tag": "0089_lut_fold",
+      "breakpoints": true
     }
   ]
 }
