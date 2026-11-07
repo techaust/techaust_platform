@@ -1,6 +1,6 @@
-Status: builder running (b1)
+Status: analyst early check running
 Tier: A
-Usage: analyst claude-opus-5-5/high (brief draft; skills: none, the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder (b1) started at 5-h 14 %
+Usage: analyst claude-opus-5-5/high (brief draft; skills: none, the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder (b1) claude-opus-5-5/high (skills: none, as above; model-audit flags both runs for that, explained): 5-h 14 → 53 %
 
 # Rebuild PDF (cloud session `rebuild-pdf`, branch `feat/rebuild-pdf`)
 
@@ -233,6 +233,8 @@ CPU: the admin check hashes at most one PDF (native digest, ~300 KB typical) onl
 ## Proposed CLAUDE.md text
 (after the build)
 
+- **2026-11-07, Rebuild PDF b1 triage, Lead:** the builder's deviations 1–13 accepted (run file "Early check"); `pdf.rebuild` audit rows stay out of the monthly finance copy (`FINANCE_AUDIT_ACTIONS` holds money and tax events only; both rebuild tables are in the copy); the audit label and filter group are 07-ZV lines 20–21 (staff only, the lead's).
+
 ## Follow-ups (for 12)
 - A bulk rebuild after a whole-bucket loss (Browser Run's 10 minutes a day paces it).
 - An anonymised client's invoice PDFs can't be rebuilt (RB-11) while the originals are kept 8 years (RA-25): a one-off professional view would settle it.
@@ -247,6 +249,7 @@ CPU: the admin check hashes at most one PDF (native digest, ~300 KB typical) onl
 ## Handover
 - 2026-11-07 20:15 IST: branch made from `origin/main` (0ec9e8b); analyst drafting the Tier A brief.
 - 2026-11-07 20:30 IST: USAGE 14 at 20:29; origin/main (#193) taken in.
+- 2026-11-07 21:30 IST: builder b1 merged (head dfb06c9); worktree removed; analyst early check started (USAGE 53 at 21:30).
 - 2026-11-07: owner's answers recorded (Q1 B, Q2 A, 07-ZV approved); builder told.
 - 2026-11-07 21:00 IST: final brief written; Q1, Q2 and 07-ZV asked; builder starting on the parts the questions don't block.
 

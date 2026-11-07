@@ -32,3 +32,7 @@ Recommendation for every line: approve as written.
 
 ## The open-offer refusal (Q1 answered B)
 19. `offer_open`: "This offer can still be accepted. Send a new version instead."
+
+## Audit log (staff; the lead's, 2026-11-07, needed by `audit-labels.test.ts`)
+20. Audit label for `pdf.rebuild`: "asked for a stored PDF to be rebuilt"
+21. Audit filter group: "Stored PDFs"
