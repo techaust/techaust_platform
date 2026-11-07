@@ -133,18 +133,19 @@ describe("L2: every signed-in request is limited per session, before any D1 work
   });
 });
 
-describe("AU55: the sign-out is limited per session, never per address, and a 429 still signs the browser out", () => {
-  it("over the session's limit: 429 with the cleared cookie, no D1 call, the session left as it is; the key is the session's, never the address's", async () => {
+describe("AU55, AU60: the sign-out is limited per session and per address on its own counter, and a 429 from either still signs the browser out", () => {
+  it("over the session's limit: 429 with the cleared cookie, no D1 call, the session left as it is; the key is the guard's session key, and the sign-in's address limiter is never asked", async () => {
     const f = await fixtures();
     const s = await sessionFor(f.a.finance);
     const c = counted();
     const refusing = limiter(false);
+    const address = limiter(true);
     const busyAddress = limiter(false);
     const before = await countOf("access_log");
     const res = await call(
       "/auth/logout",
       { method: "POST", cookie: s.cookie, ip: "203.0.113.89" },
-      withEnv(c.env, { RL_SESSION: refusing.l, RL_SIGNIN: busyAddress.l }),
+      withEnv(c.env, { RL_SESSION: refusing.l, RL_SIGNOUT: address.l, RL_SIGNIN: busyAddress.l }),
     );
     expect(res.status).toBe(429);
     expect((await bodyOf(res)).error).toEqual(RATE_LIMITED_BODY);
@@ -160,22 +161,58 @@ describe("AU55: the sign-out is limited per session, never per address, and a 42
     const guarded = limiter(false);
     await call("/me", { cookie: s.cookie }, withEnv(env, { RL_SESSION: guarded.l }));
     expect(guarded.keys[0]).toBe(refusing.keys[0]);
-    // the address limiter is never asked, so a busy shared address can't stop a sign-out
+    // the sign-out's own address counter was asked (and allowed); the sign-in's never is, so a busy sign-in address can't stop a sign-out
+    expect(address.keys).toHaveLength(1);
+    expect(address.keys[0]).not.toContain("203.0.113");
     expect(busyAddress.keys).toHaveLength(0);
     expect(await countOf("client_sessions", "id = ? AND revoked_at IS NULL", s.sessionId)).toBe(1);
   });
 
-  it("within the limit the sign-out ends the session; no cookie: the limiter is not asked and the answer is 204", async () => {
+  it("over the address's sign-out limit: 429 with the cleared cookie, no D1 call, the session limiter not asked; keys per address, apart from the sign-in's", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const c = counted();
+    const session = limiter(true);
+    const refusing = limiter(false);
+    const before = await countOf("access_log");
+    const res = await call(
+      "/auth/logout",
+      { method: "POST", cookie: s.cookie, ip: "203.0.113.90" },
+      withEnv(c.env, { RL_SESSION: session.l, RL_SIGNOUT: refusing.l }),
+    );
+    expect(res.status).toBe(429);
+    expect((await bodyOf(res)).error).toEqual(RATE_LIMITED_BODY);
+    expect(res.headers.get("Set-Cookie") ?? "").toMatch(/__Host-ta_portal=;.*Max-Age=0/i);
+    expect(c.calls()).toBe(0);
+    expect(await countOf("access_log")).toBe(before);
+    expect(session.keys).toHaveLength(0);
+    expect(await countOf("client_sessions", "id = ? AND revoked_at IS NULL", s.sessionId)).toBe(1);
+    // per address (an IPv6 /64 is one address), and never the sign-in's key for the same address
+    const allowing = limiter(true);
+    const signInLimiter = limiter(true);
+    const e = withEnv(env, { RL_SIGNOUT: allowing.l, RL_SIGNIN: signInLimiter.l });
+    for (const ip of ["203.0.113.91", "203.0.113.92", "2001:db8:9:9::1", "2001:db8:9:9::2"])
+      await call("/auth/logout", { method: "POST", cookie: "__Host-ta_portal=junk-token-value", ip }, e);
+    const [k1, k2, v6a, v6b] = allowing.keys;
+    expect(k1).not.toBe(k2);
+    expect(v6a).toBe(v6b);
+    await call("/auth/magic", { body: { email: "rl-signout@example.com" }, ip: "203.0.113.91" }, e);
+    expect(signInLimiter.keys[0]).not.toBe(k1);
+  });
+
+  it("within both limits the sign-out ends the session; no cookie: no limiter is asked and the answer is 204", async () => {
     const f = await fixtures();
     const s = await sessionFor(f.a.finance);
     const allowing = limiter(true);
-    const e = withEnv(env, { RL_SESSION: allowing.l });
+    const address = limiter(true);
+    const e = withEnv(env, { RL_SESSION: allowing.l, RL_SIGNOUT: address.l });
     const res = await call("/auth/logout", { method: "POST", cookie: s.cookie }, e);
     expect(res.status).toBe(204);
     expect(res.headers.get("Set-Cookie") ?? "").toMatch(/__Host-ta_portal=;/);
     expect(await countOf("client_sessions", "id = ? AND revoked_at IS NOT NULL", s.sessionId)).toBe(1);
     expect((await call("/auth/logout", { method: "POST" }, e)).status).toBe(204);
     expect(allowing.keys).toHaveLength(1);
+    expect(address.keys).toHaveLength(1);
   });
 });
 

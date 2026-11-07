@@ -55,7 +55,7 @@ import {
   rateLimited,
   requestInfo,
 } from "./context.ts";
-import { sessionAllowed, tooMany } from "./rate-limit.ts";
+import { sessionAllowed, signOutAddressAllowed, tooMany } from "./rate-limit.ts";
 import { scope } from "./scope.ts";
 import { type MagicLink, queueSender } from "./sender.ts";
 import { json } from "./validate.ts";
@@ -276,9 +276,11 @@ export const authRoutes = new Hono<AppEnv>()
     const token = readPortalCookie(c.req.header("Cookie"));
     c.header("Set-Cookie", clearPortalCookie(), { append: true });
     if (!token) return c.body(null, 204);
+    // Full audit AU55, AU60: limited per address (`RL_SIGNOUT`, 60 a minute, its own counter) and per session (`RL_SESSION`, keyed by the cookie's hash, as
+    // the guard is), both before any D1 work; a 429 from either still carries the cleared cookie set above, so the browser is signed out either way (the
+    // session itself ends at its idle or absolute expiry).
+    if (!(await signOutAddressAllowed(c))) return tooMany(c);
     const id = await tokenHash(token);
-    // Full audit AU55: limited per session (`RL_SESSION`, keyed by the cookie's hash, as the guard is) before any D1 work, not per address; the 429 still
-    // carries the cleared cookie set above, so the browser is signed out either way (the session itself ends at its idle or absolute expiry).
     if (!(await sessionAllowed(c, id))) return tooMany(c);
     const db = c.env.DB;
     const info = requestInfo(c);

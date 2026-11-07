@@ -91,6 +91,48 @@ describe("AU52: an address held at another client stops the erase and the anonym
     await hold(o.id, "lead", heldLead, "clear");
     expect((await erase(o.cookie, mine.id, "anonymise")).status).toBe(200);
   });
+
+  it("AU59: any held holder of the address stops it, with no lead at all: a held contact at client A, the same address erased at client B is 409 with nothing written; after the hold is lifted it goes", async () => {
+    const o = await owner();
+    const email = `nolead-${uuidv7().slice(-8)}@example.test`;
+    const a = await mkClient();
+    const b = await mkClient();
+    const held = await mkContact(a, { email });
+    const mine = await mkContact(b, { email });
+    await hold(o.id, "contact", held.id, "set");
+    const audits = () =>
+      countOf(
+        "audit_log",
+        "action IN ('contact.erase', 'contact.anonymise', 'contact.redact_offers') AND json_extract(summary, '$.contactId') = ?",
+        mine.id,
+      );
+    for (const [mode, part] of [
+      ["erase", undefined],
+      ["anonymise", undefined],
+      ["anonymise", "offers"],
+    ] as const) {
+      const res = await erase(o.cookie, mine.id, mode, part);
+      expect(res.status, `${mode} ${part ?? ""}`).toBe(409);
+      expect(await code(res)).toBe("legal_hold");
+    }
+    expect(await one("SELECT email, anonymised_at, erased_hash FROM contacts WHERE id = ?", mine.id)).toEqual(
+      {
+        email,
+        anonymised_at: null,
+        erased_hash: null,
+      },
+    );
+    expect(await audits()).toBe(0);
+    // a held CLIENT of the address counts the same way
+    await hold(o.id, "contact", held.id, "clear");
+    await hold(o.id, "client", a, "set");
+    expect(await code(await erase(o.cookie, mine.id, "erase"))).toBe("legal_hold");
+    await hold(o.id, "client", a, "clear");
+    // lifted: the erase goes; the other client's contact stays
+    expect((await erase(o.cookie, mine.id, "erase")).status).toBe(200);
+    expect(await countOf("contacts", "id = ?", mine.id)).toBe(0);
+    expect(await countOf("contacts", "id = ?", held.id)).toBe(1);
+  });
 });
 
 describe("AU53: an individual's milestone bells go with its last live contact", () => {

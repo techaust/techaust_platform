@@ -72,9 +72,9 @@ import { INVOICE_TYPES_SQL } from "./invoice-consts.ts";
 import { type Direction, decodeCursor, encodeCursor, keysetSql, PREFIX_END, pageOf } from "./keyset.ts";
 import { KEYED_FORM_MONTHS_SQL, keyedFormMonthsOf } from "./lead-data.ts";
 import {
+  ADDRESS_HELD_SQL,
   dropOfferObjects,
   MATCHED_LEAD_EMAILS_SQL,
-  MATCHED_LEAD_HELD_SQL,
   type RedactionPlan,
   readRedactionPlan,
   redactionCancelStatements,
@@ -1466,7 +1466,7 @@ async function eraseBatch(
         "c.client_id",
         `json_object('contactId', c.id, 'mode', ?8, 'reason', ?9${fresh ? ", 'offers', CAST(?10 AS INTEGER)" : ""})`,
         `FROM contacts c JOIN clients cl ON cl.id = c.client_id
-         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL} AND NOT ${MATCHED_LEAD_HELD_SQL("c")}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}
+         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL} AND NOT ${ADDRESS_HELD_SQL("c")}${erase ? ` AND NOT ${CONTACT_ON_ISSUED_DOCUMENT_SQL}` : ""}
            AND NOT ${PAYMENTS_PENDING_ON_LAST("?7")}${fresh ? ` AND ${fresh.sql}` : ""} AND ${HASHES_FRESH_SQL(mapAt)}`,
         [
           ...(fresh && plan ? [id, mode, reason, plan.ids.length, ...fresh.params] : [id, mode, reason]),
@@ -1696,7 +1696,7 @@ async function eraseBatch(
   }
   // Nothing was written: say why.
   const why = await c.env.DB.prepare(
-    `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL} OR ${MATCHED_LEAD_HELD_SQL("c")}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc, ${PAYMENTS_PENDING_ON_LAST("?1")} AS pending FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
+    `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL} OR ${ADDRESS_HELD_SQL("c")}) AS held, ${CONTACT_ON_ISSUED_DOCUMENT_SQL} AS doc, ${PAYMENTS_PENDING_ON_LAST("?1")} AS pending FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
   )
     .bind(id)
     .first<{ gone: number | null; held: number; doc: number; pending: number }>();
@@ -1736,7 +1736,7 @@ async function redactPart(c: Ctx, id: string, reason: string, plan: RedactionPla
         "c.client_id",
         "json_object('contactId', c.id, 'mode', ?8, 'reason', ?9, 'offers', CAST(?10 AS INTEGER), 'part', json('true'))",
         `FROM contacts c JOIN clients cl ON cl.id = c.client_id
-         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL} AND NOT ${MATCHED_LEAD_HELD_SQL("c")} AND ${fresh.sql}`,
+         WHERE c.id = ?7 AND c.anonymised_at IS NULL AND c.legal_hold = 0 AND cl.legal_hold = 0 AND NOT ${HELD_LEAD_SQL} AND NOT ${ADDRESS_HELD_SQL("c")} AND ${fresh.sql}`,
         [id, "anonymise", reason, plan.ids.length, ...fresh.params],
       ),
     after: (g, auditId) => [
@@ -1764,7 +1764,7 @@ async function redactPart(c: Ctx, id: string, reason: string, plan: RedactionPla
   }
   const why = await db
     .prepare(
-      `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL} OR ${MATCHED_LEAD_HELD_SQL("c")}) AS held FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
+      `SELECT c.anonymised_at AS gone, (c.legal_hold = 1 OR cl.legal_hold = 1 OR ${HELD_LEAD_SQL} OR ${ADDRESS_HELD_SQL("c")}) AS held FROM contacts c JOIN clients cl ON cl.id = c.client_id WHERE c.id = ?1`,
     )
     .bind(id)
     .first<{ gone: number | null; held: number }>();
