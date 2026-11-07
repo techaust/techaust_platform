@@ -1,6 +1,6 @@
 Status: fixes reviewed (APPROVE) and re-checked (APPROVE), lead final checks green (2026-11-07); PR held until #187 (M7.4) and #189 (M7.5) merge
 Tier: A (it covers money, gateways, refunds, client scoping, staff auth and deletion)
-Usage:
+Usage: every run claude-opus-5-5/high (from `node tools/model-audit.mjs 2026-11-06`). Audits: B0, B1 and B6 analysts (`cloudflare:workers-best-practices`, plus `wrangler` for B0 and `workers-profiling` for B6); B2, B3, B4 and B5 reviewers, with no helper because of the 2-agent cap (`frontend-design`, `workers-best-practices`, plus `dataviz` for B2/B4 and `aws-core:aws-messaging-and-streaming` for B4). Fixes: builder AF1 (`workers-best-practices`, `wrangler`), AF1 fix leg (`workers-best-practices`, `wrangler`, `turnstile-spin`), builder AF2 (`workers-best-practices`, `wrangler`, `cloudflare`, `aws-core:aws-messaging-and-streaming`; resumed for the merge), builder AF3 (`workers-best-practices`, `wrangler`, `cloudflare`, `aws-core:aws-messaging-and-streaming`), designer (`frontend-design`, `dataviz`), review-fix builder (`workers-best-practices`, `wrangler`, `frontend-design`). Checks: AF1 early check, AF1 re-check and AF2 early check, analysts (`workers-best-practices`); reviewer (`code-review` with its read-only helper general-purpose claude-opus-5-5/high, `security-review`, `workers-best-practices`, `frontend-design`, `dataviz`); re-check reviewer (`workers-best-practices`, `frontend-design`). 5-hour readings 5–88 % in the first window and 0–37 % after the reset; `node tools/agent-slots.mjs` before each start; the only flagged runs are the `code-review` helpers (allowed, docs/14 §9)
 
 # Full audit of M6–M7: review every milestone, fix every finding
 
@@ -711,3 +711,24 @@ Copied by the lead. Reviewer claude-opus-5-5/high; skills `cloudflare:workers-be
 - **One new low:** a comment named a test file that doesn't exist (`triggers-data-protection.ts:192`). Fixed by the lead (it names `test/triggers.test.ts` and `test/data-protection-triggers.test.ts`).
 
 **Status of the fix round:** reviewed (APPROVE) and re-checked (APPROVE); the lead's final checks are green. The PR is held until #187 and #189 merge.
+
+## Handover (2026-11-07)
+- **Where it stands:** all seven areas audited (B0–B6), and every finding fixed or decided (AU1–AU64).
+  - Two analyst early checks plus one re-check (GO); the designer's screens; review APPROVE and re-check APPROVE; the lead's final checks green.
+  - PR [#190](https://github.com/techaust/techaust_platform/pull/190) is open and **held** (Auto-fix on). It merges after #187 and #189, then takes `main` in under CLAUDE.md's pre-squash-head rule.
+  - No owner step of its own.
+- **Waits on the owner:**
+  - 07-ZT C1–C3 (the refund-came-back email, gated off);
+  - the portal Requests empty line (07-ZP);
+  - the RB-45 privacy line and the "New request" privacy wording;
+  - the Terms upload sentence;
+  - the RA-29 fees note;
+  - AU45, a "refund returned" statement line (recommended before launch);
+  - the SES runbook Part 9 hosted step (on the owner's yes).
+- **Follow-ups:**
+  - AU49: a partial index for reversed refunds if staging's rows read grow;
+  - three more capped body readers (`apps/jobs/src/hooks/shared.ts`, `usage.ts`, `apps/web/src/forms.ts`);
+  - the twelve monthly revenue cards at 768 px (fold the empty months if the owner prefers);
+  - staging D1 `rows_written` for the retention budget;
+  - real gateway and SES behaviour after a refund comes back.
+- **CLAUDE.md:** the audit section was added on this branch (2026-11-07).
