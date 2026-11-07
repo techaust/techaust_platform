@@ -1745,7 +1745,18 @@ describe("every successful mutation writes exactly one audit row [ADM-G-06, ADM-
     expect(all.length).toBeGreaterThan(5);
     for (const { summary } of all) {
       expect(() => JSON.parse(summary as string)).not.toThrow();
-      expect(summary).not.toMatch(/token|secret|password|cookie|hmac|"code"/i);
+      // Field names only: a random id can spell "hmac" (CI, 2026-11-08: a PayPal payment id ppl_…HMAC…), and a value is never named.
+      const keys: string[] = [];
+      const walk = (v: unknown): void => {
+        if (Array.isArray(v)) v.forEach(walk);
+        else if (v && typeof v === "object")
+          for (const [k, x] of Object.entries(v)) {
+            keys.push(k);
+            walk(x);
+          }
+      };
+      walk(JSON.parse(summary as string));
+      for (const k of keys) expect(k).not.toMatch(/token|secret|password|cookie|hmac|^code$/i);
     }
     const audit = await one<{ id: string }>("SELECT id FROM audit_log LIMIT 1");
     await expect(
