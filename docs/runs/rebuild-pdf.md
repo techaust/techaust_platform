@@ -1,6 +1,6 @@
-Status: reviewer running
+Status: review APPROVE; fixes done, re-check and final checks running
 Tier: A
-Usage: analyst (brief) claude-opus-5-5/high, skills none (the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder b1 claude-opus-5-5/high, skills none (same reason; model-audit flags it): 14 → 53 %; analyst early check claude-opus-5-5/high, skills `security-review` (failed to run: no `origin/HEAD`; checklist by hand): 53 → ~60 %; designer d1 claude-opus-5-5/high, skills `frontend-design:frontend-design` (model-audit records the attempt; "Unknown skill" in the cloud): ~60 → 71 %; builder b2 claude-opus-5-5/high, skills none (same reason; flagged): ~60 → 71 %; reviewer: started at 71 %
+Usage: analyst (brief) claude-opus-5-5/high, skills none (the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder b1 claude-opus-5-5/high, skills none (same reason; model-audit flags it): 14 → 53 %; analyst early check claude-opus-5-5/high, skills `security-review` (failed to run: no `origin/HEAD`; checklist by hand): 53 → ~60 %; designer d1 claude-opus-5-5/high, skills `frontend-design:frontend-design` (model-audit records the attempt; "Unknown skill" in the cloud): ~60 → 71 %; builder b2 claude-opus-5-5/high, skills none (same reason; flagged): ~60 → 71 %; reviewer claude-opus-5-5/high, skills `code-review` (run against `origin/main...HEAD`), `security-review` (failed to start: no `origin/HEAD`; checklist by hand): 71 → ~81 %
 
 # Rebuild PDF (cloud session `rebuild-pdf`, branch `feat/rebuild-pdf`)
 
@@ -227,6 +227,31 @@ CPU: the admin check hashes at most one PDF (native digest, ~300 KB typical) onl
 5. Migration numbers may collide with parallel branches: renumber at merge.
 6. One extra D1 query per download (downloads aren't hot routes).
 
+## Review (reviewer, claude-opus-5-5/high, 2026-11-07): **APPROVE**
+No critical or high finding. One medium, seven low (the reviewer's reply, condensed by the lead):
+1. **Medium:** a void receipt gets no Rebuild action (`apps/admin/src/routes/payments/refund-parts.tsx:403`); the server allows issued and void (the lead's known item).
+2. **Low:** `pdf.rebuilds` counted even when the guarded `rebuilt` result writes nothing (`apps/jobs/src/pdf-rebuild.ts:239`).
+3. **Low:** `close()` deleted the new key before writing its result, so a parallel run's `rebuilt` file could be deleted (`pdf-rebuild.ts:219`).
+4. **Low:** a quota-delayed message can outlive the 26-hour open window, so two requests could both render.
+5. **Low:** the 100th request hits the `n` CHECK and answers 500 (`apps/admin/worker/pdf-rebuild.ts:178-200`).
+6. **Low:** a guarded insert that writes nothing always reads "already being rebuilt", whatever changed (`pdf-rebuild.ts:200`).
+7. **Low:** a lost rebuilt object falls back to the original without checking it (`packages/db/src/pdf-served.ts:40-45`; early-check change 1 as designed).
+8. **Low:** a stale "5 MB" comment; the stored-file check exists in admin and jobs copies and core `rebuildVerdict` is used only by tests.
+
+Checked clean: 0087/0088, the 12 ROUTES rows, step-up, the served-object rule in every reader (portal scoping unchanged, signed deed excluded, `attachmentFor` after the allow-list), the plan refactor, seal checks, write-once puts, stray deletion, budgets, 07-ZV word for word. The done-test's two halves prove every point; the admin half's rebuilt object is a test stand-in (separate pools). Visual: 21 shots in `.logs/shots/rebuild-pdf-review/`, axe 0 on every page and dialog, keyboard and focus correct, 44 px targets, no overflow at 390 or 1280, no console errors (only the deliberate 429), theme precedence correct; receipt, certificate and deed simulated in the browser. Ran: `pnpm typecheck` (b2 + d1 merged) exit 0; jobs suite 800 passed; admin suite 5,472 passed; the new and changed files of core (368), db (34), admin lib (40), portal (19). Not verified: real R2 and Browser Run, staging CPU, admin and portal bytes (their builds stopped on the local `.dev.vars` in `dist`, an environment issue), the full core, db and portal suites, two parallel HTTP requests, 768 px, a screen reader.
+
+### Lead's triage of the review
+- **Fixed by the lead** (02f36bc8; small coupled edits, usage near the pacing line):
+  - 1: the action shows for a void receipt too (its download link stays as it is; follow-up);
+  - 2: `pdf.rebuilds` moved into the batch that runs only after the result is written (test: the redacted-after-put case counts nothing);
+  - 3: `closeRequest` writes the result first and deletes the new key only when it wrote it or the other result isn't `rebuilt` (test: a parallel `rebuilt` file survives; a stray beside a `skipped` result goes);
+  - 4: jobs ends a request older than `REBUILD_OPEN_MS − REBUILD_EXPIRY_MARGIN_MS` (25 h) as `failed` / `expired` with the `pdf.failed` bell and no render, so the admin's 26-hour window always outlasts it (test);
+  - 5: 409 `rebuild_limit` before the insert, 07-ZV line 24 (test: 99 requests, nothing written, no audit row);
+  - 6: on a lost race the route re-reads the subject and answers `client_gone`, `pdf_erased`, `offer_open` or 404, else `rebuild_in_progress` (one shared `subjectRefusal`; not reachable in a test without a hook, read by the re-check);
+  - 8: the comment.
+- **Kept as follow-ups** (reason: both are improvements on behaviour that is safe today): 7, a bell when a rebuilt object is lost and the original is served; 8, one shared stored-file check over core `rebuildVerdict` for admin and jobs.
+- No critical or high finding, so the rules ask no second review; the lead still asks the reviewer for a focused re-check of 02f36bc8 (Tier A, the lead's own code).
+
 ## Lead decisions (for 13)
 - **2026-11-07, Rebuild PDF (L1–L12), Lead:** two append-only tables, `pdf_repairs` (request) and `pdf_repair_results` (completion), no UPDATE carve-out (L1); the guarded request INSERT is the 5-minute throttle, `pdf_asks` not used (L2); the served key is resolved at the R2 read by the original key (admin `servedPdf`, portal `streamPdf`, jobs `attachmentFor`), so reader SQL, `ATTACHMENT_KEY` and warm fixtures are unchanged (L3); rebuild status through separate GET routes, hot routes untouched (L4); a missing envelope is refused, never re-made from rows (L5); the check is the recorded SHA-256 only (the stored checksum first, then a hash); pre-2026-10-29 structural damage under a matching hash is out of scope (L6); keys `<original>-r<n>.pdf`, n ≤ 99 (L7); bells `pdf.rebuilt`, `pdf.refused`, `pdf.failed` with entity `pdf_repair` (L8); 07-ZV staff lines under the delegation (L9); a rebuild prints the same sealed content through today's layout (L10); Worker ownership as in the routes table (L11); a request without a result blocks another for 26 hours (L12). Run file: [rebuild-pdf](runs/rebuild-pdf.md).
 
@@ -236,6 +261,10 @@ CPU: the admin check hashes at most one PDF (native digest, ~300 KB typical) onl
 - **2026-11-07, Rebuild PDF b1 triage, Lead:** the builder's deviations 1–13 accepted (run file "Early check"); `pdf.rebuild` audit rows stay out of the monthly finance copy (`FINANCE_AUDIT_ACTIONS` holds money and tax events only; both rebuild tables are in the copy); the audit label and filter group are 07-ZV lines 20–21 (staff only, the lead's).
 
 ## Follow-ups (for 12)
+- Rebuild PDF review 7: a bell (once a day per key) when a rebuilt object is lost and the original is served instead (`servedObject` `fellBack`).
+- Rebuild PDF review 8: one shared stored-file check (head checksum, then hash) over core `rebuildVerdict`, used by admin `checkStored` and jobs `storedVerdict`.
+- A void receipt has no download link in the admin's payment entry (`ReceiptCell`), though the download route serves it.
+- The local `apps/*/.dev.vars` is copied into `dist` by the admin and portal builds and stops them at `check-spa-headers` in a cloud session after `pnpm dev:secrets` (designer and reviewer both hit it).
 - A bulk rebuild after a whole-bucket loss (Browser Run's 10 minutes a day paces it).
 - An anonymised client's invoice PDFs can't be rebuilt (RB-11) while the originals are kept 8 years (RA-25): a one-off professional view would settle it.
 - Restoring lost envelopes from the S3 backup copy (N8).
@@ -249,6 +278,7 @@ Measured by builder b2 (after d1, the admin front is unchanged at 122,717): admi
 ## Handover
 - 2026-11-07 20:15 IST: branch made from `origin/main` (0ec9e8b); analyst drafting the Tier A brief.
 - 2026-11-07 20:30 IST: USAGE 14 at 20:29; origin/main (#193) taken in.
+- 2026-11-07 22:55 IST: review APPROVE; the lead fixed findings 1–6 and 8 (02f36bc8; jobs `pdf-rebuild.test.ts` 21 passed, admin `pdf-rebuild.test.ts` + `src/lib/pdf-repairs.test.ts` 52 passed); 07-ZV line 24 added (staff, the lead's); re-check of the fix commit and the full checks next.
 - 2026-11-07 22:20 IST: builder b2 merged (6906b041; run file sections kept from both); origin/main (#194, no migrations) merged; reviewer starting.
 - 2026-11-07 23:00 IST: designer d1 merged (0dc73135); screenshots copied to the main checkout's `.logs/shots/rebuild-pdf/` (52 files); worktree removed. Lead's answers to d1's questions: (1) the panel's "Fingerprint" line stays (it is the recorded first file's hash, the acceptance evidence); line 11 says "of the stored file", so the two read differently; (2) the button stays where the API may refuse (lines 19 and 9 explain; the screen can't always know the offer's open state); (3) **a void receipt keeps its PDF for the audit, so it gets the action too**: designer fix in the review-fix round; (4) yes: outcome lines are the Owner's, the fact and "Being rebuilt…" are for every reader.
 - 2026-11-07 22:30 IST: USAGE 71; weekly all-models 82 %: only the planned agents (reviewer, then a re-check if needed). Merge order: #194, #195, #196, this branch, then the LUT fold (0089); this branch keeps 0087–0088.
