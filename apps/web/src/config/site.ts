@@ -40,12 +40,6 @@ export const site = {
   /** Owner decision 2026-10-22: no GA4 at launch. Empty = no consent banner, preferences show necessary only. */
   ga4Id: "",
   /**
-   * Cloudflare Web Analytics (cookieless; the privacy notice names it; decision 2026-10-22). The site id (Cloudflare calls it a token) is public by design (it is in every
-   * page). Added by hand because Cloudflare's automatic setup does not reach pages a Worker serves (launch, 2026-11-08; automatic setup is off
-   * so it never lands on admin or portal). Production builds only (BaseLayout), so staging never counts.
-   */
-  cfAnalyticsSite: "dc951d0582994bbbb96f7ceae27106de" as string,
-  /**
    * OWNER: postal address for the legal pages (07-A `{{postal_address}}`). Empty = a labelled placeholder (never invented). The value lives
    * once in `@techaust/core/company` (`POSTAL_ADDRESS`), which the jobs Worker's Rule 9 email block reads too (P7-C); change it there.
    */
