@@ -17,6 +17,7 @@ import {
   type RepairKind,
 } from "@techaust/core/pdf-repair";
 import {
+  QUEUE_UNAVAILABLE_CODE,
   REQUEST_INSERT_SQL,
   RESULT_INSERT_SQL,
   type RepairOfRow,
@@ -52,7 +53,7 @@ export const REBUILD_CLIENT_GONE: ApiError = {
   message: "This client's details were erased, so no PDF can be made for them.",
 };
 export const REBUILD_QUEUE_UNAVAILABLE: ApiError = {
-  code: "queue_unavailable",
+  code: QUEUE_UNAVAILABLE_CODE,
   message: "The rebuild couldn't be started. Try again in a minute.",
 };
 /** Owner Q1 = B (2026-11-07): an offer the client can still accept is never rebuilt; the Owner sends a new version. 07-ZV line 19. */
@@ -78,8 +79,8 @@ const hex = (b: ArrayBuffer) =>
 
 /**
  * What the served object is against the hash recorded for it (L6, cheapest first): no object is `missing`; R2's own stored SHA-256 (it computed it from the
- * bytes it stored and checked it against ours at the put) is compared when the head carries it; otherwise the body is hashed, and an object over 5 MB is
- * `damaged` without reading it. `recorded` null (a supplier copy, which has no hash column): the stored checksum is checked against the bytes, and with no
+ * bytes it stored and checked it against ours at the put) is compared when the head carries it; otherwise the body is hashed, and an object over 2 MB
+ * (`REBUILD_HASH_MAX_BYTES`, early check change 5: the Free plan's 10 ms CPU) is `damaged` without reading it. `recorded` null (a supplier copy, which has no hash column): the stored checksum is checked against the bytes, and with no
  * checksum a present copy counts as intact.
  */
 export async function checkStored(
@@ -134,6 +135,12 @@ async function readSubject(c: Ctx, kind: RepairKind, id: string, now: number): P
 const openRequest = (history: RepairOfRow[], now: number) =>
   history.find((r) => r.outcome === null && r.requested_at > now - REBUILD_OPEN_MS) ?? null;
 
+/**
+ * The newest request that holds the 5-minute window (L2): one whose message was never sent (`queue_unavailable`, the 503) holds nothing, so "Try again in a
+ * minute" (07-ZV line 10) is never refused as `too_soon` (early check change 2; `BLOCKED` in `@techaust/db/pdf-repairs` says the same in SQL).
+ */
+const lastHolding = (history: RepairOfRow[]) => history.find((r) => r.code !== QUEUE_UNAVAILABLE_CODE);
+
 /** The rebuild routes of a set of kinds, mounted under one base (`/v1/documents`, `/v1/deeds`, `/v1/invoices`, `/v1/receipts`). */
 export function rebuildRoutes(defs: readonly RebuildKindDef[]) {
   const app = new Hono<AppEnv>();
@@ -157,8 +164,8 @@ async function postRebuild(c: Ctx, def: RebuildKindDef): Promise<Response> {
   if (subject.redacted) return err(c, PDF_ERASED, 409);
   if (kind === "offer" && subject.open) return err(c, REBUILD_OFFER_OPEN, 409);
   if (openRequest(history, now)) return err(c, REBUILD_IN_PROGRESS, 409);
-  const last = history[0];
-  if (last && last.requested_at > now - REBUILD_WINDOW_MS) return err(c, REBUILD_TOO_SOON, 429);
+  const holding = lastHolding(history);
+  if (holding && holding.requested_at > now - REBUILD_WINDOW_MS) return err(c, REBUILD_TOO_SOON, 429);
 
   // The served key and the hash recorded for it: the newest rebuild's, else the row's (L3).
   const checkedKey = served?.new_key ?? subject.original_key;
@@ -168,7 +175,7 @@ async function postRebuild(c: Ctx, def: RebuildKindDef): Promise<Response> {
   const found = check.verdict;
 
   const repairId = uuidv7();
-  const n = (last?.n ?? 0) + 1;
+  const n = (history[0]?.n ?? 0) + 1;
   const written = await mutate(c, {
     main: c.env.DB.prepare(REQUEST_INSERT_SQL[kind]).bind(
       ...requestBinds({
@@ -187,6 +194,7 @@ async function postRebuild(c: Ctx, def: RebuildKindDef): Promise<Response> {
     entityType: def.entity === "deed" ? "deed" : "document",
     entityId: id,
     summary: { repairId, kind, number: subject.label, n, found },
+    // The access row records the accepted request (202) in this batch; a queue failure below still answers 503 (the lead's triage of change 7).
     status: 202,
   });
   if (!written) return err(c, REBUILD_IN_PROGRESS, 409);
@@ -196,9 +204,16 @@ async function postRebuild(c: Ctx, def: RebuildKindDef): Promise<Response> {
     await c.env.PDF_QUEUE.send({ v: 1, kind: "pdf.rebuild", repairId, hop: 0 } satisfies PdfRebuildMessage);
   } catch {
     console.error(JSON.stringify({ level: "error", message: "pdf.rebuild enqueue failed", rid: c.var.rid }));
-    await c.env.DB.prepare(RESULT_INSERT_SQL)
-      .bind(repairId, "failed", "queue_unavailable", null, null, Date.now())
-      .run();
+    // Early check change 7: a throwing insert still answers 503 (logged, the request id only); that request then stays open and blocks another for 26 hours.
+    try {
+      await c.env.DB.prepare(RESULT_INSERT_SQL)
+        .bind(repairId, "failed", QUEUE_UNAVAILABLE_CODE, null, null, Date.now())
+        .run();
+    } catch {
+      console.error(
+        JSON.stringify({ level: "error", message: "pdf.rebuild failed result not written", rid: c.var.rid }),
+      );
+    }
     return err(c, REBUILD_QUEUE_UNAVAILABLE, 503);
   }
   return c.json({ repair: { id: repairId, n, found, state: "rebuilding" as const } }, 202);

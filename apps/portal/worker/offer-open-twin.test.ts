@@ -31,11 +31,21 @@ describe("the rebuild's offer-open twin", () => {
     for (const part of OFFER_OPEN_PARTS.slice(0, 3)) expect(DECLINE_UPDATE_SQL, part).toContain(part);
   });
 
-  it("the accept's other conditions on the document are the subject's own (frozen, not redacted, its PDF recorded) or the person's", () => {
+  it("the accept's other conditions are the subject's own (frozen, not redacted, its PDF recorded), the person's or the link's, and nothing else", () => {
+    // The person: the contact join, word for word (early check change 4: no part of the accept is skipped unread).
+    const from = ACCEPT_INSERT_SQL.slice(
+      ACCEPT_INSERT_SQL.indexOf(" FROM documents d "),
+      ACCEPT_INSERT_SQL.indexOf(" WHERE d.id = ?2"),
+    );
+    expect(from.trim()).toBe(
+      "FROM documents d JOIN contacts c ON c.id = ?3 AND c.client_id = d.client_id AND c.portal_access = 1 AND c.anonymised_at IS NULL",
+    );
     const where = ACCEPT_INSERT_SQL.slice(ACCEPT_INSERT_SQL.indexOf(" WHERE d.id = ?2"));
-    const docParts = topLevelAnds(where.replace(/ RETURNING .*$/, ""))
-      .map((p) => p.trim())
-      .filter((p) => p.startsWith("d.") || p.startsWith("NOT EXISTS"));
+    const parts = topLevelAnds(where.replace(/ RETURNING .*$/, "")).map((p) => p.trim());
+    // The link: exactly one part, the emailed link's own check (a session passes ?6 = NULL).
+    const link = parts.filter((p) => p.startsWith("(?6 IS NULL OR ") && p.endsWith(")"));
+    expect(link).toHaveLength(1);
+    const docParts = parts.filter((p) => !link.includes(p));
     const known = new Set<string>([
       ...OFFER_OPEN_PARTS,
       "WHERE d.id = ?2",

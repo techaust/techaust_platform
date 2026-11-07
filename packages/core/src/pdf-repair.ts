@@ -23,8 +23,11 @@ export const REBUILD_WINDOW_MS = 300_000;
 /** L12: a request without a result blocks another this long (the queue keeps a message 24 hours, plus a quota delay). */
 export const REBUILD_OPEN_MS = 26 * 3_600_000;
 
-/** An object larger than this is `damaged` without reading its body (no stored PDF comes near it; the check never streams a big object into the Worker). */
-export const REBUILD_HASH_MAX_BYTES = 5 * 1024 * 1024;
+/**
+ * An object larger than this is `damaged` without reading its body (no stored PDF comes near it; the check never streams a big object into the Worker, and
+ * the hash stays well inside the Free plan's 10 ms CPU: early check change 5, 2 MB).
+ */
+export const REBUILD_HASH_MAX_BYTES = 2 * 1024 * 1024;
 
 const ALREADY_REPAIRED = /-r\d+\.pdf$/;
 

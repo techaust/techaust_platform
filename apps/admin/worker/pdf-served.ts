@@ -1,24 +1,23 @@
-// Rebuild PDF (JOB-PDF-02; run file docs/runs/rebuild-pdf.md, L3): the stored PDF a reader serves, resolved at the R2 read by the key the row records. One
-// indexed query (`SERVED_PDF_SQL`, the partial index `pdf_repair_results_served`): the newest rebuilt object, else the original. Reader SQL and the hot
-// routes' warm fixtures stay unchanged; nothing stores the served key or derives another key from it. Used by the API and invoices Workers' downloads.
-import { SERVED_PDF_SQL, type ServedRow } from "@techaust/db/pdf-repairs";
+// Rebuild PDF (JOB-PDF-02; run file docs/runs/rebuild-pdf.md, L3): the stored PDF an admin download serves, resolved at the R2 read by the key the row records.
+// The rule is `servedObject` (`@techaust/db/pdf-served`, shared with the portal and the jobs email consumer): one indexed query (`SERVED_PDF_SQL`, the
+// partial index `pdf_repair_results_served`), the newest rebuilt object, else the original; and the original again when a recorded rebuild's object is gone
+// (early check change 1: a lost rebuilt file never leaves a download answering "not ready" forever). Reader SQL and the hot routes' warm fixtures stay
+// unchanged; nothing stores the served key or derives another key from it. Used by the API and invoices Workers' downloads.
+import { type ServedObject, servedObject } from "@techaust/db/pdf-served";
 
 type ServedEnv = { DB: D1Database; DOCS: R2Bucket };
 
-/** The key served for an original key, and the rebuilt object's SHA-256 (null: the original, whose hash is the row's). */
-export async function servedKey(
-  env: Pick<ServedEnv, "DB">,
-  originalKey: string,
-): Promise<{ key: string; sha256: string | null }> {
-  const row = await env.DB.prepare(SERVED_PDF_SQL).bind(originalKey).first<ServedRow>();
-  return row ? { key: row.new_key, sha256: row.new_sha256 } : { key: originalKey, sha256: null };
-}
-
-/** The served object itself (null: missing), with its key and, when rebuilt, its SHA-256 (the ETag). */
+/**
+ * The served object (null: missing), with its key and, when a rebuilt file is served, its SHA-256 (the ETag; null: the original, whose hash is the row's).
+ * A recorded rebuild whose object is gone is logged (`rebuilt pdf object missing`, the request id only) and the original is served.
+ */
 export async function servedPdf(
   env: ServedEnv,
   originalKey: string,
-): Promise<{ key: string; sha256: string | null; object: R2ObjectBody | null }> {
-  const served = await servedKey(env, originalKey);
-  return { ...served, object: await env.DOCS.get(served.key) };
+  rid: string,
+): Promise<ServedObject<R2ObjectBody>> {
+  const served = await servedObject<R2ObjectBody>(env.DB, env.DOCS, originalKey);
+  if (served.fellBack)
+    console.error(JSON.stringify({ level: "error", message: "rebuilt pdf object missing", rid }));
+  return served;
 }

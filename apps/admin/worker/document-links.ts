@@ -280,7 +280,7 @@ export const documentLinks = new Hono<AppEnv>()
     const refused = storedPdfRefusal(c, row.gone);
     if (refused) return refused;
     // Rebuild PDF (JOB-PDF-02, L3): the newest rebuilt certificate when there is one, else the stored original.
-    const object = (await servedPdf(c.env, row.r2_key)).object;
+    const object = (await servedPdf(c.env, row.r2_key, c.var.rid)).object;
     if (!object) {
       console.error(JSON.stringify({ level: "error", message: "pdf object missing", rid: c.var.rid }));
       return err(c, NOT_FOUND, 404);
