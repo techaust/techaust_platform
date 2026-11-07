@@ -1,8 +1,8 @@
 # Run: AU45, the client statement's "refund returned" line
 
-Status: re-check running (review 1 APPROVE, lows fixed)
+Status: final checks running (review APPROVE, re-check APPROVE)
 Tier: A (the statement's money lines and balances; client-facing figures)
-Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 claude-opus-5-5/high (`cloudflare:workers-best-practices`, `cloudflare:wrangler` tried, unavailable in the cloud): 5-h 1 % (20:05 IST) at start, 14 % (20:29 IST) the last relayed reading ; analyst early check claude-opus-5-5/high (`cloudflare:*` tried, unavailable): 14 % (20:29 IST) at start ; designer d1 claude-opus-5-5/high (`frontend-design:frontend-design` tried, unavailable in the cloud; docs/06 followed): 14 % (20:29 IST) at start, 33 % (21:00 IST) the last relayed reading ; reviewer r1 claude-opus-5-5/high (`code-review` with its read-only helper; `security-review` would not load: its preamble needs `origin/HEAD`; checklist applied by hand): 33 % (21:00 IST) at start ; reviewer re-check started 22:20 IST (33 % at 21:00 IST)
+Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 claude-opus-5-5/high (`cloudflare:workers-best-practices`, `cloudflare:wrangler` tried, unavailable in the cloud): 5-h 1 % (20:05 IST) at start, 14 % (20:29 IST) the last relayed reading ; analyst early check claude-opus-5-5/high (`cloudflare:*` tried, unavailable): 14 % (20:29 IST) at start ; designer d1 claude-opus-5-5/high (`frontend-design:frontend-design` tried, unavailable in the cloud; docs/06 followed): 14 % (20:29 IST) at start, 33 % (21:00 IST) the last relayed reading ; reviewer r1 claude-opus-5-5/high (`code-review` with its read-only helper; `security-review` would not load: its preamble needs `origin/HEAD`; checklist applied by hand): 33 % (21:00 IST) at start ; reviewer re-check claude-opus-5-5/high (`code-review` with its read-only helper; `security-review` checklist by hand, `origin/HEAD` unset): 33 % (21:00 IST) at start, 53 % (21:30 IST) the last relayed reading
 
 Cloud task session `au45-statement`, branch `feat/au45-statement` (owner's blanket approval, 2026-11-07, 13: "AU45 … built before launch; its wording drafted by the lead under this approval"). Basis: [full-audit-m6-m7](full-audit-m6-m7.md) AU37, AU45, AU46, AU1.
 
@@ -239,6 +239,14 @@ Findings (all low) and the lead's triage:
 5. The admin and jobs fixtures reversed with a hand-written UPDATE. **Fixed:** both call `refundReverseStatement` and assert it changed the row.
 After the fixes (lead, 2026-11-07): core 2,723 passed, pdf 421 passed, admin `worker/reports.test.ts` + `src/lib/reports.test.ts` 74 passed, jobs `statement-b` 27 passed, repo-wide `pnpm typecheck` exit 0, biome clean on the changed files.
 
+**Re-check (reviewer, 2026-11-07, on 0a1798e): APPROVE.** Lows 1, 2, 4, 5 fixed correctly (exhaustiveness kept: `statementKindText` switch, the CSV record `satisfies Record<StatementKind, string>`, `detailsOf`); keeping low 3 accepted. Ran: jobs suite 781 passed, pdf 421, admin `worker/reports.test.ts` 24, core `copy-zu` 3, typecheck exit 0. No regression. New lows and the lead's triage:
+1. The fixtures reversed a Razorpay refund with `stripe_failed`, a code the app never stores for it. **Fixed:** `gateway_failed` (core `reversalOf`'s fallback).
+2. `apps/admin/src/api.ts` `againstNumber` comment named credit notes only. **Fixed:** credit or debit note.
+3. The admin tab shows U2 only once a `refund_returned` line is loaded, while the closing figure counts it from the first page (a return on line 55 of 60 shows the note only after "Show more"). **Kept (lead):** staff-only screen, the line itself says what it is, and the PDF the client gets checks every line; a `hasReturned` flag over the whole range is a follow-up.
+4. `StatementEntryView` and pdf `StatementInputEntry` still copy core `StatementEntry`'s other fields; `statementReturnedNote` only forwards; the note rule sits in a copy module. **Kept (lead):** cleanup by preference, no defect; listed as a follow-up.
+5. The warm statement gave every kind an invoice number. **Fixed:** a TDS line with an empty number, the refund kinds an `rfnd_…` id.
+After the fixes: jobs suite 781 passed, admin `worker/reports.test.ts` 24 passed, biome clean.
+
 ## Integration notes
 
 ## Lead decisions (for 13)
@@ -251,5 +259,7 @@ In "M6–M7 audit fixes (#190)", after the "Period readers count a refund that c
 
 ## Follow-ups (for 12)
 - No test pins the admin statement route's rows read at scale (`reports-stress.test.ts` doesn't cover `/clients/:id/statement`; older than AU45; the early check's note). With it, review 1 low 3: compute the return day once and read the client's refunds once for both refund lines, if the pinned figure calls for it.
+- Admin Statement tab: show U2 from the first page when the range holds a returned refund (a `hasReturned` flag computed over the whole range by the statement API; re-check low 3).
+- Derive `StatementEntryView` (admin) and `StatementInputEntry` (pdf) from core `StatementEntry`; drop the forwarding `statementReturnedNote` (re-check low 4).
 
 ## Handover
