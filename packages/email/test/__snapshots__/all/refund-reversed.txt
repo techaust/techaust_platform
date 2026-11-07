@@ -1,0 +1,7 @@
+[Placeholder] Hi Sample, the refund of ₹11,800.00 for TH/INV/2627/0001 was returned to us by the bank or card network, so it didn't reach you. The amount is held as credit on your account.
+
+[Placeholder] We'll contact you to agree how to send it again. Reply to this email if your bank details have changed.
+
+View invoice: https://example.test/sample
+
+TecHaust Technologies · Balurghat, West Bengal, India · contact@techaust.com
