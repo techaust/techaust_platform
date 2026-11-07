@@ -1,6 +1,7 @@
 // A client's statement of account (M5.5b, LD78, LD85; ADM-CLI-04; Q58, Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28)): `GET /clients/:id/statement`, one currency, a range, keyset pages of at
-// most 50 lines with the balance before each page. Debits are the tax invoices, export invoices and debit notes (not voided); credits are the credit notes and the advance
-// payments recorded against proformas (Q9); proformas are not listed (LD22). The lines come from SQL (`@techaust/db/reports`), the running balance from core
+// most 50 lines with the balance before each page. Debits are the tax invoices, export invoices and debit notes (not voided) and the refunds that went out (M6.5);
+// credits are the credit notes, the confirmed payments (receipts, the advances of Q9 among them), the TDS lines (M6.1) and the refunds that came back (AU45, `refund_returned`,
+// on the IST day they came back); proformas are not listed (LD22). The lines come from SQL (`@techaust/db/reports`), the running balance from core
 // `statementEntries` (bigint, no floats); a statement made today closes at the sum of the client's open balances (the ledger). Staff only: nothing here is sent to a client
 // contact (Q62), so the "can see finance" rule of M5.4 has nothing to filter yet; the portal statement (M7) must apply it.
 // Self-contained (LD85): context, http, keyset and packages only, so a later third Worker can take `/clients/:id/statement*`.
@@ -29,7 +30,8 @@ export const PERIOD_INVALID: ApiError = {
   message: "Choose a range that starts on or before its last day",
 };
 
-const SK = /^\d{4}-\d{2}-\d{2}\|[123]$/;
+/** The keyset's `date|ord` (ord 1 to 6, `statementSource`): AU45 fixed `[123]`, which refused a page ending on a TDS (4) or refund (5) line with a 400. */
+const SK = /^\d{4}-\d{2}-\d{2}\|[1-6]$/;
 
 export const statementQuery = z.object({
   from: isoDate,
@@ -88,14 +90,14 @@ export const statements = new Hono<AppEnv>().get(
         .bind(...statementPageBinds(id, currency, q.from, q.to, cursor)),
       db
         .prepare(STATEMENT_BALANCE_BEFORE_SQL(cursor !== undefined))
-        .bind(...statementBalanceBeforeBinds(id, currency, q.from, q.to, cursor)),
+        .bind(...statementBalanceBeforeBinds(id, currency, q.from, cursor)),
       db.prepare(STATEMENT_TOTALS_SQL).bind(...statementTotalsBinds(id, currency, q.from, q.to)),
       // the range's opening balance: only a later page needs its own query (the first page's balance before IS the opening)
       ...(cursor
         ? [
             db
               .prepare(STATEMENT_BALANCE_BEFORE_SQL(false))
-              .bind(...statementBalanceBeforeBinds(id, currency, q.from, q.to)),
+              .bind(...statementBalanceBeforeBinds(id, currency, q.from)),
           ]
         : []),
     ];

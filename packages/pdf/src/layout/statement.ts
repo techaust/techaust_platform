@@ -8,11 +8,15 @@
 //     balance as the last (the same rows as the `statement-v1` CSV); the header repeats on every page and a row never splits;
 //   - the footer line names billing@ (statements come from billing@, docs/13 2026-10-07; docs/06 §7.1), with "Page X of Y"; the last lines say where
 //     to write and when the statement was made. No bank block, no signature: a statement asks for nothing new.
-//     Those last lines never stand alone on a page (M6.3 staging fixes, part 3): they break with the end of the ledger.
+//     Those last lines never stand alone on a page (M6.3 staging fixes, part 3): they break with the end of the ledger;
+//   - AU45: a refund that came back prints like the refund it reverses (the gateway's refund id as its number, 07-ZU U1 as its details), in the Credit
+//     column; the note that explains it (07-ZU U2) is printed once, first in the last lines and only when the statement has such a line, so it travels
+//     with the closing row and never stands alone on a page.
 // Statements are capped at 200 entries (STATEMENT_PDF_MAX_ENTRIES), so the longest is about six pages.
 //
 // No logic beyond formatting: every value is a pre-formatted string of the view (the jobs Worker formats through core). Every dynamic string goes through
-// `esc`. Data-testids (tests and the visual suite): `opening`, `closing`, `amount-due`, `entry`, `generated`, `rupee`, `currency-symbol`.
+// `esc`. Data-testids (tests and the visual suite): `opening`, `closing`, `amount-due`, `entry`, `returned-note`, `generated`, `rupee`, `currency-symbol`.
+import type { StatementKind } from "@techaust/core/statement";
 import { esc } from "../escape.ts";
 import { PDF_LOGOS, PDF_PRINT_CSS, PDF_SYMBOL, TECHAUST_PDF_FONT_DATA } from "../generated/assets.ts";
 import { STATEMENT_PDF_COPY as C } from "./copy.ts";
@@ -22,16 +26,8 @@ import { cssString, TEMPLATE_CSS } from "./styles.ts";
 /** The CSP of every document page (render.ts has the same): nothing external, inline styles only. */
 const DOCUMENT_CSP = "default-src 'none'; img-src data:; font-src data:; style-src 'unsafe-inline'";
 
-/** What a line of the statement is. */
-export type StatementLineKind =
-  | "tax_invoice"
-  | "export_invoice"
-  | "debit_note"
-  | "credit_note"
-  | "receipt"
-  | "tds"
-  // M6.5: a refund that went out (a debit: it raises what the client is owed back down).
-  | "refund";
+/** What a line of the statement is: core `StatementKind` itself (review low 1, AU45; M6.5 `refund` a debit, AU45 `refund_returned` a credit). */
+export type StatementLineKind = StatementKind;
 
 /**
  * What the layout prints, every value already formatted (dates as the PDFs write them, amounts with their currency sign). The jobs Worker's view
@@ -67,6 +63,11 @@ export type StatementLayoutView = {
     credit: string | null;
     balance: string;
   }[];
+  /**
+   * AU45 (07-ZU U2): the note that explains a "Refund came back" line, printed once in the last lines when the statement has one; null when it has none
+   * (`statementView()` sets it from the entries).
+   */
+  returnedNote: string | null;
   /** The day the PDF was made (IST), as the PDFs write dates. */
   generatedOn: string;
   /** The address statements are sent from and asked about (billing@). */
@@ -160,7 +161,7 @@ export function statementBody(view: StatementLayoutView): string {
   return `<div class="doc doc--statement">${header(view)}
 ${balances(view)}
 ${ledger(view)}
-<footer class="stm-foot">${p("stm-questions", C.questions(view.email))}${p("stm-generated", C.generatedOn(view.generatedOn), ' data-testid="generated"')}</footer></div>`;
+<footer class="stm-foot">${view.returnedNote === null ? "" : p("stm-note", view.returnedNote, ' data-testid="returned-note"')}${p("stm-questions", C.questions(view.email))}${p("stm-generated", C.generatedOn(view.generatedOn), ' data-testid="generated"')}</footer></div>`;
 }
 
 /** The symbol mark as a data URI for the page footer (the only image a margin box can carry). */
@@ -276,6 +277,7 @@ export const STATEMENT_CSS = `
 
 .doc--statement .stm-foot { margin-top: 6mm; font-size: var(--print-table); line-height: 1.4; break-inside: avoid; break-before: avoid; }
 .doc--statement .stm-foot p { margin: 0 0 1mm; }
+.doc--statement .stm-foot .stm-note { margin-bottom: 2.4mm; text-wrap: pretty; }
 .doc--statement .stm-generated { color: var(--color-text-muted); }
 `;
 

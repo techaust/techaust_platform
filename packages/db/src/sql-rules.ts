@@ -30,6 +30,29 @@ export const refundOutAtSql = (f: string, at: string): string =>
   `(${f}.status = 'succeeded' OR (${f}.status = 'failed' AND ${f}.reversed_at IS NOT NULL AND ${f}.reversed_at >= ${at}))`;
 
 /**
+ * M6–M7 audit AU45: the IST day (ISO `YYYY-MM-DD`) of instant `ms` (an SQL expression, UTC ms): the twin of core `toIsoDate(istDate(ms))` (a db test compares
+ * them across IST midnight). The statement dates a refund that came back by it (`reversed_at`).
+ */
+export const istDayOfMsSql = (ms: string): string =>
+  `date(CAST(${ms} AS INTEGER) / 1000 + 19800, 'unixepoch')`;
+
+/**
+ * M6–M7 audit AU45: refund row `f` went out and came back: a gateway refund that had succeeded and was reversed (`failed` with `reversed_at`, set once by
+ * `refundReverseStatement`). Never a lost dispute (`origin = 'chargeback'`) or a manual refund (`provider = 'manual'`): trigger `payment_refunds_status_flow` of
+ * 0082 already refuses to reverse them. The reversal also needs the gateway's refund id and keeps `settled_on`, so both are required here too (early check, low
+ * 1): the debit line is dated by `settled_on`, and a row without one would print a credit with no debit. Saying it all again keeps the pair whatever a row holds.
+ */
+export const refundReturnedSql = (f: string): string =>
+  `(${f}.status = 'failed' AND ${f}.reversed_at IS NOT NULL AND ${f}.settled_on IS NOT NULL AND ${f}.provider_refund_id IS NOT NULL AND ${f}.origin <> 'chargeback' AND ${f}.provider <> 'manual')`;
+
+/**
+ * M6–M7 audit AU45: refund row `f` went out at some time: it succeeded, or it succeeded and came back (`refundReturnedSql`). The statement lists each such
+ * refund as a debit on its `settled_on` (kept by the reversal), and a returned one also as a credit on the IST day of `reversed_at`.
+ */
+export const refundWentOutSql = (f: string): string =>
+  `(${f}.status = 'succeeded' OR ${refundReturnedSql(f)})`;
+
+/**
  * M6–M7 audit AU37: the refunds with `settled_on` from `from` to `to` (SQL expressions, ISO days, inclusive) that had gone out by the end of IST day `to`, as a
  * source for `FROM (…) f` with every column of `payment_refunds`: the succeeded ones through the partial index `payment_refunds_settled`, and the reversed ones
  * that came back only after that day through `payment_refunds_status_list` (a seek of the failed refunds: a handful). With `asOf: null` the second branch takes

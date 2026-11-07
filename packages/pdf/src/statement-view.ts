@@ -1,7 +1,9 @@
 // The statement of account's view (M5.5b stage B, LD79; ADM-CLI-04, JOB-PDF-01): the rows the jobs Worker reads, formatted into the designer's layout contract (`StatementLayoutView`, `layout/statement.ts`).
 // Kept out of `types.ts` and `view.ts` on purpose: those two are the portal's view entry and must never reach a layout (test/m45.test.ts). Jobs only.
+import { returnedNoteFor } from "@techaust/core/copy-zu";
 import { formatMoney, money } from "@techaust/core/money";
 import { placeOfSupplyLabel } from "@techaust/core/pdf-jobs";
+import type { StatementKind } from "@techaust/core/statement";
 import { footerLine } from "./footer.ts";
 import { countryName, shortIsoDate } from "./format.ts";
 import type { StatementLayoutView } from "./layout/statement.ts";
@@ -9,7 +11,8 @@ import type { Address } from "./types.ts";
 
 /** One line of a statement as the jobs Worker reads it: the amount is positive and the kind says which side it is on (`@techaust/core/statement`). */
 export type StatementInputEntry = {
-  kind: "tax_invoice" | "export_invoice" | "debit_note" | "credit_note" | "receipt" | "tds" | "refund";
+  /** Core `StatementKind` itself (review low 1, AU45), never a copied list. */
+  kind: StatementKind;
   /** ISO date (IST): the issue date, or the day the money arrived. */
   date: string;
   /** The document's printed number (a receipt shows the number of the invoice it paid). */
@@ -63,7 +66,7 @@ export type StatementView = StatementLayoutView;
 // ---- the statement of account (M5.5b, LD79; ADM-CLI-04; Researched 2026-10-28, s.31 CGST Act, Rule 46 (08-C RA-28) for what a statement lists, Q58) --------------------------------------------
 
 /** The layout the page is made by: part of the content hash (`statementViewSha256`), so a new layout makes a new PDF for the same data. The designer bumps it with the layout. */
-export const STATEMENT_LAYOUT_ID = "statement-4"; // M6.5 "statement-4": refund lines (debits); // M6.1 "statement-2": the lines come from the ledger (payments and TDS lines); M6.3 staging fixes "statement-3": the registration line breaks between its parts and the last lines keep to the ledger. A cached statement made before is never reused
+export const STATEMENT_LAYOUT_ID = "statement-5"; // AU45 "statement-5": a refund that came back (a credit line, 07-ZU U1) and its note in the last lines (U2); // M6.5 "statement-4": refund lines (debits); // M6.1 "statement-2": the lines come from the ledger (payments and TDS lines); M6.3 staging fixes "statement-3": the registration line breaks between its parts and the last lines keep to the ledger. A cached statement made before is never reused
 
 const addressLinesOf = (a: Partial<Address> | null | undefined): string[] => {
   if (!a) return [];
@@ -117,6 +120,8 @@ export function statementView(input: StatementViewInput): StatementView {
       credit: e.creditMinor === 0 ? null : fmt(e.creditMinor),
       balance: fmt(e.balanceMinor),
     })),
+    // AU45 (07-ZU U2): printed once, and only when a refund came back in the range.
+    returnedNote: returnedNoteFor(input.entries),
     generatedOn: shortIsoDate(input.generatedOn),
     email: input.billingEmail,
     footerBrand: footerLine(input.billingEmail),
