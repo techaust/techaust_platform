@@ -7,13 +7,14 @@ import { APPROVED_07ZT } from "@techaust/core/copy-zt";
 import { uuidv7 } from "@techaust/core/ids";
 import { describe, expect, it, vi } from "vitest";
 import { erasureHashOf } from "../src/erasure.ts";
+import { processGateway } from "../src/gateway.ts";
 import {
   processRefundNotify,
   processRefundReversed,
   REFUND_REVERSED_ROW_SQL,
   refundReversedCopyGate,
 } from "../src/refund-notify.ts";
-import { fakes, makeEnv, mkClient, mkContact, mkDoc, run, staff, useFakes } from "./billing-fixtures.ts";
+import { all, fakes, makeEnv, mkClient, mkContact, mkDoc, run, staff, useFakes } from "./billing-fixtures.ts";
 
 useFakes();
 
@@ -77,7 +78,7 @@ describe("AU21 (B4 L2): the refund email never counts or queues a stopped contac
   it("a suppressed contact (hard bounce) and an erased address (`h:` + keyed hash) are left out; the others get it", async () => {
     const r = await refundOf();
     const fin = await mkContact(r.clientId, { email: `fin${uuidv7().slice(-8)}@example.test` });
-    const bounced = await mkContact(r.clientId, { email: `Bounced${uuidv7().slice(-8)}@Example.test` });
+    const bounced = await mkContact(r.clientId, { email: `bounced${uuidv7().slice(-8)}@example.test` });
     const erased = await mkContact(r.clientId, { email: `erased${uuidv7().slice(-8)}@example.test` });
     await run(
       "INSERT INTO email_suppressions (email, reason, at) VALUES (lower(?1), 'hard_bounce', 1)",
@@ -101,6 +102,99 @@ describe("AU21 (B4 L2): the refund email never counts or queues a stopped contac
       "none",
     );
     expect(fakes.email).toHaveLength(0);
+  });
+});
+
+describe("AU7 L5, L6, L8 (B1): the hourly gateway sweep", () => {
+  /** An open checkout of `provider` for a new issued document, live, made at `createdAt`, expiring at `expiresAt`. */
+  async function checkout(provider: "razorpay" | "paypal", createdAt: number, expiresAt: number) {
+    const owner = await staff("owner");
+    const clientId = await mkClient();
+    const doc = await mkDoc(clientId, null);
+    const id = uuidv7();
+    await run(
+      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, ?5, 'staff', ?6, 50000, 'creating', ?7, ?8, ?8)`,
+      id,
+      provider,
+      doc.id,
+      clientId,
+      owner.id,
+      provider === "razorpay" ? "INR" : "USD",
+      expiresAt,
+      createdAt,
+    );
+    const link =
+      provider === "razorpay"
+        ? `plink_AF1${uuidv7().slice(-12).replaceAll("-", "")}`
+        : `ORDAF1${uuidv7().slice(-8)}`;
+    await run(
+      "UPDATE checkout_sessions SET status = 'live', provider_link_id = ?2, short_url = ?3, updated_at = ?4 WHERE id = ?1",
+      id,
+      link,
+      provider === "razorpay"
+        ? "https://rzp.io/i/af1"
+        : `https://www.sandbox.paypal.com/checkoutnow?token=${link}`,
+      createdAt + 1,
+    );
+    return id;
+  }
+  /** A LEADS queue that records each `sendBatch`'s size. */
+  const batchQueue = () => {
+    const sizes: number[] = [];
+    const bodies: unknown[] = [];
+    return {
+      sizes,
+      bodies,
+      queue: {
+        async send(body: unknown) {
+          sizes.push(1);
+          bodies.push(body);
+        },
+        async sendBatch(msgs: { body: unknown }[]) {
+          sizes.push(msgs.length);
+          bodies.push(...msgs.map((m) => m.body));
+        },
+      },
+    };
+  };
+
+  it("L5: a Razorpay link live an hour or more and not refreshed in 6 hours is refreshed, at most 10 a run; a young one is not; L8: no sendBatch over 100", async () => {
+    const now = Date.now() + 10 * 86_400_000;
+    const old: string[] = [];
+    for (let i = 0; i < 12; i++)
+      old.push(await checkout("razorpay", now - 2 * 3_600_000 - i, now + 86_400_000));
+    const young = await checkout("razorpay", now - 10 * 60_000, now + 86_400_000);
+    const q = batchQueue();
+    await processGateway(
+      makeEnv({ LEADS_QUEUE: q.queue as never }),
+      { kind: "gateway.sweep", asOf: now } as never,
+      1,
+      now,
+    );
+    const refreshed = (q.bodies as { kind: string; checkoutId?: string }[])
+      .filter((b) => b.kind === "gateway.refresh")
+      .map((b) => b.checkoutId);
+    expect(refreshed.filter((id) => old.includes(id as string))).toHaveLength(10);
+    expect(refreshed).not.toContain(young);
+    expect(Math.max(...q.sizes)).toBeLessThanOrEqual(100);
+  });
+
+  it("L6: an unclaimed PayPal checkout past its grace ends with one system audit row", async () => {
+    const now = Date.now() + 20 * 86_400_000;
+    const id = await checkout("paypal", now - 5 * 3_600_000, now - 31 * 60_000);
+    for (let i = 0; i < 5; i++)
+      await processGateway(makeEnv(), { kind: "gateway.sweep", asOf: now } as never, 1, now);
+    expect(
+      (await all<{ status: string }>("SELECT status FROM checkout_sessions WHERE id = ?1", id))[0]?.status,
+    ).toBe("expired");
+    const audits = await all<{ actor_type: string; summary: string }>(
+      "SELECT actor_type, summary FROM audit_log WHERE action = 'payment.link_end' AND entity_id = ?1",
+      id,
+    );
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.actor_type).toBe("system");
+    expect(JSON.parse(audits[0]?.summary ?? "{}")).toMatchObject({ checkoutId: id, why: "paypal_unclaimed" });
   });
 });
 
