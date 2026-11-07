@@ -155,3 +155,18 @@ jobs `wrangler deploy --dry-run`: Total Upload 850.08 KiB, gzip 316.78 KiB. No f
 - No screen check: nothing on the screen changes.
 
 **Open:** only the renumbering after `feat/rebuild-pdf`, on the lead's word.
+
+## Early check (analyst, Opus 5.5 high, 2026-11-07): GO
+The fold, the twins and the trigger re-creation are correct, and the oracle is faithful.
+- Finding 1 (biome format of `migrations/meta`): done.
+- Finding 2 (renumber after `feat/rebuild-pdf`'s 0087/0088): pending, by the lead's merge order.
+- Finding 3 (comment file names): done.
+- Finding 4 (the ARN-trim gap): kept by the lead; only rows the schema refuses are affected.
+- Builder's Q1–Q4, the lead's answers: 0089 for now; no audit row; the warm fixtures stay; the gap stays.
+
+## Review (reviewer, Opus 5.5 high, 2026-11-07): APPROVE
+No critical, high or medium finding.
+- **Merge condition:** renumber 0089 after `feat/rebuild-pdf` merges: remove `0089_lut_fold.sql` and its snapshot and journal entry, merge main, `drizzle-kit generate --custom --name lut_fold`, `scripts/write-triggers.ts lut_fold`, biome-format meta, update `migrations.test.ts`. Then a re-check of the regenerated SQL (it should match apart from the number).
+- **Low 2, kept:** the fold's "listed" test is slightly stricter than the old jobs reader, but only for rows the schema refuses, and it fails closed.
+- **Low 3, kept:** the ARN-trim gap (lead's decision).
+- Usage: builder agent-a8bbd6359c2c79b47, analyst agent-a6223be8be52dc033, reviewer agent-a7d5dd2c3633deeff, all claude-opus-5-5/high.
