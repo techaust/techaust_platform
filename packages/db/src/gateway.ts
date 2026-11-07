@@ -901,7 +901,7 @@ export const GATEWAY_MODES_SQL = `SELECT json_extract(value, '$.razorpay.mode') 
 /**
  * P7 A2.3 (the M3.1 follow-up): Settings › Gateways says live for at least one gateway while `PAYMENTS_LIVE_ALLOWED` is not "true", so the finance Worker runs
  * it in test mode; every active Owner hears it once per settings version (`INSERT OR IGNORE` on member, kind and entity: the entity is `gateways:v<version>`, so
- * a later save that sets live again and a later flag change ring again). The words are the caller's.
+ * a later Settings save that sets live again rings again; a flag change alone, with no Settings save, does not). The words are the caller's.
  */
 export function liveRevertBellStatement(
   db: D1Database,

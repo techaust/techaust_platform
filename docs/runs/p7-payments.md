@@ -266,3 +266,11 @@ Builder `fix/p7-payments-b1` (Opus 5.5, high), 2026-11-07. This round applies th
 - **D5:** stays a follow-up.
 - **Wanted before production go-live (L9), not before launch:** one sandbox PayPal order and one Razorpay link on staging after merge, to confirm the `custom_id` suffix is echoed and `notes.techaust_env` is present.
 - Usage: builder agent-a5c1936fb71e4ef83, analyst agent-ab7030af55bfdcc39, both claude-opus-5-5/high.
+
+## Review (reviewer, Opus 5.5 high, 2026-11-07): SEND BACK on one high (screen); fixed by the lead
+- **H1 (high):** the A2.5 notice overflowed below about 430 px (WCAG 1.4.10). Fixed in `apps/admin/src/app.css`: `.notice > div` gets `min-width: 0; overflow-wrap: anywhere`, and the last child has no bottom margin. This is safe for every notice.
+- **L2:** the bell-dedupe comment is corrected (a flag change alone doesn't ring again).
+- **L3, kept:** a test payment taken during the fallback can't be refunded through the gateway once the flag is on; the way out is "recorded as made outside". Test money only.
+- **L4, kept:** checkouts staging made before P7 are unmarked and can still raise `unknown_link` items in production. Before registering the production test webhooks at launch, the lead checks staging for open checkouts.
+- **L5:** `docs/runbooks/payment-gateways.md` gains a go-live step: remove or disable the test webhooks pointing at hooks.techaust.com.
+- Usage: reviewer agent-ac7230a0dbd69e67b, claude-opus-5-5/high.

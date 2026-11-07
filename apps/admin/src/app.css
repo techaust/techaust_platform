@@ -633,7 +633,14 @@ input[readonly] {
 }
 
 .notice > div {
+  /* P7 payments review H1: a flex child keeps min-width auto, so a long unbreakable string (a URL, a flag name) overflowed narrow screens. */
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--color-text);
+}
+
+.notice > div > :last-child {
+  margin-bottom: 0;
 }
 
 .notice .icon {
