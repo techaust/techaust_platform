@@ -16,7 +16,7 @@ import {
   debitNoteInput,
   isLiveParentStatus,
   isNoteType,
-  lutForFy,
+  lutFor,
   NOTES_MAX,
   type NoteBlocker,
   type NoteKind,
@@ -34,6 +34,7 @@ import {
   type CreditedSoFar,
   computeDocument,
   creditNote,
+  lutsOf,
   type TaxContext,
   type TaxIssue,
   taxOnlyDebitNote,
@@ -380,9 +381,9 @@ export function noteLutOf(
   // rt1 F5: the parent's frozen `supply_type` column, the one the freeze WHERE, the trigger and `explainNote` read (lead D7)
   if (kind !== "debit" || (p.row.export_mode !== "lut" && p.row.supply_type !== "export_lut")) return null;
   const fy = fyOf(now).token;
-  // rt1 re-check 1: `lutFor(lutsOf)` (the legacy `tax.lut` only when it folds), so this blocker never allows what `LUT_FOR_FY_SQL` (the freeze WHERE, trigger 0054)
-  // refuses; the one difference, a legacy ARN that would not fold, is refused here first (fail closed)
-  return { fy, lut: lutForFy(fy, settings.tax) };
+  // rt1 re-check 1, P7 LUT fold: `lutFor(lutsOf)`, the list only, the exact twin of `LUT_FOR_FY_SQL` (the freeze WHERE and trigger `documents_debit_note_lut_fy`,
+  // re-created by 0089), so the blocker, the freeze and the trigger judge one list by one rule (db `note-rules-rt1.test.ts`)
+  return { fy, lut: lutFor(fy, lutsOf(settings.tax)) };
 }
 
 export { creditAllowed };

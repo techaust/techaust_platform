@@ -37,9 +37,7 @@ import {
 import { type Action, decide } from "@techaust/core/permissions";
 import {
   BRAND_LOGOS,
-  foldLegacyLut,
   GATEWAYS,
-  legacyLutFate,
   numberingClashMessage,
   panOf,
   resolveSetting,
@@ -435,9 +433,8 @@ export const settings = new Hono<AppEnv>()
     const { group } = c.req.valid("param");
     if (decide(actor(c).role, READ_ACTION[group]) === "deny") return err(c, FORBIDDEN_GROUP, 403);
     const row = await loadRow(c.env.DB, group);
-    const resolved = resolveSetting(group, row?.value);
-    // The old single `lut` is shown as a list entry (and cleared), so a letter deleted from the list is never sent back by the old key.
-    const value = group === "tax" ? foldLegacyLut(resolved as Settings["tax"]) : resolved;
+    // P7 LUT fold: the `tax` row carries no old single `lut` (0089 folded it into `luts`; the schema drops a stray key), so nothing is folded here.
+    const value = resolveSetting(group, row?.value);
     return c.json({
       group,
       version: row?.version ?? 0,
@@ -485,7 +482,7 @@ export const settings = new Hono<AppEnv>()
         return save(c, "company", { ...value, ...keepUdyam, signature: stored.signature }, env.data.version);
       }
     }
-    // M5.2 (early check 3): a saved `tax` row never keeps the deprecated single `lut`: it is folded into `luts` (unless that FY is listed) and cleared.
+    // P7 LUT fold: a saved `tax` row holds the letters in `luts` only (the old single `lut` of M3 was folded by 0089 and is no longer a field).
     if (group === "tax") {
       // Owner 2026-10-28 (07-S §3; Researched 2026-10-28, Rule 46 CGST Rules, 08-C RA-05): only the house rules of the checklist may be switched; naming a statutory item is 400
       // `checklist_item_statutory` ("Required by GST law, so it can't be turned off."), whatever its value.
@@ -521,22 +518,8 @@ export const settings = new Hono<AppEnv>()
             400,
           );
       }
-      if (parsed.success) {
-        // A legacy letter the fold drops (its FY is already listed, or the list would refuse it) is dropped WITH a note in the log (the case and the FY,
-        // never the ARN), so the save never fails on a field the person cannot see and the drop is never silent (review 8).
-        const fate = legacyLutFate(parsed.data);
-        if (fate.fate === "listed" || fate.fate === "invalid" || fate.fate === "full")
-          console.warn(
-            JSON.stringify({
-              level: "warn",
-              message: "legacy LUT dropped on a tax save",
-              case: fate.fate,
-              fy: parsed.data.lut.fy,
-              rid: c.var.rid,
-            }),
-          );
-      }
-      return save(c, "tax", parsed.success ? foldLegacyLut(parsed.data) : env.data.value, env.data.version);
+      // P7 LUT fold: the parsed value has no `lut` (the schema drops it, so a tab opened before 0089 still saves), and only the list is written.
+      return save(c, "tax", parsed.success ? parsed.data : env.data.value, env.data.version);
     }
     return save(c, group, env.data.value, env.data.version);
   })

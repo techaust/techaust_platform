@@ -19,16 +19,23 @@ import {
 
 const opts = { documentDate: DATE, currency: "INR" } as const;
 
-describe("lutsOf: the one LUT of today's settings as a list", () => {
+describe("lutsOf: the saved letters, the list only (P7 LUT fold)", () => {
   const tax = SETTINGS_DEFAULTS.tax;
-  it("is empty until both the ARN and the FY are saved", () => {
-    expect(lutsOf({ ...tax, lut: { arn: null, fy: null } })).toEqual([]);
-    expect(lutsOf({ ...tax, lut: { arn: "AD190000000001A", fy: null } })).toEqual([]);
-    expect(lutsOf({ ...tax, lut: { arn: null, fy: "2627" } })).toEqual([]);
+  it("is empty with no list entry", () => {
+    expect(lutsOf(tax)).toEqual([]);
   });
-  it("has one entry once both are saved", () => {
-    expect(lutsOf({ ...tax, lut: { arn: "TESTARN2627", fy: "2627" } })).toEqual([
+  it("gives each list entry's year and ARN, in order, without the filing day", () => {
+    expect(
+      lutsOf({
+        ...tax,
+        luts: [
+          { fy: "2627", arn: "TESTARN2627", filedOn: "2026-03-20" },
+          { fy: "2526", arn: "TESTARN2526", filedOn: null },
+        ],
+      }),
+    ).toEqual([
       { fy: "2627", arn: "TESTARN2627" },
+      { fy: "2526", arn: "TESTARN2526" },
     ]);
   });
 });

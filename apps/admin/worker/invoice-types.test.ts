@@ -205,10 +205,15 @@ describe("the LUT of the FY of issue [ADM-INV-18, G-8, docs/09: LUT without an A
     expect(check).toEqual({ content: true, snapshot: true });
   });
 
-  it("a stored pre-M5.2 row with the single legacy `lut` reads as a list entry (a saved letter never vanishes)", async () => {
+  it("P7 LUT fold: a row that still carries the old single `lut` (0089 folds it into the list) has no letter from that key: the issue is blocked", async () => {
     await putOldTax({ arn: LUT_ARN, fy: currentFy() });
     const o = await owner();
     const made = await readyExport(o);
+    expect(await blockersOf(await issueInvoice(o, made.id))).toEqual([
+      { code: "lut_missing", fy: currentFy() },
+    ]);
+    // the same letter in the list issues it
+    await putTax({ luts: [lutOf(currentFy())] });
     const res = await issueInvoice(o, made.id);
     expect(res.status, await res.clone().text()).toBe(200);
     expect(
@@ -1352,91 +1357,51 @@ describe("FX-4 (A5 5): a proforma's GST is sealed as an estimate [Researched 202
   });
 });
 
-describe("a letter deleted from the list cannot come back from the legacy key [analyst early check 3; Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)]", () => {
+describe("P7 LUT fold: the old single `lut` of M3 is neither read nor written by Settings › Tax [analyst early check 3; ADM-SET-03; Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19)]", () => {
   const put = (s: Awaited<ReturnType<typeof owner>>, version: number, value: unknown) =>
     call("/settings/groups/tax", { method: "PUT", cookie: s.cookie, body: { version, value } });
   const get = async (s: Awaited<ReturnType<typeof owner>>) =>
     json(await call("/settings/groups/tax", { cookie: s.cookie }));
+  const stored = async () =>
+    JSON.parse((await one<{ value: string }>("SELECT value FROM settings WHERE key = 'tax'"))?.value ?? "{}");
 
-  it("read: the old single letter is shown as a list entry and the old key is empty; deleting it from the list is final, and the issue is blocked", async () => {
+  it("read: a row that still has the old key shows only the list and no `lut`; deleting a list entry is final, and the issue is blocked", async () => {
     const o = await owner();
     await putOldTax({ arn: "OLDARN1", fy: currentFy() });
     const first = await get(o);
-    expect(first.value.luts).toEqual([{ fy: currentFy(), arn: "OLDARN1", filedOn: null }]);
-    expect(first.value.lut).toEqual({ arn: null, fy: null });
-    const gone = await put(o, first.version, { ...first.value, luts: [] });
+    expect(first.value.luts).toEqual([]);
+    expect(Object.hasOwn(first.value, "lut")).toBe(false);
+    await putTax({ luts: [lutOf(currentFy(), "AD0000000000077")], lut: { arn: "OLDARN1", fy: currentFy() } });
+    const listed = await get(o);
+    expect(listed.value.luts).toEqual([{ fy: currentFy(), arn: "AD0000000000077", filedOn: null }]);
+    const gone = await put(o, listed.version, { ...listed.value, luts: [] });
     expect(gone.status, await gone.clone().text()).toBe(200);
     const after = await get(o);
     expect(after.value.luts).toEqual([]);
-    expect(after.value.lut).toEqual({ arn: null, fy: null });
+    expect(Object.hasOwn(await stored(), "lut")).toBe(false);
     const made = await readyExport(o);
     expect(await blockersOf(await issueInvoice(o, made.id))).toEqual([
       { code: "lut_missing", fy: currentFy() },
     ]);
   });
 
-  it("save: an old screen that still sends the single `lut` has it folded into the list (unless that year is listed) and cleared in the stored row", async () => {
+  it("save: a tab opened before the deploy that still sends `lut` saves, the key is never stored and nothing is added to the list", async () => {
     const o = await owner();
     await putTax({ luts: [lutOf("2526", "AD0000000000025")] });
-    const cur = await get(o);
-    const ok = await put(o, cur.version, { ...cur.value, lut: { arn: "OLDARN1", fy: currentFy() } });
-    expect(ok.status, await ok.clone().text()).toBe(200);
-    const stored = JSON.parse(
-      (await one<{ value: string }>("SELECT value FROM settings WHERE key = 'tax'"))?.value ?? "{}",
-    );
-    expect(stored.lut).toEqual({ arn: null, fy: null });
-    expect(stored.luts).toEqual([
-      { fy: "2526", arn: "AD0000000000025", filedOn: null },
-      { fy: currentFy(), arn: "OLDARN1", filedOn: null },
-    ]);
-    // the same year in the list wins: the old key is dropped
-    const again = await get(o);
-    const win = await put(o, again.version, {
-      ...again.value,
-      luts: [lutOf(currentFy(), "AD0000000000077")],
-      lut: { arn: "OLDARN9", fy: currentFy() },
-    });
-    expect(win.status, await win.clone().text()).toBe(200);
-    const stored2 = JSON.parse(
-      (await one<{ value: string }>("SELECT value FROM settings WHERE key = 'tax'"))?.value ?? "{}",
-    );
-    expect(stored2.luts).toEqual([{ fy: currentFy(), arn: "AD0000000000077", filedOn: null }]);
-    expect(stored2.lut).toEqual({ arn: null, fy: null });
-  });
-
-  it("save: a legacy ARN is normalised like a list entry's; one the list would refuse is dropped with a logged note, and the save still succeeds [review 8]", async () => {
-    const o = await owner();
-    const stored = async () =>
-      JSON.parse(
-        (await one<{ value: string }>("SELECT value FROM settings WHERE key = 'tax'"))?.value ?? "{}",
-      );
-    await putTax({ luts: [] });
-    const cur = await get(o);
-    // lower case and spaces: the list's own normal form
-    const spaced = await put(o, cur.version, { ...cur.value, lut: { arn: " ad 1234 x ", fy: currentFy() } });
-    expect(spaced.status, await spaced.clone().text()).toBe(200);
-    expect((await stored()).luts).toEqual([{ fy: currentFy(), arn: "AD1234X", filedOn: null }]);
-    // a character the list refuses (-, /): the old field is dropped, nothing fails, nothing is put into the list
-    await putTax({ luts: [] });
-    const cur2 = await get(o);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const bad = await put(o, cur2.version, { ...cur2.value, lut: { arn: "AD-123/4", fy: currentFy() } });
-    expect(bad.status, await bad.clone().text()).toBe(200);
-    expect((await stored()).luts).toEqual([]);
-    expect((await stored()).lut).toEqual({ arn: null, fy: null });
-    const notes = warn.mock.calls.map((c) => String(c[0]));
-    warn.mockRestore();
-    expect(notes.some((n) => n.includes("legacy LUT dropped") && n.includes('"case":"invalid"'))).toBe(true);
-    expect(notes.join("")).not.toContain("AD-123");
-    // a year that is not two consecutive years is refused by the list too: dropped the same way
-    await putTax({ luts: [] });
-    const cur3 = await get(o);
-    const year = await put(o, cur3.version, { ...cur3.value, lut: { arn: "AD1234", fy: "2629" } });
-    expect(year.status, await year.clone().text()).toBe(200);
-    expect((await stored()).luts).toEqual([]);
-    // reading a stored row with such a letter shows an empty list, not a letter the screen could not save back
-    await putOldTax({ arn: "AD-123/4", fy: currentFy() });
-    expect((await get(o)).value.luts).toEqual([]);
+    for (const lut of [
+      { arn: "OLDARN1", fy: currentFy() },
+      { arn: " ad 1234 x ", fy: currentFy() },
+      { arn: "AD-123/4", fy: currentFy() },
+      { arn: null, fy: null },
+      { arn: 5, fy: "26" },
+    ]) {
+      const cur = await get(o);
+      const res = await put(o, cur.version, { ...cur.value, lut });
+      expect(res.status, await res.clone().text()).toBe(200);
+      const row = await stored();
+      expect(Object.hasOwn(row, "lut"), JSON.stringify(lut)).toBe(false);
+      expect(row.luts, JSON.stringify(lut)).toEqual([{ fy: "2526", arn: "AD0000000000025", filedOn: null }]);
+    }
   });
 });
 
