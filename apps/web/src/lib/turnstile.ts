@@ -3,7 +3,7 @@
 //   - `astro build` (local, CI, `dev:worker`): the top-level value, Cloudflare's always-pass TEST key
 //   - `CLOUDFLARE_ENV=staging astro build` (the `deploy:staging` script): env.staging's key, the widget
 //     "techaust-staging-forms"; the build FAILS if it is empty, so staging never ships a form without spam protection
-//   - production: Phase 7 (its key is empty until the owner creates the widget; the endpoints answer 503 until then)
+//   - `CLOUDFLARE_ENV=production astro build` (`build:production`, P7): env.production's key; the build FAILS if it is empty, as staging's
 // The static pages can't read Worker vars at run time, so the key is written into the HTML at build time.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,9 +43,9 @@ export function siteKeyOf(config: Config, env?: string): string {
   const scope = config.env?.[env];
   if (!scope) throw new Error(`turnstile: CLOUDFLARE_ENV="${env}" is not an environment in wrangler.jsonc`);
   const key = scope.vars?.TURNSTILE_SITE_KEY ?? "";
-  if (env === "staging" && !key)
+  if ((env === "staging" || env === "production") && !key)
     throw new Error(
-      "turnstile: env.staging has no TURNSTILE_SITE_KEY (the forms would ship without spam protection)",
+      `turnstile: env.${env} has no TURNSTILE_SITE_KEY (the forms would ship without spam protection)`,
     );
   return key;
 }

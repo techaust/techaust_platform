@@ -17,8 +17,8 @@
 //     (--dry-run, not turned off by --no-dry-run or a false value), d1 migrations list|apply and d1 execute only with --local,
 //     --version (-v) and help; everything else is refused, and so is --remote/-r and --install-skills anywhere. However it is
 //     started (npx, pnpm, pnpm exec, pnpm --filter … exec, node …/wrangler.js, the heavy queue …); and the apps' deploy:* scripts;
-//   - pnpm invite, admin:reset-2fa, portal:sample and portal:link (or their scripts/*.mjs) with --staging, which run
-//     wrangler d1 execute --remote on staging;
+//   - pnpm invite, admin:reset-2fa, portal:sample and portal:link (or their scripts/*.mjs) with --staging or --production
+//     (P7-C: invite and admin:reset-2fa), which run wrangler d1 execute --remote on staging or production;
 //   - a command name bash builds at run time: a brace ({gh,}), $'…', $"…", $( … ) or `…` (a plain $variable is not refused).
 // The command is parsed into simple commands at && || ; | |& & newlines ( ) and the bodies of $(…), `…` and <(…) / >(…) (in
 // double quotes and unquoted heredocs too), so chaining or substitution doesn't hide one; arithmetic ($((…)), ((…)) at the
@@ -723,8 +723,13 @@ function commandRefusal(words, opts) {
     if (name === "wrangler") return wranglerRefusal(rest());
     // pnpm invite|admin:reset-2fa|portal:sample|portal:link --staging run wrangler d1 execute --remote on staging (second
     // re-check, finding 5)
-    if (STAGING_SCRIPTS.has(name) && rest().some((w) => /^--staging(=|$)/i.test(w.text)))
-      return `"${text} --staging" changes the staging database; in a cloud session these scripts run only locally`;
+    if (STAGING_SCRIPTS.has(name)) {
+      const remote = rest().find((w) => /^--(staging|production)(=|$)/i.test(w.text));
+      if (remote) {
+        const where = /^--production/i.test(remote.text) ? "production" : "staging";
+        return `"${text} --${where}" changes the ${where} database; in a cloud session these scripts run only locally`;
+      }
+    }
     const prev = words[j - 1]?.text ?? "";
     const lead =
       ASSIGN.test(text) ||

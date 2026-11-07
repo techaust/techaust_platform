@@ -1,12 +1,39 @@
 // scripts/check-prod-readiness.mjs beyond the website (audit A1 finding 6): "[Placeholder" copy in the admin's and the portal's
 // built bundles, an empty production Turnstile site key, and queues staging has that production lacks. Runs in Node.
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
 import * as ready from "../../../scripts/check-prod-readiness.mjs";
+// @ts-expect-error plain .mjs without types
+import { parseJsonc } from "../../../scripts/check-worker-config.mjs";
+
+type Scope = Record<string, unknown> & {
+  name?: string;
+  vars?: Record<string, string>;
+  d1_databases?: { binding: string; database_name: string; database_id: string }[];
+  r2_buckets?: { binding: string; bucket_name: string }[];
+  ratelimits?: { name: string; namespace_id: string }[];
+  services?: { binding: string; service: string }[];
+};
+
+/** P7-B: staging's scope as P7-A mirrors it: production names and ids, its own rate-limit namespaces, production values, no email allow-list. */
+const mirror = (staging: Scope): Scope => {
+  const text = JSON.stringify(staging)
+    .replaceAll("techaust-staging-", "techaust-prod-")
+    .replace(/techaust-platform-([a-z-]+?)-staging"/g, 'techaust-platform-$1"');
+  const prod = JSON.parse(text) as Scope;
+  for (const d of prod.d1_databases ?? [])
+    Object.assign(d, { database_name: "techaust-prod", database_id: "prod-id" });
+  for (const r of prod.ratelimits ?? []) r.namespace_id = String(Number(r.namespace_id) + 100);
+  const vars = { ...(prod.vars ?? {}) };
+  delete vars.EMAIL_ALLOWED_RECIPIENTS;
+  for (const k of Object.keys(vars))
+    vars[k] = k === "TURNSTILE_SITE_KEY" ? "0xprod" : `production-${k.toLowerCase()}`;
+  return { ...prod, vars };
+};
 
 const appsDir = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -35,15 +62,45 @@ describe("pending copy in the built bundles", () => {
     expect(ready.checkBundleText("admin", "techaust_platform_admin_api/index.js", guard)).toEqual([]);
   });
 
-  it("a missing build is a problem, never a pass", () => {
-    const empty = mkdtempSync(join(tmpdir(), "ready-apps-"));
-    const problems: string[] = ready.checkBundles(empty);
-    expect(problems).toHaveLength(2);
-    expect(problems.join("\n")).toContain("apps/admin/dist is not built");
-    expect(problems.join("\n")).toContain("apps/portal/dist is not built");
+  it("P7-B: leaves a copy gate's own body alone (jobs' bundler keeps the unreachable branch of an approved gate)", () => {
+    const gate = ["ZJ=s(e=>Xq?e:`[Placeholder] $", '{e}`,"ZJ")'].join("");
+    expect(ready.checkBundleText("jobs", "dist-production/index.js", gate)).toEqual([]);
+    expect(
+      ready.checkBundleText("jobs", "dist-production/index.js", "`[Placeholder] Your deed`"),
+    ).toHaveLength(1);
   });
 
-  it("reads every text file of a build, the Workers' bundles included", () => {
+  it("P7-B: a copy-approval flag left false is a problem; the real source has none", () => {
+    const root = mkdtempSync(join(tmpdir(), "ready-flags-"));
+    mkdirSync(join(root, "packages", "email", "src"), { recursive: true });
+    mkdirSync(join(root, "apps", "portal", "worker"), { recursive: true });
+    writeFileSync(
+      join(root, "packages", "email", "src", "a.ts"),
+      "export const APPROVED_07ZZ: boolean = false;\n",
+    );
+    writeFileSync(join(root, "apps", "portal", "worker", "b.ts"), "export const APPROVED_07ZY = true;\n");
+    writeFileSync(
+      join(root, "apps", "portal", "worker", "b.test.ts"),
+      "export const APPROVED_07ZX = false;\n",
+    );
+    const problems: string[] = ready.checkApprovalFlags(root);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("packages/email/src/a.ts: APPROVED_07ZZ is false");
+    expect(ready.checkApprovalFlags(join(appsDir, ".."))).toEqual([]);
+  }, 20_000);
+
+  it("a missing build is a problem, never a pass (P7-B: the jobs and website production bundles too)", () => {
+    const empty = mkdtempSync(join(tmpdir(), "ready-apps-"));
+    const problems: string[] = ready.checkBundles(empty);
+    expect(problems).toHaveLength(4);
+    expect(problems.join("\n")).toContain("apps/admin/dist is not built");
+    expect(problems.join("\n")).toContain("apps/portal/dist is not built");
+    expect(problems.join("\n")).toContain("apps/jobs/dist-production/index.js is not built");
+    expect(problems.join("\n")).toContain("apps/web/.wrangler/dist-production/worker.js is not built");
+  });
+
+  /** A made-up apps/ folder with clean builds of the two SPAs and the two pre-bundled production Workers. */
+  const cleanBuilds = () => {
     const dir = mkdtempSync(join(tmpdir(), "ready-apps-"));
     for (const app of ["admin", "portal"]) {
       mkdirSync(join(dir, app, "dist", "client", "assets"), { recursive: true });
@@ -52,11 +109,36 @@ describe("pending copy in the built bundles", () => {
       writeFileSync(join(dir, app, "dist", "client", "assets", "a.js"), 'x.includes("[Placeholder")');
       writeFileSync(join(dir, app, "dist", "client", "assets", "logo.png"), "[Placeholder] binary noise");
     }
+    mkdirSync(join(dir, "jobs", "dist-production"), { recursive: true });
+    writeFileSync(join(dir, "jobs", "dist-production", "index.js"), "const g=`[Placeholder`;");
+    writeFileSync(
+      join(dir, "jobs", "dist-production", "index.js.map"),
+      '{"sourcesContent":["[Placeholder] in a comment"]}',
+    );
+    mkdirSync(join(dir, "web", ".wrangler", "dist-production"), { recursive: true });
+    writeFileSync(join(dir, "web", ".wrangler", "dist-production", "worker.js"), "export default {};");
+    return dir;
+  };
+
+  it("reads every text file of a build, the Workers' bundles included", () => {
+    const dir = cleanBuilds();
     expect(ready.checkBundles(dir)).toEqual([]);
     writeFileSync(join(dir, "portal", "dist", "worker", "index.js"), 'const t="[Placeholder] Accept";');
     const problems: string[] = ready.checkBundles(dir);
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain("portal worker/index.js");
+  });
+
+  it("P7-B: reads the jobs production bundle (the emails, PDFs and bells) for pending copy, not its source map", () => {
+    const dir = cleanBuilds();
+    writeFileSync(
+      join(dir, "jobs", "dist-production", "index.js"),
+      'var r=c?c:"[Placeholder] postal address";',
+    );
+    const problems: string[] = ready.checkBundles(dir);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("jobs dist-production/index.js");
+    expect(problems[0]).toContain("[Placeholder] postal address");
   });
 });
 
@@ -121,24 +203,31 @@ describe("production Worker configs", () => {
     );
   });
 
-  it("today's configs: production is blocked on the three site keys and on the queues (before Phase 7)", () => {
-    const text = (ready.checkProductionConfigs(appsDir) as string[]).join("\n");
-    for (const app of ["web", "admin", "portal"])
-      expect(text).toContain(`apps/${app}/wrangler.jsonc: env.production.vars.TURNSTILE_SITE_KEY is empty`);
-    expect(text).not.toContain("apps/admin/wrangler.api.jsonc: env.production.vars.TURNSTILE_SITE_KEY");
-    expect(text).not.toContain("apps/admin/wrangler.finance.jsonc: env.production.vars.TURNSTILE_SITE_KEY");
-    for (const where of [
-      "admin/wrangler.jsonc",
-      "admin/wrangler.api.jsonc",
-      "admin/wrangler.finance.jsonc",
-      "portal/wrangler.jsonc",
-      "jobs/wrangler.jsonc",
-    ]) {
-      expect(text).toContain(`apps/${where}: staging sends on the queue binding EMAIL_QUEUE`);
-      expect(text).toContain(`apps/${where}: staging sends on the queue binding PDF_QUEUE`);
+  // P7-B: the real configs' staging scopes, mirrored by hand into a production scope that differs only in values, pass both the queue and
+  // service checks and the staging-production comparison (the comparison accepts exactly the P7-A shape, whatever the real production holds).
+  it("every real config's staging scope, mirrored into production with production names, passes", () => {
+    for (const c of ready.PROD_CONFIGS as { app: string; file: string; turnstile: boolean }[]) {
+      const config = parseJsonc(readFileSync(join(appsDir, c.app, c.file), "utf8"));
+      const mirrored = { ...config, env: { ...config.env, production: mirror(config.env.staging) } };
+      const where = `apps/${c.app}/${c.file}`;
+      expect(ready.checkEnvParity(where, mirrored), where).toEqual([]);
+      expect(ready.checkProductionConfig(where, mirrored, c), where).toEqual([]);
     }
-    expect(text).toContain("apps/web/wrangler.jsonc: staging sends on the queue binding LEADS_QUEUE");
-    expect(text).toContain("apps/jobs/wrangler.jsonc: staging consumes techaust-staging-email");
+  });
+
+  // P7-A filled every env.production block (14910a09): production now mirrors staging, the production site keys are set.
+  it("today's configs: production is ready (site keys, queues, service bindings) and differs from staging only in values", () => {
+    expect(ready.checkProductionConfigs(appsDir)).toEqual([]);
+    for (const c of ready.PROD_CONFIGS as { app: string; file: string }[]) {
+      const where = `apps/${c.app}/${c.file}`;
+      const config = parseJsonc(readFileSync(join(appsDir, c.app, c.file), "utf8"));
+      expect(ready.checkEnvParity(where, config), where).toEqual([]);
+      // the comparison really ran: production has staging's bindings under production names
+      expect(Object.keys(config.env.production.vars ?? {}).length, where).toBeGreaterThan(0);
+    }
+    const jobs = parseJsonc(readFileSync(join(appsDir, "jobs", "wrangler.jsonc"), "utf8"));
+    expect(jobs.env.production.d1_databases[0].database_name).toBe("techaust-prod");
+    expect(jobs.env.production.triggers.crons).toEqual(jobs.env.staging.triggers.crons);
   });
 
   // The fourth admin Worker (2026-11-03, L7; review finding 4): every staging service binding needs a production twin (same binding, same entrypoint, the
@@ -221,28 +310,21 @@ describe("production Worker configs", () => {
       ).toEqual([]);
     });
 
-    it("today's configs: the invoices config is read, and finance, jobs and the portal are blocked on their service bindings (before Phase 7)", () => {
+    it("the invoices config is read", () => {
       expect(ready.PROD_CONFIGS).toContainEqual({
         app: "admin",
         file: "wrangler.invoices.jsonc",
         turnstile: false,
       });
-      const text = (ready.checkProductionConfigs(appsDir) as string[]).join("\n");
-      expect(text).toContain(
-        "apps/admin/wrangler.invoices.jsonc: staging sends on the queue binding PDF_QUEUE",
-      );
-      expect(text).toContain("apps/admin/wrangler.finance.jsonc: staging binds the service ADMIN_ADVANCE");
-      for (const b of ["ADMIN_JOBS", "ADMIN_ADVANCE", "ADMIN_GATEWAY"])
-        expect(text).toContain(`apps/jobs/wrangler.jsonc: staging binds the service ${b}`);
-      expect(text).toContain("apps/portal/wrangler.jsonc: staging binds the service ADMIN_PAY");
-      // The front's production bindings already name the production Workers.
-      expect(text).not.toContain("apps/admin/wrangler.jsonc: staging binds the service");
-      expect(text).not.toContain("apps/admin/wrangler.jsonc: env.production's");
     });
   });
 
-  it("checkProdReadiness includes the apps' problems", () => {
-    const problems: string[] = ready.checkProdReadiness(join(appsDir, "web"), "does-not-exist.json", appsDir);
-    expect(problems.join("\n")).toContain("TURNSTILE_SITE_KEY is empty");
+  it("checkProdReadiness includes the apps' problems (their bundles and configs)", () => {
+    const empty = join(mkdtempSync(join(tmpdir(), "ready-apps-")), "apps");
+    mkdirSync(empty);
+    const problems: string[] = ready.checkProdReadiness(join(appsDir, "web"), "does-not-exist.json", empty);
+    const text = problems.join("\n");
+    expect(text).toContain("apps/jobs/dist-production/index.js is not built");
+    expect(text).toContain("apps/admin/wrangler.finance.jsonc is missing.");
   });
 });

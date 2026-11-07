@@ -6,12 +6,17 @@
 // config's `build.command` (wrangler `runCustomBuild`) with the token in its environment: the config each deploy will use is checked first (the redirect
 // stays inside `dist`, no `build` key, no key outside FLATTENED_KEYS, `no_bundle`, `main` and the assets inside `dist`; `configProblems`).
 //
-//   node scripts/deploy-worker.mjs staging admin-api|admin-invoices|admin-finance|admin|portal|jobs|web
-// Production deploys come at Phase 7 (L3-L4): this script refuses them until then.
+//   node scripts/deploy-worker.mjs staging|production admin-api|admin-invoices|admin-finance|admin|portal|jobs|web
+//   node scripts/deploy-worker.mjs production --check     (every production target's checks, nothing deployed: deploy-prod.yml runs it before
+//                                                         the migrations, so a wrong build stops the run before anything changes)
+// P7 (docs/runs/p7-launch.md P7-B): production deploys the same way from deploy-prod.yml, with the production builds (`build:production`,
+// `wrangler deploy --dry-run --env production --outdir`) and their own guard (scripts/check-prod-build.mjs: the production Worker, no staging
+// host or key).
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { problemsFor as productionProblemsFor } from "./check-prod-build.mjs";
 import { devVarsProblems, problemsFor } from "./check-staging-build.mjs";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -23,6 +28,11 @@ export const WRANGLER = "tools/deploy/node_modules/wrangler/bin/wrangler.js";
  * bundling deploy (jobs 836.35 KiB, website 293.98 KiB, dry runs).
  */
 export const PREBUNDLED = { jobs: "dist-staging/index.js", web: ".wrangler/dist-staging/worker.js" };
+/** P7: the production twins (`wrangler deploy --dry-run --env production --outdir <dir>` in deploy-prod.yml's build job). */
+export const PREBUNDLED_PRODUCTION = {
+  jobs: "dist-production/index.js",
+  web: ".wrangler/dist-production/worker.js",
+};
 
 /** Where wrangler runs and with what, per target (staging). */
 export const STAGING_DEPLOYS = {
@@ -38,6 +48,42 @@ export const STAGING_DEPLOYS = {
   jobs: { app: "jobs", args: ["--env", "staging", "--no-bundle", PREBUNDLED.jobs] },
   web: { app: "web", args: ["--env", "staging", "--no-bundle", PREBUNDLED.web] },
 };
+
+/**
+ * P7: where wrangler runs and with what, per target (production). The SPAs' flattened configs come from `CLOUDFLARE_ENV=production vite build`
+ * (the same paths as staging's: the Vite plugin names the folders after the top-level Worker names); jobs and the website deploy their
+ * checked-out wrangler.jsonc with `--env production`, pre-bundled. No config has a route or a custom domain: the lead attaches the domains.
+ */
+export const PRODUCTION_DEPLOYS = {
+  "admin-api": STAGING_DEPLOYS["admin-api"],
+  "admin-invoices": STAGING_DEPLOYS["admin-invoices"],
+  "admin-finance": STAGING_DEPLOYS["admin-finance"],
+  admin: STAGING_DEPLOYS.admin,
+  portal: STAGING_DEPLOYS.portal,
+  jobs: { app: "jobs", args: ["--env", "production", "--no-bundle", PREBUNDLED_PRODUCTION.jobs] },
+  web: { app: "web", args: ["--env", "production", "--no-bundle", PREBUNDLED_PRODUCTION.web] },
+};
+
+/** The deploy table, the pre-bundled files and the build guard of one scope. */
+export const SCOPES = {
+  staging: { deploys: STAGING_DEPLOYS, prebundled: PREBUNDLED, guard: problemsFor },
+  production: {
+    deploys: PRODUCTION_DEPLOYS,
+    prebundled: PREBUNDLED_PRODUCTION,
+    guard: productionProblemsFor,
+  },
+};
+
+/** The order both deploy workflows deploy in (from M6.5, owner's Q3 A 2026-11-02). */
+export const DEPLOY_ORDER = [
+  "admin-api",
+  "admin-invoices",
+  "admin-finance",
+  "admin",
+  "portal",
+  "jobs",
+  "web",
+];
 
 /**
  * L51 (review 1, finding 2): the top-level keys a flattened Worker config may have. Taken on 2026-11-07 from today's real builds (`CLOUDFLARE_ENV=staging
@@ -121,10 +167,10 @@ const shown = (root, p) => relative(root, p).replaceAll("\\", "/");
  * inside `dist`, be a JSON object with no `build` and no key outside FLATTENED_KEYS, be `no_bundle` (wrangler uploads what the build made and bundles
  * nothing), and its `main` and `assets.directory` must stay inside `dist`.
  */
-export function flattenedConfigProblems(configFile, distDir) {
+export function flattenedConfigProblems(configFile, distDir, scope = "staging") {
   const where = shown(dirname(distDir), configFile);
   if (!inside(distDir, configFile)) return [`${where} is outside dist: refused`];
-  if (!existsSync(configFile)) return [`${where} is missing: run the app's build:staging first`];
+  if (!existsSync(configFile)) return [`${where} is missing: run the app's build:${scope} first`];
   let config;
   try {
     config = JSON.parse(readFileSync(configFile, "utf8"));
@@ -155,11 +201,11 @@ export function flattenedConfigProblems(configFile, distDir) {
  * L51: the admin front's and the portal's deploy follows `apps/<app>/.wrangler/deploy/config.json`. Its `configPath`, and every auxiliary Worker's, must
  * stay inside `apps/<app>/dist`, and the config it names must pass `flattenedConfigProblems`.
  */
-export function redirectProblems(app, root = ROOT) {
+export function redirectProblems(app, root = ROOT, scope = "staging") {
   const appDir = join(root, "apps", app);
   const distDir = join(appDir, "dist");
   const file = join(appDir, REDIRECT);
-  if (!existsSync(file)) return [`apps/${app}/${REDIRECT} is missing: run the app's build:staging first`];
+  if (!existsSync(file)) return [`apps/${app}/${REDIRECT} is missing: run the app's build:${scope} first`];
   let redirect;
   try {
     redirect = JSON.parse(readFileSync(file, "utf8"));
@@ -168,7 +214,7 @@ export function redirectProblems(app, root = ROOT) {
   }
   if (typeof redirect?.configPath !== "string") return [`apps/${app}/${REDIRECT} names no configPath`];
   const base = dirname(file);
-  const problems = flattenedConfigProblems(resolveFrom(base, redirect.configPath), distDir);
+  const problems = flattenedConfigProblems(resolveFrom(base, redirect.configPath), distDir, scope);
   const aux = redirect.auxiliaryWorkers ?? [];
   if (!Array.isArray(aux)) problems.push(`apps/${app}/${REDIRECT}: auxiliaryWorkers is not a list`);
   else
@@ -178,55 +224,68 @@ export function redirectProblems(app, root = ROOT) {
   return problems;
 }
 
-/** L51: the config each staging deploy will use, checked (the admin Workers behind the front name theirs with `--config`). */
-export function configProblems(target, root = ROOT) {
-  const d = STAGING_DEPLOYS[target];
+/** L51: the config each deploy of `scope` will use, checked (the admin Workers behind the front name theirs with `--config`). */
+export function configProblems(target, root = ROOT, scope = "staging") {
+  const d = SCOPES[scope]?.deploys[target];
   if (!d) return [`unknown target ${target}`];
-  if (target === "admin" || target === "portal") return redirectProblems(target, root);
+  if (target === "admin" || target === "portal") return redirectProblems(target, root, scope);
   const at = d.args.indexOf("--config");
   if (at >= 0) {
     const appDir = join(root, "apps", d.app);
-    return flattenedConfigProblems(resolve(appDir, d.args[at + 1]), join(appDir, "dist"));
+    return flattenedConfigProblems(resolve(appDir, d.args[at + 1]), join(appDir, "dist"), scope);
   }
-  // jobs and the website deploy their checked-out wrangler.jsonc with `--env staging`: a redirect file there would point wrangler at a config the build
-  // job wrote, so none may exist.
+  // jobs and the website deploy their checked-out wrangler.jsonc with `--env staging` (or `--env production`): a redirect file there would point
+  // wrangler at a config the build job wrote, so none may exist.
   return existsSync(join(root, "apps", d.app, REDIRECT))
     ? [`apps/${d.app}/${REDIRECT} exists, but ${target} deploys its own wrangler.jsonc: refused`]
     : [];
 }
 
-/** Problems before a staging deploy of `target` (an empty list: deploy). */
-export function preDeployProblems(target, root = ROOT) {
-  const d = STAGING_DEPLOYS[target];
-  if (!d) return [`unknown target ${target} (known: ${Object.keys(STAGING_DEPLOYS).join(", ")})`];
+/** Problems before a deploy of `target` in `scope` (staging by default; an empty list: deploy). */
+export function preDeployProblems(target, root = ROOT, scope = "staging") {
+  const s = SCOPES[scope];
+  if (!s) return [`unknown scope ${scope} (known: ${Object.keys(SCOPES).join(", ")})`];
+  const d = s.deploys[target];
+  if (!d) return [`unknown target ${target} (known: ${Object.keys(s.deploys).join(", ")})`];
   if (!existsSync(join(root, WRANGLER)))
     return [`${WRANGLER} is missing: install @techaust/deploy-tools first`];
   if (target === "jobs" || target === "web") {
-    const bundle = join(root, "apps", target, PREBUNDLED[target]);
+    const file = s.prebundled[target];
+    const bundle = join(root, "apps", target, file);
     const problems = existsSync(bundle)
       ? []
-      : [`apps/${target}/${PREBUNDLED[target]} is missing: the build job pre-bundles it`];
-    if (target === "web")
+      : [`apps/${target}/${file} is missing: the build job pre-bundles it`];
+    if (scope === "production") problems.push(...s.guard(target));
+    else if (target === "web")
       problems.push(...problemsFor("web"), ...devVarsProblems("web", join(root, "apps", "web", "dist")));
     else problems.push(...devVarsProblems("jobs", join(root, "apps", "jobs", "dist-staging")));
-    problems.push(...configProblems(target, root));
+    problems.push(...configProblems(target, root, scope));
     return problems;
   }
-  return [...problemsFor(target), ...configProblems(target, root)];
+  return [...s.guard(target), ...configProblems(target, root, scope)];
 }
 
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   const [scope, target] = process.argv.slice(2);
-  if (scope !== "staging") {
-    console.error("deploy-worker: only `staging` deploys exist before Phase 7 (production comes at L3-L4).");
+  if (!SCOPES[scope]) {
+    console.error("usage: node scripts/deploy-worker.mjs staging|production <target>, or production --check");
     process.exit(2);
   }
-  const problems = preDeployProblems(target ?? "");
+  if (target === "--check") {
+    const all = DEPLOY_ORDER.flatMap((t) =>
+      preDeployProblems(t, ROOT, scope).map((p) => `deploy (${scope} ${t}): ${p}`),
+    );
+    for (const p of all) console.error(p);
+    if (all.length > 0) process.exit(1);
+    console.log(`deploy-worker: every ${scope} build passes its checks (${DEPLOY_ORDER.join(", ")})`);
+    process.exit(0);
+  }
+  const problems = preDeployProblems(target ?? "", ROOT, scope);
   if (problems.length > 0) {
-    for (const p of problems) console.error(`deploy (${target}): ${p}`);
+    for (const p of problems) console.error(`deploy (${scope} ${target}): ${p}`);
     process.exit(1);
   }
-  const d = STAGING_DEPLOYS[target];
+  const d = SCOPES[scope].deploys[target];
   const r = spawnSync(process.execPath, [join(ROOT, WRANGLER), "deploy", ...d.args], {
     cwd: join(ROOT, "apps", d.app),
     stdio: "inherit",

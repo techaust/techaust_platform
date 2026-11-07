@@ -50,6 +50,8 @@ const STAGING_FILES = [
   "apps/jobs/dist-staging/index.js",
   "apps/jobs/dist-staging/index.js.map",
 ];
+/** P7: the production artifact, the same layout with the production bundles (`dist-production`). */
+const PRODUCTION_FILES = STAGING_FILES.map((f) => f.replace("dist-staging", "dist-production"));
 const stagingArtifact = (extra: string[] = []) => {
   const dir = scratch("artifact");
   for (const f of [...STAGING_FILES, ...extra]) put(dir, f);
@@ -82,13 +84,28 @@ describe("place-build-artifact: a clean artifact (L57)", () => {
     expect(readFileSync(join(root, "scripts/deploy-worker.mjs"), "utf8")).toBe("trusted");
   });
 
-  it("places a production artifact (apps/web/dist's contents at its root) into apps/web/dist", () => {
+  it("places a production artifact (P7: the production builds and the dist-production bundles) at the same paths", () => {
     const root = checkout();
     const art = scratch("prod");
-    for (const f of ["index.html", "about/index.html", ".well-known/security.txt", "_headers"]) put(art, f);
-    expect(placeArtifact("production", art, root)).toEqual({ problems: [], copied: 4 });
-    expect(existsSync(join(root, "apps/web/dist/about/index.html"))).toBe(true);
+    for (const f of PRODUCTION_FILES) put(art, f);
+    expect(placeArtifact("production", art, root)).toEqual({ problems: [], copied: PRODUCTION_FILES.length });
     expect(existsSync(join(root, "apps/web/dist/.well-known/security.txt"))).toBe(true);
+    expect(existsSync(join(root, "apps/jobs/dist-production/index.js"))).toBe(true);
+    expect(readFileSync(join(root, "scripts/deploy-worker.mjs"), "utf8")).toBe("trusted");
+  });
+
+  it("refuses a staging bundle in a production artifact, and a production artifact without its jobs bundle", () => {
+    const art = scratch("prod");
+    for (const f of [...PRODUCTION_FILES, "apps/jobs/dist-staging/index.js"]) put(art, f);
+    expect(placementProblems("production", art, checkout())).toEqual([
+      "apps/jobs/dist-staging is outside the build outputs: refused",
+      "apps/jobs/dist-staging/index.js is outside the build outputs: refused",
+    ]);
+    const partial = scratch("prod");
+    for (const f of PRODUCTION_FILES.filter((f) => !f.startsWith("apps/jobs/"))) put(partial, f);
+    expect(placementProblems("production", partial, checkout())).toEqual([
+      "apps/jobs/dist-production is missing from the artifact",
+    ]);
   });
 });
 
@@ -190,23 +207,27 @@ describe("place-build-artifact: refusals place nothing (L57)", () => {
     const root = checkout();
     expect(placementProblems("production-ish", stagingArtifact(), root)[0]).toMatch(/unknown scope/);
     expect(placementProblems("staging", join(root, "nope"), root)[0]).toMatch(/is missing/);
-    expect(placementProblems("production", scratch("empty"), root)).toEqual(["the artifact holds no file"]);
+    expect(placementProblems("production", scratch("empty"), root)).toEqual(
+      PLACEMENTS.production.map((p: { from: string }) => `${p.from} is missing from the artifact`),
+    );
   });
 
   it("a production artifact holding a secrets file", () => {
     const root = checkout();
     const art = scratch("prod");
-    put(art, "index.html");
-    put(art, "assets/.dev.vars");
+    for (const f of [...PRODUCTION_FILES, "apps/web/dist/assets/.dev.vars"]) put(art, f);
     expect(placementProblems("production", art, root)).toEqual([
-      "assets/.dev.vars is a local secrets file (.env*, .dev.vars*): refused",
+      "apps/web/dist/assets/.dev.vars is a local secrets file (.env*, .dev.vars*): refused",
     ]);
   });
 });
 
 describe("PLACEMENTS", () => {
-  it("staging places every output at its own path; production puts the artifact's root in apps/web/dist", () => {
-    for (const p of PLACEMENTS.staging) expect(p.to).toBe(p.from);
-    expect(PLACEMENTS.production).toEqual([{ from: "", to: "apps/web/dist", type: "dir" }]);
+  it("staging and production place every output at its own path; production takes the dist-production bundles, never staging's", () => {
+    for (const p of [...PLACEMENTS.staging, ...PLACEMENTS.production]) expect(p.to).toBe(p.from);
+    expect(PLACEMENTS.production.map((p: { from: string }) => p.from)).toEqual(
+      PLACEMENTS.staging.map((p: { from: string }) => p.from.replace("dist-staging", "dist-production")),
+    );
+    expect(JSON.stringify(PLACEMENTS.production)).not.toContain("staging");
   });
 });
