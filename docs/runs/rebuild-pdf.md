@@ -1,6 +1,6 @@
-Status: review APPROVE; fixes done, re-check and final checks running
+Status: review and re-check APPROVE; final checks running
 Tier: A
-Usage: analyst (brief) claude-opus-5-5/high, skills none (the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder b1 claude-opus-5-5/high, skills none (same reason; model-audit flags it): 14 → 53 %; analyst early check claude-opus-5-5/high, skills `security-review` (failed to run: no `origin/HEAD`; checklist by hand): 53 → ~60 %; designer d1 claude-opus-5-5/high, skills `frontend-design:frontend-design` (model-audit records the attempt; "Unknown skill" in the cloud): ~60 → 71 %; builder b2 claude-opus-5-5/high, skills none (same reason; flagged): ~60 → 71 %; reviewer claude-opus-5-5/high, skills `code-review` (run against `origin/main...HEAD`), `security-review` (failed to start: no `origin/HEAD`; checklist by hand): 71 → ~81 %
+Usage: analyst (brief) claude-opus-5-5/high, skills none (the Cloudflare skills don't load in a cloud session): 5-h 1 → 14 %; builder b1 claude-opus-5-5/high, skills none (same reason; model-audit flags it): 14 → 53 %; analyst early check claude-opus-5-5/high, skills `security-review` (failed to run: no `origin/HEAD`; checklist by hand): 53 → ~60 %; designer d1 claude-opus-5-5/high, skills `frontend-design:frontend-design` (model-audit records the attempt; "Unknown skill" in the cloud): ~60 → 71 %; builder b2 claude-opus-5-5/high, skills none (same reason; flagged): ~60 → 71 %; reviewer (review) claude-opus-5-5/high, skills `code-review` (run against `origin/main...HEAD`), `security-review` (failed to start: no `origin/HEAD`; checklist by hand): 71 → ~81 %; reviewer (re-check) claude-opus-5-5/high, skills `code-review` (`security-review` failed to start, same reason): ~81 → ~83 %
 
 # Rebuild PDF (cloud session `rebuild-pdf`, branch `feat/rebuild-pdf`)
 
@@ -252,6 +252,23 @@ Checked clean: 0087/0088, the 12 ROUTES rows, step-up, the served-object rule in
 - **Kept as follow-ups** (reason: both are improvements on behaviour that is safe today): 7, a bell when a rebuilt object is lost and the original is served; 8, one shared stored-file check over core `rebuildVerdict` for admin and jobs.
 - No critical or high finding, so the rules ask no second review; the lead still asks the reviewer for a focused re-check of 02f36bc8 (Tier A, the lead's own code).
 
+## Re-check of 02f36bc8 (reviewer, claude-opus-5-5/high, 2026-11-07): **APPROVE**
+Fixes 1–6 and 8 confirmed (every `closeRequest` caller checked; the expiry in ms with the admin's 26 h outlasting jobs' 25 h; `repairsOfSql` orders by `n DESC`, so `history[0].n` is the maximum; the lost-race re-read is read-only). Ran jobs `pdf-rebuild.test.ts` 21 passed; admin `pdf-rebuild.test.ts` + `src/lib/pdf-repairs.test.ts` 52 passed. New findings:
+1. **Medium (a regression from fix 3):** the result commits before `DOCS.delete(new_key)`; if the delete throws, the redelivery returns "done" and the stray (an erased person's `-rN`, when redacted during the render) stays for good.
+2. **Low:** the expiry ran before the intact check, so a late message for an original that came back ended `expired` with "Open it to try again".
+3. **Low:** `closeRequest`'s bell wasn't tied to the result insert: a copy that lost the insert still rang "couldn't be rebuilt".
+4. **Low:** `pdf.rebuilds` sits in the second batch with the bell; a failure of that batch after the result commits loses the count.
+5. **Low:** two stale comments.
+
+### Lead's triage of the re-check (13115068)
+- 1: a redelivery of a closed request whose result made no file deletes the new key again (`sweepClosed`, in `processRebuild` and the dead letter); test: a delete that throws once, then the redelivery leaves no object.
+- 2: the intact check moved before the expiry (the expiry stays before the adoption); test: a late message with the original present reads `intact`, no bell.
+- 3: `closeRequest` rings only when it wrote the result.
+- 5: the comments.
+- 4: kept (a follow-up): it undercounts only after an infrastructure failure, like the bell before it.
+- Also found by the lead's full run: `apps/admin/worker/pdf-rebuild.ts` imported `uuidv7` from the core index (web `signin-config.test.ts`, the CPU-budget guard); now `@techaust/core/ids`.
+- jobs `pdf-rebuild.test.ts`: 23 passed.
+
 ## Lead decisions (for 13)
 - **2026-11-07, Rebuild PDF (L1–L12), Lead:** two append-only tables, `pdf_repairs` (request) and `pdf_repair_results` (completion), no UPDATE carve-out (L1); the guarded request INSERT is the 5-minute throttle, `pdf_asks` not used (L2); the served key is resolved at the R2 read by the original key (admin `servedPdf`, portal `streamPdf`, jobs `attachmentFor`), so reader SQL, `ATTACHMENT_KEY` and warm fixtures are unchanged (L3); rebuild status through separate GET routes, hot routes untouched (L4); a missing envelope is refused, never re-made from rows (L5); the check is the recorded SHA-256 only (the stored checksum first, then a hash); pre-2026-10-29 structural damage under a matching hash is out of scope (L6); keys `<original>-r<n>.pdf`, n ≤ 99 (L7); bells `pdf.rebuilt`, `pdf.refused`, `pdf.failed` with entity `pdf_repair` (L8); 07-ZV staff lines under the delegation (L9); a rebuild prints the same sealed content through today's layout (L10); Worker ownership as in the routes table (L11); a request without a result blocks another for 26 hours (L12). Run file: [rebuild-pdf](runs/rebuild-pdf.md).
 
@@ -263,6 +280,7 @@ Checked clean: 0087/0088, the 12 ROUTES rows, step-up, the served-object rule in
 ## Follow-ups (for 12)
 - Rebuild PDF review 7: a bell (once a day per key) when a rebuilt object is lost and the original is served instead (`servedObject` `fellBack`).
 - Rebuild PDF review 8: one shared stored-file check (head checksum, then hash) over core `rebuildVerdict`, used by admin `checkStored` and jobs `storedVerdict`.
+- Rebuild PDF re-check 4: `pdf.rebuilds` and the `pdf.rebuilt` bell are lost if their batch fails after the result commits (infrastructure failure only).
 - A void receipt has no download link in the admin's payment entry (`ReceiptCell`), though the download route serves it.
 - The local `apps/*/.dev.vars` is copied into `dist` by the admin and portal builds and stops them at `check-spa-headers` in a cloud session after `pnpm dev:secrets` (designer and reviewer both hit it).
 - A bulk rebuild after a whole-bucket loss (Browser Run's 10 minutes a day paces it).
