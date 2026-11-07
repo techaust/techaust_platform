@@ -104,6 +104,14 @@
     {
       "table": "acceptance_certificates",
       "sql": "SELECT * FROM acceptance_certificates"
+    },
+    {
+      "table": "pdf_repairs",
+      "sql": "SELECT * FROM pdf_repairs"
+    },
+    {
+      "table": "pdf_repair_results",
+      "sql": "SELECT * FROM pdf_repair_results"
     }
   ],
   "rollingOnly": [
