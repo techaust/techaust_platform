@@ -268,6 +268,62 @@ pnpm portal:link --email … [--client CODE] [--staging]       # 15-minute sign-
     - **Owner setup (done 2026-11-03):** the Stripe key has Refunds: Write and Disputes: Read; Razorpay sends `refund.*`; Stripe sends `refund.*`, `charge.refunded`, `charge.dispute.created/closed`.
 - **The full client portal (M7.1, #182; [run file](docs/runs/m7.1-portal.md)):** portal routes `home`, `projects` (milestones in keyset pages of 50), `shared` and `files` (downloads streamed from the portal's `FILES` binding, local and staging only), `receipts` (receipts and credit notes), `profile` (own name and phone; colleagues by name and title only, 08-C RB-45), `requests` (`client_requests`, five kinds, one open per kind, 5 a day; Owner-only close of data-rights kinds in the route, the SQL and trigger `client_requests_owner_close`) and `paid-notice` ("I've paid": a `payment_notices` row, never a payment; signed in or by the emailed link). Admin: `payment-notices.ts` (Notices tab; `POST /payments` with one `noticeId` whose document must be among the allocations; the Owner's proforma notice through the advance invoice, L25) and `client-requests.ts`. Bells go through jobs `portal.alert` (portal SQL never names a `staff_` table). Shared SQL in `packages/db/src/portal-shared.ts` and `sql-rules.ts` (`viewPayLiveSql`: a "View & pay" link ends 30 days after settlement, proformas included; a settled link's end never counts on `p:fail:`). Migrations 0071–0072 (trigger set `client_portal_triggers`). Copy 07-ZP (`APPROVED_07ZP`).
 - **Notifications and digest (M7.2, #184; [run file](docs/runs/m7.2-notifications.md)):** jobs `POST /ses` (`apps/jobs/src/hooks/ses.ts`: header token `SES_EVENTS_TOKEN` compared in constant time before the body; idempotent by the EventBridge envelope id in `email_events`; an unknown message id under 15 minutes old answers 409 so EventBridge retries) runs one batch from `packages/db/src/email-events.ts` that moves `email_log`, suppresses only our own named address on a hard bounce or complaint, sets `contacts.bounced_at` once, and rings the owners; Owner-only "Allow emails again" for a contact or an email row. Per-person switches in `staff_notification_prefs` (Your account › Notifications); the weekly digest to owners (`@techaust/db/digest`, the dashboard's own SQL) is the only non-transactional email, sent on the `techaust-marketing` configuration set with one-click unsubscribe headers to jobs `/u` (HMAC token `UNSUBSCRIBE_KEY` in the query string, the documented exception; GET changes nothing; Workers Logs redact the query string). `staff.notify` emails, `bells.sweep`, `job.failed` bells. The unfinished staff sign-in alert: 0075 `staff_signin_pending` keyed by the login challenge's `jti`, written only after a correct password, deleted in `startSession`'s batch, scanned hourly (one email per person per hour). Refund emails to clients (held behind `APPROVED_07ZQ`/`refundCopyGate` until the owner approves 07-ZQ), "Send receipt again" (refused for a payment refunded in full). Admin Email log (`/emails`, filters indexed by 0076). Migrations 0073–0076. Copy: staff lines unmarked (lead's delegation); client lines 07-ZQ.
+- **Reports and dashboard v2 (M7.3, #186; [run file](docs/runs/m7.3-reports.md)):**
+  - **Revenue and collections** by month, category, kind and client: `report-revenue.ts` on the invoices Worker.
+  - **Ageing and delivery reports:** ageing per client, pipeline and care plan hours, in `report-delivery.ts` on the API Worker.
+  - **Dashboard v2:** the finance tiles (`dashboard.ts`, `dashboard-finance.tsx`) and document search.
+  - **Paging and exports:** keyset pages of 50; every export needs step-up and writes one `report.export` audit row per page.
+  - **Rows read** are pinned by `reports-stress.test.ts` at 2,000 clients and documents.
+  - **Migration:** 0077, indexes only.
+  - **Screens:** `apps/admin/src/routes/reports/*`.
+- **Data protection (M7.4, #187; [run file](docs/runs/m7.4-data-protection.md)):**
+  - **Requests and the reply clock:** data requests are logged by staff or sent from the portal (`client-requests.ts`). The reply clock ends at the end of the IST day of the earlier of +30 days and +1 calendar month (core `dsr.ts`, 08-C RB-47). The clock is written at insert, never by a trigger. Only the Owner closes the data-rights kinds (route, SQL and trigger).
+  - **Legal hold:** a hold on a client, contact or lead (`legal_holds` history, mirrored by triggers) blocks erase, anonymise and delete. A hold trigger maps to 409 `legal_hold`.
+  - **Retention:**
+    - one matrix in `packages/db/src/retention.ts`, with one `dueWhere` per family shared by the dry run and live, and `SWITCH_LIVE_SQL` inside every live statement;
+    - floors of 366 days, with `CLOCK_SKEW_MARGIN_MS` of 1 hour;
+    - real deletion is the Owner's switch in the append-only `retention_switches`, allowed only after a dry run from the last 7 days;
+    - R2 deletions go through the `r2_deletions` outbox and the sweeps;
+    - after 13 months the audit log loses `ip`, `user_agent` and the alert summary keys `ua`, `city` and `country` (RB-48).
+  - **Erasure:**
+    - only the keyed hash `HMAC-SHA256(ERASURE_HASH_KEY, lower-cased address)` is kept, as `h:` rows in `email_suppressions`, `erased_hash` on contacts and leads, and `subject_hash` on `consent_receipts` (RB-46);
+    - the same key must be on the admin API Worker (its only secret) and on jobs, and a missing key fails closed;
+    - leads can be exported and erased, and consent withdrawn;
+    - "anonymise in parts" for a person on more than 10 offers;
+    - an anonymised client's stored PDFs and payment files go to the Owner and Accountant only (`storedPdfRefusal`).
+  - **Backups:** `BACKUP_SCOPE` defines the finance-only monthly copy.
+  - **D1 counts trigger writes:** after any statement on a table with AFTER triggers, check `changes() > 0`, never `= 1`.
+  - **Migrations:** 0078 (create table, add column and index only) and 0079 (the `data_protection_triggers` set). Copy is 07-ZR: staff lines by the lead; client lines C1–C7 and the Rule 9 block await the owner.
+- **Hardening (M7.5, #189; [run file](docs/runs/m7.5-hardening.md)):**
+  - **Security** (ASVS 5.0.0 L2 and the OWASP Top 10:2025 re-map in docs/08 §3.6, with every recorded deviation):
+    - **Rate limits:** In-Worker Rate Limiting bindings on sign-in, invites, magic links, `/t/*` and per session (admin 240 a minute, portal 120), checked before any D1 work and before Turnstile. Each purpose and scope has its own `namespace_id`, required by `check-worker-config.mjs`. A limiter error lets the request through (recorded).
+    - **Cross-site GETs:** GET/HEAD under `/api/` is refused when `Sec-Fetch-Site` isn't `same-origin`.
+    - **Login challenges are single use:** a signed `iat`, `last_login_at = MAX(now, iat)`, and a right code on a spent challenge answers `challenge_used` without counting.
+    - **TOTP seals:** versioned `v1.`, with `TOTP_ENC_KEY_PREVIOUS` re-sealed at the next sign-in (the first rotation needs break-glass; incident.md).
+    - **Keys:** `acct:` keys are HMAC under `SALT_PEPPER`.
+    - **Break-glass:** only-owner guards, an audit read-back, and the clean-up of a cut-short run.
+    - **Headers:** a set-if-absent API CSP (never the `secureHeaders` CSP option, which would overwrite `sandbox`), and one `downloadHeaders()` for every download.
+    - **CSV:** one defuser in core.
+  - **D1 budget:**
+    - the shared counting env (`packages/testing/src/budget.ts`) fails any test invocation over 45 statements in a batch or 45 calls plus subrequests;
+    - its EXPLAIN sweep fails a bare `SCAN` unless allow-listed with a reason;
+    - Cloudflare counts a `db.batch()` as one query toward 50, and subrequests are 50 per invocation.
+  - **Measurement:**
+    - `scripts/route-inventory.mjs` writes `.logs/route-inventory.json`, with a parity test per app;
+    - `scripts/bench-routes.mjs` refuses every host except the staging ones;
+    - `pnpm drill:verify` takes `--import` and `--persist-to`;
+    - `f: 1` is logged per queue kind and cron branch, plus a web request line;
+    - the portal has a start-up dry run (`apps/portal/worker/warm-routes.ts`).
+  - **Usage:**
+    - `usage.daily` runs at the 06:00 IST tick, makes one GraphQL Analytics call, writes `stats_daily` `cf.*`, and rings owners' bells at 50 % and 80 % and when the token is missing or refused;
+    - the secret `CF_ANALYTICS_TOKEN` is in jobs staging `secrets.required`;
+    - the dashboard usage tile is for Owner and Accountant (`usage.read`).
+  - **Deploys:** the build job holds no secret. The deploy job installs only wrangler (`tools/deploy`, `@techaust/deploy-tools`). The artifact is downloaded to `runner.temp` and placed by `scripts/place-build-artifact.mjs`, which refuses anything outside the outputs, any `.env`/`.dev.vars` file and symlinks. `scripts/deploy-worker.mjs` (`preDeployProblems`) refuses a config with `build` or an unknown key. No pnpm cache in any job.
+  - **Other:**
+    - web `/api/health`;
+    - migration 0080 (indexes only);
+    - runbooks `incident.md`, `restore.md`, `drill-log.md` and `budget-audit.md`;
+    - secret scripts `tools/set-random-secret.ps1`, `scripts/set-ses-keys.ps1` and `scripts/set-cf-analytics-token.ps1`.
 - **Work of 2026-11-01 (PRs #137–#149; [run file](docs/runs/cloud-parallel-2026-11-01.md)):**
   - **Deed of assignment (T11, #148):** `deeds` (migrations 0061–0062, `deed_triggers`; one open deed per project by a partial unique index, frozen once final, delete only an anonymised client's draft or cancelled deeds). A draft is prepared by `deedDraftStatements` (`packages/db/src/deeds.ts`) appended after the recompute, guarded on the audit row, in every batch that can make a project eligible (completion, payments, credit use, advance, credit-note issue, void): the accepted total minus credit notes reached with Σ settled > 0, counted once (core `@techaust/core/deeds` and its SQL twin); `packages/core/test/deed-hooks.test.ts` fails any `recomputeStatement(` call site neither hooked nor allow-listed. Only "Check again" (Owner) redrafts after a cancel. Finalise (Owner, step-up) numbers `TH/DA/{FY}/{N}` and seals the 07-ZE text; jobs `pdf.deed` renders write-once; the signed upload goes write-once to `DOCS`; the portal shows signed deeds and `deed.signed` emails only contacts with portal access **and** "can see finance". Copy 07-ZJ.
   - **Style guard (#140):** `scripts/css-collisions.mjs` (in `pnpm check` and CI) fails a class that is the subject of a base rule in two stylesheets of one app; route stylesheets stay loaded for the whole SPA session, so a duplicate leaks. The shared switch's chosen half carries a 2 px ink bar.
