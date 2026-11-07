@@ -270,7 +270,8 @@ describe("0069 and 0070: no rebuild, the pinned lists, the recreated set [run fi
       ...REFUND_NEW_0070,
     ]);
     expect(text).not.toMatch(/DROP TABLE|__new_|INDEXED BY/);
-    expect(REVIEW_KINDS_0070).toEqual(REVIEW_KINDS);
+    // M6–M7 audit AU1: 0082 added `refund_reversed` after 0070's list (refund-reversal.test.ts pins 0082).
+    expect([...REVIEW_KINDS_0070, "refund_reversed"]).toEqual(REVIEW_KINDS);
     expect(REFUND_PROVIDERS_0070).toEqual(REFUND_PROVIDERS);
     expect(REFUND_ORIGINS_0070).toEqual(REFUND_ORIGINS);
     expect(REFUND_STATUSES_0070).toEqual(REFUND_STATUSES);

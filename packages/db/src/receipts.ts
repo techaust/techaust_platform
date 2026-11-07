@@ -146,7 +146,14 @@ export const RECEIPTS_DUE_SQL = `SELECT p.id FROM payments p INDEXED BY payments
  */
 export function receiptFailureStatements(
   db: D1Database,
-  a: { paymentId: string; reason: string; numberingVersion: number | null; now: number; bellTitle: string; link: string },
+  a: {
+    paymentId: string;
+    reason: string;
+    numberingVersion: number | null;
+    now: number;
+    bellTitle: string;
+    link: string;
+  },
 ): D1PreparedStatement[] {
   return [
     db

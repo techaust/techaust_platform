@@ -57,7 +57,8 @@ type PayRow = {
  */
 export const RECEIPT_SERIES_FULL_BELL =
   "Receipts can't be numbered: the receipt series is full for this year. Widen its format in Settings › Numbering.";
-export const RECEIPT_BLOCKED_BELL = "A payment's receipt couldn't be issued after 3 tries. Open the payment to check it.";
+export const RECEIPT_BLOCKED_BELL =
+  "A payment's receipt couldn't be issued after 3 tries. Open the payment to check it.";
 
 const numberOf = async (db: D1Database, receiptId: string) =>
   (

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "59aa0c86-7d49-47bb-83f9-ebc3097dfd82",
+  "id": "a8eff6c6-64ee-4c12-b92a-b3308769770d",
   "prevId": "be829f25-531d-4610-9063-1040930a4113",
   "tables": {
     "catalogue_items": {
@@ -9838,7 +9838,8 @@
             "received_on",
             "id"
           ],
-          "isUnique": false
+          "isUnique": false,
+          "where": "\"payments\".\"status\" in ('rejected', 'withdrawn')"
         },
         "payments_reference": {
           "name": "payments_reference",

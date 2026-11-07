@@ -77,8 +77,8 @@ import {
   NOT_TDS,
   PAYMENT_ADVANCE_BACKED,
   PAYMENT_CLOSED,
-  PAYMENT_NOT_CONFIRMED,
   PAYMENT_LINKED,
+  PAYMENT_NOT_CONFIRMED,
   PAYMENT_NOT_PENDING,
   PROFORMA_ASK_WHOLE,
   PROOF_ALREADY_SET,
@@ -397,6 +397,8 @@ export function paymentListSql(f: {
     // M6–M7 audit AU2 (B0 3): the rejected and withdrawn lists read one range of `payments_status_received (status, received_on, id)` (0081), newest received
     // first, keyset `(received_on, id)`, no longer a walk of the table by rowid.
     from = "payments p INDEXED BY payments_status_received";
+    // The partial index's own WHERE, as a literal (the bound `p.status = ?` below stays as well).
+    where.push("p.status IN ('rejected', 'withdrawn')");
     key = "received_on";
   }
   if (f.status !== undefined) where.push(`p.status = ${next()}`);

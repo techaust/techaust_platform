@@ -1,6 +1,6 @@
 {
-  "id": "91b15e74-daa1-4df6-a6c2-8a337977b7a0",
-  "prevId": "59aa0c86-7d49-47bb-83f9-ebc3097dfd82",
+  "id": "3a8d95fa-07d9-4d8f-92f6-9bf5c0e9501d",
+  "prevId": "a8eff6c6-64ee-4c12-b92a-b3308769770d",
   "version": "6",
   "dialect": "sqlite",
   "tables": {
@@ -9838,6 +9838,7 @@
             "received_on",
             "id"
           ],
+          "where": "\"payments\".\"status\" in ('rejected', 'withdrawn')",
           "isUnique": false
         },
         "payments_reference": {

@@ -99,7 +99,10 @@ export async function processRefundEvent(
   // returns it up to 30 days later). A manual refund, a lost dispute or one already reversed has nothing to re-fetch.
   if (
     ours?.status === "succeeded" &&
-    (ours.provider === "manual" || ours.origin === "chargeback" || ours.reversed_at !== null || ours.provider_refund_id === null)
+    (ours.provider === "manual" ||
+      ours.origin === "chargeback" ||
+      ours.reversed_at !== null ||
+      ours.provider_refund_id === null)
   )
     return quiet("processed", "refund_settled");
   if (ours) {
@@ -125,7 +128,11 @@ export async function processRefundEvent(
         actor: "webhook",
         webhookEventId: row.id,
         after: (gs) => [
-          webhookEventMoveStatement(db, { id: row.id, status: "needs_review", outcome: "refund_reversed", now }, gs),
+          webhookEventMoveStatement(
+            db,
+            { id: row.id, status: "needs_review", outcome: "refund_reversed", now },
+            gs,
+          ),
         ],
       });
       if (reversed === "reversed") return { result: "needs_review", refundReversed: ours.id };

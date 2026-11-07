@@ -233,7 +233,13 @@ export function refundMoveStatement(
  */
 export const refundReverseStatement = (
   db: D1Database,
-  a: { refundId: string; providerRefundId: string; failureCode: string; providerStatus: string | null; now: number },
+  a: {
+    refundId: string;
+    providerRefundId: string;
+    failureCode: string;
+    providerStatus: string | null;
+    now: number;
+  },
 ): D1PreparedStatement =>
   db
     .prepare(

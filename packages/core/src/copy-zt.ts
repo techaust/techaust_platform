@@ -11,14 +11,17 @@ const zt = (line: string): string => (APPROVED_07ZT ? line : `[Placeholder] ${li
 /** `refund.reversed` (C1 to C3): the refund came back to us, so the money is the client's credit again. */
 export const REFUND_REVERSED_COPY = {
   /** C1 */
-  subject: (amount: string, documentNumber: string) => zt(`Your refund of ${amount} for ${documentNumber} came back to us`),
+  subject: (amount: string, documentNumber: string) =>
+    zt(`Your refund of ${amount} for ${documentNumber} came back to us`),
   /** C2 */
   body: (firstName: string, amount: string, documentNumber: string) =>
     zt(
       `Hi ${firstName}, the refund of ${amount} for ${documentNumber} was returned to us by the bank or card network, so it didn't reach you. The amount is held as credit on your account.`,
     ),
   /** C3 */
-  next: zt("We'll contact you to agree how to send it again. Reply to this email if your bank details have changed."),
+  next: zt(
+    "We'll contact you to agree how to send it again. Reply to this email if your bank details have changed.",
+  ),
   /** The existing portal button label (07-ZQ C4). */
   button: "View invoice",
 } as const;

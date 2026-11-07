@@ -174,7 +174,10 @@ export const payments = sqliteTable(
     // M7.3 (C8, ADM-PAY-01; CREATE INDEX only): "All payments" (every status) by the day the money arrived, newest first (keyset `(received_on, id)`).
     index("payments_received").on(t.receivedOn, t.id),
     // M6–M7 audit AU2 (B0 3; CREATE INDEX only, 0081): the rejected and withdrawn lists by the day the money arrived, newest first (keyset `(received_on, id)`).
-    index("payments_status_received").on(t.status, t.receivedOn, t.id),
+    // Partial, so no other query's plan can pick it (only a query stating its WHERE as a literal may use it).
+    index("payments_status_received")
+      .on(t.status, t.receivedOn, t.id)
+      .where(sql`${t.status} in ('rejected', 'withdrawn')`),
     // The duplicate-reference check (L12).
     index("payments_reference").on(t.referenceNorm).where(sql`${t.referenceNorm} is not null`),
     uniqueIndex("payments_advance_receipt")

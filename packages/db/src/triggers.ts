@@ -1932,8 +1932,14 @@ export function refundTriggerStatements(): string[] {
 }
 
 /** The triggers 0082 drops and creates again: from `gatewayTriggerParts("0082")` (the review kinds), then from `refundTriggerParts("0082")`. */
-export const AUDIT_MONEY_RECREATED_GATEWAY_0082 = ["review_items_values_insert", "review_items_values_update"] as const;
-export const AUDIT_MONEY_RECREATED_REFUND_0082 = ["payment_refunds_bounds", "payment_refunds_status_flow"] as const;
+export const AUDIT_MONEY_RECREATED_GATEWAY_0082 = [
+  "review_items_values_insert",
+  "review_items_values_update",
+] as const;
+export const AUDIT_MONEY_RECREATED_REFUND_0082 = [
+  "payment_refunds_bounds",
+  "payment_refunds_status_flow",
+] as const;
 
 /**
  * M6–M7 audit of the money core (run file docs/runs/full-audit-m6-m7.md B0, lead's triage AU1 and AU3; the trigger set `audit_money_triggers`, 0082). No table is

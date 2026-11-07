@@ -324,11 +324,16 @@ export async function reverseIfFailed(
   row: RefundRow,
   g: GatewayRefund,
   now: number,
-  o: { actor?: "system" | "webhook"; webhookEventId?: string | null; after?: (gs: GuardSql) => D1PreparedStatement[] } = {},
+  o: {
+    actor?: "system" | "webhook";
+    webhookEventId?: string | null;
+    after?: (gs: GuardSql) => D1PreparedStatement[];
+  } = {},
 ): Promise<"reversed" | "stands" | "already"> {
   const code = reversalOf(g);
   if (code === null) return "stands";
-  if (row.status !== "succeeded" || row.reversed_at !== null || row.provider_refund_id === null) return "already";
+  if (row.status !== "succeeded" || row.reversed_at !== null || row.provider_refund_id === null)
+    return "already";
   const db = env.DB;
   const reviewId = uuidv7();
   const moved = await mutateSystem(env, {
@@ -343,7 +348,13 @@ export async function reverseIfFailed(
     action: "refund.status",
     entityType: "refund",
     entityId: row.id,
-    summary: { refundId: row.id, paymentId: row.payment_id, status: "failed", reversed: true, code: code.slice(0, 64) },
+    summary: {
+      refundId: row.id,
+      paymentId: row.payment_id,
+      status: "failed",
+      reversed: true,
+      code: code.slice(0, 64),
+    },
     side: (gs) => [
       ...refundReview(db, row, "refund_reversed", reviewId, now, gs, {
         webhookEventId: o.webhookEventId ?? null,

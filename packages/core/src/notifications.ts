@@ -165,5 +165,8 @@ export function parseRefundReversed(body: unknown): RefundReversedMessage | null
   if (typeof o.refundId !== "string" || o.refundId.length < 1 || o.refundId.length > 64) return null;
   return { kind: "refund.reversed", refundId: o.refundId };
 }
-export const refundReversed = (refundId: string): RefundReversedMessage => ({ kind: "refund.reversed", refundId });
+export const refundReversed = (refundId: string): RefundReversedMessage => ({
+  kind: "refund.reversed",
+  refundId,
+});
 export const isRefundReversedKind = (body: unknown): boolean => objOf(body)?.kind === "refund.reversed";
