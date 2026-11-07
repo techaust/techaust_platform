@@ -12,7 +12,8 @@
 //   9. one batch: the `rebuilt` result and the statistics; when the subject was redacted or anonymised meanwhile the result is refused by its guard, the object
 //      just stored is deleted and the result is `skipped` (the T7 pattern);
 //  10. the owners' `pdf.rebuilt` bell.
-// An object at the new key never outlives a request closed without a `rebuilt` result (early check change 3): every other result deletes it first (a
+// An object at the new key never outlives a request closed without a `rebuilt` result (early check change 3): every other result deletes it right after the
+// result is written, and a redelivery of a closed request deletes it again (a
 // redacted offer's stray `-rN` would otherwise survive erasure, since the redaction outbox queues only rebuilt keys); the dead letter adopts it while the
 // subject may still be rebuilt.
 // The frozen row and the old object are never touched. Bells name the document by its number (else "Untitled"); copy 07-ZV lines 16 to 18 (approved 2026-11-07).
@@ -223,14 +224,21 @@ export async function closeRequest(
   now: number,
   bellStmt?: D1PreparedStatement,
 ): Promise<boolean> {
-  const [r] = await env.DB.batch([
-    env.DB.prepare(RESULT_INSERT_SQL).bind(req.id, outcome, code, null, null, now),
-    ...(bellStmt ? [bellStmt] : []),
-  ]);
-  const written = (r?.meta.changes ?? 0) > 0;
+  const r = await env.DB.prepare(RESULT_INSERT_SQL).bind(req.id, outcome, code, null, null, now).run();
+  const written = (r.meta.changes ?? 0) > 0;
   const other = written ? null : await env.DB.prepare(REPAIR_READ_SQL).bind(req.id).first<RepairReadRow>();
   if (written || other?.done_outcome !== "rebuilt") await env.DOCS.delete(req.new_key);
+  // Only the run that wrote the result rings (re-check finding 3): a copy that lost the insert never rings "couldn't be rebuilt" beside a winner's bell.
+  if (written && bellStmt) await env.DB.batch([bellStmt]);
   return written;
+}
+
+/**
+ * A redelivery of a request that already has its result. When that result made no file, the new key is deleted again: a delete that failed after the result
+ * committed (a transient R2 error) is retried here, so an erased person's stray `-rN` never stays (re-check finding 1; R2's delete of a missing key is a no-op).
+ */
+async function sweepClosed(env: Env, req: Pick<RepairReadRow, "new_key" | "done_outcome">): Promise<void> {
+  if (req.done_outcome !== null && req.done_outcome !== "rebuilt") await env.DOCS.delete(req.new_key);
 }
 
 /** The `rebuilt` result with the statistics (`renders` when the browser did the work); false when its guard refused it (redacted or anonymised meanwhile). */
@@ -297,13 +305,27 @@ export async function processRebuild(
     return "skipped";
   }
   if (req.done_outcome !== null) {
+    await sweepClosed(env, req);
     logEvent("pdf.rebuild_skipped", { why: "done" });
     return "done";
   }
   const subject = await loadSubject(env, req, htmlOf);
+  if (!subject.found) {
+    await closeRequest(env, req, "skipped", subject.code, now);
+    logEvent("pdf.rebuild_skipped", { why: subject.code, kind: req.subject_kind });
+    return "skipped";
+  }
+  // The old file came back (or was never lost): nothing is rebuilt. Before the expiry below, so a late message for an original that came back reads intact
+  // (re-check finding 2); it needs no render.
+  if ((await storedVerdict(env.DOCS, req.old_key, req.old_sha256)) === "intact") {
+    await closeRequest(env, req, "intact", "original_present", now);
+    logEvent("pdf.rebuild_intact", { kind: req.subject_kind });
+    return "intact";
+  }
   // A request the admin no longer counts as open (L12: 26 hours; a quota delay can carry a message past it) is never rendered: the Owner may already have
   // asked again, and two renders would spend the day's Browser Run time twice (review finding 4). An hour's margin keeps this side first.
-  if (subject.found && now - req.requested_at >= REBUILD_OPEN_MS - REBUILD_EXPIRY_MARGIN_MS) {
+  // Before the adoption below: past the window a late object could race a newer request's served key.
+  if (now - req.requested_at >= REBUILD_OPEN_MS - REBUILD_EXPIRY_MARGIN_MS) {
     await closeRequest(
       env,
       req,
@@ -314,17 +336,6 @@ export async function processRebuild(
     );
     logEvent("pdf.rebuild_failed", { stage: "rebuild", code: "expired", kind: req.subject_kind });
     return "failed";
-  }
-  if (!subject.found) {
-    await closeRequest(env, req, "skipped", subject.code, now);
-    logEvent("pdf.rebuild_skipped", { why: subject.code, kind: req.subject_kind });
-    return "skipped";
-  }
-  // The old file came back (or was never lost): nothing is rebuilt.
-  if ((await storedVerdict(env.DOCS, req.old_key, req.old_sha256)) === "intact") {
-    await closeRequest(env, req, "intact", "original_present", now);
-    logEvent("pdf.rebuild_intact", { kind: req.subject_kind });
-    return "intact";
   }
   // A redelivery after the put: the file stored at the new key is adopted, never rendered twice.
   const already = await env.DOCS.get(req.new_key);
@@ -402,7 +413,11 @@ export async function processRebuildDeadLetter(
 ): Promise<"adopted" | "failed" | "done"> {
   const req = await env.DB.prepare(REPAIR_READ_SQL).bind(msg.repairId).first<RepairReadRow>();
   logEvent("pdf.rebuild_dead_letter", { found: req !== null, done: req?.done_outcome != null });
-  if (!req || req.done_outcome !== null) return "done";
+  if (!req) return "done";
+  if (req.done_outcome !== null) {
+    await sweepClosed(env, req);
+    return "done";
+  }
   const subject = await loadSubject(env, req, renderDocumentHtml);
   if (subject.found) {
     const already = await env.DOCS.get(req.new_key);

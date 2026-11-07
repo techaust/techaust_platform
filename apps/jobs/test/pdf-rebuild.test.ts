@@ -596,6 +596,42 @@ describe("refusals, skips and the queue", () => {
     expect(await realEnv.DOCS.head(strayKey)).toBeNull();
   });
 
+  it("re-check finding 1: a delete that fails after the result committed is retried by the redelivery, so no stray stays", async () => {
+    const s = await renderedInvoice();
+    const repairId = await request("invoice", s.id, s.key);
+    const newKey = repairKey(s.key, 1);
+    // a stray at the new key (a put whose result batch never ran), and the original still intact
+    await putWithSha(realEnv.DOCS, newKey, REBUILT_PDF);
+    const env = mkEnv();
+    const real = realEnv.DOCS;
+    let fail = true;
+    (env as unknown as { DOCS: R2Bucket }).DOCS = {
+      head: (k: string) => real.head(k),
+      get: (k: string) => real.get(k),
+      put: (...a: Parameters<R2Bucket["put"]>) => real.put(...a),
+      delete: async (k: string) => {
+        if (fail) {
+          fail = false;
+          throw new Error("r2 down");
+        }
+        return real.delete(k);
+      },
+    } as unknown as R2Bucket;
+    await expect(processRebuild(env, msg(repairId), NOW, clock)).rejects.toThrow("r2 down");
+    expect(await resultOf(repairId)).toMatchObject({ outcome: "intact", code: "original_present" });
+    expect(await realEnv.DOCS.head(newKey)).not.toBeNull();
+    expect(await processRebuild(env, msg(repairId), NOW, clock)).toBe("done");
+    expect(await realEnv.DOCS.head(newKey)).toBeNull();
+  });
+
+  it("re-check finding 2: a late message whose original came back reads intact, never expired", async () => {
+    const s = await renderedInvoice();
+    const repairId = await request("invoice", s.id, s.key, NOW - REBUILD_OPEN_MS);
+    expect(await processRebuild(mkEnv(), msg(repairId, 3), NOW, clock)).toBe("intact");
+    expect(await resultOf(repairId)).toMatchObject({ outcome: "intact", code: "original_present" });
+    expect((await bellsOf(repairId)).results).toHaveLength(0);
+  });
+
   it("review finding 4: a request the admin no longer counts as open (a quota delay past 25 hours) ends failed / expired without a render", async () => {
     const s = await renderedInvoice();
     await realEnv.DOCS.delete(s.key);

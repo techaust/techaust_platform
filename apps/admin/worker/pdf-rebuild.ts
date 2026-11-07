@@ -4,9 +4,9 @@
 // certificates, deeds) and the invoices Worker (invoices and notes, the supplier copy, receipts):
 //   POST <base>/rebuild   the check (cheapest first), then ONE `mutate` batch (the guarded request, its audit row), then the `pdf.rebuild` message (awaited);
 //   GET  <base>/rebuilds  the state and the newest 10 requests (separate from the downloads, so no hot route's SQL changes: L4).
-// Staff-facing messages are 07-ZV lines 6 to 10 and 19, word for word (approved 2026-11-07).
+// Staff-facing messages are 07-ZV lines 6 to 10, 19 and 24, word for word (approved 2026-11-07).
 
-import { uuidv7 } from "@techaust/core";
+import { uuidv7 } from "@techaust/core/ids";
 import { todayIst } from "@techaust/core/offers";
 import type { PdfRebuildMessage } from "@techaust/core/pdf-jobs";
 import {
