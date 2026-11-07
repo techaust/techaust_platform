@@ -670,8 +670,8 @@ const TURNSTILE_TEST_KEY = /^[123]x0{20}/;
  * entrypoints pointing at the production Workers, Browser Run, the crons, the rate limits' names and limits (their ids: rateLimitProblems), the
  * `secrets.required` set and the vars key set (minus STAGING_ONLY_VARS); SAME_AS_STAGING_VARS keep staging's value and `wantVars` holds the production
  * hosts. Nothing in production may name staging (a `techaust-staging*` resource, a `-staging` Worker, staging's database id), workers.dev, localhost or
- * an `http://` URL. The Turnstile site key is empty (the lead fills it in; the readiness check refuses an empty one) or a real key that is neither
- * staging's nor a test key, and its hostnames are techaust.com hosts. Empty = passes.
+ * an `http://` URL. The Turnstile site key is the production widget's (set by the lead, 2026-11-07): never empty, staging's or a test key; its
+ * hostnames are techaust.com hosts. Empty = passes.
  */
 export function productionMirrorProblems(config, wantVars = {}) {
   const P = "env.production";
@@ -754,10 +754,12 @@ export function productionMirrorProblems(config, wantVars = {}) {
     const key = pv.TURNSTILE_SITE_KEY;
     if (
       typeof key !== "string" ||
-      (key !== "" && (key === sv.TURNSTILE_SITE_KEY || TURNSTILE_TEST_KEY.test(key)))
+      key === "" ||
+      key === sv.TURNSTILE_SITE_KEY ||
+      TURNSTILE_TEST_KEY.test(key)
     )
       problems.push(
-        `${P}: TURNSTILE_SITE_KEY must be empty or the production widget's key (never staging's or a test key)`,
+        `${P}: TURNSTILE_SITE_KEY must be the production widget's key (never empty, staging's or a test key)`,
       );
   }
   if ("TURNSTILE_HOSTNAMES" in pv)

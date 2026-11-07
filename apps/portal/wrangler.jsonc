@@ -137,13 +137,14 @@
       "name": "techaust-platform-portal",
       // No workers.dev and no routes or custom domain (P7, launch 2026-11-08): the lead attaches portal.techaust.com by hand. P7-A
       // (docs/runs/p7-launch.md): every binding of env.staging, naming the production resources (scripts/check-worker-config.mjs).
-      // TURNSTILE_SITE_KEY stays empty until the lead sets the production widget's public key (the readiness check refuses an empty one).
+      // TURNSTILE_SITE_KEY: the public key of the widget "techaust-prod-signin" (hostnames admin.techaust.com and portal.techaust.com; lead,
+      // 2026-11-07), shared with the admin's production host. Its secret is the Worker secret TURNSTILE_SECRET.
       "workers_dev": false,
       "preview_urls": false,
       "vars": {
         "ENVIRONMENT": "production",
         "PAYMENTS_LIVE_ALLOWED": "false",
-        "TURNSTILE_SITE_KEY": "",
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAF3fIdhlCqOre8yu",
         "TURNSTILE_HOSTNAMES": "portal.techaust.com",
         "WEBSITE_ORIGIN": "https://techaust.com"
       },

@@ -1024,10 +1024,19 @@ describe("P7-A (launch 2026-11-08): production mirrors staging binding for bindi
     ]);
   });
 
-  it("the Turnstile key is empty or the production widget's, never staging's or a test key; its hosts are techaust.com hosts only", () => {
+  it("the Turnstile key is the production widget's, never empty, staging's or a test key; its hosts are techaust.com hosts only", () => {
     const admin = read("admin/wrangler.jsonc");
+    const web = read("web/wrangler.jsonc");
+    // the lead's production widgets (2026-11-07): sign-in for admin and portal, forms for the website
+    expect(admin.env.production.vars.TURNSTILE_SITE_KEY).toBe("0x4AAAAAAF3fIdhlCqOre8yu");
+    expect(read("portal/wrangler.jsonc").env.production.vars.TURNSTILE_SITE_KEY).toBe(
+      "0x4AAAAAAF3fIdhlCqOre8yu",
+    );
+    expect(web.env.production.vars.TURNSTILE_SITE_KEY).toBe("0x4AAAAAAF3fDpktArFGL6Mv");
+    expect(web.env.production.vars.TURNSTILE_HOSTNAMES).toBe("techaust.com");
     const want = guard.PRODUCTION_VARS.admin;
     for (const key of [
+      "",
       admin.env.staging.vars.TURNSTILE_SITE_KEY,
       "1x00000000000000000000AA",
       "3x00000000000000000000FF",
@@ -1035,12 +1044,9 @@ describe("P7-A (launch 2026-11-08): production mirrors staging binding for bindi
       const c = structuredClone(admin);
       c.env.production.vars.TURNSTILE_SITE_KEY = key;
       expect(guard.productionMirrorProblems(c, want), key).toEqual([
-        "env.production: TURNSTILE_SITE_KEY must be empty or the production widget's key (never staging's or a test key)",
+        "env.production: TURNSTILE_SITE_KEY must be the production widget's key (never empty, staging's or a test key)",
       ]);
     }
-    const real = structuredClone(admin);
-    real.env.production.vars.TURNSTILE_SITE_KEY = "0x4AAAAAAProductionKeyXyz";
-    expect(guard.productionMirrorProblems(real, want)).toEqual([]);
     const local = structuredClone(admin);
     local.env.production.vars.TURNSTILE_HOSTNAMES = "admin.techaust.com,localhost";
     expect(guard.productionMirrorProblems(local, want)).toEqual([

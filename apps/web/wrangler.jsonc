@@ -80,11 +80,11 @@
         "redact_query_string": true,
         "logs": { "enabled": true, "invocation_logs": false }
       },
-      // P7-A (docs/runs/p7-launch.md): staging's queue, rate limiter and secrets, naming the production resources. TURNSTILE_SITE_KEY stays empty
-      // until the lead sets the production widget's public key (the readiness check refuses an empty one).
+      // P7-A (docs/runs/p7-launch.md): staging's queue, rate limiter and secrets, naming the production resources. TURNSTILE_SITE_KEY: the public
+      // site key of the widget "techaust-prod-forms" (hostname techaust.com; lead, 2026-11-07). Its secret is the Worker secret TURNSTILE_SECRET.
       "vars": {
         "ENVIRONMENT": "production",
-        "TURNSTILE_SITE_KEY": "",
+        "TURNSTILE_SITE_KEY": "0x4AAAAAAF3fDpktArFGL6Mv",
         "TURNSTILE_HOSTNAMES": "techaust.com",
         "FORMS_ALLOWED_ORIGINS": "https://techaust.com"
       },
