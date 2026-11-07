@@ -481,3 +481,35 @@ Analyst claude-opus-5-5/high; skill `cloudflare:workers-best-practices`. At c88e
 - **AU48 (L2):** give the `refundsOutSql` source its own alias (`fo`) and skip only that exact co-routine line.
 - **AU49 (L3):** a follow-up. If staging's rows-read figures grow, add a partial index on `payment_refunds (settled_on, id) WHERE status = 'failed' AND reversed_at IS NOT NULL` (index only).
 - **AU50 (designer):** after 20 empty pages, a line under the list. Lead's staff line: "No more payments found in these pages. Show more to keep looking further back."
+
+## Early check of AF2 (analyst, 2026-11-07): GO, fixes before the review
+Analyst claude-opus-5-5/high; skill `cloudflare:workers-best-practices`. Read-only at c88e84ab. Nothing critical or high.
+
+**What it checked:**
+- **Migrations:** 0084's 12 recreated triggers keep every earlier rule word for word.
+- **Retention cap:** a capped page deletes nothing.
+- **Other fixes:** AU10, AU11, AU12, AU13, AU19, AU20, AU21 and AU23–AU27 are sound.
+- **Batches and logs:** batches are well under 45 statements; logs carry ids only.
+
+**Medium:**
+- **M1:** the cap counts pages, not rows written. Index writes make a page cost about 4,000–4,500 rows written, so 30 pages can reach about 120,000–135,000 against the account's 100,000 a day (estimate, not measured).
+- **M2:** erasing or anonymising a contact can answer 500 when the same address is held under another client (0084's `leads_held_no_erase` against `MATCHED_LEADS`; the pre-checks miss it; `clients.ts:1468,1488-1493,1694,1734,1762`).
+- **M3:** leaving the marker bells out of retention keeps an anonymised individual's name in `milestone.unbilled` and `proforma.tax_invoice_due` bell titles for good (`alerts.ts:150-162`; the anonymise bell delete skips `entity_type = 'milestone'`). DPDP s.8(7), RB-11.
+- **M4 (hosted):** the SES account-level suppression list blocks complaints by default, so an owner's spam click on the digest can silently drop their security alerts at SES.
+
+**Low:**
+- **L1:** `/auth/logout` on `RL_SIGNIN`: a 429 doesn't sign the person out.
+- **L2:** the AU23 e2e step is missing.
+- **L3:** the invoice-send `h:` test relies on a key the staging invoices Worker doesn't have; the offer first send has no stopped-recipient test.
+
+### Lead's triage (2026-11-07)
+- **AU51 (M1):** budget by measured writes. Add up `meta.rows_written` from every page batch into a new `retention_run_counts.written` column (ADD COLUMN), and stop the run at 40,000 rows written a night; `within` reads that total. Test that the worst-case capped night stays within the budget.
+- **AU52 (M2):** a `NOT EXISTS (… MATCHED_LEADS … HELD_EMAIL_SQL)` guard in the first-row guard and the held read of both erase and anonymise, answering 409 `legal_hold`. Test: the same address at two clients, one held.
+- **AU53 (M3):** settled on the safest reading (DPDP s.8(7)).
+  - The individual anonymise also deletes the `entity_type = 'milestone'` bells of that client's milestones.
+  - The `bells` family scrubs the marker kinds' titles to a neutral line after 12 months instead of keeping them.
+  - Tests for each.
+- **AU54 (M4):** the builder drafts an owner step for `docs/runbooks/ses-and-turnstile.md`: `techaust-marketing` gets its own suppression options (BOUNCE only), checked against AWS's configuration-set suppression docs, click by click. The owner does it (hosted, on the owner's yes).
+- **AU55 (L1):** logout is limited per session (`RL_SESSION`, keyed by the cookie hash), and a 429 on logout still clears the cookie. Test.
+- **AU56 (L3):** relabel the invoice test as the route's rule when the key is present, and add an offer first-send test with the address stopped between the pre-check and the batch.
+- **AU57:** AF1 re-check AU47 and AU48 go to the same builder. L2 (the AU23 e2e step) goes to the designer.
