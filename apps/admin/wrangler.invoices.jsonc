@@ -5,7 +5,7 @@
   // Workers bind as ADMIN_ADVANCE. It has NO public URL at any level (no workers.dev, no routes, no preview URLs): it is reachable only through the
   // front's `ADMIN_INVOICES` service binding and those two entrypoint bindings, and it re-authenticates every request from the session cookie the front
   // forwards untouched. It holds no secrets, no sign-in code and no gateway client code. Bindings use the front's names and ids in each scope; CI guard:
-  // scripts/check-worker-config.mjs. Production has vars only until Phase 7 (owner approval).
+  // scripts/check-worker-config.mjs.
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "techaust-platform-admin-invoices",
   "main": "worker/invoicing.ts",
@@ -86,6 +86,25 @@
         "ENVIRONMENT": "production",
         "PAYMENTS_LIVE_ALLOWED": "false"
       },
+      // P7-A (docs/runs/p7-launch.md): the front's production resources.
+      "queues": {
+        "producers": [
+          { "binding": "EMAIL_QUEUE", "queue": "techaust-prod-email" },
+          { "binding": "PDF_QUEUE", "queue": "techaust-prod-pdf" }
+        ]
+      },
+      "r2_buckets": [
+        { "binding": "FILES", "bucket_name": "techaust-prod-files" },
+        { "binding": "DOCS", "bucket_name": "techaust-prod-docs" }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "techaust-prod",
+          "database_id": "d16029d2-373e-4b66-beb0-d77158d6dfc2",
+          "migrations_dir": "../../packages/db/migrations"
+        }
+      ],
       // As the front: NO invocation logs in production from day one. Console logs stay on.
       "observability": {
         "enabled": true,

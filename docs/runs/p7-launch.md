@@ -119,9 +119,66 @@ Files:
    - `portal-sample.mjs` and `portal-link.mjs` keep refusing production (add a test).
 3. **Done when:** the core, email, jobs and scripts tests are green and `pnpm check` passes.
 
+## P7-A report
+Builder P7-A (Opus 5.5, high), branch `fix/p7-a-config` from `origin/feat/p7-production` (78188975). Commits: 3802dfac (configs), 846bc5f1 (guard and tests), cc8248b7 (production Turnstile site keys), plus this report.
+
+**Skills loaded:** `cloudflare:workers-best-practices` (kept production observability as the existing rule: logs on, no invocation logs, no traces; generated types untouched); `cloudflare:wrangler` (checked inheritance: `vars`, bindings and `secrets` are not inherited, `triggers` and `routes` are, so every production scope lists its own and the guard refuses `routes`/`route` at the top level too; validated with `wrangler deploy --dry-run --env production`).
+
+**What changed, per file**
+- `apps/jobs/wrangler.jsonc` env.production: D1 `DB` = `techaust-prod` / `d16029d2-…` with `migrations_dir`; R2 `DOCS`/`FILES` = `techaust-prod-docs`/`-files`; producers `EMAIL_QUEUE`/`LEADS_QUEUE`/`PDF_QUEUE` and the six consumers (pdf, leads, email and their `-dlq`) with staging's batch, concurrency, retries and dead-letter queues; `ADMIN_JOBS` (invoices `BillingJobs`), `ADMIN_GATEWAY` (finance `GatewayEvents`), `ADMIN_ADVANCE` (invoices `GatewayAdvance`) on the production Worker names; `browser`; crons `0 22 * * *`, `30 * * * *`; staging's nine `secrets.required` (incl. `CF_ANALYTICS_TOKEN`); vars `ENVIRONMENT=production`, `PAYMENTS_LIVE_ALLOWED="false"`, `EMAIL_TRANSPORT=ses`, `LEAD_ALERT_TO=admin@techaust.com`, SES region and both configuration sets, `ADMIN_URL`/`PORTAL_URL`/`PUBLIC_HOOKS_URL`/`EMAIL_ASSET_BASE` on the production hosts, `PDF_RENDERER=browser`, `PDF_MIN_SPACING_MS=10000`, `CF_ACCOUNT_TAG` (staging's account tag). No `EMAIL_ALLOWED_RECIPIENTS` (src/email.ts applies the list only when `ENVIRONMENT` is staging; wrangler's dry run prints a warning that this top-level var is missing in production: expected).
+- `apps/admin/wrangler.jsonc` (front): production queues, R2, D1 added (services, rate limits 5301–5303 and secrets were already there); `TURNSTILE_SITE_KEY` = `0x4AAAAAAF3fIdhlCqOre8yu` (lead's message).
+- `apps/admin/wrangler.api.jsonc`, `wrangler.invoices.jsonc`: production queues, R2, D1 (the front's).
+- `apps/admin/wrangler.finance.jsonc`: production vars `PORTAL_URL=https://portal.techaust.com/`, `GATEWAY_TRANSPORT=api`; the five gateway secret names; queues incl. `LEADS_QUEUE` → `techaust-prod-leads`; `ADMIN_ADVANCE` → `techaust-platform-admin-invoices#GatewayAdvance`; R2; D1.
+- `apps/portal/wrangler.jsonc`: production `ADMIN_PAY` → `techaust-platform-admin-finance#PortalPayments`, queues, R2 `DOCS`/`FILES`, D1; `TURNSTILE_SITE_KEY` = `0x4AAAAAAF3fIdhlCqOre8yu`.
+- `apps/web/wrangler.jsonc`: production `LEADS_QUEUE` → `techaust-prod-leads`, `RL_FORMS` 4301, secrets `TURNSTILE_SECRET`, `FORMS_IP_PEPPER`; `TURNSTILE_SITE_KEY` = `0x4AAAAAAF3fDpktArFGL6Mv`. Web has no `PAYMENTS_LIVE_ALLOWED` in any scope (never had; no payment code), so none was added.
+- Every config: `workers_dev: false`, `preview_urls: false`, no `routes`/`route`; `TURNSTILE_HOSTNAMES` only `techaust.com`, `admin.techaust.com`, `portal.techaust.com`; the stale "until Phase 7" comments rewritten.
+- `scripts/check-worker-config.mjs`:
+  - new `productionMirrorProblems(config, wantVars)` for all seven configs (`WORKER_CONFIGS`): production name = staging's without `-staging`; D1 (`PRODUCTION_D1`), R2 and producers (`techaust-staging-` → `techaust-prod-`), consumers with staging's settings, services with staging's entrypoints on the production Workers, `browser`, `triggers`, rate-limit names and limits, `secrets.required` set, vars key set minus `STAGING_ONLY_VARS` (`EMAIL_ALLOWED_RECIPIENTS`), `SAME_AS_STAGING_VARS` values, the production hosts per config (`PRODUCTION_VARS`, `PRODUCTION_ORIGINS`); refuses `staging`, staging's database id, `workers.dev`, `localhost` and `http://` anywhere in production; Turnstile key never empty, staging's or a test key; hostnames only techaust.com hosts;
+  - new `routesProblems`: no `routes`/`route` in any scope of any config;
+  - every "until Phase 7" rule now requires the production twin (`apiConfigProblems` services/secrets, `entrypointBindingProblems`, `gatewayConfigProblems` incl. `GATEWAY_TRANSPORT=api`, `PORTAL_URL` and finance's `LEADS_QUEUE`, `jobsConfigProblems` crons and `ADMIN_JOBS` (each environment must state its own `triggers`), `notificationConfigProblems` (`PUBLIC_HOOKS_URL` = `https://hooks.techaust.com/`, query string redacted), `jobsDataProtectionProblems`/`portalFilesProblems` (`techaust-prod-files`));
+  - `RATE_LIMITS.web = { RL_FORMS: 2 }`: web's ids checked like admin's and portal's (unique across every scope and config);
+  - `canonical` now compares nested arrays key-order-free.
+- `scripts/check-worker-config.d.mts`: `RATE_LIMITS.web`.
+- Tests: `apps/web/test/worker-config.test.ts` (pinned production cases rewritten; new block "P7-A" with 10 tests: all seven real configs pass, no staging resource, the jobs production shape, missing/extra bindings, staging Worker or other entrypoint, staging/workers.dev/localhost/http values and staging-equal vars, Turnstile key and hosts, name and workers_dev, RL_FORMS 4301 and id uniqueness, routes in any scope); `apps/web/test/signin-config.test.ts` (production key and host, production email queue and consumer, `siteKeyForApp(…, "production")` = the production sign-in key); `packages/core/test/rate-limit-config.test.ts` (web in the required set).
+
+**Commands and results**
+- `node scripts/check-worker-config.mjs`: ok.
+- `pnpm --filter @techaust/web exec vitest run` on worker-config, signin-config, observability-config, admin-portal-origin, portal-website-origin, forms-m24, staging-checks, prod-readiness-apps: 203 passed, 3 skipped, **3 failed, all in `apps/web/test/prod-readiness-apps.test.ts` (P7-B's file, not edited)**: "today's configs: production is blocked on the three site keys and on the queues (before Phase 7)", "today's configs: … blocked on their service bindings (before Phase 7)", and "checkProdReadiness includes the apps' problems" (expects "TURNSTILE_SITE_KEY is empty"). They pin the pre-launch gaps this task closes; `checkProductionConfigs` now reports **nothing** for the configs (before the keys: only the three empty keys). P7-B or the lead updates those three tests at integration.
+- web: staging-checks, place-build-artifact, deploy-workflow: 95 passed, 1 skipped.
+- core: rate-limit-config, verify-tags: all passed (5 + 3).
+- jobs: `test/route-inventory.test.ts` (heavy queue): 4 passed.
+- `wrangler deploy --dry-run --env production` (heavy queue, no token): **jobs** exit 0, 850.69 KiB / gzip 317.08 KiB, bindings listed as above (3 queues, D1 techaust-prod, 2 R2, 3 entrypoint services, Browser Run, 14 vars); one expected warning (`EMAIL_ALLOWED_RECIPIENTS` not in production). **web** (after `CLOUDFLARE_ENV=production astro build`; dist removed afterwards) exit 0, 295.64 KiB / gzip 66.26 KiB: `LEADS_QUEUE (techaust-prod-leads)`, `RL_FORMS`, 4 vars.
+- `pnpm check` (heavy queue, the one whole-repo lint): exit 0 (lint, typecheck with types still `--env staging`, web bindings guard, content lint, worker config guard, SPA headers, migration guard, CSS collisions).
+
+**Not done or not verified**
+- No admin or portal production dry run or production SPA build (P7-B's builds).
+- Hosted resources were not checked: the queue names, bucket names and D1 id are taken from this brief's table. Before the first deploy the lead sets every production secret (`wrangler secret put … --env production`): jobs nine (incl. `CF_ANALYTICS_TOKEN`; a missing required secret aborts the deploy), admin front five, admin API `ERASURE_HASH_KEY` (same value as jobs'), finance five gateway keys (test keys), portal two, web two.
+- SES: production has no allow-list, so real clients get email from the first deploy; if the SES account is still in the sandbox, sends to unverified addresses fail (not checkable from here).
+
+**Open questions:** none.
+
 ## The lead's own items (not for agents)
 - the redirects (`apps/web/public/_redirects`, Q3);
 - the secret scripts' `-Environment production`;
 - the launch content (`site.launchDate` and every legal `effective` set to 2026-11-08, `founderBio`, `aliasesConfirmed`);
 - the production Turnstile keys in the configs;
 - the integration, the reviewer, the merge, then the hosted steps and the launch-day order in [phase7-production](phase7-production.md) D.
+
+## Hosted log (lead, 2026-11-07 evening; owner's decisions in chat)
+- **Production resources** created through the connector: D1 `techaust-prod` (`d16029d2-373e-4b66-beb0-d77158d6dfc2`, APAC); R2 `techaust-prod-docs` and `techaust-prod-files` (private); queues `techaust-prod-{leads,pdf,email}` and their `-dlq`.
+- **The old site deleted now** (owner, "Now": a fresh start before the new deployment; techaust.com is offline until launch):
+  - the custom domains techaust.com and www.techaust.com detached from `techaust-web`;
+  - the route `*.techaust.com/*` deleted;
+  - the Worker `techaust-web` deleted (with its assets, its `RESEND_API_KEY` secret and its workers.dev address).
+
+  Its custom-domain records (the apex and www `AAAA 100::`) went with the domains. The old repository `techaust/techaust-web` is untouched (rule 3).
+- **The zone's redirect rules** deleted and recreated as the same two (owner, "Delete and recreate"): www → apex, http → https, both 301. A proxied `AAAA www.techaust.com 100::` was recreated for the www redirect.
+- **Left for the owner:** delete the unused user API token "Workers Builds - 2026-09-04 12:28" (the connector can't manage user tokens). Optional: revoke the old site's Resend API key in Resend.
+- **Kept:** the email DNS (Zoho, the SES DKIM and MAIL FROM records), Web Analytics for techaust.com (the new CSP allows its script, and the privacy notice names Cloudflare's cookieless analytics), and the Turnstile widgets of the owner's other domains (GPLFamily, PluginWay).
+- **GitHub environment `production`** (lead, through `gh api`): required reviewer `techaust`; deployment refs branch `main` and tags `v*`.
+- **Access for production admin** (connector, Q2):
+  - the app `techaust-platform-admin (production)` on `admin.techaust.com` uses the reusable "Cloudflare account members" policy;
+  - the app `admin production health` on `admin.techaust.com/api/health` uses "Bypass everyone".
+
+  Portal, hooks and web stay public.
+- **DNS list:** the owner said yes (2026-11-07); the records are added at the step each belongs to.

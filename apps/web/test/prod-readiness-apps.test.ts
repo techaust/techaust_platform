@@ -203,9 +203,9 @@ describe("production Worker configs", () => {
     );
   });
 
-  // P7-B: the real configs, mirrored by hand into a production scope that differs from staging only in values (what P7-A writes), pass both
-  // the queue and service checks and the staging-production comparison; the only possible problem is a site key the lead has not set yet.
-  it("every real config's staging scope, mirrored into production with production names, passes (the site key aside)", () => {
+  // P7-B: the real configs' staging scopes, mirrored by hand into a production scope that differs only in values, pass both the queue and
+  // service checks and the staging-production comparison (the comparison accepts exactly the P7-A shape, whatever the real production holds).
+  it("every real config's staging scope, mirrored into production with production names, passes", () => {
     for (const c of ready.PROD_CONFIGS as { app: string; file: string; turnstile: boolean }[]) {
       const config = parseJsonc(readFileSync(join(appsDir, c.app, c.file), "utf8"));
       const mirrored = { ...config, env: { ...config.env, production: mirror(config.env.staging) } };
@@ -215,16 +215,19 @@ describe("production Worker configs", () => {
     }
   });
 
-  it("today's configs: every problem names one of the seven configs (whatever state P7-A has left them in)", () => {
-    const problems = ready.checkProductionConfigs(appsDir) as string[];
-    const files = (ready.PROD_CONFIGS as { app: string; file: string }[]).map(
-      (c) => `apps/${c.app}/${c.file}`,
-    );
-    for (const p of problems)
-      expect(
-        files.some((f) => p.startsWith(f)),
-        p,
-      ).toBe(true);
+  // P7-A filled every env.production block (14910a09): production now mirrors staging, the production site keys are set.
+  it("today's configs: production is ready (site keys, queues, service bindings) and differs from staging only in values", () => {
+    expect(ready.checkProductionConfigs(appsDir)).toEqual([]);
+    for (const c of ready.PROD_CONFIGS as { app: string; file: string }[]) {
+      const where = `apps/${c.app}/${c.file}`;
+      const config = parseJsonc(readFileSync(join(appsDir, c.app, c.file), "utf8"));
+      expect(ready.checkEnvParity(where, config), where).toEqual([]);
+      // the comparison really ran: production has staging's bindings under production names
+      expect(Object.keys(config.env.production.vars ?? {}).length, where).toBeGreaterThan(0);
+    }
+    const jobs = parseJsonc(readFileSync(join(appsDir, "jobs", "wrangler.jsonc"), "utf8"));
+    expect(jobs.env.production.d1_databases[0].database_name).toBe("techaust-prod");
+    expect(jobs.env.production.triggers.crons).toEqual(jobs.env.staging.triggers.crons);
   });
 
   // The fourth admin Worker (2026-11-03, L7; review finding 4): every staging service binding needs a production twin (same binding, same entrypoint, the

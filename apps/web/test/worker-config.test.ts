@@ -119,7 +119,7 @@ describe("the website's rate limiter ids (M7.5, L22)", () => {
     const ids = scopes.flatMap((s) =>
       (s.ratelimits ?? []).map((r: { namespace_id: string }) => r.namespace_id),
     );
-    expect(ids).toEqual(["4101", "4201"]);
+    expect(ids).toEqual(["4101", "4201", "4301"]);
     expect(new Set(ids).size).toBe(ids.length);
     const others = ["../../admin/wrangler.jsonc", "../../portal/wrangler.jsonc"].map((p) =>
       guard.parseJsonc(readFileSync(new URL(p, import.meta.url), "utf8")),
@@ -134,14 +134,14 @@ describe("the website's rate limiter ids (M7.5, L22)", () => {
 });
 
 describe("form bindings (M2.4)", () => {
-  it("top level and staging declare the queue, the rate limiter and both secrets; production has none", () => {
-    for (const scope of [config, config.env.staging]) {
+  it("every scope declares the queue, the rate limiter and both secrets (production since P7-A)", () => {
+    for (const scope of [config, config.env.staging, config.env.production]) {
       expect(scope.queues.producers[0].binding).toBe("LEADS_QUEUE");
       expect(scope.ratelimits[0]).toMatchObject({ name: "RL_FORMS", simple: { limit: 2, period: 60 } });
       expect(scope.secrets.required).toEqual(["TURNSTILE_SECRET", "FORMS_IP_PEPPER"]);
     }
     expect(config.env.staging.queues.producers[0].queue).toBe("techaust-staging-leads");
-    expect(config.env.production.queues).toBeUndefined();
+    expect(config.env.production.queues.producers[0].queue).toBe("techaust-prod-leads");
   });
 });
 
@@ -296,23 +296,29 @@ describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
   const invoices = read("admin/wrangler.invoices.jsonc");
   const jobs = read("jobs/wrangler.jsonc");
 
-  it("the real config passes: both crons and the BillingJobs binding at the top level and in staging, neither in production", () => {
+  it("the real config passes: both crons and the BillingJobs binding in every scope (production since P7-A)", () => {
     expect(guard.JOBS_CRONS).toEqual(["0 22 * * *", "30 * * * *"]);
     expect(guard.jobsConfigProblems(jobs, invoices)).toEqual([]);
-    // FX-1 (A6 3): triggers are inherited, so production states an empty list.
-    expect(jobs.env.production.triggers).toEqual({ crons: [] });
-    expect(jobs.env.production.services).toBeUndefined();
+    // FX-1 (A6 3): triggers are inherited, so production states its own.
+    expect(jobs.env.production.triggers).toEqual({ crons: guard.JOBS_CRONS });
+    expect(jobs.env.production.services).toContainEqual({
+      binding: "ADMIN_JOBS",
+      service: "techaust-platform-admin-invoices",
+      entrypoint: "BillingJobs",
+    });
   });
 
-  it("production without its own triggers would inherit the crons: refused (FX-1, A6 3)", () => {
+  it("an environment without its own triggers would inherit the top level's: refused (FX-1, A6 3)", () => {
     const d = structuredClone(jobs);
     d.env.production.triggers = undefined;
+    d.env.staging.triggers = undefined;
     expect(guard.jobsConfigProblems(d, invoices)).toEqual([
-      'env.production: needs "triggers": { "crons": [] } (an environment without its own triggers inherits the top level\'s)',
+      'env.staging: needs its own "triggers": { "crons": [...] } (an environment without its own triggers inherits the top level\'s)',
+      'env.production: needs its own "triggers": { "crons": [...] } (an environment without its own triggers inherits the top level\'s)',
     ]);
   });
 
-  it("fails a missing hourly cron, a missing or mispointed binding or entrypoint, and anything in production", () => {
+  it("fails a missing hourly cron, a missing or mispointed binding or entrypoint, in any scope", () => {
     const a = structuredClone(jobs);
     a.env.staging.triggers.crons = ["0 22 * * *"];
     expect(guard.jobsConfigProblems(a, invoices)).toEqual([
@@ -329,10 +335,10 @@ describe("jobs Worker config guard (M5.4, LD57, LD61)", () => {
     ]);
     const c = structuredClone(jobs);
     c.env.production.triggers = { crons: ["30 * * * *"] };
-    c.env.production.services = structuredClone(jobs.services);
+    c.env.production.services = structuredClone(jobs.env.staging.services);
     expect(guard.jobsConfigProblems(c, invoices)).toEqual([
-      "env.production: no cron triggers until Phase 7",
-      "env.production: no ADMIN_JOBS service binding until Phase 7",
+      'env.production: crons must be exactly ["0 22 * * *","30 * * * *"]',
+      "env.production: ADMIN_JOBS points at techaust-platform-admin-invoices-staging, expected techaust-platform-admin-invoices",
     ]);
   });
 });
@@ -455,28 +461,24 @@ describe("admin finance Worker config guard (M6.1 stage A, ADM-PAY-01)", () => {
     expect(guard.jobsConfigProblems(jobs, finance)).toEqual([
       "(top level): ADMIN_JOBS points at techaust-platform-admin-invoices, expected techaust-platform-admin-finance",
       "env.staging: ADMIN_JOBS points at techaust-platform-admin-invoices-staging, expected techaust-platform-admin-finance-staging",
+      "env.production: ADMIN_JOBS points at techaust-platform-admin-invoices, expected techaust-platform-admin-finance",
     ]);
     expect(guard.jobsConfigProblems(jobs, api)).toEqual([
       "(top level): ADMIN_JOBS points at techaust-platform-admin-invoices, expected techaust-platform-admin-api",
       "env.staging: ADMIN_JOBS points at techaust-platform-admin-invoices-staging, expected techaust-platform-admin-api-staging",
+      "env.production: ADMIN_JOBS points at techaust-platform-admin-invoices, expected techaust-platform-admin-api",
     ]);
   });
 
-  it("finance's one service binding is ADMIN_ADVANCE (the fourth admin Worker), none in production; any other is refused", () => {
+  it("finance's one service binding is ADMIN_ADVANCE (the fourth admin Worker) in every scope, production included; any other is refused", () => {
     const f = structuredClone(finance);
     f.env.staging.services.push({ binding: "ADMIN_API", service: "techaust-platform-admin-api-staging" });
-    f.env.production.services = [
-      {
-        binding: "ADMIN_ADVANCE",
-        service: "techaust-platform-admin-invoices",
-        entrypoint: "GatewayAdvance",
-      },
-    ];
+    f.env.production.services = [];
     delete f.services;
     expect(guard.apiConfigProblems(f, front, guard.FINANCE_OPTS)).toEqual([
       '(top level): services must be exactly ["ADMIN_ADVANCE"]',
       'env.staging: services must be exactly ["ADMIN_ADVANCE"]',
-      "env.production: services must be exactly []",
+      'env.production: services must be exactly ["ADMIN_ADVANCE"]',
     ]);
     // The API Worker may hold none.
     const a = structuredClone(api);
@@ -604,7 +606,7 @@ describe("admin invoices Worker config guard (the fourth admin Worker, 2026-11-0
     );
   });
 
-  it("the entrypoint bindings: each points at its Worker and names its entrypoint in the top level and staging, none in production", () => {
+  it("the entrypoint bindings: each points at its Worker and names its entrypoint in every scope (production since P7-A)", () => {
     const j = structuredClone(jobs);
     const f = structuredClone(finance);
     const p = structuredClone(portal);
@@ -617,17 +619,17 @@ describe("admin invoices Worker config guard (the fourth admin Worker, 2026-11-0
     // finance's advance naming the wrong entrypoint; the portal's ADMIN_PAY at invoices
     by(f.env.staging, "ADMIN_ADVANCE").entrypoint = "BillingJobs";
     by(p, "ADMIN_PAY").service = "techaust-platform-admin-invoices";
-    // anything in production
-    j.env.production.services = [
-      { binding: "ADMIN_ADVANCE", service: "techaust-platform-admin-invoices", entrypoint: "GatewayAdvance" },
-    ];
+    // production: jobs' advance at the STAGING invoices Worker, the portal's ADMIN_PAY gone
+    by(j.env.production, "ADMIN_ADVANCE").service = "techaust-platform-admin-invoices-staging";
+    p.env.production.services = [];
     expect(guard.entrypointBindingProblems(j, p, f, invoices)).toEqual([
       "(top level): jobs's ADMIN_ADVANCE points at techaust-platform-admin-finance, expected techaust-platform-admin-invoices",
       "(top level): portal's ADMIN_PAY points at techaust-platform-admin-invoices, expected techaust-platform-admin-finance",
       "env.staging: finance's ADMIN_ADVANCE must name the entrypoint GatewayAdvance",
       "env.staging: jobs's ADMIN_JOBS must name the entrypoint BillingJobs",
       "env.staging: jobs's ADMIN_GATEWAY points at techaust-platform-admin-invoices-staging, expected techaust-platform-admin-finance-staging",
-      "env.production: jobs has no ADMIN_ADVANCE until Phase 7",
+      "env.production: jobs's ADMIN_ADVANCE points at techaust-platform-admin-invoices-staging, expected techaust-platform-admin-invoices",
+      "env.production: portal's ADMIN_PAY service binding is missing",
     ]);
     // A missing binding.
     const k = structuredClone(jobs);
@@ -654,7 +656,7 @@ describe("M6.2 gateway wiring (run file F)", () => {
     expect(guard.apiConfigProblems(finance, front).length).toBeGreaterThan(0);
   });
 
-  it("refuses a mispointed binding, a missing webhook secret, the key pair on jobs, a stub transport on staging, anything in production, a live flag", () => {
+  it("refuses a mispointed binding, a missing webhook secret, the key pair on jobs, a stub transport on staging or production, a live flag", () => {
     const j = structuredClone(jobs);
     j.env.staging.services = j.env.staging.services.filter(
       (x: { binding: string }) => x.binding !== "ADMIN_GATEWAY",
@@ -665,7 +667,9 @@ describe("M6.2 gateway wiring (run file F)", () => {
     p.services[0].entrypoint = "GatewayEvents";
     const f = structuredClone(finance);
     f.env.staging.vars.GATEWAY_TRANSPORT = "stub";
+    f.env.production.vars.GATEWAY_TRANSPORT = "stub";
     f.vars.PAYMENTS_LIVE_ALLOWED = "true";
+    f.env.production.vars.PAYMENTS_LIVE_ALLOWED = "true";
     expect(guard.gatewayConfigProblems(j, p, f)).toEqual([
       "(top level): portal's ADMIN_PAY must name the entrypoint PortalPayments",
       "(top level): jobs must require the secret RAZORPAY_WEBHOOK_SECRET",
@@ -674,12 +678,14 @@ describe("M6.2 gateway wiring (run file F)", () => {
       "(top level): jobs must not hold a gateway's API key (finance only, L1, L3)",
       "env.staging: jobs's ADMIN_GATEWAY service binding is missing",
       "env.staging: finance GATEWAY_TRANSPORT must be api",
-      "env.production: jobs has no ADMIN_GATEWAY until Phase 7",
+      "env.production: jobs's ADMIN_GATEWAY points at x, expected techaust-platform-admin-finance",
+      "env.production: finance GATEWAY_TRANSPORT must be api",
       'finance (top level): PAYMENTS_LIVE_ALLOWED must be "false"',
+      'finance env.production: PAYMENTS_LIVE_ALLOWED must be "false"',
     ]);
   });
 
-  it("finance's own LEADS_QUEUE producer points at the jobs Worker's leads queue (top level, staging), none in production; the shared queues still match the front's [early check 2, finding 2]", () => {
+  it("finance's own LEADS_QUEUE producer points at the jobs Worker's leads queue in every scope; the shared queues still match the front's [early check 2, finding 2]", () => {
     expect(finance.queues.producers.map((q: { binding: string }) => q.binding)).toContain("LEADS_QUEUE");
     const f = structuredClone(finance);
     f.env.staging.queues.producers = f.env.staging.queues.producers.map(
@@ -689,7 +695,7 @@ describe("M6.2 gateway wiring (run file F)", () => {
     f.env.production.queues = { producers: [{ binding: "LEADS_QUEUE", queue: "techaust-production-leads" }] };
     expect(guard.gatewayConfigProblems(jobs, portal, f)).toEqual([
       "env.staging: finance's LEADS_QUEUE must be the jobs Worker's leads queue (techaust-staging-leads)",
-      "env.production: finance has no LEADS_QUEUE until Phase 7",
+      "env.production: finance's LEADS_QUEUE must be the jobs Worker's leads queue (techaust-prod-leads)",
     ]);
     // the other producers are still compared with the front's
     const g = structuredClone(finance);
@@ -699,13 +705,15 @@ describe("M6.2 gateway wiring (run file F)", () => {
     ]);
   });
 
-  it("finance's secrets are exactly the key pair and (M6.3) the Stripe restricted key, and none in production", () => {
+  it("finance's secrets are exactly the gateway keys (Razorpay, the Stripe restricted key, PayPal) in every scope, production included", () => {
+    const all =
+      '["PAYPAL_CLIENT_ID","PAYPAL_CLIENT_SECRET","RAZORPAY_KEY_ID","RAZORPAY_KEY_SECRET","STRIPE_SECRET_KEY"]';
     const f = structuredClone(finance);
     f.env.staging.secrets = { required: ["RAZORPAY_KEY_ID"] };
     f.env.production.secrets = { required: ["RAZORPAY_KEY_ID", "RAZORPAY_KEY_SECRET"] };
     expect(guard.apiConfigProblems(f, front, guard.FINANCE_OPTS)).toEqual([
-      'env.staging: secrets.required must be exactly ["PAYPAL_CLIENT_ID","PAYPAL_CLIENT_SECRET","RAZORPAY_KEY_ID","RAZORPAY_KEY_SECRET","STRIPE_SECRET_KEY"]',
-      "env.production: secrets.required must be exactly []",
+      `env.staging: secrets.required must be exactly ${all}`,
+      `env.production: secrets.required must be exactly ${all}`,
     ]);
   });
 
@@ -744,14 +752,14 @@ describe("M6.2 gateway wiring (run file F)", () => {
   });
 });
 
-describe("M7.1 (run file F, Q2 A): the portal reads the file vault on local and staging only", () => {
+describe("M7.1 (run file F, Q2 A): the portal reads the file vault of each scope", () => {
   const portal = guard.parseJsonc(
     readFileSync(new URL("../../portal/wrangler.jsonc", import.meta.url), "utf8"),
   );
   it("the real config passes", () => {
     expect(guard.portalFilesProblems(portal)).toEqual([]);
   });
-  it("fails a missing or wrong staging bucket, and any FILES in production", () => {
+  it("fails a missing or wrong bucket in any scope", () => {
     const copy = () => JSON.parse(JSON.stringify(portal));
     const noStaging = copy();
     noStaging.env.staging.r2_buckets = noStaging.env.staging.r2_buckets.filter(
@@ -768,7 +776,7 @@ describe("M7.1 (run file F, Q2 A): the portal reads the file vault on local and 
     const prod = copy();
     prod.env.production.r2_buckets = [{ binding: "FILES", bucket_name: "techaust-files" }];
     expect(guard.portalFilesProblems(prod)).toEqual([
-      "env.production: the portal binds no FILES bucket until Phase 7",
+      "env.production: the portal binds FILES to techaust-prod-files",
     ]);
   });
 });
@@ -788,7 +796,7 @@ describe("M7.4 (run file F, L7, L8, L23, review fix 17): jobs' FILES and erasure
     expect(guard.jobsDataProtectionProblems(jobs)).toEqual([]);
     expect(guard.leadPurgeModeProblems(all)).toEqual([]);
   });
-  it("fails jobs without FILES on staging, FILES in production, or without the erasure key", () => {
+  it("fails jobs without FILES on staging, the wrong FILES in production, or without the erasure key", () => {
     const copy = () => JSON.parse(JSON.stringify(jobs));
     const noFiles = copy();
     noFiles.env.staging.r2_buckets = noFiles.env.staging.r2_buckets.filter(
@@ -800,7 +808,7 @@ describe("M7.4 (run file F, L7, L8, L23, review fix 17): jobs' FILES and erasure
     const prod = copy();
     prod.env.production.r2_buckets = [{ binding: "FILES", bucket_name: "techaust-files" }];
     expect(guard.jobsDataProtectionProblems(prod)).toEqual([
-      "env.production: jobs binds no FILES bucket until Phase 7",
+      "env.production: jobs binds FILES to techaust-prod-files",
     ]);
     const noKey = copy();
     noKey.secrets.required = noKey.secrets.required.filter((n: string) => n !== "ERASURE_HASH_KEY");
@@ -860,18 +868,248 @@ describe("M7.2 (run file F): the SES-events token, the one-click key and the hoo
       "env.staging: redact_query_string must be true (the one-click token is in /u?t=)",
     ]);
   });
-  it("fails either name in production and either secret in another app", () => {
+  it("production (P7-A): fails a missing secret, an origin other than https://hooks.techaust.com/, an unredacted query string; and either secret in another app", () => {
+    expect(jobs.env.production.vars.PUBLIC_HOOKS_URL).toBe(guard.PRODUCTION_HOOKS_URL);
     const prod = copy();
-    prod.env.production.secrets = { required: ["UNSUBSCRIBE_KEY"] };
-    prod.env.production.vars.PUBLIC_HOOKS_URL = "https://hooks.techaust.com/";
+    prod.env.production.secrets.required = prod.env.production.secrets.required.filter(
+      (n: string) => n !== "SES_EVENTS_TOKEN",
+    );
+    prod.env.production.vars.PUBLIC_HOOKS_URL = jobs.env.staging.vars.PUBLIC_HOOKS_URL;
+    prod.env.production.observability.redact_query_string = false;
     expect(guard.notificationConfigProblems(prod)).toEqual([
-      "env.production: no UNSUBSCRIBE_KEY until Phase 7",
-      "env.production: no PUBLIC_HOOKS_URL until Phase 7",
+      "env.production: jobs must require the secret SES_EVENTS_TOKEN",
+      "env.production: PUBLIC_HOOKS_URL must be https://hooks.techaust.com/",
+      "env.production: redact_query_string must be true (the one-click token is in /u?t=)",
     ]);
     const leak = JSON.parse(JSON.stringify(portal));
     leak.env.staging.secrets = { required: ["SES_EVENTS_TOKEN"] };
     expect(guard.notificationConfigProblems(jobs, [["portal", leak]])).toEqual([
       "portal env.staging: SES_EVENTS_TOKEN is the jobs Worker's only",
+    ]);
+  });
+});
+
+describe("P7-A (launch 2026-11-08): production mirrors staging binding for binding, with the production resources", () => {
+  const read = (p: string) => guard.parseJsonc(readFileSync(new URL(`../../${p}`, import.meta.url), "utf8"));
+  const configs = (guard.WORKER_CONFIGS as [string, string][]).map(
+    ([label, file]) => [label, file, read(file)] as const,
+  );
+  const jobs = read("jobs/wrangler.jsonc");
+  const P = guard.PRODUCTION_VARS.jobs;
+
+  it("covers all seven Worker configs, and every real one passes", () => {
+    expect(configs.map(([, file]) => file).sort()).toEqual(
+      [
+        "admin/wrangler.api.jsonc",
+        "admin/wrangler.finance.jsonc",
+        "admin/wrangler.invoices.jsonc",
+        "admin/wrangler.jsonc",
+        "jobs/wrangler.jsonc",
+        "portal/wrangler.jsonc",
+        "web/wrangler.jsonc",
+      ].sort(),
+    );
+    for (const [label, file, c] of configs)
+      expect(guard.productionMirrorProblems(c, guard.PRODUCTION_VARS[label]), file).toEqual([]);
+    expect(guard.routesProblems(configs.map(([, file, c]) => [file, c]))).toEqual([]);
+  });
+
+  it('every production binds the production D1, buckets and queues, never staging\'s; PAYMENTS_LIVE_ALLOWED stays "false"', () => {
+    for (const [label, file, c] of configs) {
+      const prod = c.env.production;
+      const text = JSON.stringify(prod);
+      expect(text, file).not.toContain("staging");
+      expect(text, file).not.toContain("879c63dd-fedd-4710-9b13-21d8804879a9");
+      expect(prod.workers_dev, file).toBe(false);
+      expect(prod.preview_urls, file).toBe(false);
+      expect(prod.vars.ENVIRONMENT, file).toBe("production");
+      if (label !== "web") expect(prod.vars.PAYMENTS_LIVE_ALLOWED, file).toBe("false");
+      for (const d of prod.d1_databases ?? [])
+        expect(d, file).toMatchObject({ binding: "DB", ...guard.PRODUCTION_D1 });
+      for (const b of prod.r2_buckets ?? [])
+        expect(b.bucket_name, file).toMatch(/^techaust-prod-(docs|files)$/);
+      for (const q of prod.queues?.producers ?? [])
+        expect(q.queue, file).toMatch(/^techaust-prod-(leads|pdf|email)$/);
+      expect(prod.routes, file).toBeUndefined();
+      expect(prod.route, file).toBeUndefined();
+    }
+  });
+
+  it("jobs production: the production hosts, SES without the staging allow-list, Browser Run, both crons, staging's secrets", () => {
+    const prod = jobs.env.production;
+    expect(prod.vars).toMatchObject({
+      ENVIRONMENT: "production",
+      EMAIL_TRANSPORT: "ses",
+      LEAD_ALERT_TO: "admin@techaust.com",
+      ADMIN_URL: "https://admin.techaust.com/",
+      PORTAL_URL: "https://portal.techaust.com/",
+      PUBLIC_HOOKS_URL: "https://hooks.techaust.com/",
+      EMAIL_ASSET_BASE: "https://techaust.com/brand/",
+      PDF_RENDERER: "browser",
+    });
+    expect(prod.vars.EMAIL_ALLOWED_RECIPIENTS).toBeUndefined();
+    expect(prod.browser).toEqual({ binding: "BROWSER" });
+    expect(prod.triggers.crons).toEqual(guard.JOBS_CRONS);
+    expect([...prod.secrets.required].sort()).toEqual([...jobs.env.staging.secrets.required].sort());
+    expect(prod.queues.consumers.map((c: { queue: string }) => c.queue).sort()).toEqual([
+      "techaust-prod-email",
+      "techaust-prod-email-dlq",
+      "techaust-prod-leads",
+      "techaust-prod-leads-dlq",
+      "techaust-prod-pdf",
+      "techaust-prod-pdf-dlq",
+    ]);
+  });
+
+  it("refuses a missing or extra binding, a staging resource, other consumer settings, other crons, secrets or var keys", () => {
+    const c = structuredClone(jobs);
+    const prod = c.env.production;
+    prod.browser = undefined;
+    prod.r2_buckets[0].bucket_name = "techaust-staging-docs";
+    prod.d1_databases[0].database_id = "879c63dd-fedd-4710-9b13-21d8804879a9";
+    prod.queues.consumers[0].max_retries = 6;
+    prod.queues.producers.push({ binding: "EXTRA", queue: "techaust-prod-extra" });
+    prod.services = prod.services.filter((s: { binding: string }) => s.binding !== "ADMIN_GATEWAY");
+    prod.services.push({ binding: "OTHER", service: "techaust-platform-other" });
+    prod.triggers = { crons: ["30 * * * *"] };
+    prod.secrets.required = prod.secrets.required.filter((n: string) => n !== "CF_ANALYTICS_TOKEN");
+    prod.vars.EMAIL_ALLOWED_RECIPIENTS = "admin@techaust.com";
+    const problems: string[] = guard.productionMirrorProblems(c, P);
+    const want = [
+      "env.production: D1 binding DB must be",
+      "env.production: R2 binding DOCS must be",
+      "env.production: service binding ADMIN_GATEWAY is missing (staging has it)",
+      "env.production: service binding OTHER is not on staging",
+      "env.production: queue producers must be",
+      "env.production: queue consumers must be staging's",
+      "env.production: browser must be staging's",
+      "env.production: triggers must be staging's",
+      "env.production: secrets.required must be staging's",
+      "env.production: vars keys must be staging's without EMAIL_ALLOWED_RECIPIENTS",
+      "env.production: must not name a staging name (staging)",
+      "env.production: must not name staging's database id",
+    ];
+    for (const w of want)
+      expect(
+        problems.some((p) => p.startsWith(w)),
+        `${w}\n${problems.join("\n")}`,
+      ).toBe(true);
+    expect(problems).toHaveLength(want.length);
+  });
+
+  it("refuses a service pointing at the staging Worker or naming another entrypoint", () => {
+    const c = structuredClone(jobs);
+    c.env.production.services[0].service = "techaust-platform-admin-invoices-staging";
+    c.env.production.services[1].entrypoint = "PortalPayments";
+    const problems: string[] = guard.productionMirrorProblems(c, P);
+    expect(problems.filter((p) => p.startsWith("env.production: service binding"))).toHaveLength(2);
+    expect(problems).toContain("env.production: must not name a staging name (staging)");
+  });
+
+  it("refuses a workers.dev, localhost or http:// value, another production host, and a value where production must keep staging's", () => {
+    const c = structuredClone(jobs);
+    c.env.production.vars.ADMIN_URL =
+      "https://techaust-platform-admin.techaust-technologies-153.workers.dev/";
+    c.env.production.vars.PORTAL_URL = "http://localhost:5174/";
+    c.env.production.vars.PDF_RENDERER = "stub";
+    c.env.production.vars.SES_CONFIGURATION_SET = "techaust-marketing";
+    expect(guard.productionMirrorProblems(c, P)).toEqual([
+      'env.production: var SES_CONFIGURATION_SET must be staging\'s ("techaust-transactional")',
+      'env.production: var PDF_RENDERER must be staging\'s ("browser")',
+      'env.production: var ADMIN_URL must be "https://admin.techaust.com/"',
+      'env.production: var PORTAL_URL must be "https://portal.techaust.com/"',
+      "env.production: must not name a workers.dev host (workers.dev)",
+      "env.production: must not name localhost (localhost)",
+      "env.production: must not name an http:// URL (http://)",
+    ]);
+  });
+
+  it("the Turnstile key is the production widget's, never empty, staging's or a test key; its hosts are techaust.com hosts only", () => {
+    const admin = read("admin/wrangler.jsonc");
+    const web = read("web/wrangler.jsonc");
+    // the lead's production widgets (2026-11-07): sign-in for admin and portal, forms for the website
+    expect(admin.env.production.vars.TURNSTILE_SITE_KEY).toBe("0x4AAAAAAF3fIdhlCqOre8yu");
+    expect(read("portal/wrangler.jsonc").env.production.vars.TURNSTILE_SITE_KEY).toBe(
+      "0x4AAAAAAF3fIdhlCqOre8yu",
+    );
+    expect(web.env.production.vars.TURNSTILE_SITE_KEY).toBe("0x4AAAAAAF3fDpktArFGL6Mv");
+    expect(web.env.production.vars.TURNSTILE_HOSTNAMES).toBe("techaust.com");
+    const want = guard.PRODUCTION_VARS.admin;
+    for (const key of [
+      "",
+      admin.env.staging.vars.TURNSTILE_SITE_KEY,
+      "1x00000000000000000000AA",
+      "3x00000000000000000000FF",
+    ]) {
+      const c = structuredClone(admin);
+      c.env.production.vars.TURNSTILE_SITE_KEY = key;
+      expect(guard.productionMirrorProblems(c, want), key).toEqual([
+        "env.production: TURNSTILE_SITE_KEY must be the production widget's key (never empty, staging's or a test key)",
+      ]);
+    }
+    const local = structuredClone(admin);
+    local.env.production.vars.TURNSTILE_HOSTNAMES = "admin.techaust.com,localhost";
+    expect(guard.productionMirrorProblems(local, want)).toEqual([
+      'env.production: var TURNSTILE_HOSTNAMES must be "admin.techaust.com"',
+      "env.production: TURNSTILE_HOSTNAMES may name only techaust.com hosts (localhost)",
+      "env.production: must not name localhost (localhost)",
+    ]);
+  });
+
+  it("refuses a production name other than staging's without -staging, workers.dev on, and a missing environment", () => {
+    const c = structuredClone(read("portal/wrangler.jsonc"));
+    c.env.production.name = "techaust-platform-portal-prod";
+    c.env.production.workers_dev = true;
+    expect(guard.productionMirrorProblems(c, guard.PRODUCTION_VARS.portal)).toEqual([
+      'env.production: name must be techaust-platform-portal, staging\'s without "-staging"',
+      "env.production: workers_dev must be false",
+    ]);
+    expect(guard.productionMirrorProblems({ env: { staging: {} } })).toEqual([
+      "env.staging and env.production are both required",
+    ]);
+  });
+
+  it("the website's production: RL_FORMS 4301; the rate-limit ids stay unique across every config and scope", () => {
+    const web = read("web/wrangler.jsonc");
+    expect(web.env.production.ratelimits).toEqual([
+      { name: "RL_FORMS", namespace_id: "4301", simple: { limit: 2, period: 60 } },
+    ]);
+    const admin = read("admin/wrangler.jsonc");
+    const portal = read("portal/wrangler.jsonc");
+    expect(
+      guard.rateLimitProblems([
+        ["admin", admin, guard.RATE_LIMITS.admin],
+        ["portal", portal, guard.RATE_LIMITS.portal],
+        ["web", web, guard.RATE_LIMITS.web],
+      ]),
+    ).toEqual([]);
+    const dup = structuredClone(web);
+    dup.env.production.ratelimits[0].namespace_id = "4201";
+    expect(guard.rateLimitProblems([["web", dup, guard.RATE_LIMITS.web]])).toEqual([
+      "web env.production RL_FORMS: namespace_id 4201 is already used by web env.staging RL_FORMS",
+    ]);
+    const none = structuredClone(web);
+    delete none.env.production.ratelimits;
+    expect(guard.rateLimitProblems([["web", none, guard.RATE_LIMITS.web]])).toEqual([
+      'web env.production: ratelimits must be exactly ["RL_FORMS"] (not inherited: list them in every scope)',
+    ]);
+  });
+
+  it("refuses routes or a custom domain in any scope of any config (the lead attaches domains by hand)", () => {
+    const web = structuredClone(read("web/wrangler.jsonc"));
+    web.env.production.routes = [{ pattern: "techaust.com", custom_domain: true }];
+    web.route = "techaust.com/*";
+    const portal = structuredClone(read("portal/wrangler.jsonc"));
+    portal.env.staging.routes = [{ pattern: "portal.techaust.com", custom_domain: true }];
+    expect(
+      guard.routesProblems([
+        ["apps/web/wrangler.jsonc", web],
+        ["apps/portal/wrangler.jsonc", portal],
+      ]),
+    ).toEqual([
+      "apps/web/wrangler.jsonc (top level): no route (custom domains are attached by hand, never by a deploy)",
+      "apps/web/wrangler.jsonc env.production: no routes (custom domains are attached by hand, never by a deploy)",
+      "apps/portal/wrangler.jsonc env.staging: no routes (custom domains are attached by hand, never by a deploy)",
     ]);
   });
 });
