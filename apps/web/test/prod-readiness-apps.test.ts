@@ -62,6 +62,33 @@ describe("pending copy in the built bundles", () => {
     expect(ready.checkBundleText("admin", "techaust_platform_admin_api/index.js", guard)).toEqual([]);
   });
 
+  it("P7-B: leaves a copy gate's own body alone (jobs' bundler keeps the unreachable branch of an approved gate)", () => {
+    const gate = ["ZJ=s(e=>Xq?e:`[Placeholder] $", '{e}`,"ZJ")'].join("");
+    expect(ready.checkBundleText("jobs", "dist-production/index.js", gate)).toEqual([]);
+    expect(
+      ready.checkBundleText("jobs", "dist-production/index.js", "`[Placeholder] Your deed`"),
+    ).toHaveLength(1);
+  });
+
+  it("P7-B: a copy-approval flag left false is a problem; the real source has none", () => {
+    const root = mkdtempSync(join(tmpdir(), "ready-flags-"));
+    mkdirSync(join(root, "packages", "email", "src"), { recursive: true });
+    mkdirSync(join(root, "apps", "portal", "worker"), { recursive: true });
+    writeFileSync(
+      join(root, "packages", "email", "src", "a.ts"),
+      "export const APPROVED_07ZZ: boolean = false;\n",
+    );
+    writeFileSync(join(root, "apps", "portal", "worker", "b.ts"), "export const APPROVED_07ZY = true;\n");
+    writeFileSync(
+      join(root, "apps", "portal", "worker", "b.test.ts"),
+      "export const APPROVED_07ZX = false;\n",
+    );
+    const problems: string[] = ready.checkApprovalFlags(root);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain("packages/email/src/a.ts: APPROVED_07ZZ is false");
+    expect(ready.checkApprovalFlags(join(appsDir, ".."))).toEqual([]);
+  });
+
   it("a missing build is a problem, never a pass (P7-B: the jobs and website production bundles too)", () => {
     const empty = mkdtempSync(join(tmpdir(), "ready-apps-"));
     const problems: string[] = ready.checkBundles(empty);
@@ -290,7 +317,8 @@ describe("production Worker configs", () => {
   });
 
   it("checkProdReadiness includes the apps' problems (their bundles and configs)", () => {
-    const empty = mkdtempSync(join(tmpdir(), "ready-apps-"));
+    const empty = join(mkdtempSync(join(tmpdir(), "ready-apps-")), "apps");
+    mkdirSync(empty);
     const problems: string[] = ready.checkProdReadiness(join(appsDir, "web"), "does-not-exist.json", empty);
     const text = problems.join("\n");
     expect(text).toContain("apps/jobs/dist-production/index.js is not built");

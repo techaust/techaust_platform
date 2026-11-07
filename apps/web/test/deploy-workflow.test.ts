@@ -332,6 +332,22 @@ describe("deploy-prod.yml: build without secrets, deploy with wrangler only, sev
     expect(build).toContain("needs: guard");
   });
 
+  it("runs from main or a v* tag only (the production environment's deployment refs), main by default", () => {
+    expect(text).toMatch(/ {6}tag:\n[\s\S]*?default: main\n/);
+    expect(guard).toContain("main|v*) ;;");
+    for (const job of [guard, build, deploy]) {
+      const checkout = stepsOf(job).find((s) => s.includes("actions/checkout@"));
+      if (checkout) expect(checkout).toContain(["ref: $", "{{ inputs.tag }}"].join(""));
+    }
+  });
+
+  it("only the deploy job holds the token, through the production environment's secret", () => {
+    for (const job of [guard, build]) expect(job).not.toMatch(/secrets\.|environment:/);
+    expect(deploy).toMatch(/^ {4}environment: production$/m);
+    for (const step of stepsOf(deploy).filter(hasToken))
+      expect(step).toContain(`CLOUDFLARE_API_TOKEN: ${secret("CF_API_TOKEN_PROD")}`);
+  });
+
   it("the build job has no environment and no secret, builds every app for production, bundles jobs and the website, and checks them", () => {
     expect(build).not.toMatch(/secrets\.|environment:/);
     expect(build).not.toMatch(/^\s*cache:/m); // L51

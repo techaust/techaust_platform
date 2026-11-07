@@ -6,7 +6,7 @@
 // P7 (docs/runs/p7-launch.md P7-B): deploy-prod.yml's build job builds every app for production first, so this check now also finds and reads
 // jobs' and the website's pre-bundled production Workers (`dist-production`), compares staging and production per Worker (D1, R2, browser, rate
 // limits, crons, the secrets.required set and the vars key set: only values may differ), and reads noindex from the BUILT dist/_headers.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseJsonc } from "./check-worker-config.mjs";
@@ -141,8 +141,40 @@ export const SPA_APPS = ["admin", "portal"];
  * built bundle that still holds the mark would show it to clients and staff. The issue guard that REFUSES such a line looks for
  * the bare prefix and stays in the bundle on purpose: `"[Placeholder"` in core (`issueBlockers`) and `'%[Placeholder%'` in the
  * freeze SQL. So a match counts only when the prefix is not followed by a closing quote or "%".
+ * P7-B: nor by "] ${": that is a copy gate's own body (`APPROVED_x ? line : `[Placeholder] ${line}``). Vite folds a gate whose flag is
+ * true out of the SPA bundles, but jobs' bundler keeps the unreachable branch (seen in the 2026-11-07 production bundle: the 07-ZJ email
+ * gate, flag true). Whether a gate is open is read from its flag instead (checkApprovalFlags).
  */
-const PENDING_COPY = /\[Placeholder(?![%"'`])/g;
+const PENDING_COPY = /\[Placeholder(?![%"'`]|\] \$\{)/g;
+
+/** The source folders whose copy gates (`export const APPROVED_… = true|false`) reach a bundle. */
+const FLAG_SOURCES = ["packages", "apps"];
+const APPROVAL_FLAG = /export const (APPROVED_\w+)(?:\s*:\s*boolean)?\s*=\s*false\b/g;
+
+/**
+ * P7-B: every copy-approval flag in the source (packages/<pkg>/src, apps/<app>/src and apps/<app>/worker) is true: a false one would show its
+ * lines after a "[Placeholder]" mark, which a bundle scan can't always see (above). `rootDir` is the repository root.
+ */
+export function checkApprovalFlags(rootDir) {
+  const problems = [];
+  for (const top of FLAG_SOURCES) {
+    const base = join(rootDir, top);
+    if (!existsSync(base)) continue;
+    for (const name of readdirSync(base))
+      for (const sub of ["src", "worker"]) {
+        const dir = join(base, name, sub);
+        if (!existsSync(dir)) continue;
+        for (const file of walk(dir)) {
+          if (!/\.(?:ts|tsx|mjs|js)$/.test(file) || /\.test\.[a-z]+$/.test(file)) continue;
+          for (const m of readFileSync(file, "utf8").matchAll(APPROVAL_FLAG))
+            problems.push(
+              `${relative(rootDir, file).split(sep).join("/")}: ${m[1]} is false, so its lines show a "[Placeholder]" mark: the owner approves that copy, then the lead sets ${m[1]} to true.`,
+            );
+        }
+      }
+  }
+  return problems;
+}
 const BUNDLE_TEXT = /\.(?:js|mjs|cjs|html|css|json|txt)$/i;
 
 /** Problems in one built file of `app`: each pending-copy mark, with a little of the text around it (never more). */
@@ -448,6 +480,7 @@ export function checkProdReadiness(webDir, backupFile = BACKUP_RECORD_FILE, apps
   }
   problems.push(...checkBundles(appsDir));
   problems.push(...checkProductionConfigs(appsDir));
+  problems.push(...checkApprovalFlags(join(appsDir, "..")));
   return problems;
 }
 
