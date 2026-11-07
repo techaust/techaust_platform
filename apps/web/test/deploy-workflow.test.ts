@@ -3,15 +3,30 @@
 // in a fixed order (from M6.5, owner's Q3 A 2026-11-02: admin API, admin invoices, admin finance, admin front, portal, jobs, website) with a
 // health check after each app (the admin's once its four Workers are new). M7.5 (owner's Q3 A): three jobs, the token only in the two that install
 // nothing but wrangler. Runs in Node (reads files).
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
 import * as d from "../../../scripts/deploy-worker.mjs";
+
+/** Made-up repository roots for the deploy checks (removed after the file). */
+const scratchDirs: string[] = [];
+const scratch = () => {
+  const dir = mkdtempSync(join(tmpdir(), "deploy-worker-"));
+  scratchDirs.push(dir);
+  return dir;
+};
+afterAll(() => {
+  for (const dir of scratchDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const read = (path: string) =>
   readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const workflow = (name: string) => read(`.github/workflows/${name}`);
+/** L51: the portal's flattened staging config of 2026-11-07 (paths and vars made up). */
+const FLATTENED: Record<string, unknown> = JSON.parse(read("apps/web/test/fixtures/flattened-staging.json"));
 const scripts = (app: string): Record<string, string> => JSON.parse(read(`apps/${app}/package.json`)).scripts;
 
 /** The steps of a workflow's single job, each as its YAML text without comment lines (a comment above a step is not its code). */
@@ -110,6 +125,10 @@ describe("deploy-staging.yml: three jobs, the token only where nothing but wrang
     expect(text.slice(0, text.indexOf("\njobs:\n"))).not.toMatch(/secrets\./);
     expect(build).not.toMatch(/secrets\./);
     expect(build).not.toMatch(/CLOUDFLARE_API_TOKEN/);
+  });
+
+  it("the build job writes no pnpm cache the token jobs could restore (L51)", () => {
+    expect(build).not.toMatch(/^\s*cache:/m);
   });
 
   it.each([
@@ -240,6 +259,7 @@ describe("deploy-prod.yml: build without secrets, deploy with wrangler only (M7.
   it("the build job has no environment and no secret, runs the readiness and .dev.vars checks, and hands an artifact on", () => {
     expect(build).toContain("needs: guard");
     expect(build).not.toMatch(/secrets\.|environment:/);
+    expect(build).not.toMatch(/^\s*cache:/m); // L51
     expect(build).toContain("node scripts/check-prod-readiness.mjs");
     expect(build).toContain("node scripts/check-staging-build.mjs dev-vars");
     expect(build).toContain("actions/upload-artifact@");
@@ -279,6 +299,14 @@ describe("scripts/deploy-worker.mjs (M7.5, owner's Q3 A)", () => {
     expect(d.preDeployProblems("jobs", empty).join()).toMatch(/deploy-tools/);
   });
 
+  it("refuses a redirect file beside jobs' or the website's own config (they deploy their checked-out wrangler.jsonc)", () => {
+    const root = scratch();
+    mkdirSync(join(root, "apps", "jobs", ".wrangler", "deploy"), { recursive: true });
+    expect(d.configProblems("jobs", root)).toEqual([]);
+    writeFileSync(join(root, "apps", "jobs", d.REDIRECT), JSON.stringify({ configPath: "../../x.json" }));
+    expect(d.configProblems("jobs", root).join()).toMatch(/deploys its own wrangler\.jsonc: refused/);
+  });
+
   it("the deploy-tools package installs wrangler alone, at the apps' pinned version", () => {
     const tools = JSON.parse(read("tools/deploy/package.json"));
     expect(tools.dependencies).toBeUndefined();
@@ -286,6 +314,109 @@ describe("scripts/deploy-worker.mjs (M7.5, owner's Q3 A)", () => {
     expect(tools.devDependencies.wrangler).toBe(
       JSON.parse(read("apps/jobs/package.json")).devDependencies.wrangler,
     );
+  });
+});
+
+describe("the config each deploy uses: no build step, nothing outside dist (L51, review 1 finding 2)", () => {
+  /** A made-up app tree: `apps/portal/dist/techaust_platform_portal/wrangler.json` (today's real flattened config, sanitised) and its redirect. */
+  function portalTree(edit: (config: Record<string, unknown>) => void = () => {}, configPath?: string) {
+    const root = scratch();
+    const app = join(root, "apps", "portal");
+    const worker = join(app, "dist", "techaust_platform_portal");
+    mkdirSync(worker, { recursive: true });
+    mkdirSync(join(app, "dist", "client"), { recursive: true });
+    mkdirSync(join(app, ".wrangler", "deploy"), { recursive: true });
+    writeFileSync(join(worker, "index.js"), "export default {};\n");
+    const config = structuredClone(FLATTENED);
+    edit(config);
+    writeFileSync(join(worker, "wrangler.json"), JSON.stringify(config));
+    writeFileSync(
+      join(app, d.REDIRECT),
+      JSON.stringify({
+        // as the plugin writes it on Windows (backslashes): read the same on every OS
+        configPath: configPath ?? "..\\..\\dist\\techaust_platform_portal\\wrangler.json",
+        auxiliaryWorkers: [],
+      }),
+    );
+    return root;
+  }
+
+  it("today's flattened config (the fixture, taken from the 2026-11-07 staging build) passes", () => {
+    expect(d.redirectProblems("portal", portalTree())).toEqual([]);
+    // the fixture's keys are all on the allow list, and the list has no `build`
+    expect(Object.keys(FLATTENED).filter((k) => !d.FLATTENED_KEYS.includes(k))).toEqual([]);
+    expect(d.FLATTENED_KEYS).not.toContain("build");
+  });
+
+  it.each([
+    [
+      "a build key",
+      (c: Record<string, unknown>) => Object.assign(c, { build: { command: "curl x | sh" } }),
+      /"build" key/,
+    ],
+    [
+      "a key outside the allow list",
+      (c: Record<string, unknown>) => Object.assign(c, { alias: { a: "b" } }),
+      /outside the allow list: alias/,
+    ],
+    [
+      "a bundling config",
+      (c: Record<string, unknown>) => Object.assign(c, { no_bundle: false }),
+      /not no_bundle/,
+    ],
+    [
+      "a main outside dist",
+      (c: Record<string, unknown>) => Object.assign(c, { main: "../../../evil.js" }),
+      /main is missing or outside dist/,
+    ],
+    [
+      "assets outside dist",
+      (c: Record<string, unknown>) => Object.assign(c, { assets: { directory: "../../.." } }),
+      /assets\.directory is missing or outside dist/,
+    ],
+  ])("refuses %s", (_name, edit, problem) => {
+    expect(d.redirectProblems("portal", portalTree(edit)).join("\n")).toMatch(problem);
+  });
+
+  it("refuses a redirect that leads out of dist, an auxiliary Worker out of dist, and a missing or broken redirect", () => {
+    const out = portalTree(() => {}, "../../wrangler.jsonc");
+    expect(d.redirectProblems("portal", out).join()).toMatch(/outside dist: refused/);
+    const aux = portalTree();
+    writeFileSync(
+      join(aux, "apps", "portal", d.REDIRECT),
+      JSON.stringify({
+        configPath: "../../dist/techaust_platform_portal/wrangler.json",
+        auxiliaryWorkers: [{ configPath: "../../../../x/wrangler.json" }],
+      }),
+    );
+    expect(d.redirectProblems("portal", aux).join()).toMatch(/auxiliary Worker's config is outside dist/);
+    expect(d.redirectProblems("portal", scratch()).join()).toMatch(/missing: run the app's build:staging/);
+    const broken = portalTree();
+    writeFileSync(join(broken, "apps", "portal", d.REDIRECT), "{");
+    expect(d.redirectProblems("portal", broken).join()).toMatch(/is not JSON/);
+  });
+
+  it("the admin Workers deployed with --config get the same checks", () => {
+    const root = scratch();
+    const worker = join(root, "apps", "admin", "dist", "techaust_platform_admin_api");
+    mkdirSync(worker, { recursive: true });
+    writeFileSync(join(worker, "index.js"), "export default {};\n");
+    const { assets: _assets, ...config } = structuredClone(FLATTENED);
+    writeFileSync(join(worker, "wrangler.json"), JSON.stringify(config));
+    expect(d.configProblems("admin-api", root)).toEqual([]);
+    writeFileSync(join(worker, "wrangler.json"), JSON.stringify({ ...config, build: { command: "x" } }));
+    expect(d.configProblems("admin-api", root).join()).toMatch(/"build" key/);
+  });
+
+  // The real builds, when this checkout has them (CLOUDFLARE_ENV=staging vite build in apps/admin and apps/portal): every config passes.
+  const built = existsSync(
+    fileURLToPath(new URL("../../admin/.wrangler/deploy/config.json", import.meta.url)),
+  );
+  it.skipIf(!built)("today's real staging builds pass (admin's four Workers and the portal)", () => {
+    for (const target of ["admin", "admin-api", "admin-invoices", "admin-finance"])
+      expect(d.configProblems(target), target).toEqual([]);
+    if (existsSync(fileURLToPath(new URL("../../portal/.wrangler/deploy/config.json", import.meta.url))))
+      expect(d.configProblems("portal")).toEqual([]);
   });
 });
 

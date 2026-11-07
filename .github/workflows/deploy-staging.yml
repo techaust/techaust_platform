@@ -17,7 +17,10 @@ concurrency:
 
 # Three jobs (M7.5, owner's Q3 A, 2026-11-01): the Cloudflare token is only in the two jobs that install NOTHING but wrangler (`@techaust/deploy-tools`, the
 # apps' pinned version, from the lockfile), and the one job that installs and runs package code (the install, the seed SQL, the astro and vite builds, the
-# Worker bundles) has no token at all, so no package's code can reach it, not even through a file left on the runner (each job has its own runner).
+# Worker bundles) has no token at all. Each job has its own runner, but the build's ARTIFACT does reach the deploy job, and package code wrote it: a config
+# in it could carry a `build.command`, which `wrangler deploy` runs with the token set (review 1, finding 2). So scripts/deploy-worker.mjs checks the config
+# each deploy will use before wrangler starts (L51: the redirect stays inside `dist`, no `build` key, no key outside its allow list, `no_bundle`, `main` and
+# the assets inside `dist`; jobs and the website must have no redirect), and the build job writes no pnpm cache the token jobs could restore.
 #   1. prepare (token, wrangler only): the credentials check, the deploy-check token check, migrations (owner decision M1.3: before any Worker deploys),
 #      and the published catalogue snapshot (ADM-CAT-05), handed to the build as an artifact;
 #   2. build (no token): the seed SQL, the three builds and the two pre-bundled Workers (jobs and the website's /api Worker), handed on as an artifact;
@@ -113,7 +116,8 @@ jobs:
     if: needs.prepare.outputs.ready == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # No secret in this job: it installs and runs package code.
+    # No secret in this job: it installs and runs package code. No `cache: pnpm` either (L51): package code runs before the cache would be saved, so a
+    # cache written here could be restored by the token jobs.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -122,7 +126,6 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .nvmrc
-          cache: pnpm
       - run: pnpm install --frozen-lockfile
       # A published snapshot must arrive (the build never falls back to seed prices when one exists); none published: the seed.
       - if: needs.prepare.outputs.snapshot == 'true'
