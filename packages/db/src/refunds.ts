@@ -251,16 +251,19 @@ export const refundReverseStatement = (
 /**
  * A refund's review item of `kind` opens once per refund (early check 2, findings 1c, 2 and 1d: the tenth check, every later one, the dead-letter queue and L42's
  * PayPal cut-off all reach `refund_stuck`; an event seen twice reaches `refund_after_failed` twice): no item of that kind for that refund, open or resolved, exists
- * yet. One seek of `review_items_payment` (the refund's payment). Added to `g` (the batch's own guard), when given.
+ * yet. One seek of `review_items_payment` (the refund's payment). Added to `g` (the batch's own guard), when given. M6–M7 audit AU36: with `stage` (given, even
+ * null), only an item at that stage counts (`facts.stage`, absent = null), so Stripe's `requires_action` item (stage `requires_action`) never stops the reversal's
+ * own `refund_reversed` item (no stage) of the same refund, nor the reverse.
  */
 export function refundItemOnceGuard(
-  a: { paymentId: string; refundId: string; kind: string },
+  a: { paymentId: string; refundId: string; kind: string; stage?: string | null },
   g?: GuardSql,
 ): GuardSql {
+  const staged = a.stage !== undefined;
   const once: GuardSql = {
     sql: (at) =>
-      `NOT EXISTS (SELECT 1 FROM review_items ri INDEXED BY review_items_payment WHERE ri.payment_id = ?${at} AND ri.kind = ?${at + 1} AND json_extract(ri.facts, '$.refundId') = ?${at + 2})`,
-    params: [a.paymentId, a.kind, a.refundId],
+      `NOT EXISTS (SELECT 1 FROM review_items ri INDEXED BY review_items_payment WHERE ri.payment_id = ?${at} AND ri.kind = ?${at + 1} AND json_extract(ri.facts, '$.refundId') = ?${at + 2}${staged ? ` AND json_extract(ri.facts, '$.stage') IS ?${at + 3}` : ""})`,
+    params: staged ? [a.paymentId, a.kind, a.refundId, a.stage ?? null] : [a.paymentId, a.kind, a.refundId],
   };
   return g
     ? {

@@ -18,6 +18,8 @@ export type ReasonFacts = {
   code?: string | null;
   /** M6–M7 audit AU6: `refunded_outside` on a payment first seen partly refunded: how much the gateway had already refunded. */
   refundedMinor?: number | null;
+  /** M6–M7 audit AU36: `refund_reversed` at stage `requires_action` (Stripe asks the customer to act; nothing reversed). */
+  stage?: string | null;
 };
 
 const money_ = (m: number | null | undefined, currency: "INR" | "USD" | null | undefined) =>
@@ -136,11 +138,12 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
     case "reversed_after_confirm":
       return `PayPal reversed ${m(f.paidMinor)} that was already counted. Check the case in PayPal. The invoice's balance hasn't changed.`;
     case "refunded_outside":
-      // M6–M7 audit AU6 (staff-only; the builder's draft for the lead, 07-ZT line 2): a payment first seen with part of it already refunded at the gateway.
+      // M6–M7 audit AU6 (staff-only; 07-ZT line 2, reworded by the lead in AU34 to the order the database accepts: a pending payment can't be refunded in part,
+      // and one with a live refund can't be confirmed): a payment first seen with part of it already refunded at the gateway.
       if (f.refundedMinor != null && f.refundedMinor > 0)
-        return `${gw} had already refunded ${m(f.refundedMinor)} of this payment of ${m(f.paidMinor)} when it reached us, so it waits here instead of being counted. Record the refund, then confirm what was kept.`;
+        return `${gw} had already refunded ${m(f.refundedMinor)} of this payment of ${m(f.paidMinor)} when it reached us, so it waits here. Confirm it, putting only what was kept on the invoice, then record the ${m(f.refundedMinor)} refund from credit with ${gw}'s refund id.`;
       if (f.reason === "partly_refunded")
-        return `${gw} had already refunded part of this payment of ${m(f.paidMinor)} when it reached us, so it waits here instead of being counted. Check the amount in ${gw}, record the refund, then confirm what was kept.`;
+        return `${gw} had already refunded part of this payment of ${m(f.paidMinor)} when it reached us, so it waits here. Confirm it, putting only what was kept on the invoice, then record the refund from credit with ${gw}'s refund id.`;
       // M6.5 (builder's draft for the lead, staff-only): every gateway by name; "Record this refund" moves the ledger (L7).
       return `This payment was refunded in ${gw}, outside the admin. The invoice's balance hasn't changed until you record the refund.`;
     case "refund_failed":
@@ -151,6 +154,12 @@ export function reviewReason(kind: string, f: ReasonFacts = {}): string {
       // Early check 2, finding 1c (L43; builder's draft for the lead, staff-only): our row says failed, the gateway says made or on its way.
       return `${gw} shows the refund of ${m(f.paidMinor)} as made or on its way, but it is marked failed here, so the client's credit still counts it. Check it in ${gw}'s dashboard and record the refund if it was made.`;
     case "refund_reversed":
+      // M6–M7 audit AU36 (staff-only; the builder's draft for the lead): Stripe's `requires_action` after success: nothing reversed, the Owner checks it.
+      if (f.stage === "requires_action")
+        return `${gw} needs the client to act before the refund of ${m(f.paidMinor)} can reach them, so it may not have arrived. It still counts as made here. Check it in ${gw}'s dashboard.`;
+      // AU33 (the lead's line, AU33): the refund's payment was rejected when the refund was made (L33), so the money that came back is no client credit.
+      if (f.reason === "payment_rejected")
+        return `${gw}'s refund of ${m(f.paidMinor)} came back after it was made. The payment was rejected when this refund was made, so the money isn't counted here. Record it as a payment.`;
       // M6–M7 audit AU1 (staff-only; the builder's draft for the lead, 07-ZT line 3): a refund that had gone out came back.
       return `${gw}'s refund of ${m(f.paidMinor)} came back after it was made, so it is marked failed and the money is the client's credit again. Check it in ${gw}'s dashboard, then refund it again or keep it as credit.`;
     case "dispute_opened":

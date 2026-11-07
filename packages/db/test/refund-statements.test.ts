@@ -4,7 +4,7 @@
 // matches; FEMA reductions; and the twins: free money vs core, the RA-41 line vs core, the stage with M6.5's facts vs core, and the readers with refunds (credit,
 // client figures, collected, the statement) and with receipts present. The real statement builders; invented test data.
 import { env } from "cloudflare:workers";
-import { uuidv7 } from "@techaust/core";
+import { fyOf, uuidv7 } from "@techaust/core";
 import { DEFAULT_REALISATION_RULES, realisationStatus } from "@techaust/core/gst";
 import { freeOf } from "@techaust/core/ledger";
 import { receiptHeaderOf, receiptIdOf, receiptSealOf } from "@techaust/core/receipts";
@@ -71,12 +71,19 @@ import {
   REALISATION_PAGE_SQL,
   REFUNDS_REGISTER_SQL,
   REGISTER_PAGE_SQL,
+  REVENUE_CLIENTS_SQL,
+  REVENUE_MONTHS_GROUPED_SQL,
+  REVENUE_MONTHS_SQL,
+  revenueClientsBinds,
+  STATEMENT_BALANCE_BEFORE_SQL,
   STATEMENT_LEDGER_SQL,
   STATEMENT_TOTALS_SQL,
+  statementBalanceBeforeBinds,
   statementTotalsBinds,
 } from "../src/reports.ts";
 import { REVIEW_KINDS } from "../src/schema/payments.ts";
 import {
+  istFyOfMsSql,
   overpaymentAdvanceAtSql,
   overpaymentAdvanceSql,
   paymentFreeAtSql,
@@ -2093,6 +2100,127 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
     expect(await collected()).toBe(collectedBefore + 20_000);
   });
 
+  it("AU37 (L2): a refund out on 3 Nov that came back on 5 Dec stays out in every period ending before 5 Dec; a period ending after drops it", async () => {
+    const r = await refunded(20_000);
+    const back = Date.parse("2026-12-05T04:30:00Z"); // 10:00 IST
+    const inr = <R extends { currency: string }>(xs: R[]) => xs.find((x) => x.currency === "INR");
+    const read = async () => ({
+      stmtNov: await first<{ debit: number }>(
+        STATEMENT_TOTALS_SQL,
+        ...statementTotalsBinds(r.clientId, "INR", "2026-11-01", "2026-11-30"),
+      ),
+      stmtToDec: await first<{ debit: number }>(
+        STATEMENT_TOTALS_SQL,
+        ...statementTotalsBinds(r.clientId, "INR", "2026-11-01", "2026-12-31"),
+      ),
+      openingDec: await first<{ balance: number }>(
+        STATEMENT_BALANCE_BEFORE_SQL(false),
+        ...statementBalanceBeforeBinds(r.clientId, "INR", "2026-12-01", "2026-12-31"),
+      ),
+      regNov: (await all<{ id: string }>(REFUNDS_REGISTER_SQL(false), "2026-11-01", "2026-11-30")).some(
+        (x) => x.id === r.refundId,
+      ),
+      regToDec: (await all<{ id: string }>(REFUNDS_REGISTER_SQL(false), "2026-11-01", "2026-12-31")).some(
+        (x) => x.id === r.refundId,
+      ),
+      collectedNov: inr(
+        await all<{ currency: string; collected: number }>(COLLECTED_SQL, "2026-11-01", "2026-11-30"),
+      )?.collected,
+      collectedToDec: inr(
+        await all<{ currency: string; collected: number }>(COLLECTED_SQL, "2026-11-01", "2026-12-31"),
+      )?.collected,
+      tile: inr(
+        await all<{ currency: string; pm_collected: number; fy_collected: number }>(
+          COLLECTED_TILE_SQL,
+          "2026-04-01",
+          "2027-03-31",
+          "2026-12-01",
+          "2026-12-31",
+        ),
+      ),
+      monthNov: (
+        await all<{ month: string; currency: string; refunded: number }>(REVENUE_MONTHS_SQL, "2026-04-01")
+      ).find((x) => x.month === "2026-11" && x.currency === "INR")?.refunded,
+      twinNov: (
+        await all<{ month: string; currency: string; refunded: number }>(
+          REVENUE_MONTHS_GROUPED_SQL.refunded,
+          "2026-04-01",
+          "2027-03-31",
+        )
+      ).find((x) => x.month === "2026-11" && x.currency === "INR")?.refunded,
+      clientNov:
+        (
+          await all<{ client_id: string; refunded: number }>(
+            REVENUE_CLIENTS_SQL(false),
+            ...revenueClientsBinds("2026-11-01", "2026-11-30", "INR"),
+          )
+        ).find((x) => x.client_id === r.clientId)?.refunded ?? 0,
+      clientToDec:
+        (
+          await all<{ client_id: string; refunded: number }>(
+            REVENUE_CLIENTS_SQL(false),
+            ...revenueClientsBinds("2026-11-01", "2026-12-31", "INR"),
+          )
+        ).find((x) => x.client_id === r.clientId)?.refunded ?? 0,
+      // RA-41: the payment's credit at the end of 30 Nov and of 31 Dec (IST)
+      heldNov: (
+        await first<{ free: number }>(
+          `SELECT ${paymentFreeAtSql("p", "?2", "?3")} AS free FROM payments p WHERE p.id = ?1`,
+          r.p,
+          Date.parse("2026-11-30T18:30:00Z") - 1,
+          "2026-11-30",
+        )
+      )?.free,
+      heldDec: (
+        await first<{ free: number }>(
+          `SELECT ${paymentFreeAtSql("p", "?2", "?3")} AS free FROM payments p WHERE p.id = ?1`,
+          r.p,
+          Date.parse("2026-12-31T18:30:00Z") - 1,
+          "2026-12-31",
+        )
+      )?.free,
+    });
+    const before = await read();
+    expect(before.regNov && before.regToDec).toBe(true);
+    expect(before.heldNov).toBe(30_000);
+    expect(before.heldDec).toBe(30_000);
+    expect((await reverse(r.refundId, r.ref, back)).meta.changes).toBe(1);
+    const after = await read();
+    // the periods that ended before 5 Dec: unchanged
+    expect(after.stmtNov).toEqual(before.stmtNov);
+    expect(after.regNov).toBe(true);
+    expect(after.collectedNov).toBe(before.collectedNov);
+    expect(after.tile?.pm_collected).toBe(before.tile?.pm_collected);
+    expect(after.monthNov).toBe(before.monthNov);
+    expect(after.twinNov).toBe(after.monthNov);
+    expect(after.clientNov).toBe(before.clientNov);
+    expect(after.heldNov).toBe(30_000);
+    // a period ending after 5 Dec: the refund came back
+    expect(after.stmtToDec?.debit).toBe((before.stmtToDec?.debit ?? 0) - 20_000);
+    expect(after.openingDec?.balance).toBe((before.openingDec?.balance ?? 0) - 20_000);
+    expect(after.regToDec).toBe(false);
+    expect(after.collectedToDec).toBe((before.collectedToDec ?? 0) + 20_000);
+    expect(after.tile?.fy_collected).toBe((before.tile?.fy_collected ?? 0) + 20_000);
+    expect(after.clientToDec).toBe((before.clientToDec ?? 0) - 20_000);
+    expect(after.heldDec).toBe(50_000);
+    // the range readers seek both branches (the succeeded refunds and the failed ones), never a scan of payment_refunds
+    for (const [sql, binds] of [
+      [REFUNDS_REGISTER_SQL(false), ["2026-11-01", "2026-11-30"]],
+      [COLLECTED_SQL, ["2026-11-01", "2026-11-30"]],
+      [COLLECTED_TILE_SQL, ["2026-04-01", "2027-03-31", "2026-12-01", "2026-12-31"]],
+      [REVENUE_MONTHS_SQL, ["2026-04-01"]],
+    ] as const) {
+      const p = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...binds))
+        .map((x) => x.detail)
+        .join("\n");
+      expect(p).toMatch(
+        /SEARCH payment_refunds USING INDEX payment_refunds_settled \(settled_on>\? AND settled_on<\?\)/,
+      );
+      expect(p).toMatch(/SEARCH payment_refunds USING INDEX payment_refunds_status_list \(status=\?\)/);
+      expect(p).not.toMatch(/SCAN payment_refunds\b/);
+    }
+  });
+
   it("the trigger (0082): only a gateway refund that succeeded, with its code and reversed_at, keeping its settled fields; never a manual one or a lost dispute; reversed_at set once", async () => {
     const r = await refunded();
     // no reversed_at, no code, settled fields cleared: refused
@@ -2349,17 +2477,18 @@ describe("AU3 (B0 7, B6 L4): the receipt sweep tries the least recently tried fi
       (
         await all<{ id: string }>(
           RECEIPTS_DUE_SQL.replace("LIMIT 20", "LIMIT 100000"),
-          Number.MAX_SAFE_INTEGER,
+          // a cut-off in the same FY as the tries below (AU38: a full series comes back only in a later FY)
+          T + 1_000,
         )
       ).map((r) => r.id);
     expect(RECEIPTS_DUE_SQL).toMatch(/LIMIT 20$/);
-    const fail = (now: number, version: number | null) =>
+    const fail = (at: number, version: number | null) =>
       db().batch(
         receiptFailureStatements(db(), {
           paymentId: blocked,
           reason: "series_full",
           numberingVersion: version,
-          now,
+          now: T + at,
           bellTitle: "Receipts can't be numbered",
           link: "/payments",
         }),
@@ -2413,6 +2542,57 @@ describe("AU3 (B0 7, B6 L4): the receipt sweep tries the least recently tried fi
         )
       )?.receipt_failures,
     ).toBe(1);
+  });
+
+  it("AU38 (L3): a payment left out for a full series comes back once the sweep's FY is later than its last try's; any other refusal stays out", async () => {
+    const { owner, clientId } = await setup();
+    const full = await pay(clientId, owner, { amount: 1_100 });
+    const other = await pay(clientId, owner, { amount: 1_200 });
+    const version =
+      (await first<{ version: number }>("SELECT version FROM settings WHERE key = 'numbering'"))?.version ??
+      null;
+    // the last try at 31 March 2030, 23:50 IST (FY 2029-30)
+    const lastTry = Date.parse("2030-03-31T18:20:00Z");
+    for (const [id, reason] of [
+      [full, "series_full"],
+      [other, "changed"],
+    ] as const)
+      for (let i = 2; i >= 0; i--)
+        await db().batch(
+          receiptFailureStatements(db(), {
+            paymentId: id,
+            reason,
+            numberingVersion: version,
+            now: lastTry - i,
+            bellTitle: "Receipts can't be numbered",
+            link: "/payments",
+          }),
+        );
+    const due = async (cutoff: number) =>
+      (await all<{ id: string }>(RECEIPTS_DUE_SQL.replace("LIMIT 20", "LIMIT 100000"), cutoff)).map(
+        (r) => r.id,
+      );
+    // still FY 2029-30 (23:59 IST): both out
+    const sameFy = await due(Date.parse("2030-03-31T18:29:00Z"));
+    expect(sameFy).not.toContain(full);
+    expect(sameFy).not.toContain(other);
+    // 1 April 2030, 00:01 IST (FY 2030-31): the full series has room again; the other refusal stays out
+    const nextFy = await due(Date.parse("2030-03-31T18:31:00Z"));
+    expect(nextFy).toContain(full);
+    expect(nextFy).not.toContain(other);
+  });
+
+  it("istFyOfMsSql is core fyOf's twin across the 31 March / 1 April IST boundary", async () => {
+    for (const at of [
+      Date.parse("2030-03-31T18:29:59.999Z"),
+      Date.parse("2030-03-31T18:30:00.000Z"),
+      Date.parse("2026-01-01T00:00:00Z"),
+      Date.parse("2026-04-01T00:00:00Z"),
+      Date.parse("2026-12-31T20:00:00Z"),
+    ])
+      expect((await first<{ fy: number }>(`SELECT ${istFyOfMsSql("?1")} AS fy`, at))?.fy, String(at)).toBe(
+        fyOf(at).startYear,
+      );
   });
 });
 

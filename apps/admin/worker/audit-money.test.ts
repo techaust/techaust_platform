@@ -240,7 +240,7 @@ describe("AU1 (B0 1): a Stripe refund that failed after `succeeded`", () => {
     ).toHaveLength(1);
   });
 
-  it("Stripe's `requires_action` after success reverses it too; an answer that isn't this refund (another amount) moves nothing", async () => {
+  it("Stripe's `requires_action` after success (AU36: an item, no reversal; see audit-money-af1b.test.ts); an answer that isn't this refund (another amount) moves nothing", async () => {
     const r = await stripeRefunded();
     let answer = refundJson(r.reId, r.pi, "requires_action", r.amount - 1);
     stripeStub((path, method) =>
@@ -255,11 +255,11 @@ describe("AU1 (B0 1): a Stripe refund that failed after `succeeded`", () => {
     answer = refundJson(r.reId, r.pi, "requires_action", r.amount);
     expect(await processEvent(env, await refundEvent(r, "refund.updated", "pending"))).toEqual({
       result: "needs_review",
-      refundReversed: r.refundId,
     });
-    expect(await one("SELECT status, failure_code FROM payment_refunds WHERE id = ?1", r.refundId)).toEqual({
-      status: "failed",
-      failure_code: "stripe_requires_action",
+    // AU36 (Settled by the lead on the safest reading, 2026-11-07): the refund still stands
+    expect(await one("SELECT status, reversed_at FROM payment_refunds WHERE id = ?1", r.refundId)).toEqual({
+      status: "succeeded",
+      reversed_at: null,
     });
   });
 

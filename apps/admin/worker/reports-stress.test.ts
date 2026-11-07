@@ -203,10 +203,16 @@ async function measure(name: keyof typeof BUDGET, path: string): Promise<Record<
     // the per-client walks of C2 and C9 and the care plans' page read those small tables by primary key by design (B1, EXPLAIN test)
     const walks =
       /FROM clients c LIMIT -1|FROM clients c\s+WHERE|FROM care_plans p (CROSS JOIN|\s*WHERE)/.test(s.sql);
-    if (!walks)
-      expect(plan, `${name}: ${s.sql.replace(/\s+/g, " ").slice(0, 120)}`).not.toMatch(
-        /SCAN (documents|payments|payment_refunds|leads|document_lines|time_logs|d|p|f|l)\b(?! USING)/,
-      );
+    // M6–M7 audit AU37: the walk of a CO-ROUTINE (a FROM subquery whose own index SEARCHes are listed above it, e.g. `refundsOutSql`) is no table scan
+    const coroutines = new Set([...plan.matchAll(/CO-ROUTINE (\w+)/g)].map((m) => m[1]));
+    const scans = plan.split(" | ").filter((line) => {
+      const m =
+        /SCAN (documents|payments|payment_refunds|leads|document_lines|time_logs|d|p|f|l)\b(?! USING)/.exec(
+          line,
+        );
+      return m !== null && !coroutines.has(m[1]);
+    });
+    if (!walks) expect(scans, `${name}: ${s.sql.replace(/\s+/g, " ").slice(0, 120)}`).toEqual([]);
   }
   return (await res.json()) as Record<string, unknown>;
 }

@@ -11,6 +11,7 @@ import {
   refundReversed,
 } from "../src/notifications.ts";
 import {
+  awaitsAction,
   readPayPalRefund,
   readRazorpayRefund,
   readStripeRefund,
@@ -37,12 +38,17 @@ describe("AU1: a refund that succeeded and came back", () => {
       expect(stripe(s)).not.toHaveProperty("requiresAction");
   });
 
-  it("reversalOf: failed (the gateway's code) or Stripe's requires_action reverse; processed or pending stand", () => {
+  it("reversalOf: failed (the gateway's code; Stripe's failed or canceled) reverses; processed, pending and (AU36) requires_action stand", () => {
     expect(reversalOf(stripe("failed", { failure_reason: "lost_or_stolen_card" }) as never)).toBe(
       "lost_or_stolen_card",
     );
     expect(reversalOf(stripe("failed") as never)).toBe("stripe_failed");
-    expect(reversalOf(stripe("requires_action") as never)).toBe("stripe_requires_action");
+    expect(reversalOf(stripe("canceled") as never)).toBe("stripe_canceled");
+    // AU36 (Settled by the lead on the safest reading, 2026-11-07): requires_action after success is an item for the Owner, never a reversal
+    expect(reversalOf(stripe("requires_action") as never)).toBeNull();
+    expect(awaitsAction(stripe("requires_action") as never)).toBe(true);
+    for (const s of ["succeeded", "pending", "failed", "canceled"])
+      expect(awaitsAction(stripe(s) as never), s).toBe(false);
     expect(reversalOf(stripe("succeeded") as never)).toBeNull();
     expect(reversalOf(stripe("pending") as never)).toBeNull();
     const rzp = readRazorpayRefund({

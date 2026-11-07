@@ -11,7 +11,7 @@
 // document (Researched 2026-11-03, s.31(3)(d) CGST Act and Rule 50 CGST Rules as quoted in the GST Council flyer ch. 6 (08-C RA-39)); the trigger
 // `documents_receipt_insert` (0070) holds the same rules.
 import type { GuardSql } from "./log.ts";
-import { paymentRefundedInFullSql } from "./sql-rules.ts";
+import { istFyOfMsSql, paymentRefundedInFullSql } from "./sql-rules.ts";
 
 export type { GuardSql };
 
@@ -129,12 +129,15 @@ export const RECEIPT_ISSUE_MAX_FAILURES = 3;
  * A client anonymised never gets a receipt, so its payments are left out (early check 2, finding 5: otherwise 20 of them would fill every sweep for ever).
  * M6–M7 audit AU3 (B0 7, B6 L4): never tried first, then the least recently tried (`receipt_tried_at`), then the oldest confirmation; a payment whose issue was
  * refused `RECEIPT_ISSUE_MAX_FAILURES` times under the current numbering settings is left out (a full series no longer blocks every other receipt for ever),
- * and comes back once the numbering settings change (a wider format).
+ * and comes back once the numbering settings change (a wider format). AU38 (early check L3): a payment left out for a full series (`series_full`) also comes
+ * back once the FY of its last try is earlier than the FY of `?1` (the series is per FY, so a new FY has room again). `?1` is the sweep's cut-off (its run time
+ * less `RECEIPT_SWEEP_AFTER_MS`), so on 1 April the payment returns within that margin.
  */
 export const RECEIPTS_DUE_SQL = `SELECT p.id FROM payments p INDEXED BY payments_receipt_due
    WHERE p.status = 'confirmed' AND p.kind = 'payment' AND p.receipt_document_id IS NULL AND p.verified_at < ?1
      AND NOT EXISTS (SELECT 1 FROM clients k WHERE k.id = p.client_id AND k.anonymised_at IS NOT NULL)
-     AND (p.receipt_failures < ${RECEIPT_ISSUE_MAX_FAILURES} OR p.receipt_fail_version IS NOT (SELECT version FROM settings WHERE key = 'numbering'))
+     AND (p.receipt_failures < ${RECEIPT_ISSUE_MAX_FAILURES} OR p.receipt_fail_version IS NOT (SELECT version FROM settings WHERE key = 'numbering')
+       OR (p.receipt_fail_reason = 'series_full' AND ${istFyOfMsSql("p.receipt_tried_at")} < ${istFyOfMsSql("?1")}))
    ORDER BY coalesce(p.receipt_tried_at, 0), p.verified_at, p.id LIMIT 20`;
 
 /**

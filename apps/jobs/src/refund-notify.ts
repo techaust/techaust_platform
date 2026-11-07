@@ -185,11 +185,12 @@ export const refundReversedCopyGate = { approved: (): boolean => APPROVED_07ZT }
 
 /**
  * The reversed refund, only when it may be emailed: every rule in the WHERE (status `failed` with `reversed_at`, origin not `chargeback`, the client not
- * anonymised), and the document it names as `REFUND_ROW_SQL` finds it.
+ * anonymised, and (M6–M7 audit AU33) its payment `confirmed`: a refund of a pending payment refunded in full (L33) left that payment `rejected`, so the money
+ * that came back is no credit of the client's and the email's words would be wrong), and the document it names as `REFUND_ROW_SQL` finds it.
  */
 export const REFUND_REVERSED_ROW_SQL = REFUND_ROW_SQL.replace(
   "r.status = 'succeeded'",
-  "r.status = 'failed' AND r.reversed_at IS NOT NULL",
+  "r.status = 'failed' AND r.reversed_at IS NOT NULL AND p.status = 'confirmed'",
 );
 
 /**

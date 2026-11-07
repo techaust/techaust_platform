@@ -350,6 +350,8 @@ export function itemReason(
     code: str(f.code),
     // M6–M7 audit AU6: a payment first seen partly refunded at the gateway (`refunded_outside`)
     refundedMinor: num(f.refundedMinor),
+    // AU36: a `refund_reversed` item at stage `requires_action` (nothing reversed)
+    stage: str(f.stage),
     blocker: blockers.length ? blockers.map(blockerWords).join("; ") : null,
   });
 }
