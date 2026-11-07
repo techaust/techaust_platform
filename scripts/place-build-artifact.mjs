@@ -100,7 +100,8 @@ export function placementProblems(scope, fromDir, root = ROOT) {
   for (const { rel, stat } of entries) {
     const name = rel.slice(rel.lastIndexOf("/") + 1);
     if (stat.isSymbolicLink()) problems.push(`${rel} is a symlink: refused`);
-    else if (SECRET_NAME.test(name)) problems.push(`${rel} is a local secrets file (.env*, .dev.vars*): refused`);
+    else if (SECRET_NAME.test(name))
+      problems.push(`${rel} is a local secrets file (.env*, .dev.vars*): refused`);
     else if (stat.isDirectory()) {
       if (!folderAllowed(placements, rel)) problems.push(`${rel} is outside the build outputs: refused`);
     } else if (!stat.isFile()) problems.push(`${rel} is not a file or a folder: refused`);
@@ -110,8 +111,11 @@ export function placementProblems(scope, fromDir, root = ROOT) {
     const present =
       p.from === ""
         ? entries.some((e) => e.stat.isFile())
-        : entries.some((e) => e.rel === p.from && (p.type === "file" ? e.stat.isFile() : e.stat.isDirectory()));
-    if (!present) problems.push(p.from === "" ? "the artifact holds no file" : `${p.from} is missing from the artifact`);
+        : entries.some(
+            (e) => e.rel === p.from && (p.type === "file" ? e.stat.isFile() : e.stat.isDirectory()),
+          );
+    if (!present)
+      problems.push(p.from === "" ? "the artifact holds no file" : `${p.from} is missing from the artifact`);
     if (exists(join(root, p.to)))
       problems.push(`${p.to} already exists in the checkout: refused (the artifact never overwrites it)`);
   }
@@ -137,7 +141,9 @@ export function placeArtifact(scope, fromDir, root = ROOT) {
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
   const [scope, fromDir] = process.argv.slice(2);
   if (!scope || !fromDir) {
-    console.error("usage: node scripts/place-build-artifact.mjs staging|production <downloaded artifact folder>");
+    console.error(
+      "usage: node scripts/place-build-artifact.mjs staging|production <downloaded artifact folder>",
+    );
     process.exit(2);
   }
   const { problems, copied } = placeArtifact(scope, resolve(fromDir));

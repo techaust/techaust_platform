@@ -76,7 +76,9 @@ describe("place-build-artifact: a clean artifact (L57)", () => {
     const result = placeArtifact("staging", stagingArtifact(), root);
     expect(result).toEqual({ problems: [], copied: STAGING_FILES.length });
     expect(filesOf(root).sort()).toEqual([...before, ...STAGING_FILES].sort());
-    expect(readFileSync(join(root, "apps/jobs/dist-staging/index.js"), "utf8")).toBe("apps/jobs/dist-staging/index.js");
+    expect(readFileSync(join(root, "apps/jobs/dist-staging/index.js"), "utf8")).toBe(
+      "apps/jobs/dist-staging/index.js",
+    );
     expect(readFileSync(join(root, "scripts/deploy-worker.mjs"), "utf8")).toBe("trusted");
   });
 
@@ -133,7 +135,9 @@ describe("place-build-artifact: refusals place nothing (L57)", () => {
     const root = checkout();
     const art = stagingArtifact();
     mkdirSync(join(art, "scripts"));
-    expect(placementProblems("staging", art, root)).toEqual(["scripts is outside the build outputs: refused"]);
+    expect(placementProblems("staging", art, root)).toEqual([
+      "scripts is outside the build outputs: refused",
+    ]);
   });
 
   it("a folder where the seed file belongs", () => {
@@ -154,12 +158,18 @@ describe("place-build-artifact: refusals place nothing (L57)", () => {
     expect(placeArtifact("staging", art, root).copied).toBe(0);
     let fileLink = true;
     try {
-      symlinkSync(join(root, "apps/jobs/wrangler.jsonc"), join(art, "apps/jobs/dist-staging/link.js"), "file");
+      symlinkSync(
+        join(root, "apps/jobs/wrangler.jsonc"),
+        join(art, "apps/jobs/dist-staging/link.js"),
+        "file",
+      );
     } catch {
       fileLink = false; // Windows without Developer Mode: file symlinks need a privilege (Linux runners always can)
     }
     if (fileLink)
-      expect(placementProblems("staging", art, root)).toContain("apps/jobs/dist-staging/link.js is a symlink: refused");
+      expect(placementProblems("staging", art, root)).toContain(
+        "apps/jobs/dist-staging/link.js is a symlink: refused",
+      );
   });
 
   it("a missing output, and a destination the checkout already has", () => {
@@ -169,7 +179,9 @@ describe("place-build-artifact: refusals place nothing (L57)", () => {
     put(root, "apps/web/dist/index.html", "stale");
     const problems = placementProblems("staging", art, root);
     expect(problems).toContain("apps/jobs/dist-staging is missing from the artifact");
-    expect(problems).toContain("apps/web/dist already exists in the checkout: refused (the artifact never overwrites it)");
+    expect(problems).toContain(
+      "apps/web/dist already exists in the checkout: refused (the artifact never overwrites it)",
+    );
     expect(placeArtifact("staging", art, root).copied).toBe(0);
     expect(readFileSync(join(root, "apps/web/dist/index.html"), "utf8")).toBe("stale");
   });
@@ -178,12 +190,10 @@ describe("place-build-artifact: refusals place nothing (L57)", () => {
     const root = checkout();
     expect(placementProblems("production-ish", stagingArtifact(), root)[0]).toMatch(/unknown scope/);
     expect(placementProblems("staging", join(root, "nope"), root)[0]).toMatch(/is missing/);
-    expect(placementProblems("production", scratch("empty"), root)).toEqual([
-      "the artifact holds no file",
-    ]);
+    expect(placementProblems("production", scratch("empty"), root)).toEqual(["the artifact holds no file"]);
   });
 
-  it("a production artifact holding a secrets file or a symlink", () => {
+  it("a production artifact holding a secrets file", () => {
     const root = checkout();
     const art = scratch("prod");
     put(art, "index.html");

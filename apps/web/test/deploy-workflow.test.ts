@@ -141,7 +141,9 @@ const expectPlacedSafely = (
   expect(steps.filter((s) => s.includes("actions/download-artifact@"))).toHaveLength(1);
   expect(steps[download]).toContain(`name: ${artifact}`);
   expect(steps[download]).toContain(`path: ${["$", "{{ runner.temp }}/", artifact].join("")}`);
-  expect(uploadPaths(steps[download] as string)).toEqual([`${["$", "{{ runner.temp }}/", artifact].join("")}`]);
+  expect(uploadPaths(steps[download] as string)).toEqual([
+    `${["$", "{{ runner.temp }}/", artifact].join("")}`,
+  ]);
   const place = running(steps, `node scripts/place-build-artifact.mjs ${scope} "$RUNNER_TEMP/${artifact}"`);
   expect(place).toBe(download + 1);
   expect(holdsSecret(steps[place] as string)).toBe(false);
