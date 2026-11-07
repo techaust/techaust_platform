@@ -434,3 +434,90 @@ Finance does not import the rebuild code. Its figure is above the brief's estima
 1. The two new admin strings in deviation 9 (the audit label and its filter group): approve them, or give the wording.
 2. Deviation 2: should the `pdf.rebuild` audit rows go into the monthly finance copy (that is, be added to `FINANCE_AUDIT_ACTIONS`)?
 3. The branch `fix/rebuild-pdf-b1` is pushed. The run file on `origin/feat/rebuild-pdf` has moved since my branch point (the owner's answers), so the lead keeps both sections when merging.
+
+### Builder report (b2)
+Builder claude-opus-5-5/high, cloud session, branch `fix/rebuild-pdf-b2` (from `origin/feat/rebuild-pdf` 726c1596), 2026-11-07. Scope: the analyst's Required changes 1 to 9 as the lead triaged them, and the after-GO items (the import-free served lookup, portal `streamPdf`, jobs `attachmentFor`). The portal's accept SQL (Q1 = B), screens and files owned elsewhere were not touched.
+
+**Skills.** None loaded. The docs/14 §9 rows for this task (`cloudflare:workers-best-practices`, `cloudflare:wrangler`, `cloudflare:workers-profiling`, `cloudflare:cloudflare`) don't exist in a cloud session (no plugins load there). `code-review` and `security-review` are the reviewer's. No other listed skill fits builder work. `model-audit.mjs` will flag the run for that.
+
+**Required changes**
+1. **A lost rebuilt object falls back to the original.** `servedObject` in the new `packages/db/src/pdf-served.ts` holds the one rule for all three readers: a recorded rebuild whose object is gone reads the original, with `fellBack: true`.
+   - Admin `servedPdf(env, key, rid)` logs `rebuilt pdf object missing` with the request id only. The ETag is then the row's hash (`sha256: null`).
+   - Every admin download uses it: offer and invoice GET, the supplier copy (so no 202 forever), receipt, certificate, and the deed's unsigned PDF (moved from `servedKey` + `docDownload` to `servedPdf`, same headers).
+   - The portal logs the same line. Jobs logs `email.attachment_rebuilt_missing` with no key.
+   - Tests: admin (invoice ETag and bytes, log without keys; supplier copy 200, not 202), portal, jobs.
+2. **The retry after a 503 goes through.** A `queue_unavailable` result holds no 5-minute window: in `BLOCKED` (`QUEUE_UNAVAILABLE_CODE`, exported from `@techaust/db/pdf-repairs`) and in the route (`lastHolding`). `n` still counts every request.
+   - Tests: admin, retry after 503 is 202 with n = 2 from the original key, and the next one is `rebuild_in_progress`; db, `queue_unavailable` frees the window, `dead_letter` doesn't.
+3. **No stray object at the new key.** Every `close()` (intact, refused, failed, skipped) deletes `new_key` first (R2's delete of a missing key is a no-op). When `settleRebuilt` finds the request closed without a file by a parallel run, it deletes the stray. The dead letter adopts a stored object while the subject is still rebuildable (`rebuilt`, `pdf.rebuilt` bell); otherwise it deletes it with `failed` / `dead_letter`.
+   - Tests: the original came back with a stray (intact, deleted); redacted with a stray (skipped, deleted); dead letter adopt; dead letter with an anonymised client (deleted, failed).
+4. **The twin test reads every part.** It now checks the contact join word for word, allows exactly one link part (`(?6 IS NULL OR …)`) and fails on any other unknown part. No portal SQL changed.
+5. **2 MB cap.** `REBUILD_HASH_MAX_BYTES` is 2 MB (comments updated in admin and jobs). Admin test: 2 MB + 1 with matching bytes reads `damaged`; exactly 2 MB is hashed and reads `intact`.
+6. **The `envelope_missing` bell** is 07-ZV line 22, word for word (`REBUILD_BELL.envelopeMissing`). The jobs test pins the title.
+7. **A throwing result insert still answers 503.** The `failed` insert sits in a try/catch and logs `pdf.rebuild failed result not written` with the request id. The request then stays open (26 h, `rebuild_in_progress`). The 202 access row stays, with a comment. Admin test: DB proxy that throws on `RESULT_INSERT_SQL` gives 503, the log line (no key), no result row, and the next request is `rebuild_in_progress`.
+8. **The missing tests.** A void receipt (its payment withdrawn through the real route) is rebuilt and served, its row unchanged (admin). The daily quota sends a copy with hop + 1, counts `pdf.quota_hits` and rings the `pdf.quota` bell, with no result (jobs).
+9. **`skipped`:** no API returns a message for it. The GET returns `outcome` and `code` only. So line 23 is the designer's, and nothing changed here.
+
+**After-GO items**
+- **`@techaust/db/pdf-served`** (`packages/db/src/pdf-served.ts`, new export in `packages/db/package.json`): `SERVED_PDF_SQL`, `ServedRow`, `ServedObject<O>` and `servedObject(db, docs, key)`. It has no imports, and it names no Workers global either: the trigger generator pulls `pdf-repairs.ts`, and with it this file, into the db package's Node typecheck. The bindings are typed structurally and the object type is generic; callers pass `<R2ObjectBody>`. `pdf-repairs.ts` re-exports `SERVED_PDF_SQL` and `ServedRow` from it, so there is one copy.
+- **Portal `streamPdf`** (`apps/portal/worker/offer-core.ts`) takes `opts = { rebuildable: true }`.
+  - It resolves through `servedObject` from the key the client-bound row returned, so scoping is unchanged.
+  - The signed deed (`apps/portal/worker/deeds.ts`) passes `{ rebuildable: false }`.
+  - One extra indexed D1 read per download. The portal's counting env and EXPLAIN sweep ran over it in the suite.
+  - New `apps/portal/worker/pdf-served.test.ts`, 6 tests:
+    - with the original deleted, each download serves the rebuilt file: offer (exactly one lookup, bound to the original key), certificate, invoice signed in and through `/t/document/pdf`, receipt;
+    - another organisation's invoice and receipt are the plain 404;
+    - the change-1 fallback (log without keys);
+    - with no rebuild, the original.
+  - `deeds.test.ts`: the signed deed download makes no `pdf_repair_results` query.
+- **Jobs `attachmentFor`** (`apps/jobs/src/email.ts`): the served key is resolved inside the function, after the binding, redelivery and base64 checks. Only allow-listed keys reach it (the message schema). The message keeps the original key; `ATTACHMENT_KEY` and the cap are unchanged. Jobs test: the rebuilt file is attached for the original key; the fallback; no repair, the original.
+
+**Files changed**
+- New: `packages/db/src/pdf-served.ts`, `apps/portal/worker/pdf-served.test.ts`.
+- `packages/db`: `package.json`, `src/pdf-repairs.ts`, `test/pdf-repairs.test.ts`.
+- `packages/core/src/pdf-repair.ts`.
+- `apps/admin/worker`: `pdf-served.ts`, `pdf-rebuild.ts`, `pdf-rebuild.test.ts`, `document-pdf.ts`, `receipt-issue.ts`, `document-links.ts`, `deeds.ts`.
+- `apps/jobs`: `src/pdf-rebuild.ts`, `src/email.ts`, `test/pdf-rebuild.test.ts`.
+- `apps/portal/worker`: `offer-core.ts`, `deeds.ts`, `deeds.test.ts`, `offer-open-twin.test.ts`.
+
+**Commands and results** (heavy ones through `tools/heavy.sh`, logs in `.logs/rb2-*.log`)
+- Core `pnpm --filter @techaust/core test`: 134 files, 2,728 tests passed (coverage gate passed).
+- DB: 63 files, 1,112 tests passed.
+- Admin: 200 files, 5,438 tests passed.
+- Portal: 46 files, 966 tests passed.
+- Jobs: 53 files, 799 tests passed.
+- `pnpm check`: the first run failed on the db Node typecheck (`pdf-served.ts` named Workers globals); fixed (commit 2cc5a81e); the second run passed (`.logs/rb2-check2.log`). So the whole-repository lint ran twice, both times inside `pnpm check`.
+- After that type-only fix:
+  - `pnpm -r --workspace-concurrency=1` typecheck of db, admin, portal and jobs passed;
+  - directly re-run: portal `pdf-served.test.ts` 6, jobs `pdf-rebuild.test.ts` + `offers.test.ts` 68, admin `pdf-rebuild.test.ts` 20.
+  - The full suites above ran before that commit; the change only erases at compile time, and the bytes are identical.
+- Builds: portal, admin and jobs each built twice (before and after the type fix); identical bytes.
+
+**Worker bytes** (fastest of 7 start-up in brackets)
+
+| Worker | b2 | Before | Delta | Line |
+|---|---|---|---|---|
+| admin front | 122,717 (33.5 ms) | 122,717 (b1) | 0 | 150,000 |
+| admin API | 573,123 (83.5 ms) | 572,452 (b1) | +671 | 800,000 |
+| admin finance | 436,784 (67.2 ms) | 436,784 (b1) | 0 | plan 500,000 |
+| admin invoices | 579,695 (87.2 ms) | 579,222 (b1) | +473 | plan 650,000 |
+| portal | 164,185 (32.8 ms) | 163,583 (built at the branch point 726c1596) | +602 | plan 180,000 (ceiling 200,000) |
+| jobs | 886,793 (79.1 ms) | 885,539 (b1) | +1,254 | 1,000,000 |
+
+The portal baseline was built on this branch before any change. The other baselines are b1's measured figures, at the same code for those Workers.
+
+**Deviations, with reasons**
+1. **`servedObject` lives in `pdf-served.ts`,** not only the SQL and the row type: one copy of the change-1 fallback for admin, portal and jobs. It stays import-free, and structural, as above.
+2. **Admin `servedKey` is gone.** The deed's unsigned download now uses `servedPdf`, so the fallback covers it too. It builds the same `downloadHeaders` as `docDownload` and logs `pdf object missing` with the request id instead of `r2 object missing` with the key.
+3. **Change 3 goes a little beyond the list:**
+   - the `skipped` path (subject gone before the render) deletes `new_key` too, since that is exactly the redacted-offer case;
+   - `settleRebuilt` deletes the stray when a parallel run closed the request without a file.
+4. **`processRebuildDeadLetter` returns `"adopted" | "failed" | "done"`.** `queue.ts` ignores the value; the tests read it.
+
+**Not verified**
+- Real R2 (workerd only). The staging cold CPU reading (nothing deployed).
+- e2e, which this round has no screen for.
+- Two parallel HTTP requests racing (covered by the guarded INSERT, not exercised in parallel).
+- The dead letter's adopt path hashes the stored object (at most one PDF, native digest). Not measured on staging.
+
+**Open questions**
+- None new. b1's open questions 1 and 2 were settled in the lead's triage (07-ZV 20–21; finance copy unchanged).
