@@ -4,7 +4,7 @@
 import { env } from "cloudflare:workers";
 import { uuidv7 } from "@techaust/core";
 import { requestDueAtSql } from "@techaust/core/dsr";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { processPortalAlert } from "../src/portal-alerts.ts";
 import { handleQueue } from "../src/queue.ts";
 
@@ -87,6 +87,12 @@ async function request(kind: string) {
   );
   return { ...w, id, auditId: await audit("portal.request", "client_request", id, "contact", w.contact) };
 }
+
+// The last tests of this file log several lines; let the pool finish passing them on before the file's environment closes, or vitest reports
+// "EnvironmentTeardownError: Closing rpc while onUserConsoleLog was pending" (3 errors on CI for #190, every test passing).
+afterAll(async () => {
+  await new Promise((resolve) => setTimeout(resolve, 200));
+});
 
 describe("portal.alert [L9]", () => {
   it("a data request rings every active Owner once, never Staff, a deactivated Owner or another role; a redelivery writes nothing new", async () => {
