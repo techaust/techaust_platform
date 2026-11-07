@@ -1,8 +1,8 @@
 # Run: AU45, the client statement's "refund returned" line
 
-Status: reviewer running (code and visual)
+Status: re-check running (review 1 APPROVE, lows fixed)
 Tier: A (the statement's money lines and balances; client-facing figures)
-Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 claude-opus-5-5/high (`cloudflare:workers-best-practices`, `cloudflare:wrangler` tried, unavailable in the cloud): 5-h 1 % (20:05 IST) at start, 14 % (20:29 IST) the last relayed reading ; analyst early check claude-opus-5-5/high (`cloudflare:*` tried, unavailable): 14 % (20:29 IST) at start ; designer d1 claude-opus-5-5/high (`frontend-design:frontend-design` tried, unavailable in the cloud; docs/06 followed): 14 % (20:29 IST) at start, 33 % (21:00 IST) the last relayed reading ; reviewer r1 started 21:55 IST (33 % at 21:00 IST)
+Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 claude-opus-5-5/high (`cloudflare:workers-best-practices`, `cloudflare:wrangler` tried, unavailable in the cloud): 5-h 1 % (20:05 IST) at start, 14 % (20:29 IST) the last relayed reading ; analyst early check claude-opus-5-5/high (`cloudflare:*` tried, unavailable): 14 % (20:29 IST) at start ; designer d1 claude-opus-5-5/high (`frontend-design:frontend-design` tried, unavailable in the cloud; docs/06 followed): 14 % (20:29 IST) at start, 33 % (21:00 IST) the last relayed reading ; reviewer r1 claude-opus-5-5/high (`code-review` with its read-only helper; `security-review` would not load: its preamble needs `origin/HEAD`; checklist applied by hand): 33 % (21:00 IST) at start ; reviewer re-check started 22:20 IST (33 % at 21:00 IST)
 
 Cloud task session `au45-statement`, branch `feat/au45-statement` (owner's blanket approval, 2026-11-07, 13: "AU45 … built before launch; its wording drafted by the lead under this approval"). Basis: [full-audit-m6-m7](full-audit-m6-m7.md) AU37, AU45, AU46, AU1.
 
@@ -230,6 +230,14 @@ Branch `fix/au45-statement-d1`, built on `origin/feat/au45-statement` at 75b4a05
 **Open questions:** none.
 
 ## Review
+**Review 1 (reviewer, 2026-11-07, on 5da8545): APPROVE.** No critical, high or medium finding. Skills: `code-review` (high; its read-only helper ran); `security-review` would not load (its preamble runs `git diff origin/HEAD...`, unset in this checkout), so its checklist was applied by hand (auth, scoping, injection, escaping, cursor input, secrets): nothing found. Verified: the rule and its pairing with 0082, AU37 (Nov identical before and after a Dec return, db and HTTP), closing(N) = opening(N+1), ledger agreement incl. release allocation, binds (3/6) and every caller, cursor `[1-6]` (ord 4/5/6 → 200; `|7`, `|0`, `|56` → 400), client and currency scoping, SEARCH in all 7 reads, PDF `statement-5` in the hash and U2 escaped once with the closing, admin links and row keys, no out-of-scope file, conventions; single-file re-runs: db 79, admin 24 + 50, jobs 27, pdf 26, core 29 passed. Visual: the designer's shots (admin Oct 1280 light/dark, Sep–Oct 360, Oct 360 dark, focus 1280 dark, `pdf-sep-oct-1.png`) read correctly; no live pass of its own. Dropped: no U2 in the CSV (07-ZU places U2 on the PDF and the tab only).
+Findings (all low) and the lead's triage:
+1. The statement kind list copied three times (`apps/admin/src/api.ts`, `packages/pdf/src/statement-view.ts`, `packages/pdf/src/layout/statement.ts`). **Fixed:** all three use core `StatementKind`.
+2. The U2 rule written twice (PDF view, admin lib). **Fixed:** `returnedNoteFor` in `@techaust/core/copy-zu`, used by both, with a core test.
+3. `istDayOfMsSql(g.reversed_at)` computed three times per row, and the client's refunds read twice (`f`, `g`). **Kept (lead):** both are index seeks over one client's refunds (a handful), within the Free-plan targets; a rewrite only pays once the statement's rows read are pinned at scale, which is the existing follow-up (listed below with this item).
+4. `apps/jobs/src/warm.ts`: the comment claimed every kind; `debit_note` and `tds` were missing. **Fixed:** all eight kinds (a debit note carries its invoice number).
+5. The admin and jobs fixtures reversed with a hand-written UPDATE. **Fixed:** both call `refundReverseStatement` and assert it changed the row.
+After the fixes (lead, 2026-11-07): core 2,723 passed, pdf 421 passed, admin `worker/reports.test.ts` + `src/lib/reports.test.ts` 74 passed, jobs `statement-b` 27 passed, repo-wide `pnpm typecheck` exit 0, biome clean on the changed files.
 
 ## Integration notes
 
@@ -242,6 +250,6 @@ In "M6–M7 audit fixes (#190)", after the "Period readers count a refund that c
 - **The statement of account is not a period reader (AU45):** it lists a refund that went out as a debit on its `settled_on` and, if it came back, a `refund_returned` credit ("Refund came back", 07-ZU) on the IST day of `reversed_at` (`refundWentOutSql`, `refundReturnedSql`, `istDayOfMsSql` in `packages/db/src/sql-rules.ts`), so a statement ending before the return never changes and every closing balance is the next opening. Its balance before a page binds no last day (`statementBalanceBeforeBinds(client, currency, from, cursor?)`). Layout `statement-5`; the cursor takes ord 1–6.
 
 ## Follow-ups (for 12)
-- No test pins the admin statement route's rows read at scale (`reports-stress.test.ts` doesn't cover `/clients/:id/statement`; older than AU45; the early check's note).
+- No test pins the admin statement route's rows read at scale (`reports-stress.test.ts` doesn't cover `/clients/:id/statement`; older than AU45; the early check's note). With it, review 1 low 3: compute the return day once and read the client's refunds once for both refund lines, if the pinned figure calls for it.
 
 ## Handover
