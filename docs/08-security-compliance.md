@@ -88,7 +88,7 @@
 - [ ] CSP baselines:
   - **web:** `default-src 'self'; script-src 'self' 'sha256-…' https://challenges.cloudflare.com https://static.cloudflareinsights.com [+ https://www.googletagmanager.com after consent]; frame-src https://challenges.cloudflare.com; connect-src 'self' https://cloudflareinsights.com [+ GA endpoints]; img-src 'self' data:; style-src 'self'; font-src 'self'; form-action 'self'; base-uri 'none'; object-src 'none'`
   - **admin/portal:** `script-src 'self'`; `connect-src 'self'` (+ `api.pwnedpasswords.com` on password screens; + gateway checkout hosts for redirects only); `frame-src https://challenges.cloudflare.com`
-- [ ] Cloudflare zone settings (**each needs your approval at the time**): minimum TLS 1.2, Always Use HTTPS, a free WAF managed ruleset, a rate-limit rule on `/api/forms/*`, CAA records (old audit L-5)
+- [x] Cloudflare zone settings (**each approved by the owner at the time**; done 2026-11-08, [runs/p7-launch](runs/p7-launch.md)): minimum TLS 1.2, Always Use HTTPS, the free WAF managed ruleset (on by default), a rate-limit rule on `/api/` of the website, admin and portal (wider than `/api/forms/*`; hooks excluded), CAA records (old audit L-5); also SSL Full (strict) and DNSSEC. DMARC `quarantine` and the HSTS preload review follow after 2–4 weeks of clean reports
 
 ### 3.2 Authentication and sessions
 See [05 §6](05-architecture.md). Key controls:

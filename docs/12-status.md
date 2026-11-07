@@ -3,45 +3,53 @@
 _Replaced (never appended) at the end of every session._
 
 ## Date
-**2026-11-07, late night.** The launch on 2026-11-08 is in progress. The next conversation starts with "continue" (the memory note `launch-2026-11-08` holds the exact state and steps).
+**2026-11-08, early morning (IST): production is live.** The next conversation starts with "start the day" (or "continue"); the memory note `launch-2026-11-08` and [runs/p7-launch](runs/p7-launch.md) ("Launch log", "Cloudflare zone settings") hold the detail.
 
 ## Done
-- **Phases 1–6 and M7.1–M7.5 are approved,** with the M6–M7 audit included (owner's blanket approval, 13 2026-11-07). Merged: #187, #189, #190, #192–#196.
-- **Phase 7 preparation:**
-  - Production wiring and the deploy workflow (#193): a database stage, one owner approval, health checks.
-  - Production resources and all 24 production secrets.
-  - Admin Access.
-  - GitHub environments `production` and `backup`.
-  - The old site deleted.
-  - Nightly encrypted backups to S3.
-  - **Production D1 created:** 87 migrations and the seed (`deploy-prod stage=database`).
-  - **First backup and restore drill passed (L7).**
-  - The monthly 10-year copy and production catalogue prices (#195).
-  - Test-payment environment marks and live-payment readiness (#196).
-  - AU45 (#194).
-  - Launch content: the launch date and legal effective dates set to 2026-11-08, the aliases confirmed, the founder bio, redirects, the favicon.
+- **Production launched (Phase 7 L1–L8):** techaust.com, admin.techaust.com, portal.techaust.com and hooks.techaust.com are live on the new Workers (`deploy-prod.yml` run 42403321307, approved by the owner; all seven Workers deployed, every health check passed, zero Worker errors since).
+  - The LUT fold renumbered after #197 (0089 regenerated on 0088, identical SQL) and merged (#199). Production D1 holds migrations 0000–0089 and the seed.
+  - Custom Domains attached through the connector; the 30-minute website check on a temporary hostname passed, then it was detached and removed from DNS and the docs.
+  - The owner's "go": techaust.com attached; pages, redirects, robots, sitemap, security.txt, no noindex and `/api/health` checked live.
+- **Cloudflare Access removed from production admin** (owner): admin answers with its own sign-in. Staging keeps Access.
+- **Cloudflare zone settings (L10, owner's yes each):** minimum TLS 1.2, SSL Full (strict), Always Use HTTPS, DNSSEC, CAA, the `/api/` rate-limit rule, Email Obfuscation off, Browser Cache TTL respecting our headers, Speed Brain and Crawler Hints on; the unused staging events queues deleted; the owner deleted the old "Workers Builds" API token.
+- **Record:** #198 (the night of 2026-11-07) merged.
 
 ## In progress
-- **#197 Rebuild PDF** (migrations 0087–0088): approved, auto-merge on, CI running.
-- **The legacy LUT fold** (`feat/p7-lut-fold`): approved. After #197 merges it renumbers its migration (regenerate as 0089), gets a quick re-check, then a PR with auto-merge.
+- **[#200](https://github.com/techaust/techaust_platform/pull/200) `fix/launch-day`** (worktree `../launch-fix`), auto-merge on, CI running after `main` was merged in:
+  - the four old paths with a trailing slash redirect (today they show the 404 page);
+  - Web Analytics added by the website layout on production builds only;
+  - `set-prod-secrets.ps1` makes a PayPal placeholder the hook accepts;
+  - the audit test checks field names only (a random id spelt "HMAC");
+  - the launch log and the zone settings in the run file.
+  Auto-fix couldn't be turned on by this session for #200 (the owner can, from the PR bar).
+- **Web Analytics:** Cloudflare's automatic injection is off and confirmed gone from all three hosts (browser user agent). Until #200 is deployed, the website counts no visits.
+- **DNSSEC:** the DS record is published at .com; Cloudflare still showed `pending`. Re-check that it reads `active`.
 
-## Next (launch, "as soon as ready")
-1. Attach the Custom Domains admin., portal. and hooks.techaust.com (the owner's DNS yes is given).
-2. `deploy-prod.yml stage=full check_web=false`; the owner approves.
-3. A temporary hostname for 30 minutes or less; then the owner's "go"; attach techaust.com; run the post-launch checks.
-4. The owner's first sign-in (`pnpm.cmd invite … --production`) and production Settings.
-5. Gateway TEST webhooks to hooks.techaust.com: check staging for open checkouts first.
-6. L10, with the owner's yes: TLS 1.2, a WAF rate-limit rule, CAA. Switch the Access sign-in logo to techaust.com.
-7. L11: the two-week watch. Live payments (L9) when the owner says so.
+## Next
+1. When #200 merges: a production deploy (`deploy-prod.yml tag=main stage=full check_web=true`) on the owner's yes in that conversation; the owner approves in GitHub. Then check the trailing-slash redirects and that the beacon appears once on website pages and never on admin or portal.
+2. The owner's first sign-in: `pnpm.cmd invite --email <their staff address> --role owner --production` in the repo folder (their own `wrangler login`; type PRODUCTION), then enrolment and production Settings (GSTIN, Udyam, bank, signature PNG, LUT FY 2026-27 ARN, "Email on documents", payment terms, gateway modes = test, series numbers if any FY 2026-27 document was issued outside the system), then Catalogue › Publish.
+3. The contact-form test on techaust.com from the owner's phone: the lead arrives and the acknowledgement email is sent (also proves SES production access and the production email queue).
+4. Gateway TEST webhooks to `hooks.techaust.com/{razorpay,stripe,paypal}`: first check staging's open checkouts (payments L4), then the real webhook secrets (`tools/set-random-secret.ps1 … -Environment production`: Razorpay random `-Clipboard`; Stripe and PayPal `-Mode paste`). One test event per gateway shows "processed".
+5. Search Console (sitemap), a free uptime monitor, Sentry and the AWS connection back on (Q11), `backup.yml`'s first scheduled run (02:40 IST) checked.
+6. L11, the two-week watch, from 2026-11-08. L9 (live payments) when the owner says so.
 
 ## Waits on the owner
-- **At launch:** the deploy approval, the "go", the first sign-in, the Settings data (GSTIN, Udyam, bank details, signature PNG, LUT FY 2026-27 ARN, payment terms, invoice series numbers), the gateway logins for the webhooks.
-- **After launch:** Search Console sitemap, a free uptime monitor, signing the AWS connection in to TecHaust (Sentry and AWS back on, Q11).
-- **Dated duties:** the October IFF by 13 Nov (only if needed); the October EDF by 30 Nov (only if needed); the FY 2026-27 LUT before the next export invoice.
+- **The approval** of the next production deploy in GitHub (after #200).
+- **The first sign-in and Settings** (Next 2), the contact-form test (Next 3), the gateway dashboards for the webhooks (Next 4).
+- **Speed check from a phone:** open `https://techaust.com/cdn-cgi/trace` on mobile data and read `colo=` (BOM, DEL, MAA or CCU = India). This PC is served from Marseille on the free plan; paid plans don't promise Indian routing either.
+- **After launch:** Search Console, an uptime monitor, signing the AWS connection in to TecHaust.
+- **Dated duties:** the October IFF by 13 Nov (only if needed); the October EDF by 30 Nov (only if needed); the FY 2026-27 LUT before the next export invoice; DMARC `p=none` → `quarantine` after 2–4 weeks of clean reports (from about 22 Nov), then the HSTS preload review.
 - **Live payments (L9):** live accounts and keys, then the go-live order in `docs/runbooks/payment-gateways.md`.
-- **Usage:** the weekly all-models limit was at 85 % (resets 12 Nov). Extra usage is off; the owner's choice.
+- **Model menu:** Opus 5.5, high, for every conversation.
 
 ## Open follow-ups
+- **2026-11-08, new (the launch; [runs/p7-launch](runs/p7-launch.md)):**
+  - **Clean-up:** remove the side worktrees `../p7-side`, `../docs-side`, `../pay-side`, `../ops-side`, `../lut-side`, `../rb-side`, `../rec-side`, `../m74-side`, `../m75-side`, `../audit-side`, `../rec8-side` (after its PR), `../launch-fix` (after #200) and `.claude/worktrees/agent-a8bbd6359c2c79b47`, then their local branches (long paths: `Remove-Item -LiteralPath "\\?\<full path>" -Recurse -Force`).
+  - **`build:production` and `build:staging`** use Unix `VAR=value` syntax, so on Windows they fail (`'CLOUDFLARE_ENV' is not recognized`); run the steps under bash with `export CLOUDFLARE_ENV=…` (CI is Linux). A cross-platform script is a small fix.
+  - **A local production web build leaves `apps/web/dist` in production mode,** which fails web's robots test until the folder is removed.
+  - **Speed Brain is zone-wide:** admin and portal also send the `Speculation-Rules` header (prefetch of same-origin links on hover; harmless for the SPAs; watch for odd prefetches).
+  - **Cloudflare adds CAA records of its own** beside our nine (13 answers); fine.
+  - **The production placeholder Workers** (created by `wrangler secret put` before the first deploy) threw 110 errors between 00:00 and 00:30 IST; none since the deploy. A future new production Worker should be deployed before its domain is attached.
 - **2026-11-07 night (P7; run files p7-launch, p7-ops, p7-payments, p7-lut-fold, rebuild-pdf, au45-statement):**
   - **Before L9:** on staging, one sandbox PayPal order and one Razorpay link, to confirm the `custom_id` suffix and `notes.techaust_env` come back; Settings › Gateways shows the saved mode, not the mode in use (D5).
   - **A test of `scripts/drill-split.mjs`;** the first quarterly drill on real data (deferred foreign keys, statement sizes).
@@ -52,17 +60,14 @@ _Replaced (never appended) at the end of every session._
   - **The AU45 cloud session's `.dev.vars`** was copied into a build `dist`; a build guard follow-up.
   - **Model audit:** cloud agents loaded no Cloudflare skills (unavailable in the cloud); the code-review helper ran at low effort once (recorded in runs/m7.4).
 - **2026-11-07, new (the M6–M7 audit; its run file is on #190):**
-  - AU45: the "refund returned" statement line (the owner's decision);
   - AU49: a partial index for reversed refunds if staging's rows read grow;
   - three more capped body readers to fold into `@techaust/core/body` (`apps/jobs/src/hooks/shared.ts`, `usage.ts`, `apps/web/src/forms.ts`);
   - the twelve monthly revenue cards at 768 px;
   - staging D1 `rows_written` for the retention budget;
   - real gateway and SES behaviour after a refund comes back;
-  - the backup pipeline (N8) and a "Rebuild PDF" tool for a lost stored PDF (both before Phase 7 L1);
   - the break-glass CLI reset email to the member and the owners (L29).
 - **2026-11-07, new (M7.5; its run file is on #189):**
   - Trusted Types (Phase 7, with e2e on three browsers);
-  - the WAF rate-limit rule for anonymous refusals (Phase 7 L10);
   - the unindexed `staff_users` foreign keys (none is ever deleted);
   - the clock's 50-row read (L50);
   - jobs bytes 871 K of 1,000,000 (watch it);
@@ -127,7 +132,7 @@ _Replaced (never appended) at the end of every session._
 - **T6 ([run file](runs/t6-terms-offers.md)):** a recipient picker for the staff reply (it greets the document's contact); the box on `expired` offers; offers sent before T6 show "(IST)" and line 3 in the portal but not in their stored PDF (kept); the admin `PORTAL_ORIGIN` config test lives in `apps/web/test` (CLAUDE.md mention); not verified: the real portal offer page and queued email (need jobs and Browser Run), a staging admin build. Lines 6, 9, 11, 12, 14, 15 rest on OPEN items (RB-23, RB-38(c)).
 - **Parallel task sessions (2026-10-31):** the watcher counts only task-branch pushes (a builder pushing to a `fix/*` sub-branch looks quiet: fold into `/orchestrate`); Auto-fix can't be turned on from the main session for PRs a cloud session opened (the owner can, from the PR bar); `tools/agent-slots.mjs` doesn't hold the 2-agents-per-session cap of parallel runs (the prompt does).
 - **Model audit (2026-10-31):** the rt2 integration builder (agent-ae999e0f) loaded no skill though it reported two; recorded in its run file.
-- **rt1 ([run file](runs/rt1-notes-rules.md)):** (1) a migration that folds any legacy `tax.lut` into the list and drops the key, **before production**; (2) the 3B helper's IMS status per period (OPEN RA-04); (3) an optional "IFF filed" setting (OPEN RA-31); (4) show known blockers on a dialog's confirm step before step-up; (5) the draft row's 44 px inline link line gap (cosmetic).
+- **rt1 ([run file](runs/rt1-notes-rules.md)):** (1) done (#199); (2) the 3B helper's IMS status per period (OPEN RA-04); (3) an optional "IFF filed" setting (OPEN RA-31); (4) show known blockers on a dialog's confirm step before step-up; (5) the draft row's 44 px inline link line gap (cosmetic).
 - **rt2 ([run file](runs/rt2-signature-udyam.md)):** the invoice issue dialog's wrong-code notice and one shared `invalid_code` helper; a BEFORE INSERT signature trigger; inner spaces in a pasted Udyam number; one shared must-be-signed list; the `Field` scroll effect key; the save bar after a "No change" save; fresh visual baselines (invoice-udyam, advance, note fixtures); the duplicate PNG builder in `apps/admin/e2e/sample-data.ts`; the `.inv-udyam` 12em rule if the Udyam format ever changes; not verified: NVDA, Browser Run renders of the Udyam line and the signed notes.
 - **Final sweep (2026-10-31, [run file](runs/final-sweep.md)):** the week grid's "1 h 45 min" wraps at 1280 with the menu open; the activity feed's label for a credit or debit note issue; same-name people in the Time Entries table; the website focus outline 1.6 px against docs/06's 2 px.
 - **Workflows (2026-10-30, [run file](runs/audit-workflows.md)):** trace size and query-string redaction after a week (still to read on staging). Entry binding, the separate deploy job and web `/api/health` are done in M7.5 (#189); the allow-list was renewed (#188).
@@ -162,15 +167,15 @@ _Replaced (never appended) at the end of every session._
 - **M2.5 ([run file](runs/m2.5-seo-perf-a11y.md)):** `zod/mini` on `/contact` and `/get-a-quote` (≈ 20 KB gzipped); not verified: Google's Rich Results validator, real LinkedIn/WhatsApp previews, Safari/Firefox.
 - **M2.4b ([run file](runs/m2.4b-signin-email.md) "Re-check", "Handover"):** **Phase 7 checklist:** production `EMAIL_QUEUE` for admin and portal, the production Turnstile widget, fail the production SPA build on an empty `TURNSTILE_SITE_KEY` (via `check-prod-readiness.mjs`); product question "correct password, code never completed: alert?"; `/totp` and `/recovery` build the lockout alert before verifying (kept, rare and true); the React Turnstile wrapper is duplicated in admin and portal (share it when a third screen needs it); the break-glass CLI reset sends no email (prints a reminder); real mail clients beyond Zoho.
 - **M2.4 ([run file](runs/m2.4-forms-leads-email.md)):** the "your time" line outside IST; a screen reader on the form pages. (Retention is M7.4; no `dead_letters` table exists.)
-- **M2.3 ([run file](runs/m2.3-other-pages.md)):** renew `securityTxtExpires` before **2027-10-22**; before production set `site.launchDate` and every legal `effective` to the launch day; not verified: Safari/Firefox, forced colours, a screen reader, GA-on legal pages, the `deploy-prod.yml` run.
-- **M2.1 ([run file](runs/m2.1-site-shell.md)):** remove `X-Robots-Tag: noindex` before production; WhatsApp `?text=` prefill. (The MIME types and the header host allow-list are done in M7.5.)
+- **M2.3 ([run file](runs/m2.3-other-pages.md)):** renew `securityTxtExpires` before **2027-10-22**; not verified: Safari/Firefox, forced colours, a screen reader, GA-on legal pages, the `deploy-prod.yml` run.
+- **M2.1 ([run file](runs/m2.1-site-shell.md)):** WhatsApp `?text=` prefill (noindex is off in production since #193). (The MIME types and the header host allow-list are done in M7.5.)
 - **M2.2 ([run file](runs/m2.2-home-services.md)):** "Who it's for" lines missing in 07 for some pages; the S5 UI/UX section; the empty row under the S11 hero price in INR; published-snapshot build failure and custom milestone labels (M4.1); not verified: real `/api/geo` swap, no-JS render, Safari/Firefox, screen reader (the FAQ keyboard, hub links, S3 404 and Lighthouse were closed in M2.5).
 - **Earlier-work audit ([run file](runs/skill-audit-earlier-2026-10-22.md)):** heavy.sh process-tree kill on Windows; post-condition for receipts (M6). (Quote-aware stripping and the bigint exemption are done in M7.5.)
-- **Skill audit ([run file](runs/skill-audit-2026-10-22.md)):** Phase 7 WAF/rate-limit on web `/api/*` and auth routes; retire catalogue items by deactivating (M4.1); GSTIN formats for TDS/UIN/NRTP (batch Q26). (Portal cache, tracing and the binding allow list are done.)
+- **Skill audit ([run file](runs/skill-audit-2026-10-22.md)):** retire catalogue items by deactivating (M4.1); GSTIN formats for TDS/UIN/NRTP (batch Q26). (Portal cache, tracing and the binding allow list are done.)
 - **M1.6:** M7.1 document-link audit throttling; merge the bundle guards.
 - **M1.5:** a last-owner check on any future delete-user feature. (Break-glass guards, the review items and the audit IP scrub are done in M7.4/M7.5.)
 - **Social kit:** the Upwork banner's domain line after a real-device check.
 - **Wallpapers (low, [run file](runs/brand-wallpapers.md)):** test-strength items.
 - **Models and usage:** the cost report after M3.1 (Next 2).
 - **Content:** check the other "100 %" mentions in 04 against the content lint.
-- **Re-measure:** the old site's TTFB from India, if it still matters before cut-over.
+- **Re-measure:** techaust.com's TTFB from Indian mobile networks (the PC is served from Marseille on the free plan, about 0.5 s).
