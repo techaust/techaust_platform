@@ -182,3 +182,121 @@ Builder P7-A (Opus 5.5, high), branch `fix/p7-a-config` from `origin/feat/p7-pro
 
   Portal, hooks and web stay public.
 - **DNS list:** the owner said yes (2026-11-07); the records are added at the step each belongs to.
+
+## P7-B report
+Builder P7-B, branch `fix/p7-b-deploy` (from `origin/feat/p7-production`, with P7-A's 14910a09 merged in). Commits e5b0f742, 22e8e8a5, e7534db1, a3643d2b (merge), 15291b69, plus this report. Pushed. No deploy, no hosted change, no secret value.
+
+**Skills:**
+- `cloudflare:workers-best-practices`: kept the health check's `fetch` options workerd-safe (`redirect: "manual"`). Production observability is left to P7-A's configs.
+- `cloudflare:wrangler`: checked `wrangler d1 time-travel info <db> --env` against the wrangler 4.156.2 help. Checked which keys are non-inheritable (bindings, vars, secrets) in the Cloudflare docs through Context7. `triggers` is inherited, so the crons comparison falls back to the top level when a scope has none.
+- No other docs/14 §9 skill fits: no screens, no review.
+
+**Act on this first (lead, hosted): the admin's health path is `/api/v1/health`, not `/api/health`.**
+- In the code, the admin front (`apps/admin/worker/routes-front.ts`) and the portal (`apps/portal/worker/index.ts`) answer only `GET /api/v1/health`. `/api/health` belongs to the website (`apps/web/src/worker.ts`), and `/healthz` to jobs.
+- The Access app "admin production health" covers `admin.techaust.com/api/health` (Hosted log). That path does not include `/api/v1/health`, so the admin health check after deploy 4 would hit Access and stop the run.
+- Fix: change that app's path to `admin.techaust.com/api/v1/health`. The brief said to read the real paths from the code. I did not touch Access.
+
+### What changed, per file
+- **`.github/workflows/deploy-prod.yml`**, rebuilt on the shape of deploy-staging:
+  - **Inputs:** `tag` (default `main`), `confirm`, `stage: full|database` (default full), `check_web` (default true). The guard accepts only `main` or a `v*` tag, the same refs the `production` environment allows.
+  - **`guard`:** owner only, `PRODUCTION_ENABLED`, the typed confirmation, the ref check.
+  - **`build`** (no environment, no secret, no cache):
+    - writes the seed SQL;
+    - runs `build:production` for admin, portal and web;
+    - dry-runs the jobs and web bundles into `dist-production` / `.wrangler/dist-production`;
+    - runs `check-prod-build.mjs dev-vars`;
+    - runs the readiness check on stage full only;
+    - uploads the artifact `production-build`.
+  - **`deploy`** (`environment: production`, installs only wrangler):
+    - downloads the artifact to `$RUNNER_TEMP` and runs `place-build-artifact.mjs production`;
+    - runs `deploy-worker.mjs production --check`, with no secret;
+    - checks the credentials;
+    - writes the Time Travel bookmark into the job summary;
+    - applies the migrations (`d1 migrations apply`);
+    - loads the seed (`d1 execute --file`, insert-only, on every run);
+    - on stage full only: the 7 deploys in order (admin API, invoices, finance, front, portal, jobs, web), with a `prod-health.mjs` step after the front, the portal, jobs and the website (the website's only when `check_web` is true).
+  - **Safety:** the token is `secrets.CF_API_TOKEN_PROD` and appears only in the deploy job. Actions are pinned by the same SHAs as the staging workflow. The trigger is workflow_dispatch only, so it stays fork-safe. The YAML parses strictly with the `yaml` package; actionlint is not installed here.
+- **`scripts/check-prod-build.mjs`** (new), the production twin of `check-staging-build.mjs`:
+  - a flattened config must name `env.production.name` **and** say `targetEnvironment: "production"` and `ENVIRONMENT: "production"`. A plain `vite build` also names the production Worker, so the name alone proves nothing;
+  - no built text file may carry a staging host, a `techaust-staging*` name or a staging Turnstile key (source maps are skipped);
+  - the pages and the SPA sign-in bundles must carry `env.production`'s key, not the top-level test key;
+  - `dev-vars` also covers the `dist-production` bundles;
+  - the trace pattern is bounded (`{1,63}`). Unbounded, it took minutes on the admin's browser files.
+- **`scripts/prod-health.mjs`** (new):
+  - hosts `https://techaust.com`, `admin.`, `portal.` and `hooks.techaust.com`;
+  - checks: admin `/api/v1/health` only; portal `/api/v1/health`; jobs `/healthz` plus staging's public webhook checks (`/razorpay`, `/stripe`, `/paypal` → 400 `signature_missing`, `/ses` → 401 `token_missing`); web `/api/health`;
+  - each answer must be `200` JSON with `ok`, its own service and `env: "production"`;
+  - sends no Access token; retries for about 110 s (`0, 5, 10, 15, 20, 30, 30` s).
+- **`scripts/staging-health.mjs`:** `judge` takes the expected `env`; `checkApp` takes `checks`, `base` and `env`. The defaults are unchanged, so staging behaves as before.
+- **`scripts/deploy-worker.mjs`:**
+  - `PRODUCTION_DEPLOYS`: the SPAs as on staging; jobs and web with `--env production --no-bundle` from `dist-production`;
+  - `SCOPES` and `DEPLOY_ORDER`; `configProblems` and `preDeployProblems` take the scope (the L51 checks are unchanged);
+  - CLI: `staging|production <target>`, and `production --check`.
+- **`scripts/place-build-artifact.mjs`:** the production placements are staging's set with the `dist-production` bundles, each at its own path.
+- **`scripts/check-prod-readiness.mjs`:**
+  - scans jobs' `dist-production` and the website's pre-bundled Worker; a missing bundle is a problem;
+  - `checkEnvParity` per Worker. It compares:
+    - D1: same bindings, never staging's database, same `migrations_dir`;
+    - R2 and browser bindings;
+    - rate limits: same names and limits, each with its own namespace id;
+    - crons, with inheritance;
+    - the `secrets.required` set;
+    - the vars key set. `EMAIL_ALLOWED_RECIPIENTS` is staging-only and refused in production;
+    - no staging, workers.dev or localhost value or resource name in production;
+  - reads noindex from `dist/_headers`;
+  - no longer counts a copy gate's own body (`[Placeholder] ${`): jobs' bundler keeps the unreachable branch of the approved 07-ZJ email gate. In its place, `checkApprovalFlags` fails any `export const APPROVED_… = false` in the packages and apps sources. All 18 flags are true today;
+  - every existing check is kept.
+- **noindex:**
+  - `apps/web/public/_headers` no longer has an X-Robots-Tag line;
+  - `scripts/web-noindex.mjs` (new) and the `techaust:noindex-off-production` integration in `apps/web/astro.config.mjs` add it to `dist/_headers` on every build except `CLOUDFLARE_ENV=production`;
+  - `checkBuiltHeaders` in `scripts/web-dist-checks.mjs` wants it on staging and local builds and absent on production. The build scripts now pass `CLOUDFLARE_ENV` to `check-web-dist.mjs`;
+  - comments in `src/lib/search-files.ts` and `src/pages/index.astro` updated.
+- **Turnstile:** `scripts/turnstile-site-key.mjs` and `apps/web/src/lib/turnstile.ts` refuse an empty production key, as they already did for staging.
+- **Package scripts:**
+  - admin: `build:production` (with the SPA header check and the four budget checks) and `deploy:production:{api,finance,invoices,front}`;
+  - portal: `build:production` and `deploy:production`;
+  - web: `build:production` and `deploy:production`;
+  - jobs: `deploy:production`;
+  - `.gitignore`: `dist-production/`.
+- **Tests:**
+  - new: `apps/web/test/prod-deploy.test.ts`;
+  - `deploy-workflow.test.ts`, `place-build-artifact.test.ts`, `forms-m24.test.ts`: updated for the production workflow, placements and key guard;
+  - `prod-readiness-apps.test.ts`: the "before Phase 7" pins are replaced. Today's configs give no problem and differ from staging only in values, and a hand-mirrored staging scope passes;
+  - `dist-checks.test.ts`: the real-build test takes its environment from the built robots.txt;
+  - `signin-config.test.ts`: merge conflict with P7-A resolved, keeping P7-A's production key line and my empty-key case;
+  - `research-guards.test.ts`: 20 s timeout, because readiness now reads every source file for the flags.
+
+### Commands and results
+- **`pnpm --filter @techaust/web test`** (heavy): 45 files, 1077 passed, 20 skipped, 0 failed (`.logs/p7b-web-test4.log`). An earlier run failed only on a stale local production `dist` (the robots test) and on the 5 s timeout fixed above.
+- **`pnpm check`** (heavy): exit 0. That covers lint, typecheck, and the binding, content, worker-config, SPA header, migration and CSS guards.
+- **Local production build** (heavy, `.logs/p7b-prod-build2.log`), on the merged P7-A configs with their real production keys:
+  - every `build:production` step passed for admin, portal and web;
+  - Worker budgets in bytes: admin 121,871, admin API 560,633, finance 435,938, invoices 567,389, portal 163,583;
+  - `check-web-dist: ok`, with no noindex and the production robots.txt;
+  - jobs and web dry runs: 850.69 KiB and 295.64 KiB;
+  - `check-prod-build.mjs` ok for dev-vars and all 7 targets;
+  - `node scripts/deploy-worker.mjs production --check` ok;
+  - `checkProductionConfigs`: 0 problems.
+- **Readiness** (`node scripts/check-prod-readiness.mjs`). The 7 remaining failures, verbatim:
+  - The owner must supply the founder's bio (site.founderBio): it is empty.
+  - The owner must confirm that the security@ and privacy@ aliases deliver (U-5), then set site.aliasesConfirmed to true.
+  - The launch date is not set: the lead sets site.launchDate and every legal page's `effective` date (apps/web/src/content/legal.ts) to the launch day, together, before production.
+  - about.html: still shows a Placeholder (an owner input is missing); supply it, then rebuild.
+  - No verified backup is recorded (verifiedOn is empty or not a real date): the "encrypted, off-site backups" claim is not true yet. Set scripts/backup-verified.json to {"verifiedOn": "YYYY-MM-DD", "restoreDrill": true} in the commit that closes Phase 7 L7 (backups on, first backup restored on the production data).
+  - jobs dist-production/index.js: still shows copy marked "[Placeholder" ("[Placeholder] postal address"}.`),"RULE9_BLOCK"),IT={consent_withdrawa…"): the owner approves the page (07-W/07-X), then the lead sets APPROVED_07X and rebuilds.
+  - admin techaust_platform_admin_api/index.js: still shows copy marked "[Placeholder" ("[Placeholder] postal address.`}}}var PA={code:`annual_return_future`,m…"): the owner approves the page (07-W/07-X), then the lead sets APPROVED_07X and rebuilds.
+
+  The first five are the owner's inputs, the lead's launch content and the backup record. The about.html Placeholder is the founder bio. The last two belong to P7-C: `RULE9_BLOCK(null)` in `apps/jobs/src/portal-alerts.ts`, and the `request.received` sample in `packages/email/src/fixtures.ts`, which is bundled into the admin API. Both go away once the postal address comes from `@techaust/core`.
+- **Clean-up:** the local builds were removed afterwards. No dev server was started.
+
+### Not verified
+- The workflow has not run (no deploy, by rule). actionlint is not available, so only a YAML parse was done.
+- `wrangler d1 time-travel info`, the migrations and the seed against the real production D1 (they need the token).
+- The production health checks against the live hosts.
+
+### Notes and open questions
+- **Website domain:** the old site is already deleted (owner, tonight), so the website deploy has no domain conflict. Still, no config holds `routes` or a custom domain (P7-A's guard enforces this); the lead attaches `techaust.com` by hand. Run the launch with `check_web=false` until it is attached, then run `prod-health.mjs web` or re-run the workflow.
+- **Stage database:** it runs the build, so it needs the production Turnstile keys (now set), but it skips the readiness check. It deploys no Worker and no page, and it comes before the backup that the check waits for (phase7-production finding 4).
+- **Left out because the brief leaves them out** (they are in phase7-production A1.3 and A1.4): "the run's IST day equals `site.launchDate`" and "staging has deployed that SHA". The guard does enforce running from `main` or a `v*` tag.
+- **Catalogue on production (not in the brief):** the production website is built from the seed catalogue. Once the owner publishes the catalogue on production, a later production deploy would still build from the seed. Fixing that needs a production version of the published-snapshot fetch (it needs the token, so a token job before the build, like staging's `prepare`) and a production twin of `publish-catalogue.yml`. The launch run is unaffected, because nothing is published yet. This is the owner's or the lead's decision.
+- **Runbook:** `docs/runbooks/environments.md` does not describe the production workflow yet; it was not in my file list.
