@@ -2,6 +2,16 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-08 [#199](https://github.com/techaust/techaust_platform/pull/199) feat(invoices): fold the M3 LUT into the list before production
+- 2026-11-07 [#197](https://github.com/techaust/techaust_platform/pull/197) feat(pdf): Owner-only Rebuild PDF for a lost or damaged stored PDF
+- 2026-11-07 [#196](https://github.com/techaust/techaust_platform/pull/196) feat(payments): environment marks for test payments and live-payment readiness
+- 2026-11-07 [#195](https://github.com/techaust/techaust_platform/pull/195) feat(ops): monthly 10-year finance backup, production catalogue snapshot, first restore drill
+- 2026-11-07 [#194](https://github.com/techaust/techaust_platform/pull/194) feat(statement): the "Refund came back" line, so statements always join up (AU45)
+- 2026-11-07 [#193](https://github.com/techaust/techaust_platform/pull/193) feat(launch): production wiring, deploy workflow, nightly backups and launch content
+- 2026-11-07 [#192](https://github.com/techaust/techaust_platform/pull/192) docs: the owner's blanket approval and the Phase 7 go-live path
+- 2026-11-07 [#190](https://github.com/techaust/techaust_platform/pull/190) fix(audit): M6–M7 full audit fixes
+- 2026-11-07 [#189](https://github.com/techaust/techaust_platform/pull/189) feat(hardening): M7.5 hardening
+- 2026-11-07 [#187](https://github.com/techaust/techaust_platform/pull/187) feat(data-protection): M7.4 data-protection tooling
 - 2026-11-07 [#188](https://github.com/techaust/techaust_platform/pull/188) chore(deps): renew the dependency-audit allow-list to 2026-12-13
 - 2026-11-06 [#186](https://github.com/techaust/techaust_platform/pull/186) feat(reports): M7.3 reports and dashboard v2
 - 2026-11-06 [#184](https://github.com/techaust/techaust_platform/pull/184) feat(notifications): M7.2 notifications and digest
