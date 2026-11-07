@@ -2,6 +2,10 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-07 [#188](https://github.com/techaust/techaust_platform/pull/188) chore(deps): renew the dependency-audit allow-list to 2026-12-13
+- 2026-11-06 [#186](https://github.com/techaust/techaust_platform/pull/186) feat(reports): M7.3 reports and dashboard v2
+- 2026-11-06 [#184](https://github.com/techaust/techaust_platform/pull/184) feat(notifications): M7.2 notifications and digest
+- 2026-11-05 [#185](https://github.com/techaust/techaust_platform/pull/185) docs: end of day 2026-11-05 (M7.1 handover, M7.2 held as #184)
 - 2026-11-05 [#183](https://github.com/techaust/techaust_platform/pull/183) docs: record of 2026-11-05 (M7.1 on staging, M7.2 in review)
 - 2026-11-05 [#182](https://github.com/techaust/techaust_platform/pull/182) feat(portal): M7.1 the full client portal
 - 2026-11-05 [#181](https://github.com/techaust/techaust_platform/pull/181) feat(web): LinkedIn line icon in the footer contact rows and on About
