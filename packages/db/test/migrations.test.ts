@@ -108,6 +108,7 @@ describe("migrations apply cleanly to a fresh D1", () => {
       "0086_audit_af3_triggers.sql",
       "0087_pdf_repairs.sql",
       "0088_pdf_repair_triggers.sql",
+      "0089_lut_fold.sql",
     ]);
   });
 

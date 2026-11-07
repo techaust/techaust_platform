@@ -31,9 +31,8 @@ import {
 import {
   clientSideSql,
   DISCOUNT_AFTER_SALE_FROM_SQL,
-  fyTokenOfDateSql,
   LEDGER_STATUSES_SQL,
-  LUT_FOR_FY_SQL,
+  LUT_FOR_FY_SQL_0050,
   ledgerStatusCaseSql,
   livePaidSql,
   liveTdsSql,
@@ -47,6 +46,7 @@ import {
 import { auditAf2TriggerStatements } from "./triggers-audit-af2.ts";
 import { auditAf3TriggerStatements } from "./triggers-audit-af3.ts";
 import { dataProtectionTriggerStatements } from "./triggers-data-protection.ts";
+import { advanceLutFyTrigger, debitNoteLutFyTrigger, lutFoldTriggerStatements } from "./triggers-lut-fold.ts";
 import { pdfRepairTriggerStatements } from "./triggers-pdf-repairs.ts";
 
 /**
@@ -913,8 +913,6 @@ export function ledgerTriggerStatements(): string[] {
   const ledgerBad = `NEW.frozen_at IS NOT NULL AND NEW.type IN (${ledgerTypes}) AND (NEW.paid_minor IS NULL OR NEW.paid_minor < 0 OR NEW.balance_minor IS NOT max(0, NEW.total_minor - NEW.paid_minor - NEW.credited_minor))`;
   const issuing = "OLD.status = 'draft' AND NEW.status = 'issued'";
   const discountBad = `${issuing} AND NEW.type IN ('credit_note', 'debit_note') AND json_extract(NEW.header_extras, '$.noteOf.reason.code') IS 'discount_after_sale' AND (NEW.issue_date IS NULL OR NEW.issue_date < '${DISCOUNT_AFTER_SALE_FROM_SQL}')`;
-  const receivedOn = "json_extract(NEW.header_extras, '$.advance.receivedOn')";
-  const lutBad = `${issuing} AND NEW.type = 'export_invoice' AND NEW.export_mode = 'lut' AND ${receivedOn} IS NOT NULL AND NOT ${LUT_FOR_FY_SQL.replaceAll("?FY", fyTokenOfDateSql(receivedOn))}`;
   return [
     "DROP TRIGGER `documents_frozen_update`;",
     frozenUpdateTrigger(FROZEN_COLUMNS_0047, SET_ONCE_0050),
@@ -922,7 +920,8 @@ export function ledgerTriggerStatements(): string[] {
     `CREATE TRIGGER \`documents_credit_note_cap\` BEFORE UPDATE OF status ON \`documents\` WHEN ${NOTE_ISSUING} AND NEW.type = 'credit_note' AND ${creditCapSql(inrGuard)} BEGIN ${named("documents_credit_note_cap", CREDIT_CAP_MSG)} END;`,
     `CREATE TRIGGER \`documents_ledger_identity\` BEFORE UPDATE OF paid_minor, credited_minor, balance_minor, frozen_at ON \`documents\` WHEN ${ledgerBad} BEGIN ${named("documents_ledger_identity", "an issued document owes its total less what was paid and credited, never less than zero, and nothing paid is negative")} END;`,
     `CREATE TRIGGER \`documents_discount_after_sale_from\` BEFORE UPDATE OF status ON \`documents\` WHEN ${discountBad} BEGIN ${named("documents_discount_after_sale_from", `a note for a discount after sale is dated on or after ${DISCOUNT_AFTER_SALE_FROM_SQL}`)} END;`,
-    `CREATE TRIGGER \`documents_advance_lut_fy\` BEFORE UPDATE OF status ON \`documents\` WHEN ${lutBad} BEGIN ${named("documents_advance_lut_fy", "an export invoice under LUT for a payment received needs a LUT saved for the financial year of the day the payment arrived")} END;`,
+    // 0050's bytes: the LUT text with the legacy `tax.lut` branch of M3 (0089 creates the trigger again from the list-only text)
+    advanceLutFyTrigger(LUT_FOR_FY_SQL_0050),
   ];
 }
 
@@ -964,15 +963,8 @@ export function voidViewTriggerStatements(): string[] {
  * `noteBlockers` (`debit_lut_missing`) and of the note freeze's WHERE (`noteIssueTail`), all three from `LUT_FOR_FY_SQL`.
  */
 export function noteLutTriggerStatements(): string[] {
-  // The LUT route: the note's (or its invoice's) `export_mode` is 'lut', or its supply is `export_lut`. An export invoice issued on the settings' route leaves
-  // `export_mode` empty (only a route typed on the draft is stored there), so the supply type is what says it went out under LUT.
-  const lutRoute =
-    "(NEW.export_mode IS 'lut' OR NEW.supply_type IS 'export_lut' OR EXISTS (SELECT 1 FROM documents p WHERE p.id = NEW.parent_id AND (p.export_mode IS 'lut' OR p.supply_type IS 'export_lut')))";
-  const issuing = `OLD.status = 'draft' AND NEW.status = 'issued' AND NEW.type = 'debit_note' AND ${lutRoute}`;
-  const lutBad = `(NEW.issue_date IS NULL OR NOT ${LUT_FOR_FY_SQL.replaceAll("?FY", fyTokenOfDateSql("NEW.issue_date"))})`;
-  return [
-    `CREATE TRIGGER \`documents_debit_note_lut_fy\` BEFORE UPDATE OF status ON \`documents\` WHEN ${issuing} AND ${lutBad} BEGIN ${abort("documents_debit_note_lut_fy: a debit note on an export under LUT needs a LUT saved for the financial year of its own issue day")} END;`,
-  ];
+  // 0054's bytes: the LUT text with the legacy `tax.lut` branch of M3 (0089 creates the trigger again from the list-only text)
+  return [debitNoteLutFyTrigger(LUT_FOR_FY_SQL_0050)];
 }
 
 /**
@@ -2634,6 +2626,10 @@ export const TRIGGER_SETS = {
   pdf_repair_triggers: {
     what: "Rebuild PDF: rebuild requests and results append-only, a request names a subject that may be rebuilt now with its recorded key, the next number, the new and served keys, a result belongs to its request, and a redacted offer's rebuilt PDFs go to the R2 outbox",
     statements: pdfRepairTriggerStatements,
+  },
+  lut_fold: {
+    what: "P7 LUT fold: the one letter of undertaking of M3 (tax.lut) folded into the list under the M5.2 rule and its key removed, and the two LUT triggers created again from the list-only rule",
+    statements: lutFoldTriggerStatements,
   },
 } as const;
 export type TriggerSet = keyof typeof TRIGGER_SETS;

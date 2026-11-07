@@ -40,46 +40,22 @@ describe("noteLutOf reads the parent's frozen columns (rt1 F5)", () => {
     expect(noteLutOf("debit", parent(null, "intra", "export_lut"), settings([]), NOW)).toBeNull();
   });
 
-  it("rt1 re-check 1: the legacy `tax.lut` of M3 counts only when it folds into the list (fail closed)", () => {
+  it("P7 LUT fold: only the list counts; an old `tax.lut` of M3 is no letter, however well formed (0089 folded it into the list)", () => {
     const legacy = (lut: { arn: string | null; fy: string | null }): InvoiceSettings =>
       ({ tax: { ...SETTINGS_DEFAULTS.tax, luts: [], lut } }) as unknown as InvoiceSettings;
-    // a letter that folds counts, sealed as the list keeps an ARN
-    expect(
-      noteLutOf(
-        "debit",
-        parent("lut", "export_lut", "export_lut"),
-        legacy({ arn: "ad 19 03", fy: "2728" }),
-        NOW,
-      ),
-    ).toEqual({
-      fy: "2728",
-      lut: { fy: "2728", arn: "AD1903" },
-    });
-    // an ARN with a hyphen (`legacyLutFate`: invalid): the freeze WHERE and trigger 0054 would accept it, but the blocker refuses it and nothing is sealed
-    expect(
-      noteLutOf(
-        "debit",
-        parent("lut", "export_lut", "export_lut"),
-        legacy({ arn: "AD-1903", fy: "2728" }),
-        NOW,
-      ),
-    ).toEqual({ fy: "2728", lut: null });
-    // only a tab (SQLite's trim leaves it, so SQL counts it): refused here too
-    expect(
-      noteLutOf("debit", parent("lut", "export_lut", "export_lut"), legacy({ arn: "\t", fy: "2728" }), NOW)
-        ?.lut,
-    ).toBeNull();
-    // another FY's legacy letter, or a blank one, is still none
-    expect(
-      noteLutOf("debit", parent("lut", "export_lut", "export_lut"), legacy({ arn: "OLD1", fy: "2627" }), NOW)
-        ?.lut,
-    ).toBeNull();
-    expect(
-      noteLutOf("debit", parent("lut", "export_lut", "export_lut"), legacy({ arn: "  ", fy: "2728" }), NOW)
-        ?.lut,
-    ).toBeNull();
+    for (const lut of [
+      { arn: "AD1903", fy: "2728" },
+      { arn: "ad 19 03", fy: "2728" },
+      { arn: "AD-1903", fy: "2728" },
+      { arn: "\t", fy: "2728" },
+      { arn: "OLD1", fy: "2627" },
+      { arn: "  ", fy: "2728" },
+    ])
+      expect(
+        noteLutOf("debit", parent("lut", "export_lut", "export_lut"), legacy(lut), NOW),
+        JSON.stringify(lut),
+      ).toEqual({ fy: "2728", lut: null });
   });
-
   it("a credit note needs no LUT of its own", () => {
     expect(noteLutOf("credit", parent("lut", "export_lut", "export_lut"), settings([]), NOW)).toBeNull();
   });

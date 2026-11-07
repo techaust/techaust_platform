@@ -6,7 +6,6 @@
 // - the other place-of-supply rules (s.12(3) to (14)) are treated as not applying; a person may override with a reason.
 import { clientTaxCheck, type TaxInput } from "../clients.ts";
 import { fyOfDate, isValidDate } from "../dates.ts";
-import { legacyLutFate } from "../export-invoice.ts";
 import { EXPORT_PLACE_OF_SUPPLY, isStateCode, type StateCode, selectableStates } from "../gstin.ts";
 import type { Currency } from "../money.ts";
 import {
@@ -40,14 +39,12 @@ export type SupplyOptions = {
 };
 
 /**
- * The letters of undertaking the settings hold: the `luts` list (M5.2) and, when set, the one legacy `tax.lut` of M3 unless its FY is already listed
- * (a stored row must keep working and a saved letter must never vanish).
+ * The letters of undertaking the settings hold: the `luts` list (M5.2), and nothing else. P7 LUT fold: the one letter of M3 (`tax.lut`) was folded into the
+ * list by migration 0089 and is no longer a field, so this, `lutsFromStoredTax` and db `LUT_FOR_FY_SQL` read the same list (Researched 2026-10-28, Rule 96A CGST
+ * Rules (08-C RA-19: one LUT per FY)).
  */
 export function lutsOf(tax: TaxContext["tax"]): { fy: string; arn: string }[] {
-  const out = tax.luts.map(({ fy, arn }) => ({ fy, arn }));
-  const fate = legacyLutFate(tax); // the one rule for the old key (review 2, finding 9)
-  if (fate.fate === "folded") out.push({ fy: fate.entry.fy, arn: fate.entry.arn });
-  return out;
+  return tax.luts.map(({ fy, arn }) => ({ fy, arn }));
 }
 
 const OVERRIDE_REASON_MAX = 500;

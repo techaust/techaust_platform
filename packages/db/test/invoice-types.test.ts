@@ -976,10 +976,12 @@ describe("the advance batch keeps the ledger identity and the receipt FY's LUT [
       await rejects(runAdvance(late), /documents_advance_lut_fy/);
       expect(await proformaState(w.proformaId)).toMatchObject({ paid_minor: 0 });
       await runAdvance(await lutAdvance(w, "2027-03-31"));
-      // A blank ARN is no letter; the legacy single `lut` key counts as one (core `lutFor`'s twin).
+      // A blank ARN is no letter; P7 LUT fold (0089): the old single `lut` key of M3 is no letter either, only the list counts (core `lutFor(lutsOf)`'s twin).
       await setLuts({ luts: [{ fy: "2728", arn: "  " }] });
       await rejects(runAdvance(await lutAdvance(w, "2027-04-02")), /documents_advance_lut_fy/);
       await setLuts({ luts: [], lut: { fy: "2728", arn: "AD1903270000002" } });
+      await rejects(runAdvance(await lutAdvance(w, "2027-04-02")), /documents_advance_lut_fy/);
+      await setLuts({ luts: [{ fy: "2728", arn: "AD1903270000002", filedOn: null }] });
       await runAdvance(await lutAdvance(w, "2027-04-02"));
       // The IGST route needs no letter (the trigger looks only at `export_mode = 'lut'`).
       await setLuts({ luts: [] });

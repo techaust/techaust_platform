@@ -163,40 +163,11 @@ export type LutEntry = { fy: string; arn: string; filedOn: string | null };
 /** The ARN as the list keeps it: spaces dropped, upper case (the twin of the `lutEntry` schema's transform). */
 export const normaliseLutArn = (arn: string): string => arn.replace(/\s+/g, "").toUpperCase();
 
-/** True for a year token of two consecutive years ("2627"). */
-const lutFyOk = (fy: string): boolean =>
-  fy.length === 4 &&
-  [...fy].every((ch) => ch >= "0" && ch <= "9") &&
-  (Number(fy.slice(0, 2)) + 1) % 100 === Number(fy.slice(2));
-
-type LegacyLutTax = {
-  readonly lut: { readonly arn: string | null; readonly fy: string | null };
-  readonly luts: readonly { readonly fy: string; readonly arn?: string; readonly filedOn?: string | null }[];
-};
-
 /**
- * What becomes of the deprecated single `lut` of M3 (review 2, finding 9: the ONE rule; the settings fold, `lutsOf` and the stored-row reader all ask it, pure and
- * without zod): `none` (no letter in it), `listed` (its FY already has a list entry: the entry wins), `invalid` (the list would refuse it: an ARN that is not 1 to 30
- * letters or digits once normalised, or a year that is not two consecutive years), `full` (the list already holds 20) or `folded` (it counts as this list entry).
- * Researched 2026-10-28, Rule 96A CGST Rules (08-C RA-19: one LUT per FY). OPEN (08-C RA-19): the ARN's format, so only 1 to 30 letters and digits are checked.
- */
-export type LegacyLutFate =
-  | { fate: "none" | "listed" | "invalid" | "full" }
-  | { fate: "folded"; entry: LutEntry };
-
-export function legacyLutFate(tax: LegacyLutTax): LegacyLutFate {
-  const { arn, fy } = tax.lut;
-  if (!arn || !fy) return { fate: "none" };
-  if (tax.luts.some((l) => l.fy === fy)) return { fate: "listed" };
-  const norm = normaliseLutArn(arn);
-  if (!lutFyOk(fy) || !/^[A-Z0-9]{1,30}$/.test(norm)) return { fate: "invalid" };
-  if (tax.luts.length >= LUTS_MAX) return { fate: "full" };
-  return { fate: "folded", entry: { fy, arn: norm, filedOn: null } };
-}
-
-/**
- * The saved letters, read from the stored `tax` settings value WITHOUT zod (the jobs Worker must not bring zod in): the `luts` list, and the one
- * legacy `lut {arn, fy}` of M3 when `legacyLutFate` says it counts. Anything malformed is skipped, never thrown.
+ * The saved letters, read from the stored `tax` settings value WITHOUT zod (the jobs Worker must not bring zod in): the `luts` list only. P7 LUT fold (migration
+ * 0089, `@techaust/db` `triggers-lut-fold.ts`): the one letter of M3 (`tax.lut`) was folded into the list and its key removed, so a stored `lut` is ignored here, as by the
+ * schema, `lutsOf` and db `LUT_FOR_FY_SQL` (one rule for one fact). Anything malformed is skipped, never thrown. Researched 2026-10-28, Rule 96A CGST Rules
+ * (08-C RA-19: one LUT per FY).
  */
 export function lutsFromStoredTax(json: unknown): { fy: string; arn: string }[] {
   const tax = isRecord(json) ? json : {};
@@ -207,38 +178,7 @@ export function lutsFromStoredTax(json: unknown): { fy: string; arn: string }[] 
       if (!/^\d{4}$/.test(l.fy) || l.arn.trim() === "" || list.some((x) => x.fy === l.fy)) continue;
       list.push({ fy: l.fy, arn: l.arn });
     }
-  const legacy = isRecord(tax.lut) ? tax.lut : {};
-  const fate = legacyLutFate({
-    lut: {
-      arn: typeof legacy.arn === "string" ? legacy.arn : null,
-      fy: typeof legacy.fy === "string" ? legacy.fy : null,
-    },
-    luts: list,
-  });
-  return fate.fate === "folded" ? [...list, { fy: fate.entry.fy, arn: fate.entry.arn }] : list;
-}
-
-/**
- * rt1 re-check 1 (Researched 2026-10-30, Rule 96A(1) CGST Rules, Notification 37/2017-CT (08-C RA-19, Q39)): the letter a debit note on an export under LUT relies on,
- * from the parsed `tax` settings: a list entry of that FY with an ARN (`lutFor`), else the one legacy `lut` of M3 only when `legacyLutFate` folds it, so an ARN the list
- * would refuse, or a letter a full list leaves out, never passes the blocker and is never sealed. It is exactly `lutFor(fyToken, lutsOf(tax))`, the rule of the M5.2
- * export and advance paths (a core test proves it). Against db `LUT_FOR_FY_SQL` (the freeze WHERE and the trigger `documents_debit_note_lut_fy`, 0054) it is stricter in
- * ONE case, failing closed: SQL also counts a legacy letter of that FY whose ARN is not blank once its spaces are trimmed even when it would not fold; this refuses it (a
- * db test pins that core never allows what SQL refuses, and that this is the only difference). Null: none.
- */
-export function lutForFy(
-  fyToken: string,
-  tax: {
-    readonly lut: LegacyLutTax["lut"];
-    readonly luts: readonly { readonly fy: string; readonly arn: string }[];
-  },
-): { fy: string; arn: string } | null {
-  const listed = lutFor(fyToken, tax.luts);
-  if (listed) return listed;
-  const fate = legacyLutFate(tax);
-  return fate.fate === "folded" && fate.entry.fy === fyToken
-    ? { fy: fate.entry.fy, arn: fate.entry.arn }
-    : null;
+  return list;
 }
 
 /** The export route stored in a `tax` settings value (`exportMode`), read WITHOUT zod; anything else is the default, the LUT route (G-8). */

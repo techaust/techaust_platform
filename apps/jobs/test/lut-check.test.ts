@@ -150,7 +150,7 @@ describe("when a bell rings", () => {
     ]);
   });
 
-  it("no bell in March once the next FY has its letter (the legacy single letter counts too), and none while the running FY has one", async () => {
+  it("no bell in March once the next FY has its letter, and none while the running FY has one", async () => {
     await putTax({
       luts: [
         { fy: "2627", arn: ARN, filedOn: null },
@@ -158,12 +158,15 @@ describe("when a bell rings", () => {
       ],
     });
     expect(await check("2027-03-10")).toEqual({ bell: "none", owners: 0 });
-    await putTax({ luts: [{ fy: "2627", arn: ARN, filedOn: null }], lut: { arn: "OLD1", fy: "2728" } });
-    expect(await check("2027-03-17")).toEqual({ bell: "none", owners: 0 });
     // mid-year, with the running FY's letter: nothing
     await putTax({ luts: [{ fy: "2728", arn: ARN, filedOn: null }] });
     expect(await check("2027-09-15")).toEqual({ bell: "none", owners: 0 });
     expect(await bells()).toHaveLength(0);
+  });
+
+  it("P7 LUT fold: an old single `lut` of M3 is no letter (0089 folded it into the list), so March still rings for the next FY", async () => {
+    await putTax({ luts: [{ fy: "2627", arn: ARN, filedOn: null }], lut: { arn: "OLD1", fy: "2728" } });
+    expect((await check("2027-03-17")).bell).toBe("next_fy_due");
   });
 
   it("from 1 April while the running FY has no letter: the 'missing' bell (07-S §8 line), one a week", async () => {
@@ -234,7 +237,7 @@ describe("when a bell rings", () => {
 });
 
 describe("the reader and the pure rules (no zod in the jobs Worker)", () => {
-  it("lutsFromStoredTax reads the list and the legacy key, skips what is malformed, never throws", () => {
+  it("lutsFromStoredTax reads the list only (P7 LUT fold: the old `lut` key is ignored), skips what is malformed, never throws", () => {
     expect(
       lutsFromStoredTax({
         luts: [
@@ -247,10 +250,8 @@ describe("the reader and the pure rules (no zod in the jobs Worker)", () => {
         ],
         lut: { fy: "2728", arn: "OLD" },
       }),
-    ).toEqual([
-      { fy: "2627", arn: "A" },
-      { fy: "2728", arn: "OLD" },
-    ]);
+    ).toEqual([{ fy: "2627", arn: "A" }]);
+    expect(lutsFromStoredTax({ lut: { fy: "2728", arn: "OLD" } })).toEqual([]);
     for (const junk of [null, undefined, 7, "x", [], { luts: "x", lut: 3 }])
       expect(lutsFromStoredTax(junk)).toEqual([]);
   });
