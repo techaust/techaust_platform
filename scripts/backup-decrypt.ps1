@@ -33,6 +33,18 @@ function Clean-Path([string]$value) {
 
 $onWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 
+# A native program's standard error (OpenSSL's messages) becomes an error record in Windows PowerShell 5.1 when this window's output is redirected, and
+# "Stop" would end the script there. So native calls run under "Continue", and success is judged by the exit code and the files. Standard output goes
+# to the window, or with -Capture into $script:nativeOut; OpenSSL asks for a key's passphrase on the console itself.
+function Invoke-Native([string]$exe, [string[]]$argv, [switch]$Capture) {
+  $prev = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    if ($Capture) { $script:nativeOut = @(& $exe @argv) } else { & $exe @argv | Out-Host }
+    return $LASTEXITCODE
+  } finally { $ErrorActionPreference = $prev }
+}
+
 # OpenSSL: Git for Windows first (next to git.exe, then the usual install folders), then any openssl on the PATH. 1.1.1 or later (pbkdf2, OAEP digests).
 function Find-OpenSsl {
   $candidates = @()
@@ -53,8 +65,8 @@ function Find-OpenSsl {
   if ($null -ne $onPath) { $candidates += $onPath.Source }
   foreach ($c in $candidates) {
     if ($c -and (Test-Path -LiteralPath $c -PathType Leaf)) {
-      $version = (& $c version)
-      if ($LASTEXITCODE -eq 0 -and "$version" -match '^OpenSSL (1\.1\.1|[3-9]\.)') { return $c }
+      $code = Invoke-Native $c @("version") -Capture
+      if ($code -eq 0 -and "$($script:nativeOut)" -match '^OpenSSL (1\.1\.1|[3-9]\.)') { return $c }
     }
   }
   return $null
@@ -86,8 +98,9 @@ if (-not (Test-Path -LiteralPath $PrivateKey -PathType Leaf)) { Fail "no such fi
 $PrivateKey = (Resolve-Path -LiteralPath $PrivateKey).Path
 
 # 1. Exactly the three parts, by name (no folders, nothing else).
-$listing = @(& $tar -tf $Archive)
-if ($LASTEXITCODE -ne 0) { Fail "the file is not a readable tar archive. Nothing was written." }
+$code = Invoke-Native $tar @("-tf", $Archive) -Capture
+$listing = $script:nativeOut
+if ($code -ne 0) { Fail "the file is not a readable tar archive. Nothing was written." }
 $names = @($listing | ForEach-Object { "$_".Trim() } | Where-Object { $_ -ne "" } | Sort-Object)
 if (($names -join "|") -ne ($PARTS -join "|")) { Fail "the archive does not hold exactly manifest.json, dump.sql.enc and key.bin.enc. Nothing was written." }
 
@@ -96,8 +109,7 @@ New-Item -ItemType Directory -Path $work | Out-Null
 $outPath = $null
 $done = $false
 try {
-  & $tar -xf $Archive -C $work
-  if ($LASTEXITCODE -ne 0) { Fail "the archive could not be unpacked. Nothing was written." }
+  if ((Invoke-Native $tar @("-xf", $Archive, "-C", $work)) -ne 0) { Fail "the archive could not be unpacked. Nothing was written." }
 
   $manifest = Get-Content -LiteralPath (Join-Path $work "manifest.json") -Raw | ConvertFrom-Json
   if ($manifest.format -ne $FORMAT) { Fail "this backup's format is '$($manifest.format)'; this script reads $FORMAT. Tell the lead. Nothing was written." }
@@ -123,15 +135,15 @@ try {
   # 2. The backup's key (OpenSSL asks for the private key's passphrase on this window if it has one).
   $wrapped = Join-Path $work "key.bin.enc"
   $key = Join-Path $work "key.bin"
-  & $openssl pkeyutl -decrypt -inkey $PrivateKey -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -pkeyopt rsa_mgf1_md:sha256 -in $wrapped -out $key
-  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $key -PathType Leaf)) {
+  $code = Invoke-Native $openssl @("pkeyutl", "-decrypt", "-inkey", $PrivateKey, "-pkeyopt", "rsa_padding_mode:oaep", "-pkeyopt", "rsa_oaep_md:sha256", "-pkeyopt", "rsa_mgf1_md:sha256", "-in", $wrapped, "-out", $key)
+  if ($code -ne 0 -or -not (Test-Path -LiteralPath $key -PathType Leaf)) {
     $outPath = $null
     Fail "the key could not be unwrapped: wrong private key or passphrase (this backup was made for the public key with SHA-256 $($manifest.key.publicKeySha256)). Nothing was written."
   }
 
   # 3. The dump.
-  & $openssl enc -d -aes-256-cbc -pbkdf2 -iter $ITER -md sha256 -in (Join-Path $work "dump.sql.enc") -out $outPath -pass "file:$key"
-  if ($LASTEXITCODE -ne 0) { Fail "the dump could not be decrypted. Nothing was kept." }
+  $code = Invoke-Native $openssl @("enc", "-d", "-aes-256-cbc", "-pbkdf2", "-iter", "$ITER", "-md", "sha256", "-in", (Join-Path $work "dump.sql.enc"), "-out", $outPath, "-pass", "file:$key")
+  if ($code -ne 0) { Fail "the dump could not be decrypted. Nothing was kept." }
 
   # 4. Size and SHA-256 against the manifest.
   $bytes = (Get-Item -LiteralPath $outPath).Length

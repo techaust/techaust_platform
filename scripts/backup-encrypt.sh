@@ -43,7 +43,7 @@ name="$(basename -- "$dump")"
 [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || fail "the dump's file name may hold only letters, digits, dot, dash and underscore."
 
 # The wrapping key: RSA, at least 4096 bits (the owner's backup-public.pem).
-bits="$(openssl rsa -pubin -in "$pub" -noout -text 2>/dev/null | sed -n 's/.*Public-Key: (\([0-9][0-9]*\) bit).*/\1/p' | head -n 1)"
+bits="$( (openssl rsa -pubin -in "$pub" -noout -text 2>/dev/null || true) | sed -n 's/.*Public-Key: (\([0-9][0-9]*\) bit).*/\1/p' | head -n 1)"
 [ -n "$bits" ] || fail "the public key is not an RSA public key in PEM form."
 [ "$bits" -ge "$MIN_BITS" ] || fail "the public key has $bits bits; at least $MIN_BITS are needed."
 pub_sha="$(openssl pkey -pubin -in "$pub" -outform DER | openssl dgst -sha256 -r | cut -d' ' -f1)"
