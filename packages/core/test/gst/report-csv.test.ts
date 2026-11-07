@@ -51,6 +51,7 @@ const LABELS: StatementLabels = {
     tds: "TDS (test label)",
     receipt: "Payment received (test label)",
     refund: "Refund (test label)",
+    refund_returned: "Refund came back (test label)",
   },
 };
 
@@ -193,6 +194,33 @@ describe("golden CSVs", () => {
       "Credit note against INV9",
       "Invoice (test label)",
       "Closing (test label)",
+    ]);
+  });
+});
+
+describe("AU45: a refund that came back [ADM-CLI-04]", () => {
+  it("is a credit row with its own label and the refund id, and nets the refund to zero", () => {
+    const rows = [
+      { id: "r1", kind: "refund", date: "2026-11-03", number: "rfnd_T1", amountMinor: 20_000 },
+      { id: "r1", kind: "refund_returned", date: "2026-12-05", number: "rfnd_T1", amountMinor: 20_000 },
+    ] as const;
+    const s = statementEntries(rows, 10_000);
+    if (!s.ok) throw new Error("statement");
+    const out = unwrap(
+      statementCsvRows({
+        from: "2026-11-01",
+        to: "2026-12-31",
+        openingMinor: 10_000,
+        closingMinor: s.closingMinor,
+        entries: s.entries,
+        labels: LABELS,
+      }),
+    );
+    expect(out.map((r) => [r.document, r.details, r.debitMinor, r.creditMinor, r.balanceMinor])).toEqual([
+      ["", "Opening (test label)", null, null, 10_000],
+      ["rfnd_T1", "Refund (test label)", 20_000, null, 30_000],
+      ["rfnd_T1", "Refund came back (test label)", null, 20_000, 10_000],
+      ["", "Closing (test label)", null, null, 10_000],
     ]);
   });
 });

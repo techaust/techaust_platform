@@ -4,6 +4,7 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ROUTES } from "./guard.ts";
+import { encodeCursor } from "./keyset.ts";
 import { unAnonymise } from "./test-clients.ts";
 import { call, one, rows, sessionFor, withEnv } from "./test-helpers.ts";
 import { putTax } from "./test-invoice-types.ts";
@@ -516,6 +517,134 @@ describe("a client's statement", () => {
     expect(p2.range).toEqual(p1.range);
     expect(p2.entries.at(-1).balanceMinor).toBe(p1.range.closingMinor);
     expect(p2.next).toBeNull();
+  });
+
+  /**
+   * AU45: a confirmed Razorpay payment of ₹500 received 2 Nov, a TDS line of ₹10 the same day, and a refund of ₹200 recorded as made outside that succeeded
+   * on 3 Nov and came back at 10:00 IST on 5 Dec (the reversal's own columns, as `refundReverseStatement` writes them). Invented data.
+   */
+  async function refundCameBack(ownerId: string) {
+    const c = await mkReportClient();
+    const doc = await addDoc({ clientId: c, issueDate: "2026-10-28", lines: [line(1_000_00)] });
+    const T = Date.parse("2026-11-02T05:00:00Z");
+    const ck = `ck-au45-${c}`;
+    await env.DB.prepare(
+      `INSERT INTO checkout_sessions (id, provider, document_id, client_id, created_by, source, currency, amount_minor, status, expires_at, created_at, updated_at)
+       VALUES (?1, 'razorpay', ?2, ?3, ?4, 'staff', 'INR', 50000, 'creating', ?5, ?6, ?6)`,
+    )
+      .bind(ck, doc.id, c, ownerId, T + 86_400_000, T)
+      .run();
+    await env.DB.prepare(
+      "UPDATE checkout_sessions SET status = 'live', provider_link_id = ?2, short_url = 'https://rzp.io/i/x', updated_at = ?3 WHERE id = ?1",
+    )
+      .bind(ck, `plink_AU45${c}`, T + 1)
+      .run();
+    const paymentId = `pay-au45-${c}`;
+    await env.DB.prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, charges_minor, fee_tax_minor, received_on, mode, reference_norm, recorded_at, provider_payment_id, checkout_id, refetched_at)
+       VALUES (?1, ?2, 'payment', 'razorpay', 'pending_verification', 'INR', 50000, 0, 0, '2026-11-02', 'upi', ?3, ?4, ?3, ?5, ?4)`,
+    )
+      .bind(paymentId, c, `pay_AU45${c}`, T, ck)
+      .run();
+    await env.DB.prepare(
+      "UPDATE payments SET status = 'confirmed', verified_by = ?2, verified_at = ?3 WHERE id = ?1",
+    )
+      .bind(paymentId, ownerId, T + 5)
+      .run();
+    const tdsId = `tds-au45-${c}`;
+    await env.DB.prepare(
+      `INSERT INTO payments (id, client_id, kind, provider, status, currency, amount_minor, received_on, tds_section, tds_rate_bp, recorded_by, recorded_at, verified_by, verified_at)
+       VALUES (?1, ?2, 'tds', 'manual', 'confirmed', 'INR', 1000, '2026-11-02', 'as advised', 1000, ?3, ?4, ?3, ?4)`,
+    )
+      .bind(tdsId, c, ownerId, T)
+      .run();
+    const refundId = `rf-au45-${c}`;
+    const ref = `rfnd_AU45${c}`.slice(0, 40);
+    const settledAt = Date.parse("2026-11-03T06:00:00Z");
+    await env.DB.prepare(
+      `INSERT INTO payment_refunds (id, payment_id, client_id, provider, origin, status, paid_to, reason_code, currency, amount_minor, provider_refund_id,
+         requested_by, requested_at, settled_at, settled_on, updated_at)
+       VALUES (?1, ?2, ?3, 'razorpay', 'outside', 'succeeded', 'original', 'duplicate', 'INR', 20000, ?4, ?5, ?6, ?6, '2026-11-03', ?6)`,
+    )
+      .bind(refundId, paymentId, c, ref, ownerId, settledAt)
+      .run();
+    const reverse = () =>
+      env.DB.prepare(
+        "UPDATE payment_refunds SET status = 'failed', failure_code = 'stripe_failed', reversed_at = ?2, updated_at = ?2 WHERE id = ?1",
+      )
+        .bind(refundId, Date.parse("2026-12-05T04:30:00Z"))
+        .run();
+    return { c, doc, paymentId, tdsId, refundId, ref, reverse };
+  }
+
+  it("AU45: a refund out in November that came back on 5 Dec: November never moves, closing(Nov) = opening(Dec), the return is a credit [ADM-CLI-04]", async () => {
+    const o = await sessionFor("owner");
+    const r = await refundCameBack(o.id);
+    const get = async (from: string, to: string) =>
+      (await json(await call(`/clients/${r.c}/statement?from=${from}&to=${to}`, { cookie: o.cookie }))) as J;
+    const novBefore = await get("2026-11-01", "2026-11-30");
+    await r.reverse();
+    const nov = await get("2026-11-01", "2026-11-30");
+    const dec = await get("2026-12-01", "2026-12-31");
+    expect(nov).toEqual(novBefore);
+    expect(nov.entries.map((e: J) => [e.kind, e.date, e.number])).toEqual([
+      ["receipt", "2026-11-02", `pay_AU45${r.c}`],
+      ["tds", "2026-11-02", ""],
+      ["refund", "2026-11-03", r.ref],
+    ]);
+    expect(nov.range.openingMinor).toBe(r.doc.computed.totalMinor);
+    expect(nov.range.closingMinor).toBe(r.doc.computed.totalMinor - 50_000 - 1_000 + 20_000);
+    expect(dec.entries).toEqual([
+      expect.objectContaining({
+        id: r.refundId,
+        kind: "refund_returned",
+        date: "2026-12-05",
+        number: r.ref,
+        amountMinor: 20_000,
+        debitMinor: 0,
+        creditMinor: 20_000,
+      }),
+    ]);
+    expect(dec.range.openingMinor).toBe(nov.range.closingMinor);
+    expect(dec.balanceBeforeMinor).toBe(nov.range.closingMinor);
+    expect(dec.range).toMatchObject({ debitMinor: 0, creditMinor: 20_000 });
+    expect(dec.range.closingMinor).toBe(nov.range.closingMinor - 20_000);
+    expect(dec.entries[0].balanceMinor).toBe(dec.range.closingMinor);
+    // the two months as one range: every line, the same closing
+    const both = await get("2026-11-01", "2026-12-31");
+    expect(both.entries.map((e: J) => e.kind)).toEqual(["receipt", "tds", "refund", "refund_returned"]);
+    expect(both.range.closingMinor).toBe(dec.range.closingMinor);
+    expect(both.next).toBeNull();
+  });
+
+  it("AU45: a cursor ending on a TDS line (ord 4) or a refund line (ord 5) pages with the right balance before; ord 7 or 0 is 400", async () => {
+    const o = await sessionFor("owner");
+    const r = await refundCameBack(o.id);
+    await r.reverse();
+    const q = `from=2026-11-01&to=2026-12-31`;
+    const page = async (k: string, id: string) =>
+      call(`/clients/${r.c}/statement?${q}&after=${encodeCursor({ k, id })}`, { cookie: o.cookie });
+    const opening = r.doc.computed.totalMinor;
+    const afterTds = await page("2026-11-02|4", r.tdsId);
+    expect(afterTds.status).toBe(200);
+    const a = (await json(afterTds)) as J;
+    expect(a.balanceBeforeMinor).toBe(opening - 50_000 - 1_000);
+    expect(a.entries.map((e: J) => e.kind)).toEqual(["refund", "refund_returned"]);
+    expect(a.range.openingMinor).toBe(opening);
+    const afterRefund = await page("2026-11-03|5", r.refundId);
+    expect(afterRefund.status).toBe(200);
+    const b = (await json(afterRefund)) as J;
+    expect(b.balanceBeforeMinor).toBe(opening - 50_000 - 1_000 + 20_000);
+    expect(b.entries.map((e: J) => [e.kind, e.balanceMinor])).toEqual([
+      ["refund_returned", opening - 50_000 - 1_000],
+    ]);
+    const afterReturn = await page("2026-12-05|6", r.refundId);
+    expect(afterReturn.status).toBe(200);
+    const c = (await json(afterReturn)) as J;
+    expect(c.entries).toEqual([]);
+    expect(c.balanceBeforeMinor).toBe(b.range.closingMinor);
+    for (const k of ["2026-12-05|7", "2026-12-05|0", "2026-12-05|56"])
+      expect((await page(k, r.refundId)).status, k).toBe(400);
   });
 
   it("is in the client's own currency unless another is asked for; unknown clients are 404; bad dates and cursors are 400", async () => {

@@ -10,6 +10,7 @@
 // through core (`moneyText`); nothing here adds up an amount.
 import { compareDocNumbers, formatMoney, money } from "@techaust/core";
 import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
+import { STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
 import { formatDate, parseIsoDate } from "@techaust/core/dates";
 import type { CalendarDate, GstErrorCode, GstIssue, GstWarning, RealisationStage } from "@techaust/core/gst";
 import { STATE_CODES } from "@techaust/core/gstin";
@@ -695,6 +696,9 @@ export function statementKindText(kind: StatementKind, againstNumber?: string | 
     // M6.5: a refund that went out (07-ZO lacks the word: drafted for the owner, marked until approved).
     case "refund":
       return STATEMENT_REFUND_WORD;
+    // AU45 (07-ZU U1, approved 2026-11-07): a refund that came back to us (a credit).
+    case "refund_returned":
+      return STATEMENT_REFUND_RETURNED_WORD;
     case "receipt":
       return "Payment received";
     // M6.1 (07-ZH line 19, approved by the owner 2026-10-31): the tax the client deducted at source.
@@ -770,6 +774,7 @@ export const statementCsvLabels = (
     receipt: statementKindText("receipt"),
     tds: statementKindText("tds"),
     refund: statementKindText("refund"),
+    refund_returned: statementKindText("refund_returned"),
   } satisfies Record<StatementKind, string>,
 });
 

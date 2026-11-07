@@ -4,11 +4,12 @@
 // matches; FEMA reductions; and the twins: free money vs core, the RA-41 line vs core, the stage with M6.5's facts vs core, and the readers with refunds (credit,
 // client figures, collected, the statement) and with receipts present. The real statement builders; invented test data.
 import { env } from "cloudflare:workers";
-import { fyOf, uuidv7 } from "@techaust/core";
+import { fyOf, istDate, toIsoDate, uuidv7 } from "@techaust/core";
 import { DEFAULT_REALISATION_RULES, realisationStatus } from "@techaust/core/gst";
 import { freeOf } from "@techaust/core/ledger";
 import { receiptHeaderOf, receiptIdOf, receiptSealOf } from "@techaust/core/receipts";
 import { overpaymentAdvanceLine, refundableOf } from "@techaust/core/refunds";
+import { STATEMENT_PDF_MAX_ENTRIES, type StatementKind, statementEntries } from "@techaust/core/statement";
 import { describe, expect, it } from "vitest";
 import {
   CLIENT_CREDIT_SQL,
@@ -76,6 +77,7 @@ import {
   REVENUE_MONTHS_SQL,
   revenueClientsBinds,
   STATEMENT_BALANCE_BEFORE_SQL,
+  STATEMENT_ENTRIES_SQL,
   STATEMENT_LEDGER_SQL,
   STATEMENT_TOTALS_SQL,
   statementBalanceBeforeBinds,
@@ -83,12 +85,17 @@ import {
 } from "../src/reports.ts";
 import { REVIEW_KINDS } from "../src/schema/payments.ts";
 import {
+  istDayEndMsSql,
+  istDayOfMsSql,
   istFyOfMsSql,
   overpaymentAdvanceAtSql,
   overpaymentAdvanceSql,
   paymentFreeAtSql,
   paymentFreeSql,
   paymentNetAtSql,
+  refundOutAtSql,
+  refundReturnedSql,
+  refundWentOutSql,
 } from "../src/sql-rules.ts";
 import {
   AUDIT_MONEY_RECREATED_GATEWAY_0082,
@@ -2073,8 +2080,10 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
     ).toEqual({ free: 50_000 });
   });
 
-  it("the statement, Collected and the refunds register drop the refund once it came back", async () => {
+  it("Collected and the refunds register drop the refund once it came back; the statement keeps its debit and adds the credit (AU45)", async () => {
     const r = await refunded(20_000);
+    // 10:00 IST on 20 Nov: inside November (the register and Collected read November) and the statement's range; fixed, so the test never depends on the clock
+    const back = Date.parse("2026-11-20T04:30:00Z");
     const totals = () =>
       first<{ debit: number; credit: number; n: number }>(
         STATEMENT_TOTALS_SQL,
@@ -2088,10 +2097,12 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
         (x) => x.currency === "INR",
       )?.collected ?? 0;
     const collectedBefore = await collected();
-    expect((await reverse(r.refundId, r.ref)).meta.changes).toBe(1);
+    expect((await reverse(r.refundId, r.ref, back)).meta.changes).toBe(1);
     const after = await totals();
-    expect(after?.debit).toBe((before?.debit ?? 0) - 20_000);
-    expect(after?.credit).toBe(before?.credit);
+    // AU45: the refund's debit stays on the day it went out, and the "refund came back" line is a credit of the same amount
+    expect(after?.debit).toBe(before?.debit);
+    expect(after?.credit).toBe((before?.credit ?? 0) + 20_000);
+    expect(after?.n).toBe((before?.n ?? 0) + 1);
     expect(
       (await all<{ id: string }>(REFUNDS_REGISTER_SQL(false), "2026-11-01", "2026-11-30")).some(
         (x) => x.id === r.refundId,
@@ -2100,22 +2111,30 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
     expect(await collected()).toBe(collectedBefore + 20_000);
   });
 
-  it("AU37 (L2): a refund out on 3 Nov that came back on 5 Dec stays out in every period ending before 5 Dec; a period ending after drops it", async () => {
+  it("AU37 (L2), AU45: a refund out on 3 Nov that came back on 5 Dec stays out in every period ending before 5 Dec; a period ending after drops it (the statement: a credit line on 5 Dec)", async () => {
     const r = await refunded(20_000);
     const back = Date.parse("2026-12-05T04:30:00Z"); // 10:00 IST
     const inr = <R extends { currency: string }>(xs: R[]) => xs.find((x) => x.currency === "INR");
     const read = async () => ({
-      stmtNov: await first<{ debit: number }>(
+      stmtNov: await first<{ debit: number; credit: number }>(
         STATEMENT_TOTALS_SQL,
         ...statementTotalsBinds(r.clientId, "INR", "2026-11-01", "2026-11-30"),
       ),
-      stmtToDec: await first<{ debit: number }>(
+      stmtToDec: await first<{ debit: number; credit: number }>(
         STATEMENT_TOTALS_SQL,
         ...statementTotalsBinds(r.clientId, "INR", "2026-11-01", "2026-12-31"),
       ),
+      openingNov: await first<{ balance: number }>(
+        STATEMENT_BALANCE_BEFORE_SQL(false),
+        ...statementBalanceBeforeBinds(r.clientId, "INR", "2026-11-01"),
+      ),
       openingDec: await first<{ balance: number }>(
         STATEMENT_BALANCE_BEFORE_SQL(false),
-        ...statementBalanceBeforeBinds(r.clientId, "INR", "2026-12-01", "2026-12-31"),
+        ...statementBalanceBeforeBinds(r.clientId, "INR", "2026-12-01"),
+      ),
+      openingJan: await first<{ balance: number }>(
+        STATEMENT_BALANCE_BEFORE_SQL(false),
+        ...statementBalanceBeforeBinds(r.clientId, "INR", "2027-01-01"),
       ),
       regNov: (await all<{ id: string }>(REFUNDS_REGISTER_SQL(false), "2026-11-01", "2026-11-30")).some(
         (x) => x.id === r.refundId,
@@ -2195,9 +2214,17 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
     expect(after.twinNov).toBe(after.monthNov);
     expect(after.clientNov).toBe(before.clientNov);
     expect(after.heldNov).toBe(30_000);
+    // the statement (AU45): November's opening and lines never move, so December opens where November closed; the range through December keeps the debit
+    // and gains the "refund came back" credit, and January opens 20,000 lower
+    expect(after.openingNov).toEqual(before.openingNov);
+    expect(after.openingDec).toEqual(before.openingDec);
+    const nov = (x: typeof before) =>
+      (x.openingNov?.balance ?? 0) + (x.stmtNov?.debit ?? 0) - (x.stmtNov?.credit ?? 0);
+    expect(after.openingDec?.balance).toBe(nov(after));
+    expect(after.stmtToDec?.debit).toBe(before.stmtToDec?.debit);
+    expect(after.stmtToDec?.credit).toBe((before.stmtToDec?.credit ?? 0) + 20_000);
+    expect(after.openingJan?.balance).toBe((before.openingJan?.balance ?? 0) - 20_000);
     // a period ending after 5 Dec: the refund came back
-    expect(after.stmtToDec?.debit).toBe((before.stmtToDec?.debit ?? 0) - 20_000);
-    expect(after.openingDec?.balance).toBe((before.openingDec?.balance ?? 0) - 20_000);
     expect(after.regToDec).toBe(false);
     expect(after.collectedToDec).toBe((before.collectedToDec ?? 0) + 20_000);
     expect(after.tile?.fy_collected).toBe((before.tile?.fy_collected ?? 0) + 20_000);
@@ -2309,6 +2336,327 @@ describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, a
     for (const q of (m81?.queries ?? []).map((x) => x.replace(/^(\s|--> statement-breakpoint)+/, "")))
       expect(q.trim(), q.slice(0, 60)).toMatch(
         /^(ALTER TABLE `(payments|payment_refunds)` ADD |CREATE INDEX )/,
+      );
+  });
+});
+
+describe("AU45: the statement lists a refund that came back as a credit on the IST day it came back [ADM-CLI-04, JOB-PDF-01, ADM-PAY-08]", () => {
+  /** A confirmed Razorpay payment of 50,000 received 1 Nov (no allocation: all credit) with an outside refund of `amount` that succeeded on `settledOn`. */
+  async function refundedOut(amount = 20_000, settledOn = "2026-11-03") {
+    const { owner, sess, clientId } = await setup();
+    const p = await razorpayPayment(clientId, owner, "confirmed");
+    const ref = `rfnd_AU45${next()}`;
+    const a = args({
+      paymentId: p,
+      sessionId: sess,
+      amountMinor: amount,
+      way: { kind: "outside", origin: "outside", providerRefundId: ref, settledOn },
+    });
+    expect(await refundBatch(a, owner)).toBe(true);
+    return { owner, sess, clientId, p, ref, refundId: a.id };
+  }
+  const reverse = (refundId: string, ref: string, now: number) =>
+    refundReverseStatement(db(), {
+      refundId,
+      providerRefundId: ref,
+      failureCode: "stripe_failed",
+      providerStatus: "failed",
+      now,
+    }).run();
+  type Line = {
+    id: string;
+    kind: StatementKind;
+    date: string;
+    number: string;
+    amount: number;
+    sk: string;
+    parent: string | null;
+  };
+  /** The statement as the PDF and the admin read it: the opening (balance before), the lines, the totals. */
+  const statementOf = async (clientId: string, from: string, to: string, currency = "INR") => {
+    const opening =
+      (
+        await first<{ balance: number }>(
+          STATEMENT_BALANCE_BEFORE_SQL(false),
+          ...statementBalanceBeforeBinds(clientId, currency, from),
+        )
+      )?.balance ?? 0;
+    const lines = await all<Line>(
+      STATEMENT_ENTRIES_SQL(STATEMENT_PDF_MAX_ENTRIES + 1),
+      ...statementTotalsBinds(clientId, currency, from, to),
+    );
+    const totals = await first<{ debit: number; credit: number; n: number }>(
+      STATEMENT_TOTALS_SQL,
+      ...statementTotalsBinds(clientId, currency, from, to),
+    );
+    const closing = opening + (totals?.debit ?? 0) - (totals?.credit ?? 0);
+    return { opening, lines, totals, closing };
+  };
+  const ledgerOf = async (clientId: string) =>
+    (await first<{ balance: number }>(STATEMENT_LEDGER_SQL, clientId, "INR"))?.balance;
+  const coreOf = (lines: readonly Line[], opening: number) =>
+    statementEntries(
+      lines.map((l) => ({ id: l.id, kind: l.kind, date: l.date, number: l.number, amountMinor: l.amount })),
+      opening,
+    );
+  const back = Date.parse("2026-12-05T04:30:00Z"); // 10:00 IST on 5 Dec
+
+  it("(1)-(4) Nov lists the receipt and the refund, Dec the return (same number and amount); closing(Nov) = opening(Dec); Nov never moves; the core twin agrees", async () => {
+    const r = await refundedOut(20_000);
+    const novBefore = await statementOf(r.clientId, "2026-11-01", "2026-11-30");
+    expect((await reverse(r.refundId, r.ref, back)).meta.changes).toBe(1);
+    const nov = await statementOf(r.clientId, "2026-11-01", "2026-11-30");
+    const dec = await statementOf(r.clientId, "2026-12-01", "2026-12-31");
+    const both = await statementOf(r.clientId, "2026-11-01", "2026-12-31");
+    // (1) the lines
+    expect(nov.lines.map((l) => [l.kind, l.date, l.sk])).toEqual([
+      ["receipt", "2026-11-01", "2026-11-01|3"],
+      ["refund", "2026-11-03", "2026-11-03|5"],
+    ]);
+    expect(dec.lines).toEqual([
+      {
+        id: r.refundId,
+        kind: "refund_returned",
+        date: "2026-12-05",
+        number: r.ref,
+        amount: 20_000,
+        sk: "2026-12-05|6",
+        parent: null,
+      },
+    ]);
+    expect(nov.lines[1]).toMatchObject({ id: r.refundId, number: r.ref, amount: 20_000 });
+    // November's statement is the same before and after the return
+    expect(nov).toEqual(novBefore);
+    // (2) the chain
+    expect(dec.opening).toBe(nov.closing);
+    expect(dec.closing).toBe(nov.closing - 20_000);
+    expect(dec.totals).toEqual({ debit: 0, credit: 20_000, n: 1 });
+    // (3) one range over both months lists both lines and closes where December does
+    expect(both.lines.map((l) => l.kind)).toEqual(["receipt", "refund", "refund_returned"]);
+    expect(both.opening).toBe(nov.opening);
+    expect(both.closing).toBe(dec.closing);
+    // (4) the core twin: statementEntries over the SQL rows gives the SQL totals and the chained closing
+    for (const s of [nov, dec, both]) {
+      const c = coreOf(s.lines, s.opening);
+      expect(c.ok).toBe(true);
+      if (!c.ok) continue;
+      expect(c.totals).toEqual({ debitMinor: s.totals?.debit, creditMinor: s.totals?.credit });
+      expect(c.closingMinor).toBe(s.closing);
+    }
+    const cNov = coreOf(nov.lines, nov.opening);
+    const cDec = cNov.ok ? coreOf(dec.lines, cNov.closingMinor) : cNov;
+    expect(cDec.ok && cDec.closingMinor).toBe(dec.closing);
+  });
+
+  it("(5) a range through today closes at the ledger before and after the return", async () => {
+    const r = await refundedOut(20_000);
+    const now = Date.now();
+    const today = toIsoDate(istDate(now));
+    const before = await statementOf(r.clientId, "2026-01-01", today);
+    expect(before.closing).toBe(await ledgerOf(r.clientId));
+    expect((await reverse(r.refundId, r.ref, now)).meta.changes).toBe(1);
+    const after = await statementOf(r.clientId, "2026-01-01", today);
+    expect(after.lines.at(-1)).toMatchObject({ kind: "refund_returned", date: today, amount: 20_000 });
+    expect(after.closing).toBe(await ledgerOf(r.clientId));
+    expect(after.closing).toBe(before.closing - 20_000);
+  });
+
+  it("(6) a refund of an invoice's excess with its release allocation: ledger = closing before and after the return", async () => {
+    const { owner, sess, clientId } = await setup();
+    const p = await razorpayPayment(clientId, owner, "confirmed", 118_000);
+    const inv = await mkIssued(clientId);
+    await alloc(p, inv, 118_000);
+    await recompute(inv);
+    // a credit note of the invoice's full total: an excess of 118,000 on it
+    await mkIssued(clientId, { type: "credit_note", parentId: inv });
+    await run(
+      "UPDATE documents SET credited_minor = 118000, balance_minor = 0, updated_at = updated_at + 1 WHERE id = ?",
+      inv,
+    );
+    const ref = `rfnd_AU45x${next()}`;
+    const a = args({
+      paymentId: p,
+      sessionId: sess,
+      from: "document",
+      documentId: inv,
+      reasonCode: "credit_note",
+      amountMinor: 18_000,
+      way: { kind: "outside", origin: "outside", providerRefundId: ref, settledOn: "2026-11-03" },
+    });
+    expect(await refundBatch(a, owner)).toBe(true);
+    const release = await first<{ kind: string; amount_minor: number }>(
+      "SELECT pa.kind, pa.amount_minor FROM payment_refunds f JOIN payment_allocations pa ON pa.id = f.release_allocation_id WHERE f.id = ?",
+      a.id,
+    );
+    expect(release).toEqual({ kind: "release", amount_minor: 18_000 });
+    const range = ["2026-01-01", "2099-12-31"] as const;
+    const before = await statementOf(clientId, ...range);
+    expect(before.closing).toBe(await ledgerOf(clientId));
+    const docBefore = await first(
+      "SELECT paid_minor, credited_minor, balance_minor FROM documents WHERE id = ?",
+      inv,
+    );
+    expect((await reverse(a.id, ref, back)).meta.changes).toBe(1);
+    const after = await statementOf(clientId, ...range);
+    expect(after.closing).toBe(await ledgerOf(clientId));
+    expect(after.closing).toBe(before.closing - 18_000);
+    // the reversal moved only payment_refunds: the invoice and its release allocation are as they were
+    expect(
+      await first("SELECT paid_minor, credited_minor, balance_minor FROM documents WHERE id = ?", inv),
+    ).toEqual(docBefore);
+    expect(
+      await first(
+        "SELECT kind, amount_minor FROM payment_allocations WHERE payment_id = ? AND kind = 'release'",
+        p,
+      ),
+    ).toEqual({ kind: "release", amount_minor: 18_000 });
+  });
+
+  it("(7) the IST day boundary: 18:29:59.999Z is 30 Nov (a Nov line), 18:30:00.000Z is 1 Dec; the Nov line set agrees with refundOutAtSql", async () => {
+    const cases = [
+      { at: Date.parse("2026-11-30T18:29:59.999Z"), day: "2026-11-30" },
+      { at: Date.parse("2026-11-30T18:30:00.000Z"), day: "2026-12-01" },
+    ];
+    for (const k of cases) {
+      const r = await refundedOut(20_000);
+      expect((await reverse(r.refundId, r.ref, k.at)).meta.changes).toBe(1);
+      const wide = await statementOf(r.clientId, "2026-11-01", "2026-12-31");
+      expect(wide.lines.find((l) => l.kind === "refund_returned")?.date, k.day).toBe(k.day);
+      const nov = await statementOf(r.clientId, "2026-11-01", "2026-11-30");
+      const returnedInNov = nov.lines.some((l) => l.kind === "refund_returned");
+      const outAtNovEnd = await first<{ out: number }>(
+        `SELECT ${refundOutAtSql("f", istDayEndMsSql("?2"))} AS out FROM payment_refunds f WHERE f.id = ?1`,
+        r.refundId,
+        "2026-11-30",
+      );
+      // gone out at the end of November (AU37's readers) exactly when November's statement has no "came back" line
+      expect(outAtNovEnd?.out === 1, k.day).toBe(!returnedInNov);
+      expect(returnedInNov).toBe(k.day === "2026-11-30");
+      expect(nov.lines.some((l) => l.kind === "refund")).toBe(true);
+    }
+  });
+
+  it("(8) never a line: failed without success, requested or processing, a lost dispute, an L33 refund of a payment later rejected, another client's, another currency's", async () => {
+    const range = ["2026-01-01", "2099-12-31"] as const;
+    const kindsOf = async (clientId: string, currency = "INR") =>
+      (await statementOf(clientId, range[0], range[1], currency)).lines
+        .filter((l) => l.kind === "refund" || l.kind === "refund_returned")
+        .map((l) => l.kind);
+    // a gateway refund still requested, then processing, then failed without ever succeeding (no reversed_at)
+    {
+      const { owner, sess, clientId } = await setup();
+      const p = await razorpayPayment(clientId, owner, "confirmed");
+      const a = args({ paymentId: p, sessionId: sess, amountMinor: 5_000, way: { kind: "gateway" } });
+      expect(await refundBatch(a, owner)).toBe(true);
+      expect(await kindsOf(clientId)).toEqual([]);
+      const ref = `rfnd_AU45F${next()}`;
+      const moveRef = (to: "processing" | "failed") =>
+        refundMoveStatement(db(), {
+          refundId: a.id,
+          to,
+          providerRefundId: ref,
+          providerStatus: to,
+          failureCode: to === "failed" ? "BAD_REQUEST_ERROR" : null,
+          now: Date.now(),
+          today: "2026-11-03",
+        }).run();
+      expect((await moveRef("processing")).meta.changes).toBe(1);
+      expect(await kindsOf(clientId)).toEqual([]);
+      expect((await moveRef("failed")).meta.changes).toBe(1);
+      expect(await kindsOf(clientId)).toEqual([]);
+    }
+    // a lost dispute: a debit, never reversed, so never a "came back" line
+    {
+      const { owner, sess, clientId } = await setup();
+      const g = await razorpayPayment(clientId, owner, "confirmed", 10_000);
+      const disputeId = `du_${next()}`;
+      const cb = args({
+        paymentId: g,
+        sessionId: sess,
+        amountMinor: 1_000,
+        reasonCode: "chargeback",
+        way: { kind: "outside", origin: "chargeback", providerRefundId: disputeId, settledOn: "2026-11-03" },
+      });
+      expect(await refundBatch(cb, owner)).toBe(true);
+      expect((await reverse(cb.id, disputeId, back)).meta.changes).toBe(0);
+      expect(await kindsOf(clientId)).toEqual(["refund"]);
+    }
+    // the SQL says it again, whatever a row holds: a lost dispute or a manual refund is never "returned"
+    for (const [origin, provider, want] of [
+      ["chargeback", "stripe", 0],
+      ["owner", "manual", 0],
+      ["outside", "manual", 0],
+      ["owner", "stripe", 1],
+      ["outside", "razorpay", 1],
+    ] as const) {
+      expect(
+        await first<{ r: number; w: number }>(
+          `SELECT ${refundReturnedSql("x")} AS r, ${refundWentOutSql("x")} AS w
+           FROM (SELECT 'failed' AS status, 5 AS reversed_at, ?1 AS origin, ?2 AS provider) x`,
+          origin,
+          provider,
+        ),
+        `${origin}/${provider}`,
+      ).toEqual({ r: want, w: want });
+    }
+    expect(
+      await first(
+        `SELECT ${refundReturnedSql("x")} AS r, ${refundWentOutSql("x")} AS w
+         FROM (SELECT 'failed' AS status, NULL AS reversed_at, 'owner' AS origin, 'stripe' AS provider) x`,
+      ),
+    ).toEqual({ r: 0, w: 0 });
+    // L33: a pending payment refunded in full and rejected: neither line, also after a reversal
+    {
+      const { owner, sess, clientId } = await setup();
+      const p = await razorpayPayment(clientId, owner, "pending_verification");
+      const a = args({
+        paymentId: p,
+        sessionId: sess,
+        from: "pending",
+        amountMinor: 50_000,
+        way: { kind: "gateway" },
+      });
+      expect(await refundBatch(a, owner)).toBe(true);
+      const now = Date.now();
+      const ref = `rfnd_AU45P${next()}`;
+      await db().batch([
+        refundMoveStatement(db(), {
+          refundId: a.id,
+          to: "succeeded",
+          providerRefundId: ref,
+          providerStatus: "processed",
+          failureCode: null,
+          now,
+          today: "2026-11-03",
+        }),
+        pendingRefundedRejectStatement(db(), { refundId: a.id, now }),
+      ]);
+      expect(await first("SELECT status FROM payments WHERE id = ?", p)).toEqual({ status: "rejected" });
+      expect(await kindsOf(clientId)).toEqual([]);
+      expect((await reverse(a.id, ref, back)).meta.changes).toBe(1);
+      expect(await kindsOf(clientId)).toEqual([]);
+    }
+    // another client's returned refund is never on this client's statement; another currency's statement has neither line
+    const r = await refundedOut(20_000);
+    expect((await reverse(r.refundId, r.ref, back)).meta.changes).toBe(1);
+    expect(await kindsOf(r.clientId)).toEqual(["refund", "refund_returned"]);
+    const { clientId: other } = await setup();
+    expect(await kindsOf(other)).toEqual([]);
+    expect(await kindsOf(r.clientId, "USD")).toEqual([]);
+  });
+
+  it("(9) istDayOfMsSql is core toIsoDate(istDate(ms))'s twin across IST midnight", async () => {
+    for (const at of [
+      Date.parse("2026-11-30T18:29:59.999Z"),
+      Date.parse("2026-11-30T18:30:00.000Z"),
+      Date.parse("2027-03-31T18:29:59.999Z"),
+      Date.parse("2027-03-31T18:30:00.000Z"),
+      Date.parse("2026-12-31T18:30:00.000Z"),
+      Date.parse("2028-02-28T18:30:00.000Z"),
+      5,
+    ])
+      expect((await first<{ d: string }>(`SELECT ${istDayOfMsSql("?1")} AS d`, at))?.d, String(at)).toBe(
+        toIsoDate(istDate(at)),
       );
   });
 });

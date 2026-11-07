@@ -145,3 +145,26 @@ describe("statementEntries", () => {
     expect(STATEMENT_PDF_MAX_ENTRIES).toBe(200);
   });
 });
+
+describe("AU45: a refund that came back [ADM-CLI-04]", () => {
+  it("is a credit (not a debit type): it lowers the balance", () => {
+    expect((STATEMENT_DEBIT_TYPES as readonly string[]).includes("refund_returned")).toBe(false);
+    const r = statementEntries([row("refund_returned", 20_000)], 50_000);
+    expect(r.ok && r.entries[0]).toMatchObject({ debitMinor: 0, creditMinor: 20_000, balanceMinor: 30_000 });
+    expect(r.ok && r.totals).toEqual({ debitMinor: 0, creditMinor: 20_000 });
+  });
+
+  it("a refund and its return net to zero, on one statement or across two chained by the closing", () => {
+    const refund = { ...row("refund", 20_000, "rf1"), date: "2026-11-03" };
+    const back = { ...row("refund_returned", 20_000, "rf1"), date: "2026-12-05" };
+    const receipt = { ...row("receipt", 50_000, "p1"), date: "2026-11-02" };
+    const whole = statementEntries([receipt, refund, back], 0);
+    expect(whole.ok && whole.closingMinor).toBe(-50_000);
+    expect(whole.ok && whole.totals).toEqual({ debitMinor: 20_000, creditMinor: 70_000 });
+    const nov = statementEntries([receipt, refund], 0);
+    if (!nov.ok) throw new Error("nov");
+    expect(nov.closingMinor).toBe(-30_000);
+    const dec = statementEntries([back], nov.closingMinor);
+    expect(dec.ok && dec.closingMinor).toBe(-50_000);
+  });
+});

@@ -31,7 +31,9 @@ export type StatementLineKind =
   | "receipt"
   | "tds"
   // M6.5: a refund that went out (a debit: it raises what the client is owed back down).
-  | "refund";
+  | "refund"
+  // AU45: a refund that came back to us (a credit: the money is the client's credit again).
+  | "refund_returned";
 
 /**
  * What the layout prints, every value already formatted (dates as the PDFs write them, amounts with their currency sign). The jobs Worker's view

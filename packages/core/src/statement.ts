@@ -10,10 +10,15 @@
 // what they owe (the excess: paid + credited + TDS − total, where positive), minus the client's credit (what its confirmed payments hold unallocated); the
 // database's `STATEMENT_LEDGER_SQL`, twin-tested with `CLIENT_FIGURES_SQL` (M6.1, early check A4). M6.5 (L9): a succeeded refund is a debit line; a refund still with
 // the gateway is no line and no credit, so while one is in flight the statement closes above `balance − excess − credit` by exactly its amount.
+// M6–M7 audit AU45 (the run file docs/runs/au45-statement.md; replaces AU37's "as at" rule): a statement is a list of dated lines. A refund that went out stays a
+// debit on the day it went out, also after it came back; one that came back (a gateway refund reversed, never a lost dispute or a manual refund) is ALSO a credit
+// `refund_returned` of the same amount on the IST day it came back. So a statement that ended before the return never changes, every closing balance is the
+// next statement's opening balance, and after the return the two lines net to zero (the ledger counts only succeeded refunds as gone).
 
 /** The kinds of line on a statement. */
 /** M6.1 (T8, 07-ZH line 19): `tds` is the tax the client deducted at source (a credit, like a receipt). */
 /** M6.5 (L9): `refund` is money we paid back to the client (a debit: it lowers the client's credit), dated by the IST day it succeeded. */
+/** AU45: `refund_returned` is a refund that came back to us (a credit, by not being a debit type; 07-ZU U1), dated by the IST day it came back. */
 export type StatementKind =
   | "tax_invoice"
   | "export_invoice"
@@ -21,7 +26,8 @@ export type StatementKind =
   | "credit_note"
   | "receipt"
   | "tds"
-  | "refund";
+  | "refund"
+  | "refund_returned";
 
 /** The line kinds that add to what the client owes (a credit note, a receipt and TDS reduce it); M6.5: a refund too. */
 export const STATEMENT_DEBIT_TYPES = ["tax_invoice", "export_invoice", "debit_note", "refund"] as const;

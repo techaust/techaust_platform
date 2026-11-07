@@ -60,6 +60,70 @@ The shared FINISH, plus: in the admin route, the PDF view and the core twin, a r
 ## Early check
 
 ## Builder report
+### Builder b1 (2026-11-07, claude-opus-5-5/high): §2 done. Stopped for the early check
+Branch `fix/au45-statement-b1`, built on `origin/feat/au45-statement` at the head before 7b46da9 (the merge of main #193) and ed581f9 (07-ZU approved). `git merge-tree` against today's task head is clean. Commits: 61a8d15 (data, logic, route, labels, db tests) and 9f9e7bd (admin, SPA and jobs tests). No migration.
+
+**Skills.** I tried `cloudflare:workers-best-practices` and `cloudflare:wrangler`. Both returned "Unknown skill": plugins don't load in a cloud session. No other skill in docs/14 §9 fits this task: there are no screens, no CPU benchmarks and no platform features.
+
+**Files**
+- `packages/db/src/sql-rules.ts`: new `istDayOfMsSql(ms)`, `refundReturnedSql(f)` and `refundWentOutSql(f)`.
+  - `refundReturnedSql(f)` is `failed AND reversed_at IS NOT NULL AND origin <> 'chargeback' AND provider <> 'manual'`.
+  - `refundWentOutSql(f)` is `succeeded OR returned`.
+- `packages/db/src/reports.ts`:
+  - `statementSource`'s `f` branch now uses `refundWentOutSql`.
+  - New `g`/`gp` branch: `refund_returned`, ord 6, `INDEXED BY payment_refunds_client`, `gp.status = 'confirmed'`, `cond(istDayOfMsSql("g.reversed_at"))`, NULL parent, and the same number expression as the debit line.
+  - `statementBalanceBeforeBinds` is back to its pre-AU37 shape (checked against 939d094^): `(client, currency, from, cursor?)` gives `[c, cur, from]` or `[c, cur, null, null, sk, id]`.
+  - The doc comments now describe AU45 (ord 6 and the ledger).
+  - `LINE_DEBIT_KINDS` is unchanged.
+- `packages/core/src/statement.ts`: `refund_returned` added to `StatementKind`, plus the header comment. `STATEMENT_DEBIT_TYPES` is unchanged.
+- `packages/core/src/copy-zu.ts` (new) and the `./copy-zu` export in `packages/core/package.json`:
+  - `APPROVED_07ZU = true`, as the lead relayed the approval mid-run.
+  - U1 "Refund came back" and U2, word for word, behind the `zu` gate, plus `zuAllText()`.
+- Types and labels:
+  - `apps/admin/src/lib/reports.ts`: `statementKindText` and `statementCsvLabels`.
+  - `apps/admin/src/api.ts`: `StatementEntryView.kind` gains `refund` and `refund_returned`.
+  - `packages/pdf/src/statement-view.ts` and `packages/pdf/src/layout/statement.ts`: the kind unions.
+  - `packages/pdf/src/layout/copy.ts`: only `kinds.refund_returned` in `STATEMENT_PDF_COPY`.
+- `apps/admin/worker/statements.ts`: the cursor `SK` regex `[123]` is now `[1-6]`, and both bind calls are updated.
+- `apps/jobs/src/statement-pdf.ts`: the bind call.
+- `apps/jobs/src/warm.ts`: `refund` and `refund_returned` added to `warmStatement`'s kinds.
+- Tests:
+  - `packages/db/test/refund-statements.test.ts`: a new describe "AU45 …" covering (1) to (9), the existing AU1 statement test, and the AU37 test (debit unchanged, credit +20,000, openings for Nov and Dec unchanged, Jan −20,000, closing(Nov) = opening(Dec)).
+  - `packages/db/test/reports.test.ts`: plans for `f` and `g` across all 7 statement reads, and the binds and arity test.
+  - `packages/core/test/statement.test.ts`, `packages/core/test/copy-zu.test.ts` (new), `packages/core/test/gst/report-csv.test.ts`.
+  - `apps/admin/worker/reports.test.ts`: the Nov/Dec chain over HTTP; cursors after ord 4, 5 and 6 answer 200 with the right `balanceBeforeMinor`; `|7`, `|0` and `|56` answer 400.
+  - `apps/admin/src/lib/reports.test.ts`: the word, and 8 CSV kinds.
+  - `apps/jobs/test/statement-b.test.ts`: a refund and its return render, with no `totals_mismatch`.
+
+**Commands and results.** Every heavy command went through `tools/heavy.sh`, one at a time.
+- `pnpm --filter @techaust/core test`: 133 files, 2,718 tests passed (coverage gate included).
+- `pnpm --filter @techaust/db test`: 62 files, 1,100 passed.
+- `pnpm --filter @techaust/pdf test`: 27 files, 415 passed.
+- `pnpm --filter @techaust/admin test`: 199 files, 5,312 passed.
+- `pnpm --filter @techaust/jobs test`: 52 files, 781 passed.
+- `typecheck` for core, db, pdf, admin and jobs: all exit 0.
+- `pnpm exec biome check` on the 21 changed files: clean. `apps/admin/worker/reports.test.ts` still shows 2 `useTemplate` infos at lines 104 and 107. Those lines are not mine and were already there.
+
+**The analyst's claims, checked**
+- Bind count: D1 refuses 4 values for the 3-parameter `STATEMENT_BALANCE_BEFORE_SQL(false)` and accepts 3. A test in `reports.test.ts` pins this.
+- Plan for alias `g`: `SEARCH g USING INDEX payment_refunds_client (client_id=?)` in the page (both forms), the balance before (both forms), totals, count and entries. `f` is the same. No `SCAN` of `f`, `g`, `fp`, `gp`, `payment_refunds` or `payments`.
+- `payment_refunds` has `origin` and `provider` (schema `payments.ts`; values `manual|razorpay|stripe|paypal` and `owner|outside|chargeback`).
+- The brief cites no test line numbers. The AU37 test it means is in `refund-statements.test.ts`, in the describe "AU1 (B0 1)".
+
+**Where I differed from the brief, or something worth knowing**
+1. The existing AU1 test "the statement, Collected and the refunds register drop the refund …" reversed at `Date.now()`. It would have started failing after 30 Nov 2026, because Collected and the register for November keep a refund that came back after November (AU37). It now reverses at a fixed 2026-11-20T04:30Z, and the title says what it checks.
+2. In the db tests the payment is received on 1 Nov (the `razorpayPayment` fixture), not 2 Nov. The admin test uses 2 Nov. No assertion depends on that day.
+3. The returned line shares the refund's `id` with its `refund` line. `(sk, id)` stays unique because ord 5 ≠ 6, and the admin `rowKey` is `${kind}-${id}`. **Designer:** anything keyed by `id` alone must add the kind.
+4. Because `detailsOf` returns `C.kinds[kind]` for any kind it doesn't special-case, the PDF already prints "Refund came back" beside the refund id. I left the U2 note, `STATEMENT_LAYOUT_ID` (still `statement-4`) and the visual specs to the designer.
+5. `statement.tsx` typechecks with no change. The `refund` and `refund_returned` rows still link to `/invoices/<refund id>` (the existing dead link). That fix is the designer's (§3).
+6. `warmStatement()` at start-up still uses `count = 3`, so only the first 3 kinds warm. The new kinds are exercised by the 200-line CPU test (`reports-cpu.test.ts`, passed).
+
+**Not verified**
+- The whole-repo `pnpm lint`, `pnpm check` and builds were not run, as instructed. That leaves the Worker byte and start-up budgets unchecked; the SQL text grows by one UNION branch.
+- Portal and web were not tested or typechecked. The portal imports none of the changed modules (checked by grep).
+- My test runs are on my base. They do not include 7b46da9 / #193, which the lead merged into the task branch after I started.
+
+**Open questions:** none.
 
 ## Designer report
 
