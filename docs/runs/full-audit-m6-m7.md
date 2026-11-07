@@ -468,3 +468,16 @@ Commits: 4b27eaa0 (schema, migrations, triggers), eff5ca53 (retention, PDF refus
 - **AU45 (follow-up, for the owner):** a refund that comes back changes nothing for the month it went out, so filed periods hold (AU37). A client statement whose period spans the return shows no line for it, so one statement's closing balance and the next one's opening can differ by that refund. Joining them needs a new client-facing "refund returned" line (core, PDF layout, portal, copy). It goes to the owner's list with the lead's recommendation: build it before launch, as its own small task. The case is rare (a card refund the bank returns).
 - **AU46:** Collected and revenue count a refund that came back in the month it went out, with no inflow in the month it returned (the cash view of the AU37 rule). Accepted.
 - **Integration:** AF2 and the AF1 fix leg both regenerated `warm-fixtures/invoices-rpc.ts`. The lead regenerated every warm fixture from the merged code (`cpu-probe --build --write-fixtures`); the admin `warm-routes`, `warm-rpc` and portal `warm-routes` tests pass.
+
+## Re-check of the AF1 fix leg (analyst, 2026-11-07): GO
+Analyst claude-opus-5-5/high; skill `cloudflare:workers-best-practices`. At c88e84ab. AU32 to AU39 are each fixed completely, with a test that fails without it; db `refund-statements` 44/44 after the AF2 merge. Nothing critical, high or medium.
+- **L1:** after the AU38 FY lift the failure counter doesn't reset, so a payment gets only one try in the new FY (`packages/db/src/receipts.ts:164`).
+- **L2:** the relaxed scan checks (`reports-v2.test.ts:84-91`, `reports-stress.test.ts:207-215`) skip by alias name, and `f` is also a `payment_refunds` alias.
+- **L3:** the reversed branch of `refundsOutSql` seeks every failed refund; the register sorts its FY in a temporary b-tree.
+- **Designer note:** after 20 empty pages the list shows neither rows nor an empty state.
+
+### Lead's triage (2026-11-07)
+- **AU47 (L1):** count afresh when the last try was in an earlier FY (three tries per FY, and the bell can ring again); test on 1 April after three refusals in March.
+- **AU48 (L2):** give the `refundsOutSql` source its own alias (`fo`) and skip only that exact co-routine line.
+- **AU49 (L3):** a follow-up. If staging's rows-read figures grow, add a partial index on `payment_refunds (settled_on, id) WHERE status = 'failed' AND reversed_at IS NOT NULL` (index only).
+- **AU50 (designer):** after 20 empty pages, a line under the list. Lead's staff line: "No more payments found in these pages. Show more to keep looking further back."
