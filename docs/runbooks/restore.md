@@ -155,8 +155,8 @@ pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\tech
    It ends with a pass, or the list of problems (exit 1): a problem stops the drill; tell the lead.
 4. **Load it into a scratch D1 on Cloudflare** (proves Cloudflare accepts the file for a real restore):
    1. the lead creates an empty D1 `techaust-restore-<date>` (APAC) through the connector;
-   2. if step 2 found the first `CREATE TRIGGER` **before** the last `INSERT INTO`, or the file holds `BEGIN TRANSACTION`/`COMMIT`, stop: the file needs splitting first (the lead; drill:verify's `loadOrder` shows the order it uses);
-   3. load it (wrangler finds the database by name; it asks to confirm, answer `y`):
+   2. **always split the file first** (first production drill, 2026-11-07: D1's export puts `CREATE VIEW issue_guard` last, after the trigger created on it, so a straight load fails): `node scripts/drill-split.mjs <the .sql> "…\.logs\drill\parts"` writes `part-1-schema.sql`, `part-2-data.sql`, `part-3-triggers.sql` in drill-verify's `loadOrder`;
+   3. load the three parts in that order, one command each (wrangler finds the database by name; add `-y` or answer `y`), e.g. for the first part:
 ```
 pnpm --dir "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform" --filter @techaust/jobs exec wrangler d1 execute techaust-restore-<date> --remote --file "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_platform\.logs\drill\techaust-prod-<date and time>.sql"
 ```
