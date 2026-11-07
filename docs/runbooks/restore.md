@@ -173,8 +173,11 @@ _P7 ops, 2026-11-07 ([runs/p7-ops](../runs/p7-ops.md); PRD JOB-BKP-01; 08 §6.1;
 
 #### 3.6.1 What it holds
 - The tables and rows `monthlyExportSql` keeps: the invoice family (proformas, tax and export invoices, credit and debit notes, receipts and vouchers) with their lines, sections and schedules; accepted proposals and estimates (the version accepted), their acceptances and certificates; `doc_counters`; payments, allocations, refunds, the realisation tables, settlements, bank matches; `care_invoices`, `fx_rates`; the numbered deeds; the terms versions and blocks that a sent document or an acceptance pins; the care plans' terms and status history; and the **finance** rows of `audit_log` **without** the IP address and the browser.
+- **No contact's personal data** (lead, 2026-11-07, on the safest reading; the privacy notice says long-term archive copies hold only invoices, payments and other tax records):
+  - an acceptance keeps only the evidence that a document was accepted (its ids, time, way, PDF and snapshot hashes, terms version, certificate key). It never keeps the typed name, the email, the IP address, the browser or the country;
+  - a document's frozen recipient block keeps the client's legal name, GSTIN, state, address and country, which Rule 46 needs. It never keeps the contact's name or the email.
 - Never: leads, contacts, clients, never-accepted proposals and estimates, emails, files, sessions, or any table `backup-scope.ts` marks `rolling_only`.
-- Each monthly table's definition as production holds it (`CREATE TABLE IF NOT EXISTS`), but **no index, no trigger and no view**: the copy is a record to read, not a database to run the system on.
+- Each monthly table has its own definition in the copy: exactly the columns kept, with production's types, and **no constraint, index, trigger or view**. A left-out column, such as an acceptance's typed name, isn't even a column in the copy. The copy is a record to read, not a database to run the system on.
 
 #### 3.6.2 How it is made
 - **When:** in the nightly run (`.github/workflows/backup.yml`) whose UTC day is the 1st of the month (02:40 IST on the 2nd), and in any run the owner starts by hand with **monthly** ticked (Actions › "Backup D1 to S3" › Run workflow › tick "monthly"). The first copy is due on 2026-12-01.
@@ -195,7 +198,7 @@ node "D:\Business\1. Parent Project\TecHaust Technologies\Application\techaust_p
 ```
    It prints each table's row count (compare them with the `-- Rows:` line at the top of the `.sql`) and never writes over an existing file. Foreign keys are off in that file, because the copy leaves out the clients and contacts they point at.
 4. **Read the records** with any SQLite tool, or through Node (`node:sqlite`); the lead can help. Never load the copy into a production or staging D1: Cloudflare's D1 enforces foreign keys, and the copy deliberately lacks the tables they point at.
-5. **Onto a schema built from the migrations** (only when a later tool needs today's columns): build a scratch SQLite from `packages/db/migrations` in order, drop every trigger in it, run `PRAGMA foreign_keys=OFF`, then run the `.sql`. `CREATE TABLE IF NOT EXISTS` keeps the migrated tables, and every `INSERT` names its columns, so columns added later stay empty. `apps/web/test/backup-monthly.test.ts` proves this path on today's migrations.
+5. **Not onto a schema built from the migrations.** The copy creates its own tables and refuses to run over existing ones. Production's definitions would refuse its rows anyway: the columns left out, such as an acceptance's typed name and email, are required there. If a later tool needs the rows in today's shape, the lead copies them across column by column from the restored file.
 6. **Clean up:** delete the `.tar`, the `.sql` and the `.db` from `.logs\drill\` when done. They hold invoices and payments.
 
 #### 3.6.4 The AWS changes the owner makes before 2026-12-01 (lead gives the clicks)

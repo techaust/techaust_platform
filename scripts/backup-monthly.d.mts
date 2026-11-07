@@ -18,7 +18,7 @@ export function sqlLiteral(v: unknown): string;
 export function loadExport(db: DatabaseSync, sqlText: string): void;
 export function tablesOf(db: DatabaseSync): Map<string, string>;
 export function scopeProblems(tables: Map<string, string>, scope: BackupScopeFile): string[];
-export function ifNotExists(createSql: string): string;
+export function copyTableSql(db: DatabaseSync, table: string, sql: string): string;
 export function writeFinanceSql(
   db: DatabaseSync,
   scope: BackupScopeFile,

@@ -15,8 +15,9 @@
 //      (schema, then rows; transactions dropped). Its triggers are never created (the copy needs none, and a trigger written before the rows it guards
 //      would refuse them); foreign keys are off (the copy leaves out the tables they point at);
 //   2. every table of the export must be classified by the scope, and every monthly table must be in the export: otherwise nothing is written;
-//   3. the file: a header (format, time, row counts), each monthly table's definition as the export holds it (`CREATE TABLE IF NOT EXISTS`, no index and
-//      no trigger) and its rows from `monthlyExportSql(table)` as `INSERT` statements naming their columns, in one transaction.
+//   3. the file: a header (format, time, row counts), each monthly table's own definition (only the columns its query keeps, with production's
+//      declared types; no constraint, index or trigger) and its rows from `monthlyExportSql(table)` as `INSERT` statements naming their columns, in one
+//      transaction.
 // Nothing from the data is printed: the log shows the table count and the file's size only (the Actions logs of this public repository are public).
 
 import { closeSync, existsSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
@@ -147,9 +148,27 @@ export function scopeProblems(tables, scope) {
   return problems;
 }
 
-/** `CREATE TABLE x` → `CREATE TABLE IF NOT EXISTS x`, so the copy also loads onto a schema built from the migrations. */
-export const ifNotExists = (createSql) =>
-  createSql.replace(/^\s*CREATE\s+TABLE\s+(?!IF\s+NOT\s+EXISTS\b)/i, "CREATE TABLE IF NOT EXISTS ");
+/**
+ * The copy's own definition of a monthly table: exactly the columns its query returns, each with the type production declares for it, and no constraint
+ * (P7 ops: a column the scope leaves out, such as an acceptance's `typed_name`, is NOT NULL in production, so production's own definition can't hold
+ * the copy). The copy is a record to read, never a database to run on.
+ */
+export function copyTableSql(db, table, sql) {
+  const declared = new Map(
+    db
+      .prepare(`PRAGMA table_info(${ident(table)})`)
+      .all()
+      .map((c) => [String(c.name), String(c.type ?? "")]),
+  );
+  const cols = db
+    .prepare(sql)
+    .columns()
+    .map((c) => {
+      const type = (c.type ?? declared.get(String(c.name)) ?? "").trim();
+      return type ? `${ident(c.name)} ${type}` : ident(c.name);
+    });
+  return `CREATE TABLE ${ident(table)} (${cols.join(", ")});`;
+}
 
 /**
  * Writes the finance-only SQL of a loaded database through `write(text)`. Returns the row count of each monthly table (in the file's header too, which
@@ -161,7 +180,6 @@ export function writeFinanceSql(
   write,
   { createdAt = new Date().toISOString(), source = "" } = {},
 ) {
-  const tables = tablesOf(db);
   const counts = {};
   for (const { table, sql } of scope.monthly) {
     const r = db.prepare(`SELECT count(*) AS n FROM (${sql})`).get();
@@ -176,12 +194,7 @@ export function writeFinanceSql(
   );
   write(`-- Rows: ${scope.monthly.map((m) => `${m.table} ${counts[m.table]}`).join(", ")}\n`);
   write("PRAGMA foreign_keys=OFF;\n");
-  for (const { table } of scope.monthly)
-    write(
-      `${ifNotExists(tables.get(table) ?? "")
-        .trim()
-        .replace(/;?$/, ";")}\n`,
-    );
+  for (const { table, sql } of scope.monthly) write(`${copyTableSql(db, table, sql)}\n`);
   write("BEGIN TRANSACTION;\n");
   for (const { table, sql } of scope.monthly) {
     const stmt = db.prepare(sql);

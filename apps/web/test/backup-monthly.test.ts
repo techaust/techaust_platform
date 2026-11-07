@@ -8,7 +8,13 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { FINANCE_AUDIT_ACTIONS } from "@techaust/core/audit";
-import { BACKUP_SCOPE, monthlyExportSql } from "@techaust/db/backup-scope";
+import {
+  ACCEPTANCE_EXPORT_COLUMNS,
+  ACCEPTANCE_PERSONAL_COLUMNS,
+  BACKUP_SCOPE,
+  monthlyExportSql,
+  RECIPIENT_SCRUB_KEYS,
+} from "@techaust/db/backup-scope";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   BackupError,
@@ -16,7 +22,6 @@ import {
   buildFinanceCopy,
   FORMAT,
   ident,
-  ifNotExists,
   parseScope,
   readScope,
   restoreFinanceCopy,
@@ -147,11 +152,6 @@ describe("values are written exactly", () => {
     expect(() => sqlLiteral({})).toThrow(BackupError);
     expect(ident('a"b')).toBe('"a""b"');
   });
-
-  it("adds IF NOT EXISTS to a table definition once", () => {
-    expect(ifNotExists("CREATE TABLE `t` (a)")).toBe("CREATE TABLE IF NOT EXISTS `t` (a)");
-    expect(ifNotExists("CREATE TABLE IF NOT EXISTS t (a)")).toBe("CREATE TABLE IF NOT EXISTS t (a)");
-  });
 });
 
 // ---------- an export of the real schema ----------
@@ -227,6 +227,25 @@ const SECRET_IP = "203.0.113.77";
 const SECRET_UA = "Mozilla/5.0 (made-up browser for the audit row)";
 const LEAD_EMAIL = "lead-person@example.test";
 const CONTACT_EMAIL = "contact-person@example.test";
+/** P7 ops: an acceptance's personal values and the recipient block's contact name and email, none of which may reach the copy. */
+const ACCEPT_NAME = "Asha Typed-Name";
+const ACCEPT_EMAIL = "asha-accepts@example.test";
+const ACCEPT_IP = "198.51.100.23";
+const ACCEPT_UA = "Mozilla/5.0 (made-up browser for the acceptance)";
+const ACCEPT_COUNTRY = "ZZ";
+const RECIPIENT_CONTACT = "Ravi Contact-Person";
+const RECIPIENT_EMAIL = "billing-person@example.test";
+const RECIPIENT = {
+  legalName: "Shop 'A'\nRoad 1",
+  gstin: "19ABCDE1234F1Z5",
+  stateCode: "19",
+  address: { line1: "1 Market Road", city: "Balurghat" },
+  email: RECIPIENT_EMAIL,
+  country: "IN",
+  contactId: "k1",
+  contactName: RECIPIENT_CONTACT,
+  clientType: "business",
+};
 
 function sampleExport() {
   const { db, triggers } = realDb();
@@ -245,7 +264,8 @@ function sampleExport() {
     currency: "INR",
     terms_version_id: "tv-pinned",
     total_minor: BIG,
-    recipient: "Shop 'A'\nRoad 1",
+    title: "Shop 'A'\nRoad 1",
+    recipient: JSON.stringify(RECIPIENT),
     ...frozen(1, "TH/25-26/1"),
   });
   insert(db, "documents", {
@@ -273,7 +293,21 @@ function sampleExport() {
   });
   for (const d of ["d-inv", "d-prop-open", "d-prop-acc", "d-est-draft"])
     insert(db, "document_lines", { id: `l-${d}`, document_id: d });
-  insert(db, "acceptances", { id: "a1", document_id: "d-prop-acc", contact_id: "k1" });
+  insert(db, "acceptances", {
+    id: "a1",
+    document_id: "d-prop-acc",
+    contact_id: "k1",
+    typed_name: ACCEPT_NAME,
+    email: ACCEPT_EMAIL,
+    accepted_at: 1_760_000_100_000n,
+    ip: ACCEPT_IP,
+    user_agent: ACCEPT_UA,
+    country: ACCEPT_COUNTRY,
+    pdf_sha256: "a".repeat(64),
+    terms_version_id: "tv-pinned",
+    via: "portal",
+    snapshot_sha256: "b".repeat(64),
+  });
   insert(db, "deeds", {
     id: "deed-final",
     status: "final",
@@ -341,12 +375,13 @@ describe("buildFinanceCopy on an export of the real schema [JOB-BKP-01, T7 F1]",
     expect(triggers.length).toBeGreaterThan(200);
   });
 
-  it("writes the header, the monthly tables' definitions (no index, no trigger, no view) and one transaction", () => {
+  it("writes the header, the monthly tables' own definitions (no constraint, index, trigger or view) and one transaction", () => {
     expect(file.startsWith(`-- ${FORMAT}\n`)).toBe(true);
     expect(file).toContain("made 2026-12-01T21:12:00.000Z from techaust-prod-20261201T211000Z.sql");
     expect(file).toMatch(/^-- Rows: documents 2, document_lines 2, /m);
     expect(file).not.toMatch(/CREATE (UNIQUE )?INDEX|CREATE TRIGGER|CREATE VIEW/i);
-    expect(file.match(/^CREATE TABLE IF NOT EXISTS /gm)).toHaveLength(readScope().monthly.length);
+    expect(file.match(/^CREATE TABLE "/gm)).toHaveLength(readScope().monthly.length);
+    expect(file).not.toMatch(/NOT NULL|PRIMARY KEY|REFERENCES|CHECK|IF NOT EXISTS/);
     expect(file.match(/^BEGIN TRANSACTION;$/gm)).toHaveLength(1);
     expect(file.trimEnd().endsWith("COMMIT;")).toBe(true);
     expect(result.tables).toBe(readScope().monthly.length);
@@ -381,28 +416,64 @@ describe("buildFinanceCopy on an export of the real schema [JOB-BKP-01, T7 F1]",
     expect(ids("SELECT id FROM payments")).toEqual(["p1"]);
   });
 
-  it("keeps only finance audit rows, without the IP address or the browser (L35)", () => {
+  /** The columns of a table in the restored copy. */
+  const columnsOf = (t: string) =>
+    (r.prepare(`PRAGMA table_info(${ident(t)})`).all() as { name: string }[]).map((c) => c.name);
+
+  it("keeps only finance audit rows, without the IP address or the browser (L35): the columns aren't even in the copy", () => {
     expect(ids("SELECT id FROM audit_log")).toEqual(["au-fin"]);
-    const a = r.prepare("SELECT ip, user_agent, summary FROM audit_log").get() as Record<string, unknown>;
-    expect(a).toEqual({ ip: null, user_agent: null, summary: '{"number":"TH/25-26/1"}' });
+    expect(columnsOf("audit_log")).not.toContain("ip");
+    expect(columnsOf("audit_log")).not.toContain("user_agent");
+    const a = r.prepare("SELECT summary FROM audit_log").get() as Record<string, unknown>;
+    expect(a).toEqual({ summary: '{"number":"TH/25-26/1"}' });
     expect(file).not.toContain(SECRET_IP);
     expect(file).not.toContain(SECRET_UA);
   });
 
-  it("keeps every value exactly: an amount beyond 2^53, text with quotes and line breaks", () => {
-    const s = r.prepare("SELECT total_minor, recipient, currency FROM documents WHERE id = 'd-inv'");
-    s.setReadBigInts(true);
-    expect(s.get()).toEqual({ total_minor: BIG, recipient: "Shop 'A'\nRoad 1", currency: "INR" });
+  it("P7 ops: keeps the acceptance as evidence only (ids, time, way, hashes, terms), with no name, email, IP, browser or country", () => {
+    expect(columnsOf("acceptances")).toEqual([...ACCEPTANCE_EXPORT_COLUMNS]);
+    for (const c of ACCEPTANCE_PERSONAL_COLUMNS) expect(columnsOf("acceptances")).not.toContain(c);
+    const a = r.prepare("SELECT * FROM acceptances").get() as Record<string, unknown>;
+    expect(a).toMatchObject({
+      id: "a1",
+      document_id: "d-prop-acc",
+      contact_id: "k1",
+      accepted_at: 1_760_000_100_000,
+      pdf_sha256: "a".repeat(64),
+      terms_version_id: "tv-pinned",
+      via: "portal",
+      snapshot_sha256: "b".repeat(64),
+    });
+    for (const v of [ACCEPT_NAME, ACCEPT_EMAIL, ACCEPT_IP, ACCEPT_UA]) expect(file).not.toContain(v);
+    expect(file).not.toMatch(/'ZZ'/);
   });
 
-  it("the copy also loads onto a schema built from the migrations (triggers dropped first), every row in place", () => {
+  it("P7 ops: the invoice's recipient block keeps the client's legal name, GSTIN, state and address, without the contact's name or the email", () => {
+    const row = r.prepare("SELECT recipient FROM documents WHERE id = 'd-inv'").get() as {
+      recipient: string;
+    };
+    const recipient = JSON.parse(row.recipient) as Record<string, unknown>;
+    for (const k of RECIPIENT_SCRUB_KEYS) expect(recipient).not.toHaveProperty(k);
+    const { email: _e, contactName: _n, ...kept } = RECIPIENT;
+    expect(recipient).toEqual(kept);
+    expect(file).not.toContain(RECIPIENT_CONTACT);
+    expect(file).not.toContain(RECIPIENT_EMAIL);
+    // every column of documents is in the copy (the list comes from the Drizzle schema, in its own order)
+    expect(columnsOf("documents").sort()).toEqual(
+      (db.prepare("PRAGMA table_info(documents)").all() as { name: string }[]).map((c) => c.name).sort(),
+    );
+  });
+
+  it("keeps every value exactly: an amount beyond 2^53, text with quotes and line breaks", () => {
+    const s = r.prepare("SELECT total_minor, title, currency FROM documents WHERE id = 'd-inv'");
+    s.setReadBigInts(true);
+    expect(s.get()).toEqual({ total_minor: BIG, title: "Shop 'A'\nRoad 1", currency: "INR" });
+  });
+
+  it("the copy never loads over an existing schema (its CREATE TABLE refuses), so it is read on its own", () => {
     const { db: target } = realDb();
-    target.exec(file);
-    const n = (t: string) =>
-      Number((target.prepare(`SELECT count(*) AS n FROM ${ident(t)}`).get() as { n: number }).n);
-    expect(n("documents")).toBe(2);
-    expect(n("audit_log")).toBe(1);
-    expect(n("leads")).toBe(0);
+    expect(() => target.exec(file)).toThrow(/already exists/);
+    expect(Number((target.prepare("SELECT count(*) AS n FROM documents").get() as { n: number }).n)).toBe(0);
     target.close();
   });
 

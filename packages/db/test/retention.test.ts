@@ -3,10 +3,17 @@
 // rows stay, every financial table is untouched, and a second live run removes nothing. Raw SQL; invented test data; times relative to now.
 import { uuidv7 } from "@techaust/core";
 import { cutoffsOf, RETENTION_FAMILIES, type RetentionFamily } from "@techaust/core/retention";
-import { is } from "drizzle-orm";
+import { getTableColumns, is } from "drizzle-orm";
 import { getTableConfig, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { describe, expect, it } from "vitest";
-import { AUDIT_EXPORT_COLUMNS, BACKUP_SCOPE, monthlyExportSql } from "../src/backup-scope.ts";
+import {
+  ACCEPTANCE_EXPORT_COLUMNS,
+  ACCEPTANCE_PERSONAL_COLUMNS,
+  AUDIT_EXPORT_COLUMNS,
+  BACKUP_SCOPE,
+  monthlyExportSql,
+  RECIPIENT_SCRUB_KEYS,
+} from "../src/backup-scope.ts";
 import { auditIpDueSql } from "../src/dp-shared.ts";
 import { DRAIN_PAGE_SQL, ORPHAN_FILES_SQL, SIGNATURES_IN_USE_SQL } from "../src/r2-sweep.ts";
 import {
@@ -126,6 +133,57 @@ describe("the matrix and the backup scope cover every table (A.6, B.6)", () => {
     expect((await all<{ id: string }>(monthlyExportSql("acceptances"))).map((r) => r.id)).toContain(
       acceptance,
     );
+    // P7 ops: the acceptance stays as evidence only, with no typed name, email, IP, browser or country
+    const row = (await all<Record<string, unknown>>(monthlyExportSql("acceptances"))).find(
+      (r) => r.id === acceptance,
+    );
+    expect(Object.keys(row ?? {})).toEqual([...ACCEPTANCE_EXPORT_COLUMNS]);
+    expect(row).toMatchObject({
+      document_id: accepted.id,
+      contact_id: contact,
+      accepted_at: 2000,
+      pdf_sha256: "x",
+    });
+    expect(JSON.stringify(row)).not.toMatch(/Asha|asha@example\.test/);
+  });
+  it("P7 ops: every acceptances column is either kept or named personal; documents keep every column with the recipient's contact name and email removed", async () => {
+    const cols = Object.values(getTableColumns(schema.acceptances)).map((c) => c.name);
+    expect([...ACCEPTANCE_EXPORT_COLUMNS, ...ACCEPTANCE_PERSONAL_COLUMNS].sort()).toEqual([...cols].sort());
+    expect(ACCEPTANCE_PERSONAL_COLUMNS).toEqual(["typed_name", "email", "ip", "user_agent", "country"]);
+    expect(monthlyExportSql("acceptances")).not.toMatch(
+      /\b(typed_name|email|ip|user_agent|country)\b|SELECT \*/,
+    );
+    expect(monthlyExportSql("documents")).not.toContain("SELECT *");
+    // an issued invoice with a recipient block, inserted as billing-helpers' mkIssued does
+    const client = await mkClientRow();
+    const id = uuidv7();
+    const recipient = {
+      legalName: "Made-up Shop",
+      gstin: "19ABCDE1234F1Z5",
+      stateCode: "19",
+      email: "billing@example.test",
+      country: "IN",
+      contactId: "k-made-up",
+      contactName: "Made-up Contact",
+    };
+    await run(
+      `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, due_date, subtotal_minor, taxable_minor, total_minor, balance_minor, content_sha256, updated_at, recipient)
+       VALUES (?1, 'tax_invoice', 'issued', ?2, 'INR', 'inv-p7', '9999', 1, 'P7/1', 1000, '2026-10-28', '2026-11-04', 100000, 100000, 118000, 118000, ?3, 7000, ?4)`,
+      id,
+      client,
+      "h".repeat(64),
+      JSON.stringify(recipient),
+    );
+    const row = (await all<Record<string, unknown>>(monthlyExportSql("documents"))).find((r) => r.id === id);
+    expect(Object.keys(row ?? {}).sort()).toEqual(
+      Object.values(getTableColumns(schema.documents))
+        .map((c) => c.name)
+        .sort(),
+    );
+    const { email: _e, contactName: _n, ...kept } = recipient;
+    expect(JSON.parse(String(row?.recipient))).toEqual(kept);
+    for (const k of RECIPIENT_SCRUB_KEYS) expect(String(row?.recipient)).not.toContain(`"${k}"`);
+    expect(row).toMatchObject({ total_minor: 118000, number_display: "P7/1", status: "issued" });
   });
   it("every family's tables are in the matrix under that family", () => {
     for (const family of RETENTION_FAMILIES)
