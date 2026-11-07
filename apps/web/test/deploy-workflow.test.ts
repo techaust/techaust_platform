@@ -311,34 +311,191 @@ describe("deploy-staging.yml: three jobs, the token only where nothing but wrang
   });
 });
 
-describe("deploy-prod.yml: build without secrets, deploy with wrangler only (M7.5, owner's Q3 A)", () => {
+describe("deploy-prod.yml: build without secrets, deploy with wrangler only, seven deploys with health checks (M7.5, P7-B)", () => {
   const text = workflow("deploy-prod.yml");
+  const guard = jobOf(text, "guard");
   const build = jobOf(text, "build");
   const deploy = jobOf(text, "deploy");
+  const b = stepsOf(build);
+  const d = stepsOf(deploy).map((s) => `${s}\n`);
 
-  it("the build job has no environment and no secret, runs the readiness and .dev.vars checks, and hands an artifact on", () => {
+  it("keeps the guard: the owner only, PRODUCTION_ENABLED, the typed confirmation; and takes the stage and check_web inputs", () => {
+    expect(text).toMatch(/^on:\n {2}workflow_dispatch:\n/m);
+    expect(text).not.toMatch(/pull_request|workflow_run|push:/);
+    expect(guard).toContain('[ "$ACTOR" = "techaust" ] && [ "$TRIGGERING_ACTOR" = "techaust" ]');
+    expect(guard).toContain(["ENABLED: $", "{{ vars.PRODUCTION_ENABLED }}"].join(""));
+    expect(guard).toContain('[ "$CONFIRM" = "deploy techaust.com $TAG" ]');
+    expect(text).toMatch(
+      / {6}stage:\n[\s\S]*?type: choice\n\s+options: \[full, database\]\n\s+default: full/,
+    );
+    expect(text).toMatch(/ {6}check_web:\n[\s\S]*?type: boolean\n\s+default: true/);
     expect(build).toContain("needs: guard");
+  });
+
+  it("the build job has no environment and no secret, builds every app for production, bundles jobs and the website, and checks them", () => {
     expect(build).not.toMatch(/secrets\.|environment:/);
     expect(build).not.toMatch(/^\s*cache:/m); // L51
     expect(deploy).not.toMatch(/^\s*cache:/m); // L56
-    expect(build).toContain("node scripts/check-prod-readiness.mjs");
-    expect(build).toContain("node scripts/check-staging-build.mjs dev-vars");
-    expect(build).toContain("actions/upload-artifact@");
+    const order = [
+      'pnpm --filter @techaust/db seed:sql "$GITHUB_WORKSPACE/.deploy/seed.sql"',
+      "pnpm --filter @techaust/admin run build:production",
+      "pnpm --filter @techaust/portal run build:production",
+      "pnpm --filter @techaust/web run build:production",
+      "pnpm --filter @techaust/jobs exec wrangler deploy --dry-run --env production --outdir dist-production",
+      "pnpm --filter @techaust/web exec wrangler deploy --dry-run --env production --outdir .wrangler/dist-production",
+      "node scripts/check-prod-build.mjs dev-vars",
+      "node scripts/check-prod-readiness.mjs",
+      "actions/upload-artifact@",
+    ];
+    const at = order.map((c) => running(b, c));
+    for (const [i, index] of at.entries()) expect(index, order[i]).toBeGreaterThan(-1);
+    for (let i = 1; i < at.length; i++) expect(at[i], order[i]).toBeGreaterThanOrEqual(at[i - 1] as number);
+    expect(build).not.toMatch(/build:staging|--env staging|dist-staging/);
+    expect(build).toContain("include-hidden-files: true");
   });
 
-  it("downloads the build outside the checkout and places it into apps/web/dist before any step with a secret (L57)", () => {
-    expectPlacedSafely(build, deploy, "production", "production-build", "");
+  it("runs the readiness check on stage full only (stage database deploys nothing and comes before the backup it would wait for)", () => {
+    const ready = b[running(b, "node scripts/check-prod-readiness.mjs")] ?? "";
+    expect(ready).toContain("if: inputs.stage == 'full'");
+  });
+
+  it("downloads the build outside the checkout and places it before any step with a secret (L57)", () => {
+    expect(deploy).not.toMatch(/^\s+path: \.\s*$/m);
+    expectPlacedSafely(
+      build,
+      deploy,
+      "production",
+      "production-build",
+      "name: Check the production credentials are set",
+    );
   });
 
   it("the deploy job holds the production environment and installs only wrangler", () => {
     expect(deploy).toContain("needs: build");
     expect(deploy).toContain("environment: production");
     expect(deploy).toContain(WRANGLER_ONLY);
-    expect(deploy).toContain("actions/download-artifact@");
     for (const line of deploy
       .split("\n")
       .filter((l) => !l.trim().startsWith("#") && !l.includes(WRANGLER_ONLY)))
       for (const command of WORKSPACE_CODE) expect(line).not.toContain(command);
+  });
+
+  it("checks every build as a production one with no secret, before the bookmark, the migrations and the seed", () => {
+    const check = running(d, "node scripts/deploy-worker.mjs production --check");
+    expect(check).toBe(running(d, "node scripts/place-build-artifact.mjs production") + 1);
+    expect(holdsSecret(d[check] as string)).toBe(false);
+    const tt = running(d, "wrangler.js d1 time-travel info DB --env production");
+    const migrate = running(d, "wrangler.js d1 migrations apply DB --remote --env production");
+    const seed = running(
+      d,
+      "wrangler.js d1 execute DB --remote --env production --file ../../.deploy/seed.sql",
+    );
+    expect(check).toBeLessThan(tt);
+    expect(tt).toBeLessThan(migrate);
+    expect(migrate).toBeLessThan(seed);
+    expect(seed).toBeLessThan(running(d, "node scripts/deploy-worker.mjs production admin-api"));
+    expect(d[tt]).toContain("$GITHUB_STEP_SUMMARY");
+    for (const i of [tt, migrate, seed]) expect(d[i]).not.toContain("if: inputs.stage");
+  });
+
+  const ORDER = [
+    "node scripts/deploy-worker.mjs production admin-api",
+    "node scripts/deploy-worker.mjs production admin-invoices",
+    "node scripts/deploy-worker.mjs production admin-finance",
+    "node scripts/deploy-worker.mjs production admin\n",
+    "node scripts/deploy-worker.mjs production portal",
+    "node scripts/deploy-worker.mjs production jobs",
+    "node scripts/deploy-worker.mjs production web",
+  ];
+
+  it("deploys the seven Workers one per step, in order, on stage full only", () => {
+    const at = ORDER.map((c) => running(d, c));
+    for (const [i, index] of at.entries()) expect(index, ORDER[i]).toBeGreaterThan(-1);
+    expect([...at].sort((x, y) => x - y)).toEqual(at);
+    for (const c of ORDER) expect(d.filter((s) => s.includes(c))).toHaveLength(1);
+    for (const [i, index] of at.entries()) {
+      expect(d[index], ORDER[i]).toContain(`name: Deploy ${i + 1} of 7,`);
+      expect(d[index], ORDER[i]).toContain("if: inputs.stage == 'full'");
+      expect(d[index], ORDER[i]).toContain(`CLOUDFLARE_API_TOKEN: ${secret("CF_API_TOKEN_PROD")}`);
+    }
+    expect(deploy).not.toMatch(/deploy-worker\.mjs staging|staging-health/);
+  });
+
+  it.each([
+    ["admin", 3, "if: inputs.stage == 'full'\n"],
+    ["portal", 4, "if: inputs.stage == 'full'\n"],
+    ["jobs", 5, "if: inputs.stage == 'full'\n"],
+    ["web", 6, "if: inputs.stage == 'full' && inputs.check_web\n"],
+  ] as const)("checks the %s health right after its (last) deploy, with no secret", (app, at, condition) => {
+    const health = running(d, `node scripts/prod-health.mjs ${app}`);
+    expect(health).toBe(running(d, ORDER[at] as string) + 1);
+    const step = d[health] ?? "";
+    expect(holdsSecret(step)).toBe(false);
+    expect(step).toContain(condition);
+    expect(step).not.toMatch(/continue-on-error/);
+  });
+
+  it("uses only the production token and the account id", () => {
+    const used = [...text.matchAll(/secrets\.(\w+)/g)].map((m) => m[1]);
+    expect(new Set(used)).toEqual(new Set(["CF_API_TOKEN_PROD", "CLOUDFLARE_ACCOUNT_ID"]));
+  });
+
+  it("pins every action by commit SHA, the same pins as deploy-staging.yml", () => {
+    const uses = (t: string) => [...t.matchAll(/uses: (\S+)/g)].map((m) => m[1] as string);
+    for (const u of uses(text)) expect(u).toMatch(/@[0-9a-f]{40}$/);
+    const staging = new Set(uses(workflow("deploy-staging.yml")));
+    for (const u of uses(text)) expect(staging.has(u), u).toBe(true);
+  });
+});
+
+describe("scripts/deploy-worker.mjs: production (P7-B)", () => {
+  it("knows the same seven targets; jobs and the website go up pre-bundled from dist-production with --env production", () => {
+    expect(Object.keys(d.PRODUCTION_DEPLOYS).sort()).toEqual(Object.keys(d.STAGING_DEPLOYS).sort());
+    expect(d.DEPLOY_ORDER).toEqual([
+      "admin-api",
+      "admin-invoices",
+      "admin-finance",
+      "admin",
+      "portal",
+      "jobs",
+      "web",
+    ]);
+    expect(d.PRODUCTION_DEPLOYS.jobs.args).toEqual([
+      "--env",
+      "production",
+      "--no-bundle",
+      "dist-production/index.js",
+    ]);
+    expect(d.PRODUCTION_DEPLOYS.web.args).toEqual([
+      "--env",
+      "production",
+      "--no-bundle",
+      ".wrangler/dist-production/worker.js",
+    ]);
+    for (const t of ["admin-api", "admin-invoices", "admin-finance", "admin", "portal"])
+      expect(d.PRODUCTION_DEPLOYS[t]).toEqual(d.STAGING_DEPLOYS[t]);
+    expect(JSON.stringify(d.PRODUCTION_DEPLOYS)).not.toContain("staging");
+  });
+
+  it("refuses an unknown scope or target, and a missing wrangler, before anything runs", () => {
+    expect(d.preDeployProblems("web", undefined, "prod").join()).toMatch(/unknown scope prod/);
+    expect(d.preDeployProblems("production-web", undefined, "production").join()).toMatch(/unknown target/);
+    const empty = fileURLToPath(new URL("./fixtures/", import.meta.url));
+    expect(d.preDeployProblems("jobs", empty, "production").join()).toMatch(/deploy-tools/);
+  });
+
+  it("checks the production redirect and flattened configs the same way (L51), naming build:production", () => {
+    const root = scratch();
+    expect(d.configProblems("portal", root, "production").join()).toMatch(
+      /run the app's build:production first/,
+    );
+    expect(d.configProblems("admin-api", root, "production").join()).toMatch(/build:production first/);
+    mkdirSync(join(root, "apps", "web", ".wrangler", "deploy"), { recursive: true });
+    expect(d.configProblems("web", root, "production")).toEqual([]);
+    writeFileSync(join(root, "apps", "web", d.REDIRECT), "{}");
+    expect(d.configProblems("web", root, "production").join()).toMatch(
+      /deploys its own wrangler\.jsonc: refused/,
+    );
   });
 });
 
@@ -517,6 +674,42 @@ describe("the apps' staging scripts [A1-5]", () => {
 
   it("jobs deploys with wrangler alone (it bundles; no build step of its own)", () => {
     expect(scripts("jobs")["deploy:staging"]).toBe("wrangler deploy --env staging");
+    expect(scripts("jobs")["deploy:production"]).toBe("wrangler deploy --env production");
+  });
+
+  // P7-B: the production twins.
+  it.each([
+    ["admin", "CLOUDFLARE_ENV=production vite build"],
+    ["portal", "CLOUDFLARE_ENV=production vite build"],
+    ["web", "CLOUDFLARE_ENV=production astro build"],
+  ])(
+    "%s: build:production builds for production, runs the build's own checks, and deploys nothing",
+    (app, build) => {
+      const s = scripts(app)["build:production"] ?? "";
+      expect(s.startsWith(build)).toBe(true);
+      expect(s).not.toContain("wrangler deploy");
+      if (app === "web")
+        expect(s).toContain("CLOUDFLARE_ENV=production node ../../scripts/check-web-dist.mjs");
+      else {
+        expect(s).toContain(`node ../../scripts/check-spa-headers.mjs ${app}`);
+        expect(s).toContain(`node ../../scripts/worker-budget.mjs ${app}`);
+      }
+    },
+  );
+
+  it.each([
+    ["admin", "deploy:production:api", "admin-api"],
+    ["admin", "deploy:production:finance", "admin-finance"],
+    ["admin", "deploy:production:invoices", "admin-invoices"],
+    ["admin", "deploy:production:front", "admin"],
+    ["portal", "deploy:production", "portal"],
+    ["web", "deploy:production", "web"],
+  ])("%s %s checks the build is a production one, then only runs wrangler", (app, name, target) => {
+    const parts = (scripts(app)[name] ?? "").split("&&").map((x) => x.trim());
+    expect(parts[0]).toBe(`node ../../scripts/check-prod-build.mjs ${target}`);
+    expect(parts).toHaveLength(2);
+    expect(parts[1]?.startsWith("wrangler deploy")).toBe(true);
+    if (app === "web") expect(parts[1]).toBe("wrangler deploy --env production");
   });
 
   it("admin has no combined deploy:staging (its four Workers deploy in separate steps)", () => {
