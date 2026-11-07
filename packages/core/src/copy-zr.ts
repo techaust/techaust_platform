@@ -8,8 +8,8 @@
 // No line is legal wording invented here: the Rule 9 block is 07-A §8's Grievance Officer block word for word (the brief says "§7": §8 is the block itself);
 // Researched 2026-11-06, DPDP Rules 2025 r.14(3); SPDI r.5(9); privacy notice 07-A §§7–8 (08-C RB-47).
 
-/** The owner's approval of the client lines C1 to C7 and the Rule 9 block (07-ZR). Not yet approved. */
-export const APPROVED_07ZR: boolean = false;
+/** The owner's approval of the client lines C1 to C7 and the Rule 9 block (07-ZR): approved word for word by the owner, 2026-11-07. */
+export const APPROVED_07ZR: boolean = true;
 const zr = (line: string): string => (APPROVED_07ZR ? line : `[Placeholder] ${line}`);
 
 /**
@@ -54,7 +54,7 @@ export const REQUEST_RECEIVED_COPY = {
   closing: zr("— TecHaust Technologies"),
 } as const;
 
-/** C7 (L31; the analyst's idea, not final wording): the privacy page's line on the keyed form kept after an erasure. For the owner with C1 to C6. */
+/** C7 (L31; approved by the owner, 2026-11-07): the privacy page's line on the keyed form kept after an erasure (privacy notice v0.3, "How long we keep it"). */
 export const PRIVACY_KEYED_FORM_LINE = zr(
   "If you ask us to erase your data, we keep only a scrambled form of your email address for 3 years, so that we don't email you and can show what you agreed to.",
 );

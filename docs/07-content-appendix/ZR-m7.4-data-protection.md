@@ -1,15 +1,15 @@
 # 07-ZR: M7.4 data-protection tooling (requests, acknowledgement, retention, legal hold)
 
-Status: **Client lines C1–C7 and the Rule 9 block: waiting for the owner's approval.** Until then every client line shows "[Placeholder]" (`APPROVED_07ZR` in `packages/core/src/copy-zr.ts`), and the jobs Worker queues no `request.received` email outside local development (so no portal request is marked acknowledged by an email that wasn't sent). Staff lines S1–S10 are the brief's words, approved by the lead under the owner's delegation (run file [m7.4-data-protection](../runs/m7.4-data-protection.md) section H); the two extra staff lines at the end are the builder's drafts for the lead. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). No legal wording is invented here: the Rule 9 block is 07-A §8 word for word.
+Status: **Client lines C1–C7 and the Rule 9 block: approved word for word by the owner, 2026-11-07** (`APPROVED_07ZR` is `true` in `packages/core/src/copy-zr.ts`; the jobs Worker queues the `request.received` email). The postal address in the Rule 9 block stays the marked gap "[Placeholder] postal address" until the owner gives it. Staff lines S1–S10 are the brief's words, approved by the lead under the owner's delegation (run file [m7.4-data-protection](../runs/m7.4-data-protection.md) section H); the two extra staff lines at the end are the builder's drafts for the lead. English (India/UK spelling), "and" never "&", no banned phrases (07 §1.3). No legal wording is invented here: the Rule 9 block is 07-A §8 word for word.
 
-## Client lines (for the owner)
+## Client lines (approved by the owner, 2026-11-07)
 - **C1** (the portal's own requests; replaces 07-ZP C21; the date is the reply day in IST): "We'll reply by email by {date}."
 - **C2** (acknowledgement email, subject): "We've received your request"
 - **C3** (acknowledgement email, body): "We received your "{kind label}" request on {date}. We'll reply by {due date}." The kind label is 07-ZP C19's (or C5, C6 below), quoted.
 - **C4** (acknowledgement email, closing; the house sign-off of 07 §8's lead acknowledgement): "— TecHaust Technologies"
 - **C5** (kind label): "Withdraw my consent"
 - **C6** (kind label): "Nominate someone to act for me"
-- **C7** (privacy page line, L31; the analyst's idea, not final wording): "If you ask us to erase your data, we keep only a scrambled form of your email address for 3 years, so that we don't email you and can show what you agreed to."
+- **C7** (privacy page line, L31; approved 2026-11-07, on the privacy notice from v0.3 under "How long we keep it"): "If you ask us to erase your data, we keep only a scrambled form of your email address for 3 years, so that we don't email you and can show what you agreed to."
 
 ## The Rule 9 contact block (in every reply email: acknowledgement, close and decline; L32)
 07-A §8 word for word (the brief names "07-A §7"; §7 is "Your rights", §8 is the Grievance Officer block itself):
