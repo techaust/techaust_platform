@@ -77,18 +77,26 @@ export function splitStatements(sql) {
   return out;
 }
 
-/** The export's statements in load order: schema (and pragmas), then data, then triggers. Transactions are dropped (the D1 import runs each file whole). */
+/** L53 (review 1, finding 5): the first statement of the data part. The export writes tables in its own order, so a child row can come before its parent. */
+export const DEFER_FKS = "PRAGMA defer_foreign_keys=TRUE;";
+
+/**
+ * The export's statements in load order: schema (and pragmas), then data, then triggers. Transactions are dropped (the D1 import runs each file whole).
+ * The data part, a file of its own, starts with `PRAGMA defer_foreign_keys=TRUE;` (L53): the pragma lasts only until the end of the transaction it is
+ * set in, so the export's own copy, loaded with the schema, would not cover the rows. The foreign keys are still checked, at the end of the data file.
+ */
 export function loadOrder(sql) {
   const schema = [];
   const data = [];
   const triggers = [];
   for (const s of splitStatements(sql)) {
     if (/^(BEGIN|COMMIT|END)\s*(TRANSACTION)?\s*;?$/i.test(s)) continue;
+    if (/^PRAGMA\s+defer_foreign_keys\b/i.test(s)) continue;
     if (/^CREATE\s+(TEMP\s+|TEMPORARY\s+)?TRIGGER\b/i.test(s)) triggers.push(s);
     else if (/^(INSERT|REPLACE|UPDATE|DELETE)\b/i.test(s)) data.push(s);
     else schema.push(s);
   }
-  return { schema, data, triggers };
+  return { schema, data: data.length > 0 ? [DEFER_FKS, ...data] : data, triggers };
 }
 
 /** The triggers a sequence of statements leaves installed (CREATE adds, DROP removes), in order. */

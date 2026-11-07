@@ -18,10 +18,12 @@ if (-not (Test-Path (Join-Path $root $config))) { Write-Host "RESULT: FAILED: no
 $secure = Read-Host -Prompt "Paste the Cloudflare analytics token (hidden), then press Enter" -AsSecureString
 $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
 try { $value = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr).Trim() } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
-# A Cloudflare API token is 40 characters of letters, digits, "-" and "_" (as the dashboard shows it). Anything else is a wrong paste.
-if ($value -notmatch '^[A-Za-z0-9_-]{40}$') {
+# A Cloudflare API token is letters, digits, "-" and "_". The ones seen so far are 40 characters, but Cloudflare fixes no length and newer token formats
+# are longer, so 40 to 200 are accepted (review 1, L53: the old exact 40 could refuse a real token). Spaces, quotes or a line break mean a wrong paste.
+# This range was written before the owner's real token existed: the RESULT line says the format check passed, so the first real run confirms it.
+if ($value -notmatch '^[A-Za-z0-9_-]{40,200}$') {
   $value = $null
-  Write-Host "RESULT: FAILED: that does not look like a Cloudflare API token (40 letters, digits, - or _). Nothing was stored."
+  Write-Host "RESULT: FAILED: that does not look like a Cloudflare API token (40 to 200 letters, digits, - or _). Nothing was stored. If you pasted the whole token, tell the lead."
   exit 1
 }
 
@@ -62,4 +64,4 @@ try {
   $value = $null
   try { [Console]::InputEncoding = $prevEncoding } catch { }
 }
-Write-Host "RESULT: CF_ANALYTICS_TOKEN stored on $worker; nothing to paste anywhere"
+Write-Host "RESULT: CF_ANALYTICS_TOKEN stored on $worker (the token passed the format check); nothing to paste anywhere"
