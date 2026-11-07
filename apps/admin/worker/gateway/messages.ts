@@ -18,6 +18,13 @@ export const bellNeedsReview = (reason: string) => `A payment needs review: ${re
 export const BELL_SIGNATURES =
   "Razorpay webhook signatures failed 5 times in an hour. Check the webhook secret.";
 
+/**
+ * P7 A2.3 (the M3.1 follow-up): Settings › Gateways still says Live for a gateway while live payments are switched off, so it runs in test mode. Staff words,
+ * builder's draft for the lead's approval under the owner's delegation (run file docs/runs/p7-payments.md).
+ */
+export const BELL_LIVE_REVERTED =
+  "Live payments are switched off, so every gateway set to Live is running in test mode. Set it back to Test in Settings › Gateways.";
+
 // ---- M6.3 (07-ZM S17, staff words, lead under the owner's delegation) -------------------------------------------------------------------------------------------
 
 /** S17: "{client} paid {amount} by card for {number}." (USD, en-US). */

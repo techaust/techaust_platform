@@ -609,7 +609,7 @@ export async function processStripeEvent(
     });
     return { result: "processed" };
   }
-  const mode = await stripeModeOfSettings(db);
+  const mode = await stripeModeOfSettings(db, env);
   const api = stripeOf(env, mode);
   if (!api) return { result: "retry" };
   // (4) expired and (6) paid: both through the re-fetch; only Stripe's own answer ends a row or records money.
@@ -638,7 +638,7 @@ export async function refreshStripeCheckout(
     return "no_open_link";
   const claim = await checkoutRefreshClaimStatement(env.DB, { id: checkout.id, now }).run();
   if (claim.meta.changes !== 1) return "too_soon";
-  const mode = await stripeModeOfSettings(env.DB);
+  const mode = await stripeModeOfSettings(env.DB, env);
   const api = stripeOf(env, mode);
   if (!api) return "retry";
   const r = await settleStripe(env, {

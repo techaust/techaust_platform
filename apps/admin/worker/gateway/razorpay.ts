@@ -234,7 +234,8 @@ const fail = <T>(code: RzpFailure): ProviderResult<T> => ({ ok: false, code: pro
  * the signature with the secret given here (the jobs Worker holds the real one; the finance Worker never verifies webhooks itself).
  */
 export function razorpayProvider(
-  cfg: RazorpayConfig & { webhookSecrets?: readonly string[] },
+  /** `env`: this Worker's `ENVIRONMENT`, the link's `notes.techaust_env` (P7; "local" when not given, as Stripe's adapter). */
+  cfg: RazorpayConfig & { webhookSecrets?: readonly string[]; env?: string },
 ): PaymentProvider {
   const api = razorpayApi(cfg);
   return {
@@ -251,7 +252,7 @@ export function razorpayProvider(
         expire_by: Math.trunc(req.expiresAt / 1000),
         notify: { sms: false, email: false },
         reminder_enable: false,
-        notes: { document_id: req.documentId, checkout_id: req.checkoutId },
+        notes: { document_id: req.documentId, checkout_id: req.checkoutId, techaust_env: cfg.env ?? "local" },
         callback_url: req.callbackUrl,
         callback_method: "get",
       });

@@ -67,7 +67,7 @@ const as = <T>(
 /** The refund client for `provider`, or null when this Worker has no transport for it (503 `gateway_unavailable`). */
 export async function refundGwOf(env: { DB: D1Database }, provider: string): Promise<RefundGw | null> {
   if (provider === "razorpay") {
-    const api = razorpayOf(env, await gatewayModeOf(env.DB));
+    const api = razorpayOf(env, await gatewayModeOf(env.DB, env));
     if (!api) return null;
     return {
       provider,
@@ -93,7 +93,7 @@ export async function refundGwOf(env: { DB: D1Database }, provider: string): Pro
     };
   }
   if (provider === "stripe") {
-    const api = stripeOf(env, await stripeModeOfSettings(env.DB));
+    const api = stripeOf(env, await stripeModeOfSettings(env.DB, env));
     if (!api) return null;
     return {
       provider,
@@ -113,7 +113,7 @@ export async function refundGwOf(env: { DB: D1Database }, provider: string): Pro
     };
   }
   if (provider === "paypal") {
-    const api = payPalOf(env, await payPalModeOfSettings(env.DB));
+    const api = payPalOf(env, await payPalModeOfSettings(env.DB, env));
     if (!api) return null;
     return {
       provider,

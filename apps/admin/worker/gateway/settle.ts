@@ -14,7 +14,7 @@ import { istDate, toIsoDate } from "@techaust/core/dates";
 import type { ProcessEventResult } from "@techaust/core/gateway-rpc";
 import { uuidv7 } from "@techaust/core/ids";
 import { payableOnline } from "@techaust/core/online-pay";
-import type { PaymentStatusReport } from "@techaust/core/payments";
+import { envMarkVerdict, type PaymentStatusReport } from "@techaust/core/payments";
 import {
   isRazorpayShortUrl,
   judgeRazorpayPayment,
@@ -32,6 +32,7 @@ import {
   checkoutLiveStatement,
   type GatewayFacts,
   type GatewayPaymentArgs,
+  OTHER_ENV_OUTCOME,
   recordGatewayPaymentStatements,
   reviewBellStatement,
   reviewItemStatement,
@@ -149,6 +150,35 @@ export const reviewFactsOf = (facts: GatewayFacts, r: ReasonFacts): GatewayFacts
 
 /** The event's id when the news came from one. */
 const eventIdOf = (cause: SettleCause) => (cause.kind === "event" ? cause.eventId : null);
+
+/** This Worker's `ENVIRONMENT` (read by name: the generated `Env` types it from the staging config), or null. */
+export const environmentOf = (env: object): string | null => {
+  const v: unknown = Reflect.get(env, "ENVIRONMENT");
+  return typeof v === "string" && v !== "" ? v : null;
+};
+
+/**
+ * P7 (the analyst's Phase 7 finding 5): a link Razorpay re-fetched whose `notes.techaust_env` names ANOTHER environment (staging and production share one
+ * sandbox account) is never ours: the event moves to `ignored` with outcome `other_env` (a refresh answers `ignored`), with no review item, no bell and no
+ * ledger write; one log line, no ids. A link with no mark (made before P7) keeps today's path. True when it was handled here.
+ */
+export async function ignoredAsOtherEnv(
+  env: GatewayEnv,
+  a: Pick<SettleArgs, "cause" | "now">,
+  linkMark: string | null,
+): Promise<boolean> {
+  if (envMarkVerdict(linkMark, environmentOf(env)) !== "other") return false;
+  console.log(JSON.stringify({ ev: "gw", m: "other_env", p: "razorpay" }));
+  const eventId = eventIdOf(a.cause);
+  if (eventId)
+    await webhookEventMoveStatement(env.DB, {
+      id: eventId,
+      status: "ignored",
+      outcome: OTHER_ENV_OUTCOME,
+      now: a.now,
+    }).run();
+  return true;
+}
 const sourceOf = (cause: SettleCause): "webhook" | "refresh" =>
   cause.kind === "event" ? "webhook" : "refresh";
 
@@ -489,6 +519,8 @@ export async function settlePayment(
     );
   }
   const link = linkR.value;
+  // P7: another environment's link (its `notes.techaust_env`) is ignored quietly, before any lookup of ours.
+  if (await ignoredAsOtherEnv(env, a, link.envMark)) return { result: "ignored" };
   // (3) our checkout: by the link id, else a stuck `creating` row by our reference ("For B2" 4); none: a link we don't know
   const checkout = await checkoutForLink(env, link, a.now);
   if (!checkout)
