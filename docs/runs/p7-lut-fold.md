@@ -110,3 +110,48 @@ Builder, 2026-11-07, branch `fix/p7-lut-fold-b1` (commits `1e87dd34`, `0d8f1eae`
 - Q2: the migration bumps `version` but writes no audit row, and keeps `updated_by`/`updated_at`; earlier data migrations wrote none either. Is an audit row wanted?
 - Q3: `apps/admin/worker/warm-fixtures/*` still holds captured `tax` rows with `"lut":{…}`. They read fine (the key is stripped) and the warm tests pass. I left them because regenerating them needs the CPU probe, which runs after a build.
 - Q4: over a list the schema would refuse (an entry whose ARN is only a tab), core (JS `trim`) and SQL (`trim` of spaces only) still differ. No stored row the admin can write is like that; I kept the list branch as it was.
+
+## Builder report 2
+
+Builder, 2026-11-07, after the analyst's early check came back GO (lead's message). Commit `5d14f4d0` on `fix/p7-lut-fold-b1`, after `f191baa2` and the early-check report commit.
+
+**Changes from the early check:**
+- **Low finding:** `packages/core/src/export-invoice.ts:168` and `packages/db/src/sql-rules.ts:49` now name `triggers-lut-fold.ts`.
+- **Analyst finding 1:** `pnpm exec biome format --write packages/db/migrations/meta/0089_snapshot.json packages/db/migrations/meta/_journal.json`.
+- **Not renumbered:** 0089 stays until `feat/rebuild-pdf` (0087/0088) merges. Then, on the lead's word: take out `0089_lut_fold.sql`, its snapshot and journal entry, merge main, run `drizzle-kit generate --custom --name lut_fold`, run `scripts/write-triggers.ts lut_fold`, biome-format `migrations/meta/*`, and update `migrations.test.ts`.
+- **Lead's decisions:** Q1, 0089 for now; Q2, no audit row; Q3, the warm fixtures stay; Q4, the ARN-trim gap stays. Nothing changed for them.
+
+**Commands (each through `tools/heavy.sh`, one at a time):**
+
+| Command | Log | Result |
+|---|---|---|
+| `pnpm --filter @techaust/admin test` | `p7-admin-test` | 199 files, 5309 passed (689 s) |
+| `pnpm --filter @techaust/jobs test` | `p7-jobs-test` | 52 files, 781 passed |
+| `pnpm --filter @techaust/admin build` | `p7-admin-build` | exit 0; Worker budget below |
+| `pnpm --filter @techaust/jobs build` | `p7-jobs-build` | exit 0; Worker budget below |
+| `pnpm check` (the one whole-repo lint) | `p7-check` | exit 0 |
+
+`pnpm check` covered: biome over 1971 files (14 warnings and 8 infos, all in files this task doesn't touch), every typecheck, the web binding guard, the Worker config guard, the migration guard (88 migrations) and CSS collisions.
+
+From the early-check run on this branch: core 2713 passed (coverage 98.1 % statements, 96.2 % branches), db 1104 passed.
+
+**Worker bytes** (`worker-budget.mjs`; startup is the fastest of 7, start-up work included, limit 200 ms):
+
+| Worker | Bytes | Limit | Startup |
+|---|---|---|---|
+| admin front | 121,871 | 150,000 | 32.4 ms |
+| admin API | 559,789 | 800,000 | 79.6 ms |
+| admin finance | 435,841 | 800,000 | 77.4 ms |
+| admin invoices | 566,579 | 800,000 | 96.1 ms |
+| jobs | 870,481 | 1,000,000 | 79.4 ms |
+
+jobs `wrangler deploy --dry-run`: Total Upload 850.08 KiB, gzip 316.78 KiB. No forbidden modules anywhere. I didn't build `main` to compare. The change only removes code: the legacy branches, `legacyLutFate` and `foldLegacyLut`.
+
+**Migration:** `packages/db/migrations/0089_lut_fold.sql`, the custom trigger set `lut_fold` from `packages/db/src/triggers-lut-fold.ts`. It is a data fold plus the two LUT triggers dropped and created again. No table is rebuilt.
+
+**Not verified:**
+- Staging: there is no deploy from a builder. Staging has no saved LUT, so on staging the fold only removes `lut: {arn: null, fy: null}` and bumps the `tax` row's version.
+- Production has no D1 yet; its seed now writes no `lut`.
+- No screen check: nothing on the screen changes.
+
+**Open:** only the renumbering after `feat/rebuild-pdf`, on the lead's word.
