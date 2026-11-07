@@ -341,7 +341,8 @@ test("a held client's project: no Delete on its notes or files (AU23); arrow key
   page,
 }) => {
   // Its own client, project, note and file (sample, local database only), so the hold touches no other test's records; the file row has no stored
-  // object (the list never reads one) and is never opened.
+  // object (the list never reads one) and is never opened. Its code and name sort after the sample clients, and it has a contact, so the tests that open
+  // "the first client" still find one with contacts.
   const client = `cl-m74-hold-${run}`;
   const project = `prj-m74-hold-${run}`;
   const note = `note-m74-hold-${run}`;
@@ -350,10 +351,12 @@ test("a held client's project: no Delete on its notes or files (AU23); arrow key
   d1(
     [
       `INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency, billing_address, created_at, updated_at)
-        VALUES ('${client}', 'H-${run}', 'Harbour Mills Private Limited (sample)', 'Harbour Mills (sample)', 'business', 'IN', 'unregistered', '19', 'INR',
-          '{"line1":"9 Sample Wharf Road","city":"Kolkata","state":"West Bengal","stateCode":"19","postalCode":"700001","country":"IN"}', ${t}, ${t});`,
+        VALUES ('${client}', 'ZM-${run}', 'Zinnia Mills Private Limited (sample)', 'Zinnia Mills (sample)', 'business', 'IN', 'unregistered', '19', 'INR',
+          '{"line1":"9 Sample Garden Road","city":"Kolkata","state":"West Bengal","stateCode":"19","postalCode":"700001","country":"IN"}', ${t}, ${t});`,
+      `INSERT INTO contacts (id, client_id, name, email, is_primary) VALUES ('ct-m74-hold-${run}', '${client}', 'Neha Bose (sample)',
+        'neha.${run.toLowerCase()}@example.test', 1);`,
       `INSERT INTO projects (id, code, client_id, name, currency, status, created_at, updated_at)
-        VALUES ('${project}', 'PRJ-H-${run}', '${client}', 'Records archive for Harbour Mills (sample)', 'INR', 'active', ${t}, ${t});`,
+        VALUES ('${project}', 'PRJ-ZM-${run}', '${client}', 'Records archive for Zinnia Mills (sample)', 'INR', 'active', ${t}, ${t});`,
       `INSERT INTO notes (id, client_id, project_id, visibility, body_md, created_at, updated_at)
         VALUES ('${note}', '${client}', '${project}', 'internal', 'Kick-off notes for the archive (sample).', ${t}, ${t});`,
       `INSERT INTO files (id, client_id, project_id, r2_key, filename, mime, size, sha256, shared, created_at)
@@ -379,7 +382,7 @@ test("a held client's project: no Delete on its notes or files (AU23); arrow key
   // AU15: the tabs move focus by the arrow keys (manual activation), and the focused, unselected tab draws the 2 px ring
   await page.goto(`/projects/${project}?tab=notes`);
   await expect(
-    page.getByRole("heading", { level: 1, name: "Records archive for Harbour Mills (sample)" }),
+    page.getByRole("heading", { level: 1, name: "Records archive for Zinnia Mills (sample)" }),
   ).toBeVisible();
   await page.getByRole("tab", { name: "Notes" }).focus();
   await page.keyboard.press("ArrowRight");
@@ -413,7 +416,7 @@ test("a held client's project: no Delete on its notes or files (AU23); arrow key
     await expect(page.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
     await page.keyboard.press("Escape");
     await page.getByRole("tab", { name: "Files" }).click();
-    await expect(page.getByText("archive-scope-sample.pdf")).toBeVisible();
+    await expect(page.getByText("archive-scope-sample.pdf", { exact: true }).first()).toBeVisible();
     await expect(fileDelete()).toHaveCount(0);
     await shot(page, "held-project-files-1280");
     // and the client page's notes (on its overview) and Files tab say the same
@@ -423,7 +426,7 @@ test("a held client's project: no Delete on its notes or files (AU23); arrow key
     await expect(page.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
     await page.keyboard.press("Escape");
     await page.goto(`/clients/${client}?tab=files`);
-    await expect(page.getByText("archive-scope-sample.pdf")).toBeVisible();
+    await expect(page.getByText("archive-scope-sample.pdf", { exact: true }).first()).toBeVisible();
     await expect(fileDelete()).toHaveCount(0);
   } finally {
     const lifted = await hold(false);
