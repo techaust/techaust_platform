@@ -3,6 +3,8 @@
 // received in the range with a running balance, 50 at a time. The CSV is built in the browser from every page (core `statementCsv`, `statement-v1`,
 // fetched only when asked: the gst core is SPA only and lazy); the PDF is made by the jobs Worker on request ("Make PDF", then the tab asks again until
 // it is ready; a bell rings too, and its link brings the person back here with the PDF's id, `?pdf=`). Proformas are never listed (LD22, LD78).
+// AU45: a refund (M6.5) and a refund that came back print the gateway's refund id as plain text (only the invoice family links), and 07-ZU U2's note
+// shows under the table once any loaded line is a refund that came back.
 import "../../reports.css";
 import { fyOf, istDate, toIsoDate } from "@techaust/core/dates";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -22,6 +24,8 @@ import {
   STATEMENT_WAIT_MS,
   statementDetailsText,
   statementErrorText,
+  statementLineIsDocument,
+  statementReturnedNote,
 } from "../../lib/reports.ts";
 import { csvBlob, pollStatementPdf, saveFile } from "../../lib/reports-api.ts";
 import { Amount, RangeForm, WideList } from "../reports/parts.tsx";
@@ -192,6 +196,8 @@ export function StatementTab(props: {
 
   const C = STATEMENT_COPY.columns;
   const cur = query.currency;
+  // AU45 (07-ZU U2): once, when any loaded line (the "Show more" pages too) is a refund that came back
+  const returnedNote = page.state === "ready" ? statementReturnedNote(page.entries) : null;
   return (
     <div className="statement">
       <div className="statement-controls">
@@ -282,13 +288,14 @@ export function StatementTab(props: {
                   header: C.document,
                   card: "title",
                   cell: (r) =>
-                    // a payment or a TDS line is not a document (M6.1): its number is plain text, never an invoice link
-                    r.kind === "receipt" || r.kind === "tds" ? (
-                      <span className="docno">{r.number}</span>
-                    ) : (
+                    // only the invoice family links (`statementLineIsDocument`): a payment or TDS line (M6.1) and a refund or a refund that came back
+                    // (M6.5, AU45: the gateway's refund id) print their number as plain text, never an invoice link
+                    statementLineIsDocument(r.kind) ? (
                       <Link to={documentHref(r.id)} className="docno report-doclink">
                         {r.number}
                       </Link>
+                    ) : (
+                      <span className="docno">{r.number}</span>
                     ),
                 },
                 { key: "details", header: C.details, cell: (r) => statementDetailsText(r) },
@@ -326,6 +333,11 @@ export function StatementTab(props: {
           )}
           {page.state === "ready" && (
             <div className="report-notes">
+              {returnedNote && (
+                <p className="report-note" data-testid="returned-note">
+                  {returnedNote}
+                </p>
+              )}
               <p className="hint report-note">{STATEMENT_COPY.proformasNote}</p>
             </div>
           )}
