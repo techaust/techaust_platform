@@ -153,6 +153,9 @@ const MATRIX = {
   "deeds.cancel": { owner: "allow" },
   "deeds.recheck": { owner: "allow" },
   "deeds.renderPdf": { owner: "allow" },
+  // Rebuild PDF (JOB-PDF-02; run file docs/runs/rebuild-pdf.md): re-creating a stored PDF that is missing or damaged, from its sealed record, under a new key.
+  // The Owner only, with a fresh code. A new docs/04 §9 row "Rebuild a stored PDF (`pdfs.rebuild`) | ✅ (step-up) | — | — | —".
+  "pdfs.rebuild": { owner: "step-up" },
   // Refunds
   "refunds.read": { owner: "allow", accountant: "allow" },
   "refunds.issue": { owner: "step-up" },

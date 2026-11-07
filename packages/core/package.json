@@ -53,6 +53,7 @@
     "./notifications": "./src/notifications.ts",
     "./numbering": "./src/numbering.ts",
     "./pdf-jobs": "./src/pdf-jobs.ts",
+    "./pdf-repair": "./src/pdf-repair.ts",
     "./permissions": "./src/permissions.ts",
     "./portal": "./src/portal.ts",
     "./portal-schemas": "./src/schemas/portal.ts",
