@@ -323,7 +323,7 @@ describe("the statement PDF: read, view, content hash, render, store once", () =
     const reversed = await refundReverseStatement(realEnv.DB, {
       refundId: refund,
       providerRefundId: ref,
-      failureCode: "stripe_failed",
+      failureCode: "gateway_failed",
       providerStatus: "failed",
       now: Date.parse("2026-10-20T04:30:00Z"),
     }).run();

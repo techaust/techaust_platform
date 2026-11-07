@@ -574,7 +574,7 @@ describe("a client's statement", () => {
       const r = await refundReverseStatement(env.DB, {
         refundId,
         providerRefundId: ref,
-        failureCode: "stripe_failed",
+        failureCode: "gateway_failed",
         providerStatus: "failed",
         now: Date.parse("2026-12-05T04:30:00Z"),
       }).run();

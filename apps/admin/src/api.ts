@@ -1034,7 +1034,7 @@ export type StatementEntryView = {
   kind: StatementKind;
   date: string;
   number: string;
-  /** A credit note's invoice number (07-V §6 "Credit note against {number}"); null for every other kind. */
+  /** A credit or debit note's invoice number (07-V §6 "Credit note against {number}", FX-4 "Debit note against {number}"); null for every other kind. */
   againstNumber?: string | null;
   amountMinor: number;
   debitMinor: number;

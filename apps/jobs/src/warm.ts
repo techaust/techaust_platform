@@ -75,7 +75,13 @@ export function warmStatement(count = 3): number {
         id: `warm-${i}`,
         kind,
         date: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`,
-        number: `TH/INV/2627/${String(i + 1).padStart(4, "0")}`,
+        // as real rows can: a TDS line with no invoice number (the empty cell), a refund line with the gateway's refund id (re-check low 5)
+        number:
+          kind === "tds"
+            ? ""
+            : kind === "refund" || kind === "refund_returned"
+              ? `rfnd_WARM${String(i + 1).padStart(10, "0")}`
+              : `TH/INV/2627/${String(i + 1).padStart(4, "0")}`,
         amountMinor: 118_000 + i,
         againstNumber: kind === "credit_note" || kind === "debit_note" ? "TH/INV/2627/0001" : null,
       };
