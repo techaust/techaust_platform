@@ -1,6 +1,7 @@
 // M7.5 B2 (brief B, I1): the route inventory's pure check. Every row has exactly one reading or one named proxy with its reason, NFR-2's limits for its
-// kind, and its figures within them; the check fails otherwise.
+// kind, and its figures within them; the check fails otherwise. L58: the suite's labels joined to rows by scripts/route-inventory.mjs (`applyBudgets`).
 import { describe, expect, it } from "vitest";
+import { applyBudgets, buildRows } from "../../../scripts/route-inventory.mjs";
 import {
   type Inventory,
   type InventoryRow,
@@ -148,5 +149,39 @@ describe("helpers", () => {
     expect(patternMatches("/api/v1/invoices/:id", "/api/v1/invoices/inv_1/pdf")).toBe(false);
     expect(patternMatches("/api/v1/invoices/:id", "/api/v1/clients/c_1")).toBe(false);
     expect(patternMatches("/api/forms/*", "/api/forms/contact")).toBe(true);
+  });
+});
+
+describe("applyBudgets: a test label lands on its row (scripts/route-inventory.mjs, L55, L58)", () => {
+  const d1Of = (rows: InventoryRow[], id: string) => rows.find((r) => r.id === id)?.d1;
+
+  it("joins an email to `email` (even one named like a kind), a form to `lead` and a dead letter to its queue's row", () => {
+    const rows = buildRows();
+    for (const id of ["jobs queue email", "jobs queue lead", "jobs queue pdf-dlq", "jobs queue deed.signed"])
+      expect(d1Of(rows, id), id).toBeNull();
+    const joined = applyBudgets(rows, "jobs", [
+      { label: "queue email deed.signed", d1: 3, sub: 1, maxBatch: 2 },
+      { label: "queue leads other", d1: 4, sub: 0, maxBatch: 5 },
+      { label: "queue pdf-dlq x", d1: 1, sub: 2, maxBatch: 1 },
+    ]);
+    expect(joined).toBe(3);
+    expect(d1Of(rows, "jobs queue email")).toEqual({ calls: 3, subrequests: 1, maxBatch: 2 });
+    expect(d1Of(rows, "jobs queue lead")).toEqual({ calls: 4, subrequests: 0, maxBatch: 5 });
+    expect(d1Of(rows, "jobs queue pdf-dlq")).toEqual({ calls: 1, subrequests: 2, maxBatch: 1 });
+    // the queue kind that shares the template's name gets nothing from an email
+    expect(d1Of(rows, "jobs queue deed.signed")).toBeNull();
+    expect(rows.filter((r) => r.d1 !== null)).toHaveLength(3);
+  });
+
+  it("keeps the worst figures of every label on a row, and joins jobs labels only for the jobs suite", () => {
+    const rows = buildRows();
+    applyBudgets(rows, "jobs", [
+      { label: "queue email invoice.issued", d1: 5, sub: 0, maxBatch: 1 },
+      { label: "queue email deed.signed", d1: 2, sub: 3, maxBatch: 4 },
+    ]);
+    expect(d1Of(rows, "jobs queue email")).toEqual({ calls: 5, subrequests: 3, maxBatch: 4 });
+    expect(
+      applyBudgets(buildRows(), "admin", [{ label: "queue leads other", d1: 1, sub: 0, maxBatch: 1 }]),
+    ).toBe(0);
   });
 });
