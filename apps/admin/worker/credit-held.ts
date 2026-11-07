@@ -11,7 +11,7 @@
 // it was confirmed; `confirmedAfter` marks one confirmed after the period ended.
 import { istDate, toIsoDate } from "@techaust/core/dates";
 import { istDayEndMs, previousReturnPeriod, returnPeriodEnd, returnPeriodOf } from "@techaust/core/refunds";
-import { CREDIT_HELD_SQL } from "@techaust/db/refunds";
+import { CREDIT_HELD_SQL, type CreditHeldScanRow, creditHeldPage } from "@techaust/db/refunds";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { type AppEnv, BAD_REQUEST, err } from "./context.ts";
@@ -27,13 +27,11 @@ const creditHeldQuery = z.object({
   cursor: z.optional(z.string().check(z.maxLength(200))),
 });
 
-type Row = {
-  id: string;
+type Row = CreditHeldScanRow & {
   client_id: string;
   client_code: string;
   client_name: string;
   currency: "INR" | "USD";
-  received_on: string;
   amount_minor: number;
   net: number;
   credit: number;
@@ -62,8 +60,8 @@ export const creditHeld = new Hono<AppEnv>().get("/credit-held", query(creditHel
       .bind(istDayEndMs(end), end, cur?.k ?? "", cur?.id ?? "", tax.excessProvisoMinor)
       .all<Row>()
   ).results;
-  const page = rows.slice(0, CREDIT_HELD_PAGE);
-  const last = page.at(-1);
+  // M6–M7 audit AU2 (B0 2): a page looks at a bounded window of payments, so it may hold fewer than 50 items and still go on (`creditHeldPage`).
+  const { items: page, next } = creditHeldPage(rows);
   return c.json({
     period,
     periodEnd: end,
@@ -83,6 +81,6 @@ export const creditHeld = new Hono<AppEnv>().get("/credit-held", query(creditHel
       // Second review, M1 (L48): received by the period's end but confirmed after it (listed by the day the money arrived; its allocations came later)
       confirmedAfter: r.confirmed_after === 1,
     })),
-    next: rows.length > CREDIT_HELD_PAGE && last ? encodeCursor({ k: last.received_on, id: last.id }) : null,
+    next: next ? encodeCursor(next) : null,
   });
 });

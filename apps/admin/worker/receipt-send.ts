@@ -61,10 +61,30 @@ const RECEIPT_SQL = `SELECT d.id, d.client_id, d.status, d.version_group_id, d.n
    FROM documents d JOIN clients k ON k.id = d.client_id LEFT JOIN payments p ON p.receipt_document_id = d.id
    WHERE d.id = ?1 AND d.type = 'receipt'`;
 
+/**
+ * M6–M7 audit AU21 (B4 L2): an address that may be emailed: not on the suppression list (a hard bounce, a complaint). The erased `h:` form needs the erasure key,
+ * which only the jobs Worker holds, so the email consumer stays the guard for it (a contact who was erased here is anonymised, which the rule already refuses).
+ */
+const NOT_SUPPRESSED = "NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email = lower(c.email))";
+
 /** The chosen contacts that may receive it (the same rule as the INSERT's WHERE), for the 409's names. */
 const ELIGIBLE_SQL = `SELECT c.id, lower(c.email) AS email FROM contacts c
    WHERE c.id IN (SELECT j.value FROM json_each(?2) j) AND c.client_id = (SELECT d.client_id FROM documents d WHERE d.id = ?1 AND d.type = 'receipt')
-     AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL`;
+     AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL AND ${NOT_SUPPRESSED}`;
+
+/**
+ * The refusal names the refused contacts at the top level, as `recipientRefusal` of the document sends does (M6–M7 audit AU16, B2 2: the SPA reads `contactIds`
+ * there, so the dialog marks them).
+ */
+const recipientRefusal = (c: Parameters<typeof err>[0], contactIds: readonly string[]) =>
+  c.json(
+    {
+      error: { code: RECIPIENT_INVALID.code, message: RECIPIENT_INVALID.message },
+      request_id: c.var.rid,
+      contactIds,
+    },
+    409,
+  );
 
 export const receiptSend = new Hono<AppEnv>().post("/:id/send", param(idParam), body(sendBody), async (c) => {
   const { id } = c.req.valid("param");
@@ -84,7 +104,7 @@ export const receiptSend = new Hono<AppEnv>().post("/:id/send", param(idParam), 
   const eligible = (eR?.results ?? []) as { id: string; email: string }[];
   const ok = new Set(eligible.map((x) => x.id));
   const refused = ids.filter((x) => !ok.has(x));
-  if (refused.length > 0) return err(c, RECIPIENT_INVALID, 409, { contactIds: refused });
+  if (refused.length > 0) return recipientRefusal(c, refused);
   const now = Date.now();
   const sends = eligible.map((x) => ({ sendId: uuidv7(), contactId: x.id, email: x.email }));
   const attach = r.attach_pdf === 1 && r.pdf_r2_key !== null;
@@ -98,7 +118,7 @@ export const receiptSend = new Hono<AppEnv>().post("/:id/send", param(idParam), 
          JOIN contacts c ON c.id = v.column2
          JOIN documents d ON d.id = ?1 AND d.type = 'receipt' AND d.status = 'issued' AND d.client_id = c.client_id
          JOIN clients k ON k.id = d.client_id AND k.anonymised_at IS NULL
-         WHERE c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
+         WHERE c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL AND ${NOT_SUPPRESSED}
            AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.receipt_document_id = d.id AND ${paymentRefundedInFullSql("p")})
          RETURNING id, email`,
     )

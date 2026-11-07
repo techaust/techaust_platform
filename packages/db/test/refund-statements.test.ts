@@ -25,14 +25,19 @@ import {
   RECEIPT_PAYMENT_SQL,
   RECEIPT_PDF_PENDING_SQL,
   RECEIPTS_DUE_SQL,
+  receiptFailureStatements,
   receiptIssueStatements,
 } from "../src/receipts.ts";
 import {
+  BANK_MATCH_BY_ID_SQL,
   bankMatchRemoveStatement,
   bankMatchStatement,
   CREDIT_HELD_SQL,
+  type CreditHeldScanRow,
+  creditHeldPage,
   PAYMENT_REFUNDS_SQL,
   pendingRefundedRejectStatement,
+  REDUCTION_BY_ID_SQL,
   REFUND_BY_PROVIDER_REF_SQL,
   REFUNDS_IDLE_SQL,
   REFUNDS_LIST_BY_CLIENT_SQL,
@@ -42,6 +47,7 @@ import {
   type RefundInsertArgs,
   realisationReductionStatement,
   receiptVoidStatement,
+  reductionLetterStatement,
   refundAnsweredStatement,
   refundAttemptStatement,
   refundBatchResult,
@@ -50,6 +56,7 @@ import {
   refundMoveStatement,
   refundRepostClaimStatement,
   refundResultStatement,
+  refundReverseStatement,
   refundSideStatements,
   SETTLEMENTS_SQL,
   settlementPageStatements,
@@ -75,6 +82,12 @@ import {
   paymentFreeSql,
   paymentNetAtSql,
 } from "../src/sql-rules.ts";
+import { REVIEW_KINDS } from "../src/schema/payments.ts";
+import {
+  AUDIT_MONEY_RECREATED_GATEWAY_0082,
+  AUDIT_MONEY_RECREATED_REFUND_0082,
+  REVIEW_KINDS_0082,
+} from "../src/triggers.ts";
 import { mkClientRow, mkIssued, mkMember, mkReceipt, next } from "./billing-helpers.ts";
 import { all, first, rejects, run } from "./helpers.ts";
 
@@ -1121,13 +1134,13 @@ describe("RA-41: credit held at a period's end (review part 1, finding 3)", () =
     };
     const rows: Held[] = [];
     for (let k = "", id = "", pages = 0; pages < 100; pages++) {
-      const page = await all<Held>(CREDIT_HELD_SQL, at, "2029-12-31", k, id, 100_000);
+      const page = await all<Held & CreditHeldScanRow>(CREDIT_HELD_SQL, at, "2029-12-31", k, id, 100_000);
       expect(page.length).toBeLessThanOrEqual(51);
-      rows.push(...page.slice(0, 50));
-      const last = page[49];
-      if (page.length <= 50 || !last) break;
-      k = last.received_on;
-      id = last.id;
+      const p = creditHeldPage(page);
+      rows.push(...p.items);
+      if (!p.next) break;
+      k = p.next.k;
+      id = p.next.id;
     }
     expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);
     const mine = rows.filter((r) => [loose, proviso, above, later, refunded].includes(r.id));
@@ -1176,12 +1189,12 @@ describe("RA-41: credit held at a period's end (review part 1, finding 3)", () =
     type Held = { id: string; received_on: string; credit: number; net: number; confirmed_after: number };
     const rows: Held[] = [];
     for (let k = "", id = "", pages = 0; pages < 100; pages++) {
-      const page = await all<Held>(CREDIT_HELD_SQL, at, day, k, id, 100_000);
-      rows.push(...page.slice(0, 50));
-      const last = page[49];
-      if (page.length <= 50 || !last) break;
-      k = last.received_on;
-      id = last.id;
+      const page = await all<Held & CreditHeldScanRow>(CREDIT_HELD_SQL, at, day, k, id, 100_000);
+      const p = creditHeldPage(page);
+      rows.push(...p.items);
+      if (!p.next) break;
+      k = p.next.k;
+      id = p.next.id;
     }
     return rows.filter((r) => ids.includes(r.id));
   }
@@ -1995,6 +2008,350 @@ describe("early check 1: the statements [findings 1 to 3, 5 to 10; L40]", () => 
         )
       )?.stage,
     ).toBe("reduction_pending");
+  });
+});
+
+// ---- M6–M7 audit (run file docs/runs/full-audit-m6-m7.md, lead's triage AU1, AU3, AU4) ---------------------------------------------------------------------
+
+describe("AU1 (B0 1): a gateway refund that succeeded comes back failed, once, and its money is credit again", () => {
+  /** A confirmed Razorpay payment of 50,000 with an outside refund of `amount` that succeeded (the gateway's id `rfnd_…`). */
+  async function refunded(amount = 20_000) {
+    const { owner, sess, clientId } = await setup();
+    const p = await razorpayPayment(clientId, owner, "confirmed");
+    const ref = `rfnd_AU1${next()}`;
+    const a = args({
+      paymentId: p,
+      sessionId: sess,
+      amountMinor: amount,
+      way: { kind: "outside", origin: "outside", providerRefundId: ref, settledOn: "2026-11-03" },
+    });
+    expect(await refundBatch(a, owner)).toBe(true);
+    return { owner, sess, clientId, p, ref, refundId: a.id };
+  }
+  const reverse = (refundId: string, ref: string, now = Date.now()) =>
+    refundReverseStatement(db(), {
+      refundId,
+      providerRefundId: ref,
+      failureCode: "stripe_failed",
+      providerStatus: "failed",
+      now,
+    }).run();
+
+  it("the reversal moves once (code, reversed_at, settled fields kept); a replay or another gateway id writes nothing", async () => {
+    const r = await refunded();
+    expect((await first<{ credit: number }>(CLIENT_CREDIT_SQL, r.clientId))?.credit).toBe(30_000);
+    expect((await reverse(r.refundId, "rfnd_OTHER")).meta.changes).toBe(0);
+    const at = Date.now();
+    expect((await reverse(r.refundId, r.ref, at)).meta.changes).toBe(1);
+    expect((await reverse(r.refundId, r.ref)).meta.changes).toBe(0);
+    expect(
+      await first(
+        "SELECT status, failure_code, reversed_at, settled_on, settled_at IS NOT NULL AS settled FROM payment_refunds WHERE id = ?",
+        r.refundId,
+      ),
+    ).toEqual({ status: "failed", failure_code: "stripe_failed", reversed_at: at, settled_on: "2026-11-03", settled: 1 });
+    // the money is the client's credit again, through the existing readers (refunds not failed)
+    expect((await first<{ credit: number }>(CLIENT_CREDIT_SQL, r.clientId))?.credit).toBe(50_000);
+    expect(
+      await first<{ free: number }>(`SELECT ${paymentFreeSql("p")} AS free FROM payments p WHERE p.id = ?`, r.p),
+    ).toEqual({ free: 50_000 });
+  });
+
+  it("the statement, Collected and the refunds register drop the refund once it came back", async () => {
+    const r = await refunded(20_000);
+    const totals = () =>
+      first<{ debit: number; credit: number; n: number }>(
+        STATEMENT_TOTALS_SQL,
+        ...statementTotalsBinds(r.clientId, "INR", "2026-01-01", "2026-12-31"),
+      );
+    const before = await totals();
+    const regBefore = await all<{ id: string }>(REFUNDS_REGISTER_SQL(false), "2026-11-01", "2026-11-30");
+    expect(regBefore.some((x) => x.id === r.refundId)).toBe(true);
+    const collected = async () =>
+      (await all<{ currency: string; collected: number }>(COLLECTED_SQL, "2026-11-01", "2026-11-30")).find(
+        (x) => x.currency === "INR",
+      )?.collected ?? 0;
+    const collectedBefore = await collected();
+    expect((await reverse(r.refundId, r.ref)).meta.changes).toBe(1);
+    const after = await totals();
+    expect(after?.debit).toBe((before?.debit ?? 0) - 20_000);
+    expect(after?.credit).toBe(before?.credit);
+    expect(
+      (await all<{ id: string }>(REFUNDS_REGISTER_SQL(false), "2026-11-01", "2026-11-30")).some(
+        (x) => x.id === r.refundId,
+      ),
+    ).toBe(false);
+    expect(await collected()).toBe(collectedBefore + 20_000);
+  });
+
+  it("the trigger (0082): only a gateway refund that succeeded, with its code and reversed_at, keeping its settled fields; never a manual one or a lost dispute; reversed_at set once", async () => {
+    const r = await refunded();
+    // no reversed_at, no code, settled fields cleared: refused
+    await rejects(
+      run("UPDATE payment_refunds SET status = 'failed', failure_code = 'x' WHERE id = ?", r.refundId),
+      /payment_refunds_status_flow/,
+    );
+    await rejects(
+      run("UPDATE payment_refunds SET status = 'failed', reversed_at = 5 WHERE id = ?", r.refundId),
+      /payment_refunds_status_flow/,
+    );
+    await rejects(
+      run(
+        "UPDATE payment_refunds SET status = 'failed', failure_code = 'x', reversed_at = 5, settled_on = NULL, settled_at = NULL WHERE id = ?",
+        r.refundId,
+      ),
+      /payment_refunds_status_flow|payment_refunds_fixed/,
+    );
+    // reversed_at alone, with no move: refused
+    await rejects(
+      run("UPDATE payment_refunds SET reversed_at = 5 WHERE id = ?", r.refundId),
+      /payment_refunds_status_flow/,
+    );
+    await run(
+      "UPDATE payment_refunds SET status = 'failed', failure_code = 'x', reversed_at = 5 WHERE id = ?",
+      r.refundId,
+    );
+    // set once, and a reversed refund moves nowhere
+    await rejects(
+      run("UPDATE payment_refunds SET reversed_at = 6 WHERE id = ?", r.refundId),
+      /payment_refunds_status_flow/,
+    );
+    await rejects(
+      run("UPDATE payment_refunds SET status = 'succeeded' WHERE id = ?", r.refundId),
+      /payment_refunds_status_flow/,
+    );
+    // a manual refund that succeeded never comes back this way (the statement and the trigger)
+    const { owner, sess, clientId } = await setup();
+    const m = await pay(clientId, owner, { amount: 10_000 });
+    const ma = args({ paymentId: m, sessionId: sess, amountMinor: 1_000 });
+    expect(await refundBatch(ma, owner)).toBe(true);
+    await rejects(
+      run("UPDATE payment_refunds SET status = 'failed', failure_code = 'x', reversed_at = 5 WHERE id = ?", ma.id),
+      /payment_refunds_status_flow/,
+    );
+    // a lost dispute neither
+    const g = await razorpayPayment(clientId, owner, "confirmed", 10_000);
+    const cb = args({
+      paymentId: g,
+      sessionId: sess,
+      amountMinor: 1_000,
+      reasonCode: "chargeback",
+      way: { kind: "outside", origin: "chargeback", providerRefundId: `du_${next()}`, settledOn: "2026-11-03" },
+    });
+    expect(await refundBatch(cb, owner)).toBe(true);
+    expect((await reverse(cb.id, (cb.way as { providerRefundId: string }).providerRefundId)).meta.changes).toBe(0);
+    await rejects(
+      run("UPDATE payment_refunds SET status = 'failed', failure_code = 'x', reversed_at = 5 WHERE id = ?", cb.id),
+      /payment_refunds_status_flow/,
+    );
+  });
+
+  it("0082 drops only what it creates again; no rebuild; its review kinds are the schema's", () => {
+    const m = env.TEST_MIGRATIONS.find((x) => x.name === "0082_audit_money_triggers.sql");
+    const text = (m?.queries ?? []).join("\n");
+    const dropped = [...text.matchAll(/DROP TRIGGER `(\w+)`/g)].map((x) => x[1]);
+    expect(dropped).toEqual([...AUDIT_MONEY_RECREATED_GATEWAY_0082, ...AUDIT_MONEY_RECREATED_REFUND_0082]);
+    const created = [...text.matchAll(/CREATE TRIGGER `(\w+)`/g)].map((x) => x[1]);
+    expect(created).toEqual(dropped);
+    expect(text).not.toMatch(/DROP TABLE|__new_|INDEXED BY/);
+    expect([...REVIEW_KINDS_0082]).toEqual([...REVIEW_KINDS]);
+    const m81 = env.TEST_MIGRATIONS.find((x) => x.name === "0081_audit_money.sql");
+    for (const q of (m81?.queries ?? []).map((x) => x.replace(/^(\s|--> statement-breakpoint)+/, "")))
+      expect(q.trim(), q.slice(0, 60)).toMatch(/^(ALTER TABLE `(payments|payment_refunds)` ADD |CREATE INDEX )/);
+  });
+});
+
+describe("AU3 (B0 4): RA-40's credit-note link in the refund's WHERE and in the trigger", () => {
+  it("a credit note issued before the payment arrived, or smaller than the refund, is never linked: zero rows from the statement, an abort from the trigger", async () => {
+    const { owner, sess, clientId } = await setup();
+    const inv = await mkIssued(clientId);
+    const p = await pay(clientId, owner, { amount: 118_000, receivedOn: "2026-11-02" });
+    await alloc(p, inv, 118_000);
+    await recompute(inv);
+    await run(
+      "UPDATE documents SET credited_minor = 18000, balance_minor = 0, updated_at = updated_at + 1 WHERE id = ?",
+      inv,
+    );
+    const note = async (issueDate: string, total: number) => {
+      const id = uuidv7();
+      const n = next();
+      await run(
+        `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, subtotal_minor, taxable_minor, total_minor,
+           balance_minor, content_sha256, updated_at, parent_id)
+         VALUES (?1, 'credit_note', 'issued', ?2, 'INR', 'cn-au3', '9999', ?3, ?4, 1000, ?5, ?6, ?6, ?6, 0, ?7, 7000, ?8)`,
+        id,
+        clientId,
+        n,
+        `CN/${n}`,
+        issueDate,
+        total,
+        "h".repeat(64),
+        inv,
+      );
+      return id;
+    };
+    const early = await note("2026-10-28", 18_000); // issued before the payment arrived
+    const late = await note("2026-11-02", 18_000);
+    const small = await note("2026-11-03", 5_000); // smaller than the refund
+    const base = { paymentId: p, sessionId: sess, from: "document" as const, documentId: inv, reasonCode: "credit_note" };
+    expect(await refundBatch(args({ ...base, creditNoteId: early, amountMinor: 18_000 }), owner)).toBe(false);
+    expect(await refundBatch(args({ ...base, creditNoteId: small, amountMinor: 18_000 }), owner)).toBe(false);
+    // the trigger holds it too, for a row written straight in
+    await rejects(
+      run(
+        `INSERT INTO payment_refunds (id, payment_id, client_id, document_id, credit_note_id, provider, origin, status, mode, paid_to, reason_code, currency, amount_minor,
+           reference_norm, paid_on, requested_by, requested_at, settled_at, settled_on, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, 'manual', 'owner', 'succeeded', 'neft', 'own_account', 'credit_note', 'INR', 18000, 'UTRRA40', '2026-11-03', ?6, 1, 1, '2026-11-03', 1)`,
+        uuidv7(),
+        p,
+        clientId,
+        inv,
+        early,
+        owner,
+      ),
+      /payment_refunds_bounds/,
+    );
+    expect(await refundBatch(args({ ...base, creditNoteId: late, amountMinor: 18_000 }), owner)).toBe(true);
+  });
+});
+
+describe("AU3 (B0 5, 6): idempotent ticks and reductions, no letter for an anonymised client", () => {
+  it("a bank tick sent twice with the same id writes one row and the second is zero rows (no primary-key abort)", async () => {
+    const { owner, sess, clientId } = await setup();
+    const p = await pay(clientId, owner, { amount: 5_000 });
+    const tick = {
+      id: uuidv7(),
+      kind: "payment" as const,
+      targetId: p,
+      statementOn: "2026-11-03",
+      statementRef: "ST/1",
+      sessionId: sess,
+      now: Date.now(),
+    };
+    expect((await bankMatchStatement(db(), tick).run()).meta.changes).toBe(1);
+    expect((await bankMatchStatement(db(), tick).run()).meta.changes).toBe(0);
+    expect(await first(BANK_MATCH_BY_ID_SQL, tick.id)).toMatchObject({ target_kind: "payment", payment_id: p });
+  });
+
+  it("a reduction sent twice with the same id writes one row; its letter is refused once the client is anonymised", async () => {
+    const { sess } = await setup();
+    const usd = await mkClientRow({ currency: "USD" });
+    const id = uuidv7();
+    const n = next();
+    await run(
+      `INSERT INTO documents (id, type, status, client_id, currency, series, fy, number, number_display, frozen_at, issue_date, supply_type, total_minor, paid_minor, credited_minor, balance_minor, updated_at)
+       VALUES (?1, 'export_invoice', 'issued', ?2, 'USD', 'exp-au3', '9999', ?3, ?4, 1000, '2026-11-01', 'export_lut', 10000, 6000, 4000, 0, 7000)`,
+      id,
+      usd,
+      n,
+      `E/${n}`,
+    );
+    const red = {
+      id: uuidv7(),
+      documentId: id,
+      amountMinor: 4_000,
+      approvedOn: "2026-11-20",
+      bankRef: "ADB/AU3",
+      declaration: false,
+      note: null,
+      sessionId: sess,
+      now: Date.now(),
+      declarationMaxInrMinor: 100_000_000,
+    };
+    expect((await realisationReductionStatement(db(), red).run()).meta.changes).toBe(1);
+    expect((await realisationReductionStatement(db(), red).run()).meta.changes).toBe(0);
+    expect(await first(REDUCTION_BY_ID_SQL, red.id)).toMatchObject({ document_id: id, amount_minor: 4_000 });
+    await run("UPDATE clients SET anonymised_at = 5 WHERE id = ?", usd);
+    const letter = {
+      id: red.id,
+      r2Key: `reductions/${red.id}/letter-x`,
+      sha256: "a".repeat(64),
+      mime: "application/pdf",
+      sessionId: sess,
+      now: Date.now(),
+    };
+    expect((await reductionLetterStatement(db(), letter).run()).meta.changes).toBe(0);
+  });
+});
+
+describe("AU4 (B0 9): a withdraw is refused while a bank tick or an advice link is active", () => {
+  it("an active tick: zero rows; once it is removed the withdraw goes through", async () => {
+    const { owner, sess, clientId } = await setup();
+    const p = await pay(clientId, owner, { amount: 5_000 });
+    const tickId = uuidv7();
+    await bankMatchStatement(db(), {
+      id: tickId,
+      kind: "payment",
+      targetId: p,
+      statementOn: "2026-11-03",
+      statementRef: null,
+      sessionId: sess,
+      now: Date.now(),
+    }).run();
+    const withdraw = () =>
+      withdrawPaymentStatement(db(), { paymentId: p, now: Date.now(), sessionId: sess, reason: "entered twice" }).run();
+    expect((await withdraw()).meta.changes).toBe(0);
+    await bankMatchRemoveStatement(db(), { id: tickId, reason: "wrong line", sessionId: sess, now: Date.now() }).run();
+    expect((await withdraw()).meta.changes).toBe(1);
+  });
+});
+
+describe("AU3 (B0 7, B6 L4): the receipt sweep tries the least recently tried first and leaves a blocked payment out after 3 failures", () => {
+  it("never tried first; after 3 refusals under one numbering version it is left out with one bell; a new version brings it back", async () => {
+    const { owner, clientId } = await setup();
+    const blocked = await pay(clientId, owner, { amount: 1_000 });
+    const other = await pay(clientId, owner, { amount: 2_000 });
+    // every due payment in the sweep's order (the file's other tests leave many confirmed payments without a receipt; the sweep takes the first 20 of these)
+    const due = async () =>
+      (await all<{ id: string }>(RECEIPTS_DUE_SQL.replace("LIMIT 20", "LIMIT 100000"), Number.MAX_SAFE_INTEGER)).map(
+        (r) => r.id,
+      );
+    expect(RECEIPTS_DUE_SQL).toMatch(/LIMIT 20$/);
+    const fail = (now: number, version: number | null) =>
+      db().batch(
+        receiptFailureStatements(db(), {
+          paymentId: blocked,
+          reason: "series_full",
+          numberingVersion: version,
+          now,
+          bellTitle: "Receipts can't be numbered",
+          link: "/payments",
+        }),
+      );
+    const version = (await first<{ version: number }>("SELECT version FROM settings WHERE key = 'numbering'"))?.version ?? null;
+    await fail(10, version);
+    // the blocked one was tried; the other never was, so it comes first
+    const order = await due();
+    expect(order.indexOf(other)).toBeLessThan(order.indexOf(blocked));
+    await fail(11, version);
+    const bells = () =>
+      first<{ n: number }>(
+        "SELECT count(*) AS n FROM notifications WHERE kind = 'receipt.blocked' AND entity_id = ?",
+        blocked,
+      );
+    expect((await bells())?.n).toBe(0);
+    await fail(12, version);
+    expect(await due()).not.toContain(blocked);
+    expect(await due()).toContain(other);
+    const owners = (
+      await first<{ n: number }>("SELECT count(*) AS n FROM staff_users WHERE role = 'owner' AND status = 'active'")
+    )?.n;
+    expect((await bells())?.n).toBe(owners);
+    expect(await first("SELECT receipt_failures, receipt_fail_reason FROM payments WHERE id = ?", blocked)).toEqual({
+      receipt_failures: 3,
+      receipt_fail_reason: "series_full",
+    });
+    // a fourth refusal under the same version rings no second bell
+    await fail(13, version);
+    expect((await bells())?.n).toBe(owners);
+    // the numbering settings change: the payment is due again, its count starts over
+    await run(
+      "INSERT INTO settings (key, value, version, updated_at) VALUES ('numbering', '{}', 1, 1) ON CONFLICT (key) DO UPDATE SET version = version + 1",
+    );
+    expect(await due()).toContain(blocked);
+    const v2 = (await first<{ version: number }>("SELECT version FROM settings WHERE key = 'numbering'"))?.version ?? null;
+    await fail(14, v2);
+    expect((await first<{ receipt_failures: number }>("SELECT receipt_failures FROM payments WHERE id = ?", blocked))?.receipt_failures).toBe(1);
   });
 });
 

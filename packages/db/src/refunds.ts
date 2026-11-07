@@ -382,7 +382,7 @@ export const refundInrStatement = (
  * (a page of 50 and whether there is more), through `payments_confirmed`. `held_since_at`: the instant of the last allocation or release before the period's end
  * (null: the money was never put on an invoice, so it is held from the day it arrived).
  */
-export const CREDIT_HELD_SQL = `SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
+export const CREDIT_HELD_SQL_UNBOUNDED = `SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
      s.held_since_at, s.confirmed_after
    FROM (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1", { p: "p", day: "?2" })} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
          (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at,
@@ -394,6 +394,60 @@ export const CREDIT_HELD_SQL = `SELECT s.id, s.client_id, k.code AS client_code,
        ORDER BY p.received_on, p.id LIMIT 51) s
    JOIN clients k ON k.id = s.client_id
    ORDER BY s.received_on, s.id`;
+
+/** M6–M7 audit AU2 (B0 2): the most confirmed payments one page of `CREDIT_HELD_SQL` looks at (so a page reads well under 9,000 rows at any table size). */
+export const CREDIT_HELD_SCAN = 1_000;
+
+/**
+ * `CREDIT_HELD_SQL_UNBOUNDED`'s answer, one bounded window at a time (M6–M7 audit AU2, B0 2: at 5,000 confirmed payments the unbounded page read about 15,000
+ * rows, since it walks every payment received up to the period's end to find a few that hold credit). The window `w` is the next `CREDIT_HELD_SCAN` confirmed
+ * payments after the keyset (one range of `payments_confirmed`); the page is the matches in that window (at most 51, the same columns and order); every row also
+ * carries the window's last key (`scan_on`, `scan_id`) and size (`scanned`), and when nothing in the window matched, ONE row of only those (its `id` NULL). The
+ * route goes on from the 51st match, else from the window's end while the window was full (`scanned` = `CREDIT_HELD_SCAN`), else it is done: the pages together
+ * hold exactly the unbounded answer (a db test pages both).
+ */
+export const creditHeldSql = (scan: number): string => `WITH w AS (SELECT p.id, p.received_on FROM payments p INDEXED BY payments_confirmed
+       WHERE p.status = 'confirmed' AND p.received_on <= ?2 AND (p.received_on > ?3 OR (p.received_on = ?3 AND p.id > ?4))
+       ORDER BY p.received_on, p.id LIMIT ${scan}),
+     e AS (SELECT received_on AS scan_on, id AS scan_id, (SELECT count(*) FROM w) AS scanned FROM w ORDER BY received_on DESC, id DESC LIMIT 1)
+   SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
+     s.held_since_at, s.confirmed_after, e.scan_on, e.scan_id, e.scanned
+   FROM e LEFT JOIN (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1", { p: "p", day: "?2" })} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
+         (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at,
+         p.verified_at > ?1 AS confirmed_after
+       FROM w CROSS JOIN payments p ON p.id = w.id
+       WHERE p.kind = 'payment' AND ${overpaymentAdvanceAtSql("p", "?1", "?2", "?5")}
+       ORDER BY p.received_on, p.id LIMIT 51) s ON 1
+   LEFT JOIN clients k ON k.id = s.client_id
+   ORDER BY s.received_on, s.id`;
+
+export const CREDIT_HELD_SQL = creditHeldSql(CREDIT_HELD_SCAN);
+
+/** A row of `creditHeldSql`: a match (its `id` set) or the window's one empty row (its `id` NULL), each with the window's end and size. */
+export type CreditHeldScanRow = {
+  id: string | null;
+  received_on: string | null;
+  scan_on: string;
+  scan_id: string;
+  scanned: number;
+};
+
+/**
+ * One page of `creditHeldSql(scan)`'s rows (AU2): the matches (at most 50), and where the next page starts: after the 50th match when there was a 51st, else after
+ * the window's last payment while the window was full, else nowhere (the list is done). A page may hold fewer than 50 matches (or none) and still go on.
+ */
+export function creditHeldPage<T extends CreditHeldScanRow>(
+  rows: readonly T[],
+  scan: number = CREDIT_HELD_SCAN,
+): { items: (T & { id: string; received_on: string })[]; next: { k: string; id: string } | null } {
+  const matches = rows.filter((r): r is T & { id: string; received_on: string } => r.id !== null);
+  const items = matches.slice(0, 50);
+  const last = items.at(-1);
+  if (matches.length > 50 && last) return { items, next: { k: last.received_on, id: last.id } };
+  const w = rows[0];
+  if (w && w.scanned >= scan) return { items, next: { k: w.scan_on, id: w.scan_id } };
+  return { items, next: null };
+}
 
 // ---- the withdraw's receipt (L10) -------------------------------------------------------------------------------------------------------------------------
 

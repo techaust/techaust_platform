@@ -25,6 +25,7 @@ import {
 } from "@techaust/core/notifications";
 import { firstNameOf } from "@techaust/core/offers";
 import { portalBase, storedValue, TERMS_READ } from "./billing-shared.ts";
+import { erasureHashOf } from "./erasure.ts";
 import { logEvent } from "./log.ts";
 import { sendChunked } from "./send-batch.ts";
 
@@ -58,7 +59,26 @@ export const REFUND_ROW_SQL = `SELECT r.id, r.client_id, r.amount_minor, r.curre
 export const REFUND_CONTACTS_SQL = `SELECT lower(c.email) AS email, c.name FROM contacts c
    WHERE c.client_id = (SELECT r.client_id FROM payment_refunds r WHERE r.id = ?1)
      AND c.portal_access = 1 AND c.can_see_finance = 1 AND c.anonymised_at IS NULL
+     AND NOT EXISTS (SELECT 1 FROM email_suppressions s WHERE s.email = lower(c.email))
    ORDER BY c.is_primary DESC, c.created_at, c.id LIMIT ${REFUND_MAIL_MAX}`;
+
+/**
+ * M6–M7 audit AU21 (B4 L2): the contacts whose address was erased (the `h:` + keyed hash form on the suppression list, which SQL can't compute) are left out
+ * too, in one read, so a stopped contact is never queued or counted. Without the key this throws `ErasureKeyMissing` (the message is retried, as the email
+ * consumer does): no email goes to an erased address for want of the key.
+ */
+export async function withoutErased<T extends { email: string }>(env: object & { DB: D1Database }, contacts: T[]): Promise<T[]> {
+  if (contacts.length === 0) return contacts;
+  const keyed = await Promise.all(contacts.map(async (c) => ({ c, key: `h:${await erasureHashOf(env, c.email)}` })));
+  const stopped = new Set(
+    (
+      await env.DB.prepare("SELECT email FROM email_suppressions WHERE email IN (SELECT value FROM json_each(?1))")
+        .bind(JSON.stringify(keyed.map((k) => k.key)))
+        .all<{ email: string }>()
+    ).results.map((r) => r.email),
+  );
+  return keyed.filter((k) => !stopped.has(k.key)).map((k) => k.c);
+}
 
 type RefundRow = {
   id: string;
@@ -99,7 +119,7 @@ export async function processRefundNotify(
     logEvent("refund_notify.none", { why: row ? "no_document" : "not_mailable" });
     return "none";
   }
-  const contacts = (contactsRead?.results ?? []) as { email: string; name: string }[];
+  const contacts = await withoutErased(env, (contactsRead?.results ?? []) as { email: string; name: string }[]);
   if (contacts.length === 0) {
     logEvent("refund_notify.none", { why: "no_contact" });
     return "none";
@@ -192,7 +212,7 @@ export async function processRefundReversed(
     logEvent("refund_reversed.none", { why: row ? "no_document" : "not_mailable" });
     return "none";
   }
-  const contacts = (contactsRead?.results ?? []) as { email: string; name: string }[];
+  const contacts = await withoutErased(env, (contactsRead?.results ?? []) as { email: string; name: string }[]);
   if (contacts.length === 0) {
     logEvent("refund_reversed.none", { why: "no_contact" });
     return "none";
