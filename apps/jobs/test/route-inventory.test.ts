@@ -26,10 +26,13 @@ import { isStatsKind } from "@techaust/core/stats";
 import { isUsageKind } from "@techaust/core/usage";
 import { describe, expect, it } from "vitest";
 // @ts-expect-error plain .mjs without types
-import { CRON_BRANCHES, jobsFetchRows, QUEUE_KINDS } from "../../../scripts/route-inventory-lib.mjs";
+import * as inventory from "../../../scripts/route-inventory-lib.mjs";
 import { cronBranchOf, HOURLY_CRON } from "../src/billing.ts";
 import indexText from "../src/index.ts?raw";
 import { PURGE_CRON } from "../src/purge.ts";
+import wranglerText from "../wrangler.jsonc?raw";
+
+const { CRON_BRANCHES, jobsFetchRows, QUEUE_EXTRA, QUEUE_KINDS, queueRowOf } = inventory;
 
 /** The predicates `handleQueue` routes by (src/queue.ts), plus the three kinds it tells apart by shape or by its own check. */
 const ROUTED = [
@@ -105,6 +108,31 @@ describe("route inventory parity: jobs (M7.5 B2)", () => {
       const text = await res.text();
       expect(text.includes('"not_found"'), `${r.method} ${r.path}`).toBe(false);
     }
+  });
+
+  it("every consumer queue's test label lands on a row: emails on `email`, a form on `lead`, dead letters on their own rows (L55)", () => {
+    const rows = new Set<string>([...(QUEUE_KINDS as string[]), ...(QUEUE_EXTRA as string[])]);
+    // The local consumers, named as the test labels name them (apps/jobs/test/setup.ts strips `techaust-local-`).
+    const block = wranglerText.slice(
+      wranglerText.indexOf('"consumers": ['),
+      wranglerText.indexOf('"env": {'),
+    );
+    const consumers = [...block.matchAll(/"queue": "techaust-local-([a-z-]+)"/g)].map((m) => m[1] as string);
+    expect(consumers.sort()).toEqual(["email", "email-dlq", "leads", "leads-dlq", "pdf", "pdf-dlq"]);
+    const reached = new Set<string>();
+    for (const queue of consumers) {
+      // a sample of what each queue carries: every listed kind, an email template named like a kind, and a body with no kind
+      for (const kind of [...(QUEUE_KINDS as string[]), "deed.signed", "invoice.issued", "other"]) {
+        const row = queueRowOf(queue, kind) as string;
+        if (queue === "email") expect(row).toBe("email");
+        else if (queue.endsWith("-dlq")) expect(row).toBe(queue);
+        else if (kind === "other") expect(row).toBe(queue === "leads" ? "lead" : "other");
+        else expect(row).toBe(kind);
+        if (rows.has(row)) reached.add(row);
+      }
+    }
+    // every extra row is reachable from a consumer's label
+    expect((QUEUE_EXTRA as string[]).filter((r) => !reached.has(r))).toEqual([]);
   });
 
   it("the cron branches cover the configured crons and every branch cronBranchOf names", () => {

@@ -23,6 +23,9 @@ beforeAll(async () => {
     put(day(1), "cf.exceeded_resources", 2),
     // Older than 30 days, and another metric: not read.
     put(day(40), "cf.requests", 99_000),
+    // L50: the 31st day back is sent (before the 06:00 IST reading the tile's window ends the day before yesterday); the 32nd is not.
+    put(day(31), "cf.requests", 7_000),
+    put(day(32), "cf.requests", 8_000),
     put(day(1), "leads.open", 3, "new"),
   ]);
 });
@@ -53,6 +56,7 @@ describe("GET /api/v1/dashboard/usage (M7.5 D1/G)", () => {
     expect(body.limits).toEqual(FREE_DAILY_LIMITS);
     expect(body.thresholds).toEqual([...USAGE_THRESHOLDS]);
     expect(body.days).toEqual([
+      { date: day(31), values: { "cf.requests": 7_000 } },
       { date: day(2), values: { "cf.requests": 61_000, "cf.d1.rows_read": 900_000 } },
       { date: day(1), values: { "cf.requests": 5_000, "cf.exceeded_resources": 2 } },
     ]);

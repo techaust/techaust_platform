@@ -1,7 +1,9 @@
 // M7.5 I4: the pure parts of `pnpm drill:verify` (scripts/drill-verify.mjs): an export split with triggers kept whole and loaded schema, data, then
 // triggers; the triggers a sequence of statements leaves installed; and the gap-free numbering check. Each with a failing and a passing case.
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import {
+  DEFER_FKS,
   installedTriggers,
   loadOrder,
   migrationFiles,
@@ -29,13 +31,52 @@ describe("splitStatements and loadOrder", () => {
 
   it("loads schema, then data, then triggers, whatever order the export wrote", () => {
     const o = loadOrder(`BEGIN TRANSACTION;\n${EXPORT}\nCOMMIT;`);
+    // L53: the export's defer pragma leaves the schema part; the data part (its own file) starts with it
     expect(o.schema.map((x: string) => x.slice(0, 20))).toEqual([
-      "PRAGMA defer_foreign",
       "CREATE TABLE t (id T",
       "CREATE INDEX t_note ",
     ]);
-    expect(o.data).toHaveLength(2);
+    expect(o.data).toHaveLength(3);
+    expect(o.data[0]).toBe(DEFER_FKS);
     expect(o.triggers).toHaveLength(1);
+    expect(loadOrder("CREATE TABLE t (id TEXT);").data).toEqual([]);
+  });
+
+  it("L53: a child row written before its parent loads (the foreign keys are checked at the end of the data file)", () => {
+    const SCHEMA_FK = [
+      "PRAGMA defer_foreign_keys=TRUE;",
+      "CREATE TABLE child (id TEXT PRIMARY KEY, parent_id TEXT NOT NULL REFERENCES parent(id));",
+      "INSERT INTO child VALUES ('c1', 'p1');",
+      "CREATE TABLE parent (id TEXT PRIMARY KEY);",
+      "INSERT INTO parent VALUES ('p1');",
+    ].join("\n");
+    const o = loadOrder(SCHEMA_FK);
+    // Each part runs as one file in one transaction, as the D1 import does, with foreign keys on (as D1 has them).
+    const load = (db: InstanceType<typeof DatabaseSync>, statements: string[]) => {
+      db.exec("BEGIN");
+      try {
+        db.exec(statements.join("\n"));
+        db.exec("COMMIT");
+      } catch (e) {
+        db.exec("ROLLBACK");
+        throw e;
+      }
+    };
+    const fresh = () => {
+      const db = new DatabaseSync(":memory:");
+      db.exec("PRAGMA foreign_keys=ON;");
+      load(db, o.schema);
+      return db;
+    };
+    const db = fresh();
+    load(db, o.data);
+    expect(db.prepare("SELECT count(*) AS n FROM child").get()).toEqual({ n: 1 });
+    // without the pragma at the head of the data part the same rows are refused
+    expect(() => load(fresh(), o.data.slice(1))).toThrow(/FOREIGN KEY/);
+    // and a child whose parent never comes is still refused at the end
+    expect(() => load(fresh(), [DEFER_FKS, "INSERT INTO child VALUES ('c2', 'nope');"])).toThrow(
+      /FOREIGN KEY/,
+    );
   });
 });
 

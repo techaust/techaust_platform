@@ -18,6 +18,7 @@ import type { RequestsClockMessage } from "@techaust/core/dp-jobs";
 import { istHourOf } from "@techaust/core/invoices";
 import type { BellsSweepMessage, SigninUnfinishedMessage } from "@techaust/core/notifications";
 import type { ReceiptSweepMessage } from "@techaust/core/pdf-jobs";
+import { USAGE_HOUR_IST, type UsageMessage, usageMessageOf } from "@techaust/core/usage";
 import { processAlertsDaily } from "./alerts.ts";
 import { processCareBill, processCareDeadLetter, processCareIssue, processCareScan } from "./care-billing.ts";
 import { logEvent } from "./log.ts";
@@ -42,7 +43,8 @@ export const REPEAT_HOURS = CARE_SCAN_REPEAT_HOURS; // one constant with core, w
 const inWindow = (hour: number, first: number) => hour >= first && hour <= first + REPEAT_HOURS;
 
 /**
- * What the hourly cron queues for a tick: the reminder scan every hour, the care scan at 06:00 IST (again at 07:00 and 08:00), the owners' alerts at 09:00 IST (again
+ * What the hourly cron queues for a tick: the reminder scan every hour, the care scan and (L50) the Free-plan usage reading at 06:00 IST (the care scan again at
+ * 07:00 and 08:00), the owners' alerts at 09:00 IST (again
  * at 10:00 and 11:00), and at 09:00 IST only the export realisation scan (M5.5b, LD76) and, on IST days 5 to 7, the EDF reminder for the PREVIOUS month (January's tick
  * names December of the year before). Pure: no D1 read, nothing but the scheduled time.
  */
@@ -57,6 +59,7 @@ export function hourlyMessages(
   | SigninUnfinishedMessage
   | BellsSweepMessage
   | RequestsClockMessage
+  | UsageMessage
 )[] {
   const hour = istHourOf(scheduledTime);
   const today = istDate(scheduledTime);
@@ -113,11 +116,15 @@ export function hourlyMessages(
     ...(hour === ALERTS_HOUR_IST
       ? [{ v: 1, kind: "requests.clock", asOf: scheduledTime } satisfies RequestsClockMessage]
       : []),
+    // M7.5 D1, L50 (review 1): the Free-plan usage of the UTC day that has just ended, at 06:00 IST (00:30 UTC), once; its consumer makes the one GraphQL
+    // fetch (usage.ts). Read before the 09:00 IST bells, so they ring on yesterday's figures.
+    ...(hour === USAGE_HOUR_IST ? [usageMessageOf(scheduledTime)] : []),
   ];
 }
 
 /**
- * M7.5 L20: the cron branch of a tick, as the route inventory's four cron rows: `daily` (03:30 IST), `h06` (the care scan's hours, 06:00 to 08:00 IST), `h09`
+ * M7.5 L20: the cron branch of a tick, as the route inventory's four cron rows: `daily` (03:30 IST), `h06` (the care scan's hours, 06:00 to 08:00 IST; the
+ * usage reading at 06:00, L50), `h09`
  * (the alerts' hours, 09:00 to 11:00 IST: alerts, realisation, recon, digest, request clock) and `hourly` (every other hour: reminders and the sweeps).
  */
 export function cronBranchOf(

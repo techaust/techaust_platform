@@ -1,5 +1,5 @@
 // M7.5 D1 (Q4 A, owner 2026-11-01): the account's daily use of the Cloudflare Free plan, read once a day from the GraphQL Analytics API by the jobs
-// Worker (`usage.daily`, queued by the 03:30 IST cron) and kept in `stats_daily` as `cf.*` metrics; the 09:00 IST owner alerts ring a bell at 50 % and
+// Worker (`usage.daily`, queued by the 06:00 IST hourly tick, 00:30 UTC; L50) and kept in `stats_daily` as `cf.*` metrics; the 09:00 IST owner alerts ring a bell at 50 % and
 // 80 % of a daily Free limit; the dashboard's usage tile (designer, later) reads the last 30 days. Pure, and no zod: the jobs Worker imports this file.
 //
 // Dataset and field names: Cloudflare docs read 2026-11-07 through Context7 (cloudflare-docs): `workersInvocationsAdaptive` (sum `requests`, dimensions
@@ -42,7 +42,16 @@ export const isUsageMessage = (body: unknown): body is UsageMessage =>
   typeof (body as { day?: unknown }).day === "string" &&
   ISO_DAY.test((body as { day: string }).day);
 
-/** The UTC day that ended last before `scheduledTime` (the 03:30 IST cron runs at 22:00 UTC: today's UTC day isn't over, so yesterday's). */
+/**
+ * L50 (review 1): the IST hour of the hourly tick that queues `usage.daily`: 06:00 IST is 00:30 UTC, half an hour after Cloudflare's daily limits reset,
+ * so the UTC day it reads has just ended (the old 22:00 UTC run read a day that was already 22 hours old, and the tile looked stale most of the day).
+ */
+export const USAGE_HOUR_IST = 6;
+
+/**
+ * The UTC day before the UTC day of `ms`. For the 06:00 IST tick (00:30 UTC) that is the UTC day that just ended; for the dashboard at any time it is
+ * "yesterday (UTC)", the newest day a reading can exist for. (At 23:59 UTC on 7 Nov: 6 Nov; at 00:31 UTC on 8 Nov: 7 Nov.)
+ */
 export const usageDayOf = (scheduledTime: number): string =>
   new Date(scheduledTime - 86_400_000).toISOString().slice(0, 10);
 
@@ -203,6 +212,13 @@ export function usageBellTitle(c: UsageCrossing, day: string): string {
   const n = (v: number) => v.toLocaleString("en-IN");
   return `Free plan: ${USAGE_METRIC_LABELS[c.metric]} at ${c.threshold} % of the daily limit on ${day} (${n(c.value)} of ${n(c.limit)})`;
 }
+
+/**
+ * L55 (audit B6 L2): the owners' bell when the reading couldn't run for want of a working token (none set outside local, or Cloudflare answered 401 or
+ * 403), once per IST day. 07-ZS ZS16, drafted by the builder for the lead's approval under the delegation.
+ */
+export const usageTokenBellTitle = (day: string): string =>
+  `Free plan usage for ${day} (UTC) wasn't read: the Cloudflare analytics token is missing or was refused. Make a new read-only token and set it again.`;
 
 /** The newest day among recorded totals (the alerts read the last few days and use the newest), or null. */
 export function newestUsageDay(rows: { date: string }[]): string | null {

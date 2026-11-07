@@ -67,7 +67,7 @@ export const USAGE_TOTALS_SQL = `SELECT date, metric, value FROM stats_daily WHE
 export const USAGE_BELLS_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'usage.limit', 'usage', json_extract(j.value, '$.id'), substr(json_extract(j.value, '$.title'), 1, 300), '/'
   FROM staff_users u JOIN json_each(?1) j WHERE u.role = 'owner' AND u.status = 'active'`;
-/** How far back the alert looks for the newest recorded day (the 03:30 IST job records the UTC day before; a missed night still alerts once). */
+/** How far back the alert looks for the newest recorded day (the 06:00 IST job, L50, records the UTC day that just ended; a missed day still alerts once). */
 const USAGE_LOOKBACK_DAYS = 3;
 
 /**
@@ -234,8 +234,14 @@ export async function processAlertsDaily(
   if (writes.length > 0) await env.DB.batch(writes);
   if (decision && lut === "queued")
     await ringLutBell(env, { kind: "lut.check", asOf: todayIst(now) }, decision);
-  // M7.5 D1 (Q4 A): the Free-plan usage lines ride the first message only (one a day).
-  if (msg.first) await ringUsageBells(env, now);
+  // M7.5 D1 (Q4 A): the Free-plan usage lines ride the first message only (one a day). L53 (review 1): a failure there is logged and never stops the
+  // paging below (the next page of the owners' alerts would be lost; the usage bells are retried by the 10:00 and 11:00 repeats).
+  if (msg.first)
+    try {
+      await ringUsageBells(env, now);
+    } catch (e) {
+      logEvent("usage.alert_failed", { error: e instanceof Error ? e.name : "unknown" });
+    }
 
   // A full page queues the next message; a finished list has no cursor.
   const lastU = unbilled[unbilled.length - 1];

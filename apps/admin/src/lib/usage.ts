@@ -1,5 +1,5 @@
 // The dashboard's Free-plan usage tile (M7.5 G, Q4 A; Owner and Accountant, `usage.read`, docs/04 §9 row L40): the words and the pure rules behind it.
-// The figures are the API's (`GET /api/v1/dashboard/usage`, apps/admin/worker/dashboard-usage.ts), counted by the jobs Worker's nightly `usage.daily` from
+// The figures are the API's (`GET /api/v1/dashboard/usage`, apps/admin/worker/dashboard-usage.ts), counted by the jobs Worker's `usage.daily` (06:00 IST, L50) from
 // Cloudflare's analytics. Days are UTC days (Cloudflare's daily limits reset at 00:00 UTC). A day the job couldn't read is absent: a gap, never a zero.
 // The limits, the metric names and the 50 % and 80 % lines come from core (`@techaust/core/usage`), the same ones the 09:00 bells use, so the tile and the
 // bell never disagree about a crossing. Staff lines: 07-ZS (drafted by the designer, approved by the lead under the owner's delegation; run file H).
@@ -89,11 +89,14 @@ export type UsageRow = {
 };
 
 export type UsageView = {
-  /** The 30-day window, UTC days: `to` is yesterday. */
+  /**
+   * The 30-day window, UTC days. L50: on a healthy day `to` is the newest day read (yesterday once the 06:00 IST reading has run, the day before until
+   * then), so the strips never end in an empty slot; when the reading is stale, `to` is yesterday and the days since show as gaps.
+   */
   from: string;
   to: string;
   newest: string;
-  /** The newest reading is older than yesterday. */
+  /** The newest reading is older than the day before yesterday (L50: the 00:00 to 00:30 UTC wait and the job's own run are never "stale"). */
   stale: boolean;
   rows: UsageRow[];
   /** Requests stopped at a limit on the newest day; null when not read. */
@@ -105,7 +108,11 @@ export type UsageView = {
 /** The tile's model from the API's answer, at `now` (ms). Null before the first reading. */
 export function usageView(tile: UsageTile, now: number): UsageView | null {
   if (!tile.newest) return null;
-  const to = usageDayOf(now);
+  // L50 (review 1): yesterday (UTC) is the newest day a reading can exist for, but it is read at 06:00 IST (00:30 UTC), so until then the newest is the
+  // day before. Fresh = the newest is one of those two; the window then ends at the newest day read (no empty last slot, no "Not read" top row).
+  const yesterday = usageDayOf(now);
+  const stale = tile.newest < addDays(yesterday, -1);
+  const to = stale || tile.newest > yesterday ? yesterday : tile.newest;
   const from = addDays(to, -(USAGE_TILE_DAYS - 1));
   const days = tile.days.filter((d) => d.date >= from && d.date <= to);
   const newestDay = tile.days.find((d) => d.date === tile.newest);
@@ -117,7 +124,7 @@ export function usageView(tile: UsageTile, now: number): UsageView | null {
     from,
     to,
     newest: tile.newest,
-    stale: tile.newest < to,
+    stale,
     rows: USAGE_METRICS.map((metric) => ({
       metric,
       label: USAGE_METRIC_LABELS[metric],

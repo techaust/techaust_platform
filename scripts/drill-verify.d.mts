@@ -1,3 +1,4 @@
+export const DEFER_FKS: string;
 export function splitStatements(sql: string): string[];
 export function loadOrder(sql: string): { schema: string[]; data: string[]; triggers: string[] };
 export function installedTriggers(statements: string[]): Set<string>;

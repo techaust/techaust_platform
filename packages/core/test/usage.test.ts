@@ -9,12 +9,14 @@ import {
   isUsageMessage,
   newestUsageDay,
   parseUsage,
+  USAGE_HOUR_IST,
   USAGE_METRICS,
   USAGE_QUERY,
   usageBellTitle,
   usageCrossings,
   usageDayOf,
   usageMessageOf,
+  usageTokenBellTitle,
   usageVariables,
 } from "../src/usage.ts";
 
@@ -22,13 +24,20 @@ const answer = (account: unknown, errors: unknown = null) =>
   JSON.stringify({ data: { viewer: { accounts: account === undefined ? [] : [account] } }, errors });
 
 describe("usage message and day", () => {
-  it("the UTC day before the cron's run, and a message only with a real ISO day", () => {
-    expect(usageDayOf(Date.UTC(2026, 0, 1, 22))).toBe("2025-12-31");
-    expect(usageMessageOf(Date.UTC(2026, 10, 7, 22))).toEqual({
+  it("the UTC day that just ended at the 06:00 IST tick (00:30 UTC, L50), and a message only with a real ISO day", () => {
+    expect(USAGE_HOUR_IST).toBe(6);
+    expect(usageDayOf(Date.UTC(2026, 0, 1, 0, 30))).toBe("2025-12-31");
+    // at 23:59 UTC the day isn't over: the day before; at 00:31 UTC the day that just ended
+    expect(usageDayOf(Date.UTC(2026, 10, 7, 23, 59))).toBe("2026-11-06");
+    expect(usageDayOf(Date.UTC(2026, 10, 8, 0, 31))).toBe("2026-11-07");
+    expect(usageMessageOf(Date.UTC(2026, 10, 7, 0, 30))).toEqual({
       v: 1,
       kind: "usage.daily",
       day: "2026-11-06",
     });
+    expect(usageTokenBellTitle("2026-11-06")).toBe(
+      "Free plan usage for 2026-11-06 (UTC) wasn't read: the Cloudflare analytics token is missing or was refused. Make a new read-only token and set it again.",
+    );
     expect(isUsageMessage({ v: 1, kind: "usage.daily", day: "2026-11-06" })).toBe(true);
     for (const bad of [
       null,
