@@ -1,6 +1,6 @@
 # Run: AU45, the client statement's "refund returned" line
 
-Status: final checks running (review APPROVE, re-check APPROVE)
+Status: PR READY https://github.com/techaust/techaust_platform/pull/194
 Tier: A (the statement's money lines and balances; client-facing figures)
 Usage: analyst claude-opus-5-5/high (brief draft; `cloudflare:workers-best-practices` and `cloudflare:wrangler` tried, unavailable in a cloud session); 5-h 1 % at 20:05 IST (relayed) ; builder b1 claude-opus-5-5/high (`cloudflare:workers-best-practices`, `cloudflare:wrangler` tried, unavailable in the cloud): 5-h 1 % (20:05 IST) at start, 14 % (20:29 IST) the last relayed reading ; analyst early check claude-opus-5-5/high (`cloudflare:*` tried, unavailable): 14 % (20:29 IST) at start ; designer d1 claude-opus-5-5/high (`frontend-design:frontend-design` tried, unavailable in the cloud; docs/06 followed): 14 % (20:29 IST) at start, 33 % (21:00 IST) the last relayed reading ; reviewer r1 claude-opus-5-5/high (`code-review` with its read-only helper; `security-review` would not load: its preamble needs `origin/HEAD`; checklist applied by hand): 33 % (21:00 IST) at start ; reviewer re-check claude-opus-5-5/high (`code-review` with its read-only helper; `security-review` checklist by hand, `origin/HEAD` unset): 33 % (21:00 IST) at start, 53 % (21:30 IST) the last relayed reading
 
@@ -269,3 +269,4 @@ In "M6–M7 audit fixes (#190)", after the "Period readers count a refund that c
 - Derive `StatementEntryView` (admin) and `StatementInputEntry` (pdf) from core `StatementEntry`; drop the forwarding `statementReturnedNote` (re-check low 4).
 
 ## Handover
+2026-11-07, lead (cloud session `au45-statement`): built, reviewed (APPROVE), re-checked (APPROVE), final run green; PR [#194](https://github.com/techaust/techaust_platform/pull/194) opened with `tools/cloud-pr.sh`. Next: the main session reviews it, turns on auto-merge and Auto-fix, and copies "Lead decisions (for 13)", "Proposed CLAUDE.md text" and "Follow-ups (for 12)". Merge order: after #193 (taken in), before rebuild-pdf. No migration, so no renumbering.
