@@ -133,6 +133,101 @@ Branch `fix/au45-statement-b1`, built on `origin/feat/au45-statement` at the hea
 **Open questions:** none.
 
 ## Designer report
+### Designer d1 (2026-11-07, claude-opus-5-5/high): §3 done
+Branch `fix/au45-statement-d1`, built on `origin/feat/au45-statement` at 75b4a05. Commits: 99f4c5f (PDF) and f302efa (admin tab), plus this report.
+
+**Skills.** I tried `frontend-design:frontend-design` (docs/14 §9) and it returned "Unknown skill": plugins don't load in a cloud session. Instead I followed docs/06 (§7 for the PDF, §5.4 for the admin parts) and the layout's own rules directly. `dataviz` doesn't apply because there is no chart or stat tile. No other §9 skill fits.
+
+**Files**
+- `packages/pdf/src/layout/statement.ts`:
+  - `returnedNote: string | null` on `StatementLayoutView`.
+  - When the note is set, it prints first in `.stm-foot` as `<p class="stm-note" data-testid="returned-note">` (escaped, ink, 2.4 mm above the questions line, `text-wrap: pretty`).
+  - `.stm-foot` keeps `break-inside: avoid; break-before: avoid`, so the note travels with the closing row and never stands alone on a page.
+  - The returned line already printed like the refund (refund id, U1 through `C.kinds`, amount in Credit). Only the header comment changed for it.
+- `packages/pdf/src/statement-view.ts`:
+  - `statementView` sets `returnedNote` to 07-ZU U2 (`STATEMENT_REFUND_RETURNED_NOTE`) only when an entry is `refund_returned`, otherwise null.
+  - `STATEMENT_LAYOUT_ID` goes from "statement-4" to "statement-5". The history comment is kept.
+- `packages/pdf/test/statement-layout.test.ts`: new describe "AU45" (4 tests):
+  - the exact row HTML: refund id, "Refund came back", empty Debit cell, the Credit cell;
+  - the refund stays a debit;
+  - the note prints once, first in the foot, after the closing row, and not without the kind;
+  - the note is escaped;
+  - a closing below zero has no Amount due and still prints the note.
+- `packages/pdf/test/statement.test.ts`:
+  - the layout id and hash are now statement-5;
+  - new describe "AU45" (2 tests): one note for two returned refunds, none for a refund alone, the returned entry's view, and the note is part of the hash.
+- `packages/pdf/test/fixtures/audit.ts`: new case "statement" / "refund returned" with 6 entries (two invoices, a payment, TDS, a refund on 06 Nov and its return on 05 Dec). It is built through the real `statementView`. The 200-entry rotation is unchanged.
+- `packages/pdf/visual/layout-audit.spec.ts`: `"statement-refund-returned": 1`.
+- `apps/jobs/test/statement-b.test.ts`: the AU45 test also asserts the U1 cell beside the refund id, and U2 printed once in its `stm-note` paragraph.
+- `apps/admin/src/lib/reports.ts`:
+  - `statementLineIsDocument(kind)`: only `tax_invoice`, `export_invoice`, `debit_note` and `credit_note` link.
+  - `statementReturnedNote(entries)`: U2 or null.
+- `apps/admin/src/routes/clients/statement.tsx`:
+  - The Document cell links only when `statementLineIsDocument` is true. `refund` and `refund_returned` print `<span className="docno">`, which fixes the dead `/invoices/<refund id>` link.
+  - U2 shows as the first `.report-note` (body ink, not the muted hint) under the table. It appears when any loaded entry, including later "Show more" pages, is `refund_returned`.
+  - Row keys stay `${kind}-${id}`.
+  - No new CSS class.
+- `apps/admin/src/lib/reports.test.ts`: 2 tests (which kinds link; the note follows the whole loaded list).
+
+**Commands and results.** All run through `tools/heavy.sh`, one at a time.
+- `pnpm --filter @techaust/pdf test`: 27 files, **421 passed**.
+- `pnpm --filter @techaust/admin test`: 199 files, **5,314 passed**.
+- `pnpm --filter @techaust/jobs test`: 52 files, **781 passed**.
+- `pnpm --filter @techaust/pdf exec playwright test visual/layout-audit.spec.ts` (whole audit): **85 passed**, 13 skipped (the sweep skips are the existing ones). `statement-refund-returned` is 1 page and passes both the page check and the sweep. Every other pin is unchanged.
+- `pnpm typecheck`: exit 0, no TS errors.
+- `pnpm --filter @techaust/admin build`, Worker budgets:
+  - admin front 121,871 bytes (startup 30.6 ms);
+  - admin API 560,704 (62.1 ms);
+  - admin finance 435,938 (51.7 ms);
+  - admin invoices 568,040 (67.5 ms).
+  - All are within their limits, with no forbidden modules.
+  - The first try failed in `check-spa-headers` because the worktree's local `.dev.vars` from `pnpm dev:secrets` was copied into `dist/`. I moved the file aside for the build and restored it.
+- `pnpm --filter @techaust/jobs build`: jobs 872,293 bytes (limit 1,000,000), startup 65.6 ms. `.dev.vars` was moved aside in the same way.
+- `node scripts/css-collisions.mjs`: ok.
+- `pnpm exec biome check` on every changed file: clean.
+- Whole-repo `pnpm lint` (final check): exit 0. It shows 14 warnings and 8 infos, all in files I didn't touch (portal CSS, core `public-text.ts`, pdf `envelope`/`render`/`variants` tests, admin `worker/reports.test.ts` 104/107, web `catalogue.ts`).
+
+**Local fixture** (scratch scripts outside the repo, not committed; local D1 only):
+- A throwaway Owner was signed in the way `apps/admin/e2e/global-setup.ts` does it.
+- Client "Sample Statement Traders (sample)" has:
+  - invoice ₹1,18,000 on 02 Sep;
+  - a Razorpay payment of ₹1,38,000 on 04 Sep;
+  - a gateway refund of ₹15,000 settled 06 Sep and reversed 2026-10-05T04:30Z;
+  - invoice ₹59,000 on 15 Oct.
+- What the admin API answered:
+  - **September** closes at −₹5,000.00.
+  - **October** opens at −₹5,000.00, has "Refund came back" ₹15,000 credit on 05 Oct, and closes at ₹39,000.00.
+  - **Sep–Oct** lists both refund lines and closes at ₹39,000.00.
+- So closing(N) = opening(N+1).
+
+**Screenshots** (deviceScaleFactor 2, under `.logs/au45/` in the worktree, `/home/user/techaust_platform/.claude/worktrees/agent-a68661adfc10655c6/.logs/au45/`):
+- `admin-sep-{360,768,1280}-{light,dark}.png`: September. Invoice linked; payment and refund as plain text; closing −₹5,000; no note.
+- `admin-oct-{360,768,1280}-{light,dark}.png`: October. Opening −₹5,000; "Refund came back" in Credit with the refund id as plain text; U2 under the table above the proformas note.
+- `admin-sep-oct-{360,768,1280}-{light,dark}.png`: the two-month range. Refund debit 06 Sep, return credit 05 Oct, note once.
+- `admin-oct-1280-os-light-app-dark.png` and `admin-oct-1280-os-dark-app-light.png`: the in-app theme wins over the OS theme.
+- `admin-empty-768-light.png` (April: empty state, no note), `admin-loading-768-dark.png` (skeleton rows), `admin-error-360-light.png` (a 500 gives "This didn't load" with Try again).
+- `admin-focus-1280-{light,dark}.png`: keyboard focus inside the tab.
+- `pdf/pdf-sep-1.png`, `pdf/pdf-oct-1.png`, `pdf/pdf-sep-oct-1.png`: the statement PDF of the same local data, built from the admin API lines through `statementView` and the layout, printed by Chromium.
+  - September has no note.
+  - October has the line in Credit, the note in the last lines, Amount due ₹39,000.
+- `pdf/statement-refund-returned-1.png`: the layout-audit fixture, 1 page.
+- `pdf/*.pdf`: the PDFs themselves.
+
+**Checks in the browser** (Playwright 1.64.1 Chromium, local admin dev server, `TECHAUST_PORT_OFFSET=0`):
+- axe on `.statement` at 1280 px in light and dark: **no violations**.
+- Links in the tab: only the two invoices (in both the table and the card view). No refund or payment links.
+- Tab order: from → calendar → to → calendar → currency → Show → table region → invoice links → Download CSV → Make PDF. Focus is visible (2 px outline) and there is no trap.
+- Console errors: none, apart from the 500s I triggered on purpose for the error state.
+- The dev server was stopped before the suites (no vite or workerd left running from this worktree).
+
+**Not verified**
+- The real jobs Worker → Browser Run render of a `statement-5` PDF; locally Chromium printed the same HTML.
+- The note arriving on a later "Show more" page in the browser. With 5 lines the fixture fits on one page; the logic is unit-tested over the whole loaded list.
+- Portal: nothing to build there (the portal has no statement view).
+
+**Placeholder text:** none. U1 and U2 come from `@techaust/core/copy-zu`, and `APPROVED_07ZU = true`.
+
+**Open questions:** none.
 
 ## Review
 

@@ -2,7 +2,7 @@
 // GST error code, the periods, the urgency order and the stage pills, the statement's words, the tax form's round trip (early check H2), and the files
 // the screens make from register rows through the gst core (the sums are core's; these tests only check that the screens pass them on whole).
 import { STATEMENT_REFUND_WORD } from "@techaust/core/copy-zo";
-import { STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
+import { STATEMENT_REFUND_RETURNED_NOTE, STATEMENT_REFUND_RETURNED_WORD } from "@techaust/core/copy-zu";
 import { heldRowOf, type RegisterApiRow, type ReportMeta } from "@techaust/core/gst";
 import { GSTR1_FREQUENCIES, realisationParamsFromStoredTax } from "@techaust/core/invoices";
 import { SETTINGS_DEFAULTS } from "@techaust/core/settings";
@@ -45,6 +45,8 @@ import {
   statementDetailsText,
   statementErrorText,
   statementKindText,
+  statementLineIsDocument,
+  statementReturnedNote,
   stateText,
   TAX_FIELDS_COPY,
   taxOnlyNoteText,
@@ -396,6 +398,25 @@ describe("statement words", () => {
     expect(statementKindText("refund_returned")).toBe(STATEMENT_REFUND_RETURNED_WORD);
     expect(statementCsvLabels().kinds.refund_returned).toBe("Refund came back");
     expect(Object.keys(statementCsvLabels().kinds)).toHaveLength(8);
+  });
+
+  it("AU45: only the invoice family links to /invoices/; a refund, its return, a payment and TDS are plain text", () => {
+    for (const k of ["tax_invoice", "export_invoice", "debit_note", "credit_note"] as const)
+      expect(statementLineIsDocument(k)).toBe(true);
+    for (const k of ["receipt", "tds", "refund", "refund_returned"] as const)
+      expect(statementLineIsDocument(k)).toBe(false);
+  });
+
+  it("AU45 (07-ZU U2): the note shows once any loaded line is a refund that came back, else never", () => {
+    expect(STATEMENT_REFUND_RETURNED_NOTE).toBe(
+      "A refund that came back is one the bank or card network returned to us. The amount is your credit again.",
+    );
+    expect(statementReturnedNote([])).toBeNull();
+    expect(statementReturnedNote([{ kind: "receipt" }, { kind: "refund" }])).toBeNull();
+    // a later "Show more" page brings the line in: the note follows the whole loaded list
+    expect(
+      statementReturnedNote([{ kind: "tax_invoice" }, { kind: "refund" }, { kind: "refund_returned" }]),
+    ).toBe(STATEMENT_REFUND_RETURNED_NOTE);
   });
 
   it("the Details cell of a credit note names the invoice the API sent (review 2)", () => {
