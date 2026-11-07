@@ -435,3 +435,112 @@ Finance does not import the rebuild code. Its figure is above the brief's estima
 1. The two new admin strings in deviation 9 (the audit label and its filter group): approve them, or give the wording.
 2. Deviation 2: should the `pdf.rebuild` audit rows go into the monthly finance copy (that is, be added to `FINANCE_AUDIT_ACTIONS`)?
 3. The branch `fix/rebuild-pdf-b1` is pushed. The run file on `origin/feat/rebuild-pdf` has moved since my branch point (the owner's answers), so the lead keeps both sections when merging.
+
+## Designer report (d1)
+Designer claude-opus-5-5/high, cloud session, branch `fix/rebuild-pdf-d1` (from `origin/feat/rebuild-pdf` 726c159), 2026-11-07. Scope: the brief's "Screens" for Q1 = B and Q2 = A. Only `apps/admin/src/**` changed. No worker, portal or jobs file was touched, because builder b2 works on those in parallel.
+
+**Skills**
+- `frontend-design:frontend-design` (docs/14 §9): tried, and it doesn't exist in a cloud session ("Unknown skill"). I followed docs/06 and the admin's existing shared parts instead: `ConfirmDialog` with its step-up slot, `btn--text` quiet actions, the `pdf-panel__supplier` pattern, tokens only.
+- `dataviz`: not loaded. There is no chart, stat tile or dashboard.
+- No other §9 skill fits screen work.
+
+**What was built**
+- **The action.** A quiet text action ("Rebuild PDF", "Rebuild certificate", "Rebuild supplier copy" or "Rebuild unsigned PDF", line 1) sits under each stored PDF's download, with a 16 px icon and a full 44 px target. It shows only when `decide(role, "pdfs.rebuild") !== "deny"` (the Owner) and the PDF is ready.
+- **The dialog.** It uses `ConfirmDialog` (lines 2–4). The code field shows only when no step-up is active as the dialog opens. A step-up that lapses on the way goes through `request`'s step-up dialog, and the request is sent once more. A wrong code is the code field's own error, as everywhere else.
+- **Started.** The toast says line 5 and the state changes to "Being rebuilt…". The button goes away, and focus moves to the state lines (WCAG 2.4.3).
+- **Refusals.**
+  - Lines 6–10 and 19, `pdf_erased` (07-ZG line 2) and `pdf_pending` (the API's existing message) show in the dialog's error notice. The dialog stays open.
+  - `nothing_to_rebuild` closes the dialog and says line 6 as a toast, because it is good news, not a fault.
+  - After `rebuild_in_progress`, `too_soon`, `queue_unavailable` and `nothing_to_rebuild`, the screen reads the state again.
+- **State lines.** They sit in a polite live region that is always in the tree.
+  - Line 11: the fact, with the date and the first 12 hex characters set in the document face. Everyone who reads the document sees it.
+  - "Being rebuilt…": everyone sees it.
+  - The newest request's outcome, if it made no new file: the Owner only, because it is theirs to act on. That covers 12 refused, 13 `envelope_missing`, 14 failed, 15 intact and 23 skipped.
+- **Polling.** While a rebuild runs, the screen reads `GET …/rebuilds` every 10 s, skipping ticks while the tab is hidden. A failed read shows nothing extra; the download still stands.
+- **Where it sits.**
+  - Offer PDF: through `PdfPanel`'s `extra` slot in `routes/documents/read.tsx`, so `pdf-panel.tsx` is unchanged.
+  - Certificate: `AcceptancePanel`, under its download.
+  - Invoice PDF: under the download, then the supplier copy's own rebuild inside the `SupplierCopy` group. That group shows only for roles that may download the supplier copy, so its GET (`invoices.supplierCopy`) is never refused.
+  - Receipt: the payment entry view (`PaymentReceiptAndRefunds`), under the receipt link. It shows only when the receipt has a PDF and isn't void. It is not added to every row of the Payments panel table, where it would be noisy and would poll once per row.
+  - Unsigned deed: under the download on a final deed (`FinalActions`) and on a signed deed (`SignedPanel`).
+
+**Files changed** (all under `apps/admin/src`)
+- New:
+  - `components/rebuild-pdf.tsx`
+  - `lib/pdf-repairs.ts`: the 07-ZV words, `refusalLine`, `outcomeLine`, `rebuildLines`, `startedState`, `numberLabel`
+  - `lib/pdf-repairs-api.ts`: `rebuildPath` and `pdfRepairsApi.{rebuild,state}`
+  - `lib/pdf-repairs.test.ts`
+- Edited:
+  - `routes/documents/read.tsx`
+  - `routes/documents/offer-panels.tsx`
+  - `routes/invoices/read.tsx`
+  - `routes/payments/refund-parts.tsx`
+  - `routes/projects/deed.tsx`
+  - `screens.css` (the new `.pdf-rebuild*` block; the CSS collision guard is clean)
+
+**Commands and results**
+- `pnpm exec vitest run src/lib/pdf-repairs.test.ts src/lib/copy-zg.test.ts` (admin): 37 passed. The new file's 30 tests cover:
+  - 07-ZV word for word against `docs/07-content-appendix/ZV-rebuild-pdf.md` and against the API's messages in `worker/pdf-rebuild.ts`;
+  - codes to lines and outcomes to lines;
+  - who sees which line, the started state and the paths of every kind;
+  - no `Placeholder`.
+- `bash tools/heavy.sh --log rb-d1-typecheck2 pnpm --filter @techaust/admin typecheck`: exit 0.
+- `bash tools/heavy.sh --log rb-d1-build2 pnpm --filter @techaust/admin build`: exit 0.
+  - Admin front: 122,717 bytes against the 150,000 ceiling, with 29.6 ms start-up. That is the same as b1, because the SPA isn't in the Worker.
+  - API 572,452, finance 436,784, invoices 579,222, all unchanged.
+  - The first build (`rb-d1-build`) failed on `check-spa-headers`: the local `apps/admin/.dev.vars` from `pnpm dev:secrets` was copied into `dist`. I deleted it and built again. Run `pnpm dev:secrets` again before using that worktree's dev server.
+- `pnpm exec biome check` on the changed files: clean.
+- `bash tools/heavy.sh --log rb-d1-check pnpm check`: exit 0. This includes the whole-repository lint (run once), typecheck, the guards, and the CSS collisions (29 stylesheets, none with two owners).
+- The visual check ran in temporary Playwright specs against the admin dev server (`TECHAUST_PORT_OFFSET=0`, local D1 only). The specs were deleted afterwards and never committed.
+  - The Playwright MCP browser isn't installed in this session, so I used the repo's own `@playwright/test` with the installed `/opt/pw-browsers/chromium-1243`. Nothing was installed.
+  - Every assertion passed, with axe at 0 violations (moderate and above, WCAG 2.2 AA plus best-practice) on every shot taken, and no console errors.
+  - The dev server is stopped.
+
+**Local data used** (sample only, in this worktree's `.wrangler/state`)
+- The e2e global setup with `E2E_SAMPLE=1` (a throwaway Owner and the sample invoices).
+- `pdf_r2_key` and `pdf_sha256` set on TH/INV/2627/0001 ("simulated ready"; no R2 object, so the live rebuild found it `missing`).
+- Two sample proposals inserted: TH/PRP/2627/0004, expired; and TH/PRP/2627/0005, still open.
+- The jobs Worker's result rows inserted by hand (`rebuilt`, and `refused` / `row_mismatch`).
+- One sample payment recorded through the API.
+
+**Screenshots** (`.logs/shots/rebuild-pdf/`). The in-app theme is always set against the opposite OS theme. Shots named SIMULATED had an answer supplied in the browser.
+- `01-invoice-ready-{1280,390}-{light,dark}.png`: the invoice before any rebuild. "Rebuild PDF" under the download, and "Rebuild supplier copy" under the supplier copy.
+- `02-focus-visible-1280-light.png`: the keyboard pass. The rebuild action has visible focus. The checks proved:
+  - Tab order: download, rebuild, supplier copy, rebuild supplier copy;
+  - Enter opens the dialog;
+  - Escape closes it and returns focus to the action.
+- `03-dialog-1280-light.png`, `03-dialog-390-dark.png`: the dialog (lines 2–4) with the step-up code field.
+- `03-started-toast-1280-light.png`: live 202. The line 5 toast and "Being rebuilt…".
+- `03-both-rebuilding-1280-light.png`: the PDF and the supplier copy both being rebuilt, live.
+- `03-polled-rebuilt-and-supplier-running-1280-light.png`: the 10 s poll picked up the result. Line 11's fact is shown while the supplier copy is still running.
+- `03-live-rebuilt-fact-and-refused-1280-light.png`: line 11 and line 12 (the supplier copy refused), live.
+- `04-after-rebuild-{1280,390}-{light,dark}.png`: after a reload, the fact stays and the action is back.
+- `05-refusal-too-soon-live-1280-light.png`: line 7 from the real 429.
+- `06-SIMULATED-state-{rebuilding-with-earlier-fact,refused,envelope-missing,failed,intact,skipped}-{1280-light,390-dark}.png`: every state line (11, "Being rebuilt…", 12, 13, 14, 15, 23).
+- `07-SIMULATED-refusal-{client_gone,rebuild_in_progress,queue_unavailable,pdf_pending,pdf_erased}-1280-light.png`: the refusals in the dialog (lines 8, 9, 10, the existing `pdf_pending` and `pdf_erased` messages).
+- `07-SIMULATED-refusal-nothing_to_rebuild-toast-1280-light.png`: line 6 as a toast.
+- `08-SIMULATED-accountant-{1280-light,390-dark}.png`: the Accountant sees the fact and no button, and not the Owner's refused line.
+- `09-SIMULATED-read-failed-1280-light.png`, `09-SIMULATED-loading-1280-light.png`: a failed or slow state read draws nothing extra, so nothing jumps.
+- `10-offer-expired-ready-{1280-light,390-dark}.png`: the offer PDF panel with "Rebuild PDF".
+- `10-offer-rebuilding-live-1280-light.png`: live 202 on the expired offer.
+- `10-refusal-offer-open-live-1280-light.png`: line 19 from the real 409 `offer_open`.
+- `11-SIMULATED-certificate-{1280-light,390-dark}.png`: the acceptance panel (the acceptance was added in the browser) with the fact and "Rebuild certificate".
+- `12-SIMULATED-receipt-{1280-light,390-dark}.png`: the payment entry's receipt with the fact and "Rebuild PDF". The payment is real; the receipt answer was simulated, because receipts are issued by jobs.
+- `12-SIMULATED-receipt-dialog-over-entry-{1280-light,390-dark}.png`: the confirm dialog stacked over the entry dialog.
+- `13-SIMULATED-deed-{final-making,signed}-{1280-light,390-dark}.png`: "Rebuild unsigned PDF" on a final deed and on a signed deed (with the fact). The deed answers are the T11 spec's fixtures.
+
+**Placeholder text:** none. Every line is 07-ZV 1–15, 19 or 23, or an existing approved line (07-ZG 2, and the API's `pdf_pending` words).
+
+**Not verified**
+- A real Browser Run render. Results were inserted by hand, which is the jobs Worker's part.
+- Real R2. There were no stored objects locally, so every live check was `missing`, never `damaged`.
+- The real receipt and deed pages with server data: their answers were simulated in the browser.
+- 768 px (the brief asked for 390 and 1280).
+- NVDA and VoiceOver.
+- The step-up lapsing between the dialog opening and the POST. The path is `request`'s existing step-up retry and wasn't exercised live.
+
+**Open questions**
+1. After a rebuild, the PDF panel's existing line "Fingerprint {12}" still shows the first file's SHA-256, while line 11 shows the stored file's. Both are true, but two different fingerprints on one panel may puzzle staff. Should the panel's line stay as it is (the first file), or should the lead consider a wording change? I didn't change it.
+2. The button also shows where the API will refuse: an offer the client can still accept, or an anonymised client. That follows the brief ("Owner and ready"), and lines 19 and 9 then explain. Should it be hidden in those cases instead?
+3. The receipt action is only in the payment entry view, not in the Payments panel table rows. Void receipts get no action, although the trigger allows rebuilding one, because the screen offers no download for them. Is that right?
+4. Outcome lines 12–15 and 23 show to the Owner only. "Being rebuilt…" and line 11 show to every reader. Is that right?
