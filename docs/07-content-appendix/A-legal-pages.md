@@ -59,7 +59,7 @@ We use these service providers ("processors"). Each receives only what it needs:
 | Meta Platforms (WhatsApp) | Messages you exchange with us on WhatsApp, if you choose to contact us there | USA / global |
 | Sentry | Error monitoring (personal data removed where possible) | USA |
 
-Other people at your organisation who have client portal access can see your name and job title. They can't see your email address or phone number. (v0.3, owner 2026-11-07; 08-C RB-45)
+Other people at your organisation who have client portal access can see your name and job title. If you accept a proposal or estimate, they can also see its acceptance record, which shows your name, email address, IP address and browser. (v0.3, owner 2026-11-07; 08-C RB-45)
 
 We may also disclose information when the law requires it, or to protect our rights in a legal dispute.
 

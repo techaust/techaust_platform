@@ -403,7 +403,7 @@ describe("privacy 0.3 and terms 0.3 (the owner's copy, 2026-11-07: audit B3 M4, 
 
   it("privacy names what colleagues see, what an erasure keeps, and the portal's real request control", () => {
     expect(paras("privacy", "sharing")).toContain(
-      "Other people at your organisation who have client portal access can see your name and job title. They can’t see your email address or phone number.",
+      "Other people at your organisation who have client portal access can see your name and job title. If you accept a proposal or estimate, they can also see its acceptance record, which shows your name, email address, IP address and browser.",
     );
     expect(paras("privacy", "retention")).toContain(
       "If you ask us to erase your data, we keep only a scrambled form of your email address for 3 years, so that we don’t email you and can show what you agreed to.",

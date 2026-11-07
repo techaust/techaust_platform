@@ -203,8 +203,9 @@ const makePrivacy = (ga: boolean): LegalDoc => ({
           },
         },
         {
-          // Owner, 2026-11-07 (audit B3 M4): what colleagues see in the portal. Researched 2026-11-06, 08-C RB-45 (name and title only).
-          p: "Other people at your organisation who have client portal access can see your name and job title. They can’t see your email address or phone number.",
+          // Owner, 2026-11-07 (audit B3 M4): what colleagues see in the portal: name and title (08-C RB-45), and an accepted offer's record and certificate
+          // (`ACCEPTANCE_SQL`, `CERT_KEY_SQL`, client-scoped; 08-C RB-19).
+          p: "Other people at your organisation who have client portal access can see your name and job title. If you accept a proposal or estimate, they can also see its acceptance record, which shows your name, email address, IP address and browser.",
         },
         {
           p: "We may also disclose information when the law requires it, or to protect our rights in a legal dispute.",
