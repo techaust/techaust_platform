@@ -399,7 +399,12 @@ export const projects = new Hono<AppEnv>()
            FROM files f WHERE f.project_id = ?1 ORDER BY f.created_at DESC, f.id DESC LIMIT 5`,
         )
         .bind(id),
-      db.prepare(`SELECT ${clientGoneSql("p.client_id")} AS gone FROM projects p WHERE p.id = ?1`).bind(id),
+      // Full audit AU23: the client's legal hold too (the screens hide Delete on its notes and files while it stands).
+      db
+        .prepare(
+          `SELECT ${clientGoneSql("p.client_id")} AS gone, (SELECT k.legal_hold FROM clients k WHERE k.id = p.client_id) AS held FROM projects p WHERE p.id = ?1`,
+        )
+        .bind(id),
       // The hours logged on the project (M3.5, ADM-PRJ-05): totals only, never a person or a note, so every role that reads a project
       // sees the same figure. Served by `time_logs_project_date`; a project has a handful of entries a day at most.
       db.prepare(PROJECT_HOURS_SQL).bind(id),
@@ -410,10 +415,13 @@ export const projects = new Hono<AppEnv>()
     const hours = hrs?.results[0] as { total: number; billable: number } | undefined;
     const milestones = (ms?.results ?? []) as MilestoneRow[];
     const anonymised = (gone?.results[0] as { gone: number } | undefined)?.gone === 1;
+    const held = (gone?.results[0] as { held: number } | undefined)?.held === 1;
     return c.json({
       project: projectView(row),
       /** The client is an anonymised individual: the screens are read-only (client_anonymised). */
       clientAnonymised: anonymised,
+      /** Full audit AU23: the client is under a legal hold: its notes and files can't be deleted (the screens hide Delete). */
+      clientLegalHold: held,
       milestones: milestones.map((m) => milestoneView(m, row.budget_minor)),
       milestoneTotals: milestoneTotals(
         row.budget_minor,

@@ -42,6 +42,11 @@ export function PageHeader(props: {
   more?: MenuItem[] | undefined;
   /** A status shown beside the title. */
   status?: ReactNode | undefined;
+  /**
+   * Several actions (a lead's three, AU28): between a tablet and about 900 px they wrap under the title instead of squeezing it; from 900 px they sit
+   * at its right as on every page.
+   */
+  wideActions?: boolean | undefined;
 }) {
   const h1 = useRef<HTMLHeadingElement>(null);
   const { key, pathname } = useLocation();
@@ -51,7 +56,7 @@ export function PageHeader(props: {
     if (key !== "default") h1.current?.focus();
   }, [pathname]);
   return (
-    <header className="page-header">
+    <header className={props.wideActions ? "page-header page-header--wide-actions" : "page-header"}>
       {props.crumbs && props.crumbs.length > 0 && (
         <nav aria-label="Breadcrumb" className="crumbs">
           <ol>

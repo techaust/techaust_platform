@@ -1,5 +1,6 @@
 // The SES hook's one batch (M7.2; ADM-MAIL-02, JOB-HOOK-01..03; run file docs/runs/m7.2-notifications.md B, C.3, L2, L4, L5, L15). Tier A ground: the suppression
-// list and the contact flag. At most 6 statements, every one on an index (JOB-HOOK-03), run inline by the hook (L2: no queue message per event).
+// list and the contact flag. At most 6 statements, every one on an index (JOB-HOOK-03), run inline by the hook (L2: no queue message per event). Full audit AU20:
+// a complaint about the weekly digest switches that member's digest off (statement 4 of a complaint) instead of stopping the address.
 //
 //   1. the event row, `ON CONFLICT (id) DO NOTHING` (JOB-HOOK-02: an EventBridge redelivery writes nothing twice), with its outcome computed in the same
 //      statement from the `email_log` row the message id names, BEFORE any change (`unknown_message`, `applied` or `stale`; the twin of core `emailEventMove`);
@@ -16,6 +17,7 @@
 // Every side statement is idempotent anyway (rank, `INSERT OR IGNORE`, `coalesce`, the bell's unique key).
 import type { SesEvent } from "@techaust/core/email-events";
 import { EVENT_STATUS, SES_BELLS, SES_BELLS_NOT_CONTACT, suppressionOf } from "@techaust/core/email-events";
+import { NON_TRANSACTIONAL_TEMPLATES } from "@techaust/core/email-templates";
 import { emailRankSql } from "./email-rank.ts";
 
 type Db = Pick<D1Database, "prepare">;
@@ -86,17 +88,34 @@ export function sesEventStatements(
   if (reason) {
     const recipients = JSON.stringify(ev.bounce?.recipients ?? ev.complaint?.recipients ?? []);
     // The address of OUR row for this message, and only if the event names it (`?8` the recipients as JSON, lower-cased by the parser).
-    const ours = `SELECT e.id, e.to_email FROM email_log e WHERE e.ses_message_id = ?2
+    const ours = `SELECT e.id, e.to_email, e.template FROM email_log e WHERE e.ses_message_id = ?2
       AND e.to_email IN (SELECT lower(j.value) FROM json_each(?8) j WHERE j.type = 'text')`;
     const known = thisEvent("'applied', 'stale'");
+    // Full audit M6–M7 AU20 (B4 L1): a spam report on a NON-transactional email (the weekly digest) never stops the address (security alerts and sign-in
+    // links would stop with it): that member's digest is switched off instead (`digest_off_via = 'complaint'`), and no "emails stopped" bell rings.
+    const marketing = `o.template IN (${NON_TRANSACTIONAL_TEMPLATES.map((t) => `'${t}'`).join(", ")})`;
+    const stops = reason === "complaint" ? ` AND NOT ${marketing}` : "";
     out.push(
       db
         .prepare(
           `INSERT OR IGNORE INTO email_suppressions (email, reason, at)
-           SELECT o.to_email, ?9, ?6 FROM (${ours}) o WHERE ${known}`,
+           SELECT o.to_email, ?9, ?6 FROM (${ours}) o WHERE ${known}${stops}`,
         )
         .bind(...base, recipients, reason),
     );
+    if (reason === "complaint")
+      out.push(
+        db
+          .prepare(
+            `INSERT INTO staff_notification_prefs (user_id, digest_weekly, digest_off_via, updated_at)
+             SELECT u.id, 0, 'complaint', ?6 FROM (${ours}) o JOIN staff_users u ON lower(u.email) = o.to_email
+             WHERE ${marketing} AND ${known}
+             ON CONFLICT (user_id) DO UPDATE SET digest_weekly = 0, digest_off_via = 'complaint',
+               updated_at = max(excluded.updated_at, staff_notification_prefs.updated_at + 1)
+             WHERE staff_notification_prefs.digest_weekly = 1`,
+          )
+          .bind(...base, recipients),
+      );
     if (reason === "hard_bounce")
       out.push(
         db
@@ -115,7 +134,7 @@ export function sesEventStatements(
              CASE WHEN x.code IS NULL THEN ?11 ELSE replace(?10, '{client_code}', x.code) END, '/emails/' || x.id
            FROM (SELECT o.id, (SELECT min(cl.code) FROM contacts ct JOIN clients cl ON cl.id = ct.client_id
                                WHERE ct.email = o.to_email AND ct.anonymised_at IS NULL) AS code
-                 FROM (${ours}) o) x
+                 FROM (${ours}) o WHERE 1${stops}) x
            JOIN staff_users u ON u.role = 'owner' AND u.status = 'active'
            WHERE ${known}`,
         )

@@ -48,6 +48,9 @@ export const EMAIL_TEMPLATES = [
   "staff.signin_unfinished",
   // M7.4 (D.8, L32; POR-11): the acknowledgement of a request sent from the portal (07-ZR C2 to C4 and the Rule 9 block; the builder's plain template).
   "request.received",
+  // M6–M7 audit AU1 (ADM-PAY-08): a refund that succeeded came back failed at the gateway; the money is the client's credit again (07-ZT C1 to C3, held behind
+  // `APPROVED_07ZT` until the owner approves them; the builder's plain template).
+  "refund.reversed",
 ] as const;
 export type EmailTemplate = (typeof EMAIL_TEMPLATES)[number];
 

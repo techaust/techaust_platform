@@ -96,46 +96,71 @@ async function handleHook(req: Request, env: HookEnv, now: number, out: { o?: st
     logEvent("hook.signature_invalid", { provider: "stripe", code: verdict });
     return refuse(400, "signature_invalid");
   }
+  // M6–M7 audit AU7 L4 (B1 L4): a body Stripe signed but we can't read is acknowledged (200, `invalid_event` logged): a 400 makes Stripe retry it for days and
+  // may disable the endpoint. When its event id and type can be read, it is kept as an `ignored` row (no queue message) so it can be traced.
   let obj: unknown;
   try {
     obj = JSON.parse(strictUtf8.decode(raw));
   } catch {
     out.o = "invalid_event";
-    return refuse(400, "invalid_event");
+    logEvent("hook.invalid_event", { provider: "stripe" });
+    return answer(200, { ok: true });
   }
   const parsed = parseStripeEvent(obj);
   if (!parsed.ok) {
     out.o = "invalid_event";
-    return refuse(400, "invalid_event");
+    logEvent("hook.invalid_event", { provider: "stripe" });
+    await keepUnreadable(env, obj, now);
+    return answer(200, { ok: true });
   }
   const e = parsed.value;
-  const liveExpected = secretOf(env, "PAYMENTS_LIVE_ALLOWED") === "true";
+  // M6–M7 audit AU7 L1 (B1 L1): the finance Worker runs in the Owner's gateway mode AND the flag (test while the mode is still test, even with the flag true),
+  // which this hook cannot read. So while the flag is true BOTH modes are stored, with `livemode` in the facts, and the finance judge (which re-fetches with the
+  // key of its own mode and checks `livemode` against it) decides; while the flag is false only test-mode events are kept, as before.
+  const liveAllowed = secretOf(env, "PAYMENTS_LIVE_ALLOWED") === "true";
+  const modeKept = liveAllowed || e.livemode === false;
   // M6.5 (L36; Step 0 point 4): a refund or dispute event carries no checkout marks (S4: Stripe copies no metadata to a Refund or a Dispute; ours sets its own
   // `techaust_refund` on the refunds we make). Kept with its whitelisted facts when its livemode is ours; the finance Worker matches the PaymentIntent to OUR
   // payment and ignores the rest (one D1 row per not-ours event on the shared account, accepted).
   if (Object.hasOwn(STRIPE_REFUND_EVENTS, e.name)) {
     const rf = stripeRefundEventFacts(obj);
-    if (!rf || e.livemode !== liveExpected) {
+    if (!rf || !modeKept) {
       out.o = rf ? "livemode_mismatch" : "invalid_event";
       return answer(200, { ok: true });
     }
-    return store(env, e.id, e.name, refundFactsRecord(rf), now, out);
+    return store(env, e.id, e.name, { ...refundFactsRecord(rf), livemode: e.livemode ? 1 : 0 }, now, out);
   }
   // (6) ours or not: no D1 write for anything that isn't exactly ours.
-  const foreign =
-    e.livemode !== liveExpected
-      ? "livemode_mismatch"
-      : !e.techaust
-        ? "not_techaust"
-        : e.techaust.env !== secretOf(env, "ENVIRONMENT")
-          ? "other_env"
-          : null;
+  const foreign = !modeKept
+    ? "livemode_mismatch"
+    : !e.techaust
+      ? "not_techaust"
+      : e.techaust.env !== secretOf(env, "ENVIRONMENT")
+        ? "other_env"
+        : null;
   if (foreign) {
     out.o = foreign;
     return answer(200, { ok: true });
   }
   // (7) ours. Only the four session events carry our marks, so an event here is one we handle (an unknown type never reaches this line).
+  // (`stripeEventFacts` carries `livemode` already.)
   return store(env, e.id, e.name, stripeEventFacts(e), now, out, e.type === "other");
+}
+
+/** AU7 L4: a signed event we can't read, kept `ignored` with no facts when its id (`evt_…`) and type can be read; a failed write changes nothing. */
+async function keepUnreadable(env: HookEnv, obj: unknown, now: number): Promise<void> {
+  if (typeof obj !== "object" || obj === null) return;
+  const id: unknown = Reflect.get(obj, "id");
+  const type: unknown = Reflect.get(obj, "type");
+  if (typeof id !== "string" || !/^evt_[A-Za-z0-9_]{1,250}$/.test(id)) return;
+  if (typeof type !== "string" || !/^[a-z0-9_.]{1,100}$/.test(type)) return;
+  try {
+    await env.DB.prepare(WEBHOOK_EVENT_INSERT_SQL)
+      .bind(uuidv7(), "stripe", id, type, now, "ignored", JSON.stringify({ unreadable: 1 }))
+      .run();
+  } catch {
+    // never changes the answer
+  }
 }
 
 /** Stores one event (`received`, or `ignored` for a type we don't handle), finds it again, and queues a new or still waiting one once (`gateway.event`). */

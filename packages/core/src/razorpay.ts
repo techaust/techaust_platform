@@ -300,6 +300,8 @@ export function readRazorpayPayment(obj: unknown): PaymentStatusReport | null {
         : s === "failed"
           ? "failed"
           : "pending";
+  // M6–M7 audit AU6 (B1 M1): `amount_refunded` (Razorpay keeps `status: captured` and `refund_status: partial` while part of it went back).
+  const refunded = count(obj.amount_refunded);
   return {
     providerRef: id,
     state,
@@ -310,6 +312,7 @@ export function readRazorpayPayment(obj: unknown): PaymentStatusReport | null {
     feeTaxMinor: count(obj.tax),
     createdAt,
     orderRef: str(obj.order_id, ORDER_ID),
+    ...(refunded !== null && refunded > 0 ? { refundedMinor: refunded } : {}),
   };
 }
 
@@ -326,6 +329,9 @@ export const JUDGE_VERDICTS = [
   "order_mismatch",
   "payment_not_on_link",
   "partial_payment",
+  // M6–M7 audit AU6 (B1 M1): captured, but part of it was already refunded at Razorpay (`amount_refunded` > 0) before we first settled it: recorded pending with a
+  // `refunded_outside` item that carries the refunded amount; never confirmed in full, no ledger move. A payment refunded in full stays `not_captured` (item only).
+  "partly_refunded",
 ] as const;
 export type JudgeVerdict = (typeof JUDGE_VERDICTS)[number];
 
@@ -359,6 +365,8 @@ export function judgeRazorpayPayment(
   if (payment.currency !== checkout.currency || link.currency !== checkout.currency)
     return no("currency_mismatch");
   if (link.state === "partially_paid") return no("partial_payment");
+  // AU6: before the amount, so the item always says what was refunded.
+  if ((payment.refundedMinor ?? 0) > 0) return no("partly_refunded");
   if (payment.amountMinor !== checkout.amountMinor || link.amountMinor !== checkout.amountMinor)
     return no("amount_mismatch");
   return { ok: true };

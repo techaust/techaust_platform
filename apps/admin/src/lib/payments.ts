@@ -9,7 +9,7 @@
 // Money is formatted and added only through core; nothing here adds up an amount by hand. Pure, so the words and rules are tested without a browser.
 import { csvCell } from "@techaust/core/csv-cell";
 import { LEDGER_STATUSES, PAYABLE_TYPES, receiptMonthWarning, TDS_TYPES } from "@techaust/core/ledger";
-import { type Currency, compare, formatMoney, money, subtract, sum } from "@techaust/core/money";
+import { add, type Currency, compare, formatMoney, money, subtract, sum } from "@techaust/core/money";
 import { reviewReason } from "../../worker/gateway/reasons.ts";
 import type { PaymentMode, PaymentStatus } from "../api.ts";
 import { RequestError } from "../api.ts";
@@ -231,7 +231,26 @@ export const PAY_ERRORS = {
   not_an_export_invoice: ZH("Only an issued export invoice has a realisation date."),
   // second early check: a Staff request naming a proforma puts the whole payment on that one proforma (L5)
   proforma_ask_whole: ZH("A payment for a proforma goes on that proforma alone, in full."),
+  // M6–M7 audit AU4 (B0 9; staff line, the builder's draft for the lead, 07-ZT line 7)
+  payment_linked:
+    "This payment is ticked as seen in the bank statement or linked to a remittance advice. Remove that first, then withdraw it.",
+  // M6.5 (L10; the server's own line) and AU16 (B2 4)
+  refunds_exist: "This payment has a refund, so it can't be withdrawn.",
 } as const;
+
+/**
+ * M6–M7 audit AU16 (B2 4) and AU4 (B0 9): why a confirmed bank entry can't be withdrawn now (shown beside the actions instead of a Withdraw the server would
+ * refuse); null when nothing stands in the way. Staff lines, the builder's drafts for the lead (07-ZT lines 7 and 8).
+ */
+export function withdrawBlockedLine(d: {
+  hasLiveRefund?: boolean;
+  bankTicked?: boolean;
+  advice?: unknown;
+}): string | null {
+  if (d.hasLiveRefund) return PAY_ERRORS.refunds_exist;
+  if (d.bankTicked || d.advice) return PAY_ERRORS.payment_linked;
+  return null;
+}
 
 /** Line 25 (second early check): the void blocker `payment_recorded`, a payment put on this invoice, even one withdrawn later (line 21 is `payment_pending`). */
 export const VOID_PAYMENT_RECORDED = ZH(
@@ -536,6 +555,29 @@ export function leftoverLine(
   return compare(money(amountMinor, currency), owed) > 0
     ? { kind: "over", text: overpaymentLine(amount, client) }
     : { kind: "kept", text: keptAsCreditLine(amount, client) };
+}
+
+/**
+ * A confirmed payment's dialog (M6–M7 audit AU17, B2 5): the part it keeps as the client's credit, line 47's words: the amount, less what it was put on, plus
+ * what was moved back to credit. Null for anything but a confirmed payment, when nothing is kept, or while a refund of it stands (`hasLiveRefund` not false:
+ * some of that credit may have gone back to the client, and the refunds list under it says so). Core money only.
+ */
+export function keptOnPaymentLine(
+  p: { kind: string; status: string; amountMinor: number; currency: Currency },
+  allocations: readonly { kind: "allocate" | "release"; amountMinor: number }[],
+  hasLiveRefund: boolean | undefined,
+  client: string,
+): string | null {
+  if (p.kind !== "payment" || p.status !== "confirmed" || hasLiveRefund !== false) return null;
+  const of = (k: "allocate" | "release") =>
+    sum(
+      allocations.filter((a) => a.kind === k).map((a) => money(a.amountMinor, p.currency)),
+      p.currency,
+    );
+  // every allocation row's amount is positive (CHECK `payment_allocations_amount`): an allocate takes from the payment, a release gives back
+  const kept = add(subtract(money(p.amountMinor, p.currency), of("allocate")), of("release"));
+  if (compare(kept, money(0, p.currency)) <= 0) return null;
+  return keptAsCreditLine(amountText(kept.amount, p.currency), client);
 }
 
 /**

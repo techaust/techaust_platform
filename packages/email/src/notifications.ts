@@ -22,6 +22,7 @@ import {
   REFUND_EMAIL_COPY,
   SIGNIN_UNFINISHED_COPY,
 } from "@techaust/core/copy-zq";
+import { REFUND_REVERSED_COPY } from "@techaust/core/copy-zt";
 import { escapeHtml, headerValue } from "./headers.ts";
 import {
   footerLink,
@@ -58,6 +59,19 @@ export const REFUND_SENT_KEYS = [
   "url",
 ] as const;
 export type RefundSentData = Record<(typeof REFUND_SENT_KEYS)[number], string>;
+
+/** M6–M7 audit AU1 (07-ZT C1 to C3; the builder's plain template, behind `APPROVED_07ZT`). */
+export const REFUND_REVERSED_KEYS = ["first_name", "amount", "document_number", "url"] as const;
+export type RefundReversedData = Record<(typeof REFUND_REVERSED_KEYS)[number], string>;
+
+/** `refund.reversed` (07-ZT C1 to C3): the refund came back to us, the amount is the client's credit again, the portal button. */
+export function refundReversedEmail(d: RefundReversedData, opts: LayoutOptions): Rendered {
+  const C = REFUND_REVERSED_COPY;
+  return securityEmail(headerValue(C.subject(d.amount, d.document_number)), opts, {
+    before: [withBold(C.body(d.first_name, d.amount, d.document_number), d.amount), para(C.next)],
+    action: { label: C.button, url: d.url },
+  });
+}
 
 export const SIGNIN_UNFINISHED_KEYS = ["first_name", "time"] as const;
 export type SigninUnfinishedData = Record<(typeof SIGNIN_UNFINISHED_KEYS)[number], string>;

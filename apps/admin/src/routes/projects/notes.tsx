@@ -35,6 +35,8 @@ export function NotesPanel(props: {
   clientName: string;
   /** The client is an anonymised individual: the panel is read-only (client_anonymised). */
   readOnly?: boolean;
+  /** Full audit AU23: the client is under a legal hold: no note can be deleted (the server answers 409 `legal_hold`), so Delete is not offered. */
+  held?: boolean;
   /** The panel heading's level and words (the client overview nests it under its own h2s). */
   title?: string;
 }) {
@@ -103,6 +105,7 @@ export function NotesPanel(props: {
               scope={props.scope}
               clientName={props.clientName}
               mayTouch={mayTouch(n)}
+              mayDelete={props.held !== true}
               onChanged={() => first.reload(true)}
               onDelete={() => setDeleting(n)}
             />
@@ -263,6 +266,8 @@ function NoteItem(props: {
   scope: VaultScope;
   clientName: string;
   mayTouch: boolean;
+  /** AU23: false while a legal hold stands on the client. */
+  mayDelete: boolean;
   onChanged: () => void;
   onDelete: () => void;
 }) {
@@ -340,7 +345,16 @@ function NoteItem(props: {
                   requestAnimationFrame(() => document.getElementById(`${id}-body`)?.focus());
                 },
               },
-              { label: "Delete", icon: <Trash size={16} />, tone: "danger", onSelect: props.onDelete },
+              ...(props.mayDelete
+                ? [
+                    {
+                      label: "Delete",
+                      icon: <Trash size={16} />,
+                      tone: "danger" as const,
+                      onSelect: props.onDelete,
+                    },
+                  ]
+                : []),
             ]}
           />
         )}

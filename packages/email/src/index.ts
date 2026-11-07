@@ -15,7 +15,9 @@ import { staffApprovalIssueDecided, staffApprovalIssueRequested } from "./invoic
 import {
   DIGEST_KEYS,
   digestWeekly,
+  REFUND_REVERSED_KEYS,
   REFUND_SENT_KEYS,
+  refundReversedEmail,
   refundSent,
   SIGNIN_UNFINISHED_KEYS,
   STAFF_NOTIFICATION_KEYS,
@@ -353,6 +355,9 @@ function renderTemplate(
       return { ...noReply, ...staffNotification(pick(get, STAFF_NOTIFICATION_KEYS), opts) };
     case "refund.sent":
       return { ...billing, ...refundSent(pick(get, REFUND_SENT_KEYS), opts) };
+    // M6–M7 audit AU1: a refund that came back, from billing@ like the refund email (07-ZT, behind `APPROVED_07ZT`).
+    case "refund.reversed":
+      return { ...billing, ...refundReversedEmail(pick(get, REFUND_REVERSED_KEYS), opts) };
     // M7.4 (D.8, L32): the acknowledgement of a portal request, from hello@ like the lead acknowledgement (07-ZR; the builder's plain template).
     case "request.received":
       return { ...hello, ...requestReceived(pick(get, REQUEST_RECEIVED_KEYS), opts) };

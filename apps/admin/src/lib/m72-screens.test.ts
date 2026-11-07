@@ -125,6 +125,10 @@ describe("the words", () => {
       "recipient_invalid",
     ])
       expect(zqErrorText(new RequestError(409, code, "server words"))).toBe(ZQ_ERRORS[code]);
+    // audit AU29: the lead's words for refused recipients (portal, finance, an address that isn't stopped)
+    expect(ZQ_ERRORS.recipient_invalid).toBe(
+      "Some recipients can't get this receipt: they need portal access and finance access, and an address that isn't stopped.",
+    );
     expect(zqErrorText(new RequestError(403, "forbidden_x", ""))).toBe(ZQ_ERRORS.forbidden);
     expect(zqErrorText(new RequestError(500, "boom", "The server broke"))).toBe("The server broke.");
     expect(zqErrorText(new Error("x"))).toMatch(/Try again/);

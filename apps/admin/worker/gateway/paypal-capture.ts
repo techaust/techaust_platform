@@ -498,6 +498,17 @@ export async function settleCapture(
     await reviewOnlyOf(ctx, c, "client_gone", f.amountMinor, facts);
     return { state: "review" };
   }
+  // M6–M7 audit AU6 (B1 M1): PayPal shows part of the capture refunded before we first settled it: pending (no ledger move, the checkout marked paid only while
+  // open) with a `refunded_outside` item; PayPal's capture names no refunded total, so the item says "part of it" (`reason: partly_refunded`).
+  if (!verdict.ok && verdict.verdict === "partly_refunded")
+    return pendingOrLate(
+      ctx,
+      c,
+      f,
+      "refunded_outside",
+      { paidMinor: f.amountMinor, reason: "partly_refunded", provider: "paypal", currency: "USD" },
+      facts,
+    );
   if (!verdict.ok)
     return pendingOrLate(
       ctx,

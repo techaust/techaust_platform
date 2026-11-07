@@ -241,9 +241,22 @@ export async function processSnapshot(env: Env, msg: PdfSnapshotMessage): Promis
 
 // ---- the invoice family (B2) --------------------------------------------------------------------------------------------------------
 
-/** The bell of a refused invoice envelope or signature: its own kind (the sweep leaves a document with one alone), and the invoice's page. */
-const refusedBell = (env: Env, id: string, label: string): D1PreparedStatement =>
-  bell(env, "pdf.refused", "document", id, BELL_COPY.invoiceRefused(label), `/invoices/${id}`);
+/**
+ * Full audit M6–M7 AU10 (B6 L1): a refusal is recorded on the document's `pdf_failures` row (`refused_at`, set once), which the sweep reads, so the clean-up
+ * of old bells can never make a refused document ring again. `?1` the document, `?2` now.
+ */
+export const REFUSED_MARK_SQL = `INSERT INTO pdf_failures (document_id, nights, refused_at) VALUES (?1, 0, ?2)
+  ON CONFLICT (document_id) DO UPDATE SET refused_at = coalesce(pdf_failures.refused_at, excluded.refused_at)`;
+
+/** A refused document's `pdf.refused` bell with its refusal mark (one batch). */
+const refusedWith = (env: Env, id: string, title: string, link: string): D1PreparedStatement[] => [
+  bell(env, "pdf.refused", "document", id, title, link),
+  env.DB.prepare(REFUSED_MARK_SQL).bind(id, Date.now()),
+];
+
+/** The bell of a refused invoice envelope or signature: its own kind (the sweep leaves a refused document alone), and the invoice's page. */
+const refusedBell = (env: Env, id: string, label: string): D1PreparedStatement[] =>
+  refusedWith(env, id, BELL_COPY.invoiceRefused(label), `/invoices/${id}`);
 
 /** `snapshot` for an issued invoice: the same steps as a proposal's, from the invoice envelope. */
 async function snapshotInvoice(
@@ -258,7 +271,7 @@ async function snapshotInvoice(
     if (made.code === "unsupported_type" || made.code === "not_issued") return skip(made.code);
     // The rows do not reproduce what the issue sealed: nothing is written, the owners are told, and a retry cannot help.
     logEvent("pdf.refused", { stage: "snapshot", code: made.code, family: "invoice" });
-    await env.DB.batch([refusedBell(env, d.id, label)]);
+    await env.DB.batch(refusedBell(env, d.id, label));
     return "refused";
   }
   const e = made.envelope;
@@ -268,7 +281,7 @@ async function snapshotInvoice(
   if (!put.created && (await put.existing.text()) !== text) {
     // A different envelope already holds the key: never overwritten, never rendered from; a person looks.
     logEvent("pdf.refused", { stage: "snapshot", code: "key_conflict", family: "invoice" });
-    await env.DB.batch([refusedBell(env, d.id, label)]);
+    await env.DB.batch(refusedBell(env, d.id, label));
     return "refused";
   }
   await env.DB.prepare("UPDATE documents SET snapshot_r2_key = ?2 WHERE id = ?1 AND snapshot_r2_key IS NULL")
@@ -331,7 +344,7 @@ async function renderInvoice(
       code: verdict.ok ? "unknown" : verdict.code,
       family: "invoice",
     });
-    await env.DB.batch([refusedBell(env, row.id, label)]);
+    await env.DB.batch(refusedBell(env, row.id, label));
     return "refused";
   }
   const keyInput = { type: envelope.type, fy: envelope.fy, number: envelope.number, version: 1 };
@@ -367,18 +380,14 @@ async function renderInvoice(
       family: "invoice",
       type: envelope.type,
     });
-    await env.DB.batch([
-      bell(env, "pdf.refused", "document", row.id, BELL_COPY.invoiceUnsigned(label), `/invoices/${row.id}`),
-    ]);
+    await env.DB.batch(refusedWith(env, row.id, BELL_COPY.invoiceUnsigned(label), `/invoices/${row.id}`));
     return "refused";
   }
   const signature = await verifiedSignature(env, envelope);
   if (signature === "refused") {
     logEvent("pdf.refused", { stage: "render", code: "signature", family: "invoice" });
     // Same kind (the sweep leaves it alone), but its own line and the place to fix it (07-R §3).
-    await env.DB.batch([
-      bell(env, "pdf.refused", "document", row.id, BELL_COPY.invoiceSignature(label), "/settings/company"),
-    ]);
+    await env.DB.batch(refusedWith(env, row.id, BELL_COPY.invoiceSignature(label), "/settings/company"));
     return "refused";
   }
   // the generic portal address (the host of PORTAL_URL), never a personal link; unset leaves the "pay in the portal" line out
@@ -399,7 +408,7 @@ async function renderInvoice(
       family: "invoice",
       type: envelope.type,
     });
-    await env.DB.batch([refusedBell(env, row.id, label)]);
+    await env.DB.batch(refusedBell(env, row.id, label));
     return "refused";
   }
   const result = await renderPaced(env, html, pdfOptionsFor(view), clock);
@@ -785,13 +794,14 @@ export const SWEEP_MAX_FAILED_NIGHTS = 3;
 /**
  * The sweep's pick (`?1` the newest `frozen_at` it may take). Exported so a test can EXPLAIN it: it must use `documents_pdf_pending` (the pending set is small; the
  * order is then a sort of that set). FX-1 (A6 2): the least recently tried first (`pdf_failures.last_attempt_at`, never tried counts as 0), then the oldest; a
- * document with `SWEEP_MAX_FAILED_NIGHTS` failed nights is left out, as is one with a refusal bell.
+ * document with `SWEEP_MAX_FAILED_NIGHTS` failed nights is left out, as is a refused one (full audit AU10: `pdf_failures.refused_at`, never the bell, which the
+ * clean-up may delete).
  */
 export const SWEEP_SQL = `SELECT documents.id FROM documents INDEXED BY documents_pdf_pending LEFT JOIN pdf_failures f ON f.document_id = documents.id
   WHERE documents.frozen_at IS NOT NULL AND documents.pdf_sha256 IS NULL AND documents.type IN ('proposal', 'estimate', 'tax_invoice', 'export_invoice', 'proforma', 'credit_note', 'debit_note') AND documents.frozen_at <= ?1
     AND coalesce(f.nights, 0) < ${SWEEP_MAX_FAILED_NIGHTS} AND documents.redacted_at IS NULL
     AND NOT EXISTS (SELECT 1 FROM clients z WHERE z.id = documents.client_id AND z.anonymised_at IS NOT NULL)
-    AND NOT EXISTS (SELECT 1 FROM notifications r WHERE r.entity_type = 'document' AND r.entity_id = documents.id AND r.kind = 'pdf.refused')
+    AND f.refused_at IS NULL
   ORDER BY coalesce(f.last_attempt_at, 0), documents.frozen_at, documents.id LIMIT ${SWEEP_LIMIT}`;
 
 /** The sweep's note that it tried a document (`?1` the document, `?2` the sweep's time). One row per document; the failed nights are left as they are. */
@@ -829,7 +839,11 @@ export const FAILED_NIGHT_SQL = `INSERT INTO pdf_failures (document_id, nights, 
 /** The owners' one `pdf.refused` bell once a document reaches `SWEEP_MAX_FAILED_NIGHTS` (`?1` the document, `?2` the title, `?3` the link): unique per owner, kind and document. */
 export const STOPPED_BELL_SQL = `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
   SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'pdf.refused', 'document', ?1, ?2, ?3 FROM staff_users u
-  WHERE u.status = 'active' AND u.role = 'owner' AND (SELECT nights FROM pdf_failures WHERE document_id = ?1) >= ${SWEEP_MAX_FAILED_NIGHTS}`;
+  WHERE u.status = 'active' AND u.role = 'owner' AND (SELECT nights FROM pdf_failures WHERE document_id = ?1) >= ${SWEEP_MAX_FAILED_NIGHTS}
+    AND (SELECT refused_at FROM pdf_failures WHERE document_id = ?1) IS NULL`;
+
+/** AU10: the document that reached `SWEEP_MAX_FAILED_NIGHTS` is marked refused (`?1` the document, `?2` now), once; the sweep reads the mark. */
+export const STOPPED_MARK_SQL = `UPDATE pdf_failures SET refused_at = ?2 WHERE document_id = ?1 AND refused_at IS NULL AND nights >= ${SWEEP_MAX_FAILED_NIGHTS}`;
 
 /** The cron's one job for PDFs: enqueue ONE sweep message. No D1 read. */
 export async function enqueueSweep(env: Env, scheduledTime: number): Promise<void> {
@@ -932,6 +946,7 @@ export async function processPdfDeadLetter(env: Env, body: unknown, now = Date.n
               BELL_COPY.stoppedNightly(documentLabel(row.number_display)),
               link,
             ),
+            env.DB.prepare(STOPPED_MARK_SQL).bind(body.documentId, now),
           ]
         : []),
     ]);

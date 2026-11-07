@@ -91,6 +91,7 @@ export function Overview(props: {
             scope={{ kind: "client", id: client.id }}
             clientName={client.displayName}
             readOnly={props.data.anonymised}
+            held={client.legalHold === true}
           />
         )}
       </div>

@@ -119,20 +119,24 @@ export const isUnmatched = (r: Pick<RequestView, "contactRef" | "lead">): boolea
 
 /** What the close may offer for this request (core `closeVerdict`'s rules, so the screen offers only what the server accepts). */
 export function closeOptions(r: RequestView): {
-  done: "ok" | "identity_first" | "unmatched_erasure";
+  done: "ok" | "identity_first" | "unmatched_erasure" | "unmatched_withdrawal";
   reasons: readonly DeclineReason[];
   needsAction: boolean;
   canRecordExport: boolean;
 } {
   const unmatchedErasure = r.kind === "data_erasure" && isUnmatched(r);
+  // Full audit AU26: a consent withdrawal is done only by linking its own withdrawal, so one naming only an address can only be declined.
+  const unmatchedWithdrawal = r.kind === "consent_withdrawal" && isUnmatched(r);
   return {
     done: unmatchedErasure
       ? "unmatched_erasure"
-      : IDENTITY_CHECKED_KINDS.includes(r.kind) && r.identityCheckedAt === null
-        ? "identity_first"
-        : "ok",
+      : unmatchedWithdrawal
+        ? "unmatched_withdrawal"
+        : IDENTITY_CHECKED_KINDS.includes(r.kind) && r.identityCheckedAt === null
+          ? "identity_first"
+          : "ok",
     reasons: unmatchedErasure ? EMAIL_ONLY_DECLINE_REASONS : DECLINE_REASONS,
-    needsAction: r.kind === "data_erasure" && !unmatchedErasure,
+    needsAction: (r.kind === "data_erasure" || r.kind === "consent_withdrawal") && !isUnmatched(r),
     canRecordExport: r.kind === "data_access",
   };
 }
@@ -143,9 +147,24 @@ export function closeOptions(r: RequestView): {
  */
 export function erasureMatches(entries: readonly AuditEntry[], r: RequestView): AuditEntry[] {
   const from = r.receivedAt ?? r.createdAt;
+  const withdrawal = r.kind === "consent_withdrawal";
   return entries
     .filter((e) => e.at >= from)
     .filter((e) => {
+      // Full audit AU26: a consent withdrawal links its contact's marketing-consent change, or its lead's withdrawal (the server also checks the receipt).
+      if (withdrawal) {
+        if (r.contactRef !== null && e.action === "contact.update") {
+          const s = e.summary as { contactId?: unknown; changed?: unknown } | null;
+          return (
+            s?.contactId === r.contactRef &&
+            Array.isArray(s.changed) &&
+            s.changed.includes("marketingConsent")
+          );
+        }
+        if (r.lead !== null && e.action === "lead.consent_withdraw")
+          return e.entityType === "lead" && e.entityId === r.lead.id;
+        return false;
+      }
       if (r.contactRef !== null && (e.action === "contact.erase" || e.action === "contact.anonymise"))
         return (e.summary as { contactId?: unknown } | null)?.contactId === r.contactRef;
       if (r.lead !== null && e.action === "lead.erase")
@@ -155,9 +174,19 @@ export function erasureMatches(entries: readonly AuditEntry[], r: RequestView): 
     .sort((a, b) => b.at - a.at || (a.id < b.id ? 1 : -1));
 }
 
-/** The audit actions to look through for a request's erasure (one list read per action). */
+/** The audit actions to look through for a request's erasure, or (AU26) its consent withdrawal (one list read per action). */
 export const erasureActionsOf = (r: RequestView): string[] =>
-  r.contactRef !== null ? ["contact.erase", "contact.anonymise"] : r.lead !== null ? ["lead.erase"] : [];
+  r.kind === "consent_withdrawal"
+    ? r.contactRef !== null
+      ? ["contact.update"]
+      : r.lead !== null
+        ? ["lead.consent_withdraw"]
+        : []
+    : r.contactRef !== null
+      ? ["contact.erase", "contact.anonymise"]
+      : r.lead !== null
+        ? ["lead.erase"]
+        : [];
 
 /** The day an export was emailed, as the close stores it: the start of that IST day, or now for today (never in the future). */
 export function exportSentAtOf(isoDay: string, now: number): number | "future" | null {

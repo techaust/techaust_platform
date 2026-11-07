@@ -18,7 +18,13 @@ import {
   stageOpenSql,
   stageSql,
 } from "./realisation.ts";
-import { paymentFreeSql, SQL_CURRENCIES } from "./sql-rules.ts";
+import {
+  istDayEndMsSql,
+  paymentFreeSql,
+  refundOutAtSql,
+  refundsOutSql,
+  SQL_CURRENCIES,
+} from "./sql-rules.ts";
 
 /**
  * Rows in one report page (keyset, the admin lists' rule): every page statement reads one more (`LIMIT REPORT_PAGE_SIZE + 1`) to know whether another page exists. One
@@ -193,6 +199,8 @@ const LINE_DEBIT_KINDS = "('tax_invoice', 'export_invoice', 'debit_note', 'refun
  * a `tds` line for tax the client deducted (T8; dated by its advice; the number is the invoice it is on). A pending, rejected or withdrawn payment is never a line.
  * M6.5 (L9): a `refund` line (a debit, core `STATEMENT_DEBIT_TYPES`) for each SUCCEEDED refund of a confirmed payment, dated by the IST day it succeeded
  * (`settled_on`); its number is the bank reference of a manual refund, else the gateway's refund id, else ''. A refund still with the gateway is not a line.
+ * M6–M7 audit AU37 (Settled by the lead on the safest reading, 2026-11-07 (08-C RA-41)): the whole statement is as at the end of its last day `?4` (bound by
+ * every statement read, the balance before a page too): a refund that came back after that day is still a line, so a past statement never moves.
  * `ord` orders one day: 1 a debit document, 2 a credit note, 3 a receipt, 4 a TDS line, 5 a refund; `sk` is `date|ord`, the keyset key with `id`. Proformas are not here
  * (LD78: not a tax document; their payment shows through the tax invoice). `cond` is a SQL fragment over a date expression, e.g. `x BETWEEN ?3 AND ?4`. With
  * `withParent`, a credit or debit note carries the number of the invoice it is against (`parent`; FX-4, full audit A5 7: debit notes too); every other line NULL.
@@ -212,7 +220,7 @@ const statementSource = (cond: (dateExpr: string) => string, withParent = false)
     UNION ALL
     SELECT f.id, 'refund', f.settled_on, 5, coalesce(f.reference_norm, f.provider_refund_id, ''), f.amount_minor, f.settled_on || '|5'${withParent ? ", NULL" : ""}
       FROM payment_refunds f INDEXED BY payment_refunds_client JOIN payments fp ON fp.id = f.payment_id
-      WHERE f.client_id = ?1 AND f.currency = ?2 AND f.status = 'succeeded' AND fp.status = 'confirmed' AND ${cond("f.settled_on")}) u`;
+      WHERE f.client_id = ?1 AND f.currency = ?2 AND ${refundOutAtSql("f", istDayEndMsSql("?4"))} AND fp.status = 'confirmed' AND ${cond("f.settled_on")}) u`;
 
 /**
  * One page of a statement: `?1` the client, `?2` the currency, `?3` and `?4` the range (inclusive), and for a next page `?5` and `?6` the last row's `(sk, id)`.
@@ -279,13 +287,15 @@ export const statementPageBinds = (
   cursor?: StatementCursor,
 ): (string | null)[] =>
   cursor ? [clientId, currency, from, to, cursor.sk, cursor.id] : [clientId, currency, from, to];
+/** M6–M7 audit AU37: `to` (the range's last day, `?4`) is bound too: the balance before a page is as at that day's end, as the page's own lines. */
 export const statementBalanceBeforeBinds = (
   clientId: string,
   currency: string,
   from: string,
+  to: string,
   cursor?: StatementCursor,
 ): (string | null)[] =>
-  cursor ? [clientId, currency, null, null, cursor.sk, cursor.id] : [clientId, currency, from];
+  cursor ? [clientId, currency, null, to, cursor.sk, cursor.id] : [clientId, currency, from, to];
 export const statementTotalsBinds = (
   clientId: string,
   currency: string,
@@ -756,15 +766,17 @@ export type PaymentsRegisterRow = {
  * oldest first by `(settled_on, id)`, with a next page from `?3`/`?4`; read through `payment_refunds_settled`. Each row carries the source payment, the client, the
  * invoice and the credit note it followed (numbers), the bank's INR amount of a USD refund (L15, never a GST figure). At most 51 rows.
  * B4 (`GET /reports/refunds`, the `refunds-v1` CSV): and the source payment's own reference (its gateway id and its bank reference).
+ * M6–M7 audit AU37 (Settled by the lead on the safest reading, 2026-11-07 (08-C RA-41)): a refund that came back after `?2` is still in the register for that
+ * range (`refundsOutSql`), so a filed period's register never moves.
  */
 export const REFUNDS_REGISTER_SQL = (after: boolean): string =>
-  `SELECT f.id, f.payment_id, f.provider, f.origin, f.mode, f.paid_to, f.reason_code, f.settled_on, f.currency, f.amount_minor, f.inr_refunded_minor, f.reference_norm,
-       f.provider_refund_id, f.client_id, c.code AS client_code, c.display_name AS client_name, fd.number_display AS document_number, fc.number_display AS credit_note_number,
+  `SELECT fo.id, fo.payment_id, fo.provider, fo.origin, fo.mode, fo.paid_to, fo.reason_code, fo.settled_on, fo.currency, fo.amount_minor, fo.inr_refunded_minor, fo.reference_norm,
+       fo.provider_refund_id, fo.client_id, c.code AS client_code, c.display_name AS client_name, fd.number_display AS document_number, fc.number_display AS credit_note_number,
        fp.provider_payment_id AS payment_provider_ref, fp.reference_norm AS payment_reference
-   FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id JOIN clients c ON c.id = f.client_id
-     LEFT JOIN documents fd ON fd.id = f.document_id LEFT JOIN documents fc ON fc.id = f.credit_note_id
-   WHERE f.status = 'succeeded' AND fp.status = 'confirmed' AND f.settled_on >= ?1 AND f.settled_on <= ?2 ${after ? "AND (f.settled_on > ?3 OR (f.settled_on = ?3 AND f.id > ?4))" : ""}
-   ORDER BY f.settled_on, f.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
+   FROM (${refundsOutSql("?1", "?2")}) fo JOIN payments fp ON fp.id = fo.payment_id JOIN clients c ON c.id = fo.client_id
+     LEFT JOIN documents fd ON fd.id = fo.document_id LEFT JOIN documents fc ON fc.id = fo.credit_note_id
+   WHERE fp.status = 'confirmed' ${after ? "AND (fo.settled_on > ?3 OR (fo.settled_on = ?3 AND fo.id > ?4))" : ""}
+   ORDER BY fo.settled_on, fo.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 
 /** One row of `REFUNDS_REGISTER_SQL` as D1 returns it. */
 export type RefundsRegisterRow = {
@@ -819,7 +831,8 @@ const inrDocTaxable = (c: string) =>
   `CASE ${c} WHEN 'INR' THEN d.taxable_minor ELSE json_extract(d.computed, '$.inr.taxableMinor') END`;
 const inrDocTotal = (c: string) => `CASE ${c} WHEN 'INR' THEN d.total_minor ELSE d.total_inr_minor END`;
 const inrPaid = (c: string) => `CASE ${c} WHEN 'INR' THEN p.amount_minor ELSE p.inr_received_minor END`;
-const inrRefunded = (c: string) => `CASE ${c} WHEN 'INR' THEN f.amount_minor ELSE f.inr_refunded_minor END`;
+const inrRefunded = (c: string, f = "f") =>
+  `CASE ${c} WHEN 'INR' THEN ${f}.amount_minor ELSE ${f}.inr_refunded_minor END`;
 
 /**
  * `[count, taxable, total, inr count, inr taxable, inr total]` of the documents `d` that match `is` (an SQL condition) in currency `c` (6 arguments, under D1's 32).
@@ -833,13 +846,19 @@ const collectedJson = (is: string, c: string) => {
   const tds = `${is} AND p.kind = 'tds'`;
   return `json_array(count(CASE WHEN ${pay} THEN 1 END), coalesce(sum(CASE WHEN ${pay} THEN p.amount_minor END), 0), count(CASE WHEN ${tds} THEN 1 END), coalesce(sum(CASE WHEN ${tds} THEN p.amount_minor END), 0), coalesce(sum(CASE WHEN ${pay} THEN ${inrPaid(c)} END), 0), count(CASE WHEN ${pay} AND (${inrPaid(c)}) IS NULL THEN 1 END))`;
 };
-/** `[refunds, refunded, inr refunded, inr missing]` of the succeeded refunds `f` that match `is` in currency `c`. */
-const refundedJson = (is: string, c: string) =>
-  `json_array(count(CASE WHEN ${is} THEN 1 END), coalesce(sum(CASE WHEN ${is} THEN f.amount_minor END), 0), coalesce(sum(CASE WHEN ${is} THEN ${inrRefunded(c)} END), 0), count(CASE WHEN ${is} AND (${inrRefunded(c)}) IS NULL THEN 1 END))`;
+/** `[refunds, refunded, inr refunded, inr missing]` of the succeeded refunds `f` (the alias; AU48: `fo` over `refundsOutSql`) that match `is` in currency `c`. */
+const refundedJson = (is: string, c: string, f = "f") =>
+  `json_array(count(CASE WHEN ${is} THEN 1 END), coalesce(sum(CASE WHEN ${is} THEN ${f}.amount_minor END), 0), coalesce(sum(CASE WHEN ${is} THEN ${inrRefunded(c, f)} END), 0), count(CASE WHEN ${is} AND (${inrRefunded(c, f)}) IS NULL THEN 1 END))`;
+const refundedOutJson = (is: string, c: string) => refundedJson(is, c, "fo");
 /** One JSON object with a value per currency (`{"INR": [...], "USD": [...]}`), each from `json(<currency test>, <currency literal>)`. */
 const perCurrency = (json: (is: string, c: string) => string, col: string) =>
   `json_object(${SQL_CURRENCIES.map((c) => `'${c}', ${json(`${col} = '${c}'`, `'${c}'`)}`).join(", ")})`;
-const SUCCEEDED_REFUNDS = "f.status = 'succeeded' AND fp.status = 'confirmed' AND fp.kind = 'payment'";
+const REFUNDS_OF_COLLECTED = "fp.status = 'confirmed' AND fp.kind = 'payment'";
+/**
+ * The refunds of confirmed money received that had gone out by the end of IST day `to` (M6–M7 audit AU37, Settled by the lead on the safest reading, 2026-11-07
+ * (08-C RA-41): one that came back after that day still counts, so a past period never moves); `f` a refund, `fp` its payment.
+ */
+const refundsOutBy = (to: string) => `${refundOutAtSql("f", istDayEndMsSql(to))} AND ${REFUNDS_OF_COLLECTED}`;
 
 /**
  * The columns of one revenue row from three JSON values (`inv`, `pay`, `ref`: `invoicedJson`, `collectedJson`, `refundedJson`) at JSON path `at` (an SQL
@@ -896,8 +915,8 @@ export const REVENUE_MONTHS_SQL = /* @__PURE__ */ (() => {
            (SELECT ${perCurrency(invoicedJson, "d.currency")} FROM documents d INDEXED BY documents_issued_on WHERE ${ISSUED_IN("m.f", "m.t")}) AS inv,
            (SELECT ${perCurrency(collectedJson, "p.currency")} FROM payments p INDEXED BY payments_confirmed
              WHERE p.status = 'confirmed' AND p.received_on >= m.f AND p.received_on <= m.t) AS pay,
-           (SELECT ${perCurrency(refundedJson, "f.currency")} FROM payment_refunds f INDEXED BY payment_refunds_settled JOIN payments fp ON fp.id = f.payment_id
-             WHERE ${SUCCEEDED_REFUNDS} AND f.settled_on >= m.f AND f.settled_on <= m.t) AS ref
+           (SELECT ${perCurrency(refundedOutJson, "fo.currency")} FROM (${refundsOutSql("m.f", "m.t")}) fo JOIN payments fp ON fp.id = fo.payment_id
+             WHERE ${REFUNDS_OF_COLLECTED}) AS ref
          FROM (${months}) m LIMIT -1) x
    JOIN (${currencyRows}) cur
    WHERE ${has("x.inv", 0)} + ${has("x.pay", 0)} + ${has("x.pay", 2)} + ${has("x.ref", 0)} > 0
@@ -918,7 +937,7 @@ export const REVENUE_MONTHS_GROUPED_SQL = /* @__PURE__ */ (() => ({
        coalesce(sum(CASE p.kind WHEN 'payment' THEN p.amount_minor END), 0) AS received, coalesce(sum(CASE p.kind WHEN 'tds' THEN p.amount_minor END), 0) AS tds
      FROM payments p WHERE p.status = 'confirmed' AND p.received_on >= ?1 AND p.received_on <= ?2 GROUP BY month, p.currency ORDER BY month, p.currency`,
   refunded: `SELECT substr(f.settled_on, 1, 7) AS month, f.currency, count(*) AS refunds, sum(f.amount_minor) AS refunded
-     FROM payment_refunds f JOIN payments fp ON fp.id = f.payment_id WHERE ${SUCCEEDED_REFUNDS} AND f.settled_on >= ?1 AND f.settled_on <= ?2
+     FROM payment_refunds f JOIN payments fp ON fp.id = f.payment_id WHERE ${refundsOutBy("date(f.settled_on, 'start of month', '+1 month', '-1 day')")} AND f.settled_on >= ?1 AND f.settled_on <= ?2
      GROUP BY month, f.currency ORDER BY month, f.currency`,
 }))();
 
@@ -1070,7 +1089,7 @@ export const REVENUE_CLIENTS_SQL = (after: boolean): string =>
                  (SELECT ${collectedJson("1 = 1", "?3")} FROM payments p INDEXED BY payments_client
                    WHERE p.client_id = c.id AND p.currency = ?3 AND p.status = 'confirmed' AND p.received_on >= ?1 AND p.received_on <= ?2) AS pay,
                  (SELECT ${refundedJson("1 = 1", "?3")} FROM payment_refunds f INDEXED BY payment_refunds_client JOIN payments fp ON fp.id = f.payment_id
-                   WHERE f.client_id = c.id AND f.currency = ?3 AND ${SUCCEEDED_REFUNDS} AND f.settled_on >= ?1 AND f.settled_on <= ?2) AS ref
+                   WHERE f.client_id = c.id AND f.currency = ?3 AND ${refundsOutBy("?2")} AND f.settled_on >= ?1 AND f.settled_on <= ?2) AS ref
                FROM clients c LIMIT -1) z
          WHERE json_extract(z.inv, '$[0]') > 0 OR json_extract(z.pay, '$[0]') > 0 OR json_extract(z.pay, '$[2]') > 0 OR json_extract(z.ref, '$[0]') > 0
          LIMIT -1) y

@@ -281,13 +281,14 @@ export function FilterBar(props: {
   const on = props.groups.reduce((n, g) => n + g.selected.length, 0) + extraOn;
   const [open, setOpen] = useState(false);
   const groupsId = useId();
+  // M6–M7 audit AU17 (B2 6): one chip group and nothing else (no search, no extra field) lays out in one column, so its chips run the panel's width
+  // instead of wrapping inside the first column of the search-and-groups grid.
+  const single = !props.searchLabel && props.groups.length === 1 && props.extra === undefined;
+  const classes = ["filters", single ? "filters--single" : "", props.className ?? ""]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <section
-      className={props.className ? `filters ${props.className}` : "filters"}
-      aria-label="Filters"
-      data-open={open || undefined}
-      id={groupsId}
-    >
+    <section className={classes} aria-label="Filters" data-open={open || undefined} id={groupsId}>
       {props.searchLabel && (
         <div className="filters__search">
           <label htmlFor="filter-q">{props.searchLabel}</label>

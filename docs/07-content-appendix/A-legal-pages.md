@@ -59,6 +59,8 @@ We use these service providers ("processors"). Each receives only what it needs:
 | Meta Platforms (WhatsApp) | Messages you exchange with us on WhatsApp, if you choose to contact us there | USA / global |
 | Sentry | Error monitoring (personal data removed where possible) | USA |
 
+Other people at your organisation who have client portal access can see your name and job title. If you accept a proposal or estimate, they can also see its acceptance record, which shows your name, email address, IP address and browser. (v0.3, owner 2026-11-07; 08-C RB-45)
+
 We may also disclose information when the law requires it, or to protect our rights in a legal dispute.
 
 ### 4. Data stored outside India
@@ -78,6 +80,8 @@ Some providers store data outside India. Indian law currently permits this, as t
 
 If the law requires us to keep something longer (for example, during a dispute), we keep it only for that purpose.
 
+If you ask us to erase your data, we keep only a scrambled form of your email address for 3 years, so that we don't email you and can show what you agreed to. (v0.3, owner 2026-11-07; 07-ZR C7)
+
 ### 6. How we protect it
 - Encryption in transit (HTTPS) and at rest.
 - Two-factor sign-in for our staff, and role-based access.
@@ -95,7 +99,7 @@ You can ask us to:
 - **withdraw consent** (as easily as you gave it; this doesn't affect what we did before)
 - **nominate** someone to exercise your rights if you die or become unable to
 
-Email **privacy@techaust.com**, or use "Request my data" in the client portal. We may need to confirm your identity. We acknowledge requests within 48 hours and respond within 30 days.
+Email **privacy@techaust.com**, or, if you use the client portal, go to Profile, then Requests, and choose "New request". We may need to confirm your identity. We acknowledge requests within 48 hours and respond within 30 days.
 
 ### 7a. If you are in the EU or UK (OPEN, 08-C RB-27)
 - **Who controls your data:** TecHaust Technologies (Rupak Sarkar, proprietor), {{postal_address}}, India · privacy@techaust.com.
@@ -124,11 +128,13 @@ This notice is available in English. If you'd like it in Hindi, Bengali or anoth
 ### 12. Changes
 We'll post changes here and update the date. For significant changes affecting clients, we'll email you.
 
-*Version 0.2 · Effective {{effective_date}}*
+*Version 0.3 · Effective {{effective_date}}* · Changes in 0.3 (2026-11-07, owner): what colleagues can see about you in the client portal; what we keep after you ask us to erase your data; how to make a request in the client portal.
 
 ---
 
 ## 2. Website terms of use (`/terms`)
+
+**Version 0.3 (2026-11-07, owner):** §7 no longer has the sentence "You're responsible for files you upload: you confirm you have the right to share them and that they contain no malware." (the portal has no uploads; audit B3 L6).
 
 **Version 0.2 (2026-10-31):** §7, §10 and §12 as changed by [07-ZE](ZE-terms-offers-deed.md) lines 13, 14 and 15, with line 6 after §12 (the text lives there, word for word; the site is `apps/web/src/content/legal-pages.ts`). The items below are version 0.1.
 

@@ -165,6 +165,42 @@ describe("the send takes 1 to 5 recipients; anything else changes nothing [ADM-P
     expect(await codeOf(res)).toBe("recipient_invalid");
     await untouched(made.id, before);
   });
+
+  // Full audit AU56 (early check of AF2, L3; AU21): the first send of an offer holds the stop rule in its freeze guard, not only in the pre-check.
+  it("a recipient whose address is stopped between the pre-check and the batch refuses the whole first send: 409 recipient_invalid naming them, no number taken", async () => {
+    const { s, made, v, a, b } = await draft();
+    const before = await counter();
+    const e = beforeSendBatch(async () => {
+      await env.DB.prepare(
+        "INSERT INTO email_suppressions (email, reason, at) SELECT lower(email), 'complaint', ?2 FROM contacts WHERE id = ?1",
+      )
+        .bind(b.id, Date.now())
+        .run();
+    });
+    const res = await send(
+      s.cookie,
+      made.id,
+      { expectedUpdatedAt: v.updatedAt, contactIds: [a.id, b.id] },
+      e,
+    );
+    expect(res.status).toBe(409);
+    const body = await json(res);
+    expect(body.error.code).toBe("recipient_invalid");
+    expect(body.contactIds).toEqual([b.id]);
+    await untouched(made.id, before);
+    expect(
+      (
+        await one<{ number_display: string | null }>(
+          "SELECT number_display FROM documents WHERE id = ?",
+          made.id,
+        )
+      )?.number_display,
+    ).toBeNull();
+    // without the stopped contact the first send goes, and takes the next number
+    const again = await send(s.cookie, made.id, { expectedUpdatedAt: v.updatedAt, contactIds: [a.id] });
+    expect(again.status, await again.clone().text()).toBe(200);
+    expect(await counter()).toBe(before + 1);
+  });
 });
 
 // ---- the send rows ------------------------------------------------------------------------------------------------------------

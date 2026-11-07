@@ -9,7 +9,7 @@ import { type Column, DataTable } from "../../components/data-table.tsx";
 import { EmptyState } from "../../components/display.tsx";
 import { LifeBuoy } from "../../components/icons.tsx";
 import { LoadFailed, useLoad } from "../../components/states.tsx";
-import { hoursText, periodText } from "../../lib/care.ts";
+import { dayText, hoursText, periodText } from "../../lib/care.ts";
 import { m73Api } from "../../lib/m73-api.ts";
 import {
   billedText,
@@ -80,7 +80,13 @@ export function CareHoursReport() {
     {
       key: "period",
       header: C.period,
-      cell: (r) => <span className="m73-nowrap-dates">{periodText(r.period)}</span>,
+      // AU22 (B4 M2): each date stays whole and the line may break only at "to" (periodText's words), so a narrow column never pushes the text into "Included"
+      cell: (r) => (
+        <span className="m73-period">
+          <span className="m73-nowrap-dates">{dayText(r.period.start)}</span> to{" "}
+          <span className="m73-nowrap-dates">{dayText(r.period.end)}</span>
+        </span>
+      ),
     },
     {
       key: "included",

@@ -91,7 +91,7 @@ export const routeFor = tableOf(ROUTES);
  * keeps a session tied to the organisation it was created for; a moved contact stops matching.
  */
 export const SESSION_READ =
-  "SELECT s.last_seen_at, s.idle_expires_at, s.abs_expires_at, s.revoked_at, c.id AS contact_id, c.name, c.email, c.can_see_finance, cl.id AS client_id, cl.display_name FROM client_sessions s JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id JOIN clients cl ON cl.id = s.client_id WHERE s.id = ?1 AND c.portal_access = 1 AND c.anonymised_at IS NULL";
+  "SELECT s.last_seen_at, s.idle_expires_at, s.abs_expires_at, s.revoked_at, c.id AS contact_id, c.name, c.email, c.can_see_finance, cl.id AS client_id, cl.display_name FROM client_sessions s JOIN contacts c ON c.id = s.contact_id AND c.client_id = s.client_id JOIN clients cl ON cl.id = s.client_id AND cl.anonymised_at IS NULL WHERE s.id = ?1 AND c.portal_access = 1 AND c.anonymised_at IS NULL";
 
 type SessionRow = {
   last_seen_at: number;

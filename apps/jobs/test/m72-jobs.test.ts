@@ -711,6 +711,109 @@ describe("the dead letter (early check finding 4; L13)", () => {
     ).toEqual({ link: "/" });
     expect(DEAD_LETTER_SQL).toContain("status IN ('queued', 'sending')");
   });
+
+  it("full audit AU11 L5: the M7.2 kinds are named in the alert (no ids); a refund email that ran out of tries rings the owners with the client's code", async () => {
+    const owner = await staff("owner");
+    const { sent, transport } = recorder();
+    const e = makeEnv();
+    const named: [string, string, unknown][] = [
+      ["techaust-local-email-dlq", "staff notification email", staffNotify("payment.online", "pay-x")],
+      [
+        "techaust-local-leads-dlq",
+        "owners' weekly digest",
+        { v: 1, kind: "digest.weekly", weekStart: "2026-11-02" },
+      ],
+      ["techaust-local-leads-dlq", "unfinished sign-in alert", { v: 1, kind: "signin.unfinished", asOf: 1 }],
+      ["techaust-local-leads-dlq", "hourly staff email check", { v: 1, kind: "bells.sweep", since: 1 }],
+    ];
+    for (const [queue, words, body] of named) {
+      sent.length = 0;
+      expect(await processDeadLetter(e, queue, body, transport)).toBe(true);
+      expect(sent[0]?.text, words).toContain(`Email: ${words}`);
+      expect(sent[0]?.text).not.toContain("pay-x");
+    }
+    const r = await refundOf("outside");
+    const code = (await one<{ code: string }>("SELECT code FROM clients WHERE id = ?1", r.clientId))?.code;
+    sent.length = 0;
+    expect(
+      await processDeadLetter(
+        e,
+        "techaust-local-email-dlq",
+        { kind: "refund.notify", refundId: r.refundId },
+        transport,
+      ),
+    ).toBe(true);
+    expect(sent[0]?.text).toContain("Email: refund email to a client");
+    expect(sent[0]?.text).not.toContain(r.refundId);
+    // a redelivery of the dead letter rings nothing new
+    await processDeadLetter(
+      e,
+      "techaust-local-email-dlq",
+      { kind: "refund.notify", refundId: r.refundId },
+      transport,
+    );
+    expect(
+      await all(
+        "SELECT title, link FROM notifications WHERE user_id = ?1 AND kind = 'refund.email_failed' AND entity_id = ?2",
+        owner.id,
+        r.refundId,
+      ),
+    ).toEqual([
+      {
+        title: `The email about a refund to ${code} couldn't be sent. Tell the client about the refund yourself.`,
+        link: "/payments?tab=refunds",
+      },
+    ]);
+    // an unknown refund rings nothing
+    await processDeadLetter(
+      e,
+      "techaust-local-email-dlq",
+      { kind: "refund.notify", refundId: "rf-none" },
+      transport,
+    );
+    expect(await all("SELECT 1 FROM notifications WHERE entity_id = 'rf-none'")).toEqual([]);
+  });
+
+  it("AU61 (review L2): a returned-refund email (refund.reversed) that ran out of tries is named in the alert and rings the same refund bell, once", async () => {
+    const owner = await staff("owner");
+    const { sent, transport } = recorder();
+    const e = makeEnv();
+    const r = await refundOf("outside");
+    const code = (await one<{ code: string }>("SELECT code FROM clients WHERE id = ?1", r.clientId))?.code;
+    const body = { kind: "refund.reversed", refundId: r.refundId };
+    expect(await processDeadLetter(e, "techaust-local-email-dlq", body, transport)).toBe(true);
+    expect(sent[0]?.text).toContain("Email: the email telling a client their refund came back");
+    expect(sent[0]?.text).not.toContain(r.refundId);
+    await processDeadLetter(e, "techaust-local-email-dlq", body, transport);
+    expect(
+      await all(
+        "SELECT title, link FROM notifications WHERE user_id = ?1 AND kind = 'refund.email_failed' AND entity_id = ?2",
+        owner.id,
+        r.refundId,
+      ),
+    ).toEqual([
+      {
+        title: `The email about a refund to ${code} couldn't be sent. Tell the client about the refund yourself.`,
+        link: "/payments?tab=refunds",
+      },
+    ]);
+    // a malformed body (an extra key) is named but rings nothing
+    await processDeadLetter(
+      e,
+      "techaust-local-email-dlq",
+      { kind: "refund.reversed", refundId: "rf-bad", extra: 1 },
+      transport,
+    );
+    expect(await all("SELECT 1 FROM notifications WHERE entity_id = 'rf-bad'")).toEqual([]);
+  });
+
+  it("full audit AU11 L5: the 09:00 IST tick fetches yesterday's and the day before's settlements", () => {
+    const at9 = hourlyMessages(istTick("2026-11-10", 9)).filter((m) => m.kind === "recon.fetch");
+    expect(at9).toEqual([
+      { kind: "recon.fetch", provider: "razorpay", day: "2026-11-09", skip: 0 },
+      { kind: "recon.fetch", provider: "razorpay", day: "2026-11-08", skip: 0 },
+    ]);
+  });
 });
 
 describe("the M3.3 follow-up: a sign-in link whose token row is gone", () => {

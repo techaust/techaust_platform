@@ -9,6 +9,38 @@
  */
 export const SQL_CURRENCIES = ["INR", "USD"] as const;
 
+/**
+ * M6–M7 audit AU38: the FY (its first calendar year, e.g. 2026 for 2026-27) of the IST day of instant `ms` (an SQL expression, UTC ms): the twin of core
+ * `fyOf(istDate(ms))`, the FY running 1 April to 31 March (a db test compares them across the 31 March / 1 April boundary).
+ */
+export const istFyOfMsSql = (ms: string): string =>
+  `(CAST(strftime('%Y', (${ms}) / 1000 + 19800, 'unixepoch') AS INTEGER) - (CAST(strftime('%m', (${ms}) / 1000 + 19800, 'unixepoch') AS INTEGER) < 4))`;
+
+/** M6–M7 audit AU37: the first UTC ms after IST day `day` (an SQL expression, ISO `YYYY-MM-DD`): IST midnight that ends it (UTC midnight + 24 h − 5 h 30 min). */
+export const istDayEndMsSql = (day: string): string =>
+  `((CAST(strftime('%s', ${day}) AS INTEGER) + 66600) * 1000)`;
+
+/**
+ * M6–M7 audit AU37 (Settled by the lead on the safest reading, 2026-11-07 (08-C RA-41)): refund row `f` counts as gone out at instant `at` (an SQL expression, UTC
+ * ms, exclusive: the first instant AFTER the period) when it succeeded, or when it had succeeded and came back only at or after `at` (`reversed_at`, set once by
+ * the reversal, which keeps `settled_on` and `settled_at`). So a period that ended before the refund came back keeps it, and filed figures never move. A reader
+ * through the partial index `payment_refunds_settled` (succeeded only) adds the reversed ones through `refundsOutSql`'s second branch.
+ */
+export const refundOutAtSql = (f: string, at: string): string =>
+  `(${f}.status = 'succeeded' OR (${f}.status = 'failed' AND ${f}.reversed_at IS NOT NULL AND ${f}.reversed_at >= ${at}))`;
+
+/**
+ * M6–M7 audit AU37: the refunds with `settled_on` from `from` to `to` (SQL expressions, ISO days, inclusive) that had gone out by the end of IST day `to`, as a
+ * source for `FROM (…) f` with every column of `payment_refunds`: the succeeded ones through the partial index `payment_refunds_settled`, and the reversed ones
+ * that came back only after that day through `payment_refunds_status_list` (a seek of the failed refunds: a handful). With `asOf: null` the second branch takes
+ * every reversed refund of the range, and the caller filters each of its own periods with `refundOutAtSql` (the dashboard's one-pass tile).
+ */
+export const refundsOutSql = (from: string, to: string, asOf: string | null = istDayEndMsSql(to)): string =>
+  `SELECT * FROM payment_refunds INDEXED BY payment_refunds_settled WHERE status = 'succeeded' AND settled_on >= ${from} AND settled_on <= ${to}
+     UNION ALL
+     SELECT * FROM payment_refunds INDEXED BY payment_refunds_status_list
+     WHERE status = 'failed' AND reversed_at IS NOT NULL${asOf === null ? "" : ` AND reversed_at >= ${asOf}`} AND settled_on >= ${from} AND settled_on <= ${to}`;
+
 /** The first IST day a credit note for "Discount after sale" may be dated (core `DISCOUNT_AFTER_SALE_FROM`: a test compares the two; Researched 2026-10-28, 08-C RA-02). */
 export const DISCOUNT_AFTER_SALE_FROM_SQL = "2026-11-01";
 
@@ -140,10 +172,11 @@ export const paymentNetAtSql = (payment: string, at: string, held?: { p: string;
  * what it held net then (`paymentNetAtSql`) and less its refunds that had gone out by then (succeeded; money still on its way back was still held: the safe side
  * for Table 11A). Second review, L4: a refund from credit (no release row) counts by the day it went out (`settled_on`, as the statement and "Collected" count
  * it), so a bank refund paid before the period ended but recorded after it is not held at the end; a refund of an invoice's excess counts at its instant
- * (`settled_at`), the instant its release row was written, so the two always cancel out together.
+ * (`settled_at`), the instant its release row was written, so the two always cancel out together. M6–M7 audit AU37 (Settled by the lead on the safest reading,
+ * 2026-11-07 (08-C RA-41)): a refund that came back after `at` still counts as gone out at `at` (`refundOutAtSql`), so a filed period's figure never moves.
  */
 export const paymentFreeAtSql = (p: string, at: string, day: string): string =>
-  `(${p}.amount_minor - ${paymentNetAtSql(`${p}.id`, at, { p, day })} - (SELECT coalesce(sum(pra.amount_minor), 0) FROM payment_refunds pra INDEXED BY payment_refunds_payment WHERE pra.payment_id = ${p}.id AND pra.status = 'succeeded'
+  `(${p}.amount_minor - ${paymentNetAtSql(`${p}.id`, at, { p, day })} - (SELECT coalesce(sum(pra.amount_minor), 0) FROM payment_refunds pra INDEXED BY payment_refunds_payment WHERE pra.payment_id = ${p}.id AND ${refundOutAtSql("pra", `(${at}) + 1`)}
      AND CASE WHEN pra.release_allocation_id IS NULL THEN pra.settled_on <= ${day} ELSE pra.settled_at <= ${at} END))`;
 
 /**

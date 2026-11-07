@@ -201,6 +201,7 @@ function ClientView(props: {
             scope={{ kind: "client", id: client.id }}
             emptyText={COPY.clientFilesEmpty}
             readOnly={props.data.anonymised}
+            held={client.legalHold === true}
           />
         ) : tab === "activity" ? (
           <Activity clientId={client.id} contacts={props.data.contacts} />

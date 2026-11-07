@@ -2,7 +2,13 @@
 // the portal sign-in. Every failure path is closed (false); the only success is a confirmed, fresh token for the
 // right action on a listed host. No network is used: `fetch` is replaced.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_TOKEN_LENGTH, SITEVERIFY_URL, type VerifyTurnstile, verifyTurnstile } from "../src/turnstile.ts";
+import {
+  MAX_TOKEN_LENGTH,
+  SITEVERIFY_MAX_BYTES,
+  SITEVERIFY_URL,
+  type VerifyTurnstile,
+  verifyTurnstile,
+} from "../src/turnstile.ts";
 
 const base: VerifyTurnstile = {
   secret: "secret-value",
@@ -114,5 +120,39 @@ describe("verifyTurnstile", () => {
     answer = "network-error";
     expect(await verifyTurnstile({ ...base, local: true })).toBe(false);
     expect(await verifyTurnstile({ ...base, local: true, token: "" })).toBe(false);
+  });
+
+  it("M6–M7 audit AU39: asks never to follow a redirect; a 3xx answer is refused, unread", async () => {
+    expect(await verifyTurnstile(base)).toBe(true);
+    expect(calls[0]?.init?.redirect).toBe("manual");
+    for (const status of [301, 302, 307, 308]) {
+      answer = { httpStatus: status };
+      expect(await verifyTurnstile(base), String(status)).toBe(false);
+    }
+  });
+
+  it("M6–M7 audit AU39: an answer over the cap (declared or streamed) is refused; one just under it is read", async () => {
+    const ok = JSON.stringify({ success: true, action: "admin_login", hostname: "admin.example" });
+    const respond = (r: () => Response) => vi.spyOn(globalThis, "fetch").mockImplementation(async () => r());
+    // declared too long
+    respond(() => new Response(ok, { headers: { "Content-Length": String(SITEVERIFY_MAX_BYTES + 1) } }));
+    expect(await verifyTurnstile(base)).toBe(false);
+    // streamed past the cap with no length given
+    const big = `${ok}${" ".repeat(SITEVERIFY_MAX_BYTES)}`;
+    respond(
+      () =>
+        new Response(
+          new ReadableStream({
+            start(c) {
+              c.enqueue(new TextEncoder().encode(big));
+              c.close();
+            },
+          }),
+        ),
+    );
+    expect(await verifyTurnstile(base)).toBe(false);
+    // padded to exactly the cap: still read
+    respond(() => new Response(ok.padEnd(SITEVERIFY_MAX_BYTES, " ")));
+    expect(await verifyTurnstile(base)).toBe(true);
   });
 });

@@ -15,7 +15,9 @@
 import { withdrawalOf } from "@techaust/core/consent";
 import { leadEraseBody } from "@techaust/core/dp-schemas";
 import { uuidv7 } from "@techaust/core/ids";
+import { processorsBlock } from "@techaust/core/processors";
 import { INSERT_RECEIPT_GUARDED_SQL, LEAD_WITH_ADDRESS_SQL } from "@techaust/db/consent";
+import { HELD_EMAIL_SQL } from "@techaust/db/dp-shared";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { auditFirstRow } from "./audit-row.ts";
@@ -68,12 +70,12 @@ const isPlaceholderAddress = (email: string): boolean =>
   /^anonymised\+.*@invalid$/s.test(email.toLowerCase());
 
 const exportRequest = z.strictObject({
-  part: z.optional(z.enum(["lead_activities", "email_log", "consent_receipts"])),
+  part: z.optional(z.enum(["lead_activities", "email_log", "consent_receipts", "client_requests"])),
   after: z.optional(z.string().check(z.maxLength(400))),
 });
 
 /** The lead and every unconverted lead with its address (L37: one read before the batch). `?1` the lead. */
-export const LEAD_ERASE_READ_SQL = `SELECT l.id, l.ref, l.client_id, l.legal_hold, lower(l.contact_email) AS email,
+export const LEAD_ERASE_READ_SQL = `SELECT l.id, l.ref, l.client_id, l.legal_hold, lower(l.contact_email) AS email, ${HELD_EMAIL_SQL("l.contact_email")} AS address_held,
      (SELECT json_group_array(json_object('id', o.id, 'ref', o.ref, 'held', o.legal_hold)) FROM (SELECT o.id, o.ref, o.legal_hold FROM leads o
         WHERE lower(o.contact_email) = lower(l.contact_email) AND o.client_id IS NULL ORDER BY o.id LIMIT ${MAX_ERASED_LEADS + 1}) o) AS same
    FROM leads l WHERE l.id = ?1`;
@@ -84,7 +86,8 @@ export const LEAD_ERASE_READ_SQL = `SELECT l.id, l.ref, l.client_id, l.legal_hol
  */
 const ERASE_AUDIT_FROM = `FROM leads l WHERE l.id = ?7 AND l.client_id IS NULL
      AND (SELECT count(*) FROM leads o WHERE lower(o.contact_email) = ?8 AND o.client_id IS NULL) = ?10
-     AND NOT EXISTS (SELECT 1 FROM leads o WHERE lower(o.contact_email) = ?8 AND o.client_id IS NULL AND (o.legal_hold = 1 OR o.id NOT IN (SELECT value FROM json_each(?9))))`;
+     AND NOT EXISTS (SELECT 1 FROM leads o WHERE lower(o.contact_email) = ?8 AND o.client_id IS NULL AND (o.legal_hold = 1 OR o.id NOT IN (SELECT value FROM json_each(?9))))
+     AND NOT ${HELD_EMAIL_SQL("?8")}`;
 
 /** Statements after the first row; `?1` the ids as JSON. Exported so a test can count and EXPLAIN them. */
 export const LEAD_ERASE_SQL = {
@@ -117,6 +120,10 @@ export const LEAD_EXPORT_PARTS = {
        WHERE entity_type = 'lead' AND entity_id IN (?1, ?3) AND lower(to_email) = ?2${cur ? " AND (created_at, id) > (?4, ?5)" : ""} ORDER BY created_at, id LIMIT 51`,
   consent_receipts: (cur: boolean) =>
     `SELECT id, event, source, notice_version, purposes, marketing, at FROM consent_receipts WHERE lead_id = ?1${cur ? " AND (at, id) > (?4, ?5)" : ""} ORDER BY at, id LIMIT 51`,
+  // Full audit M6–M7 AU24 (B5 M2; Researched 2026-10-29, DPDP s.11(1)(b) (08-C RB-36)): the requests this person made as a lead (their words, the outcome
+  // and the staff's close note, as the contact export gives them), through `client_requests_lead`.
+  client_requests: (cur: boolean) =>
+    `SELECT id, kind, details, status, outcome, close_note, closed_at, created_at AS at FROM client_requests WHERE lead_id = ?1${cur ? " AND (created_at, id) > (?4, ?5)" : ""} ORDER BY created_at, id LIMIT 51`,
 } as const;
 
 type LeadExportRow = Record<string, unknown> & {
@@ -141,6 +148,8 @@ export const leadData = new Hono<AppEnv>()
       const { erased_hash: _hash, ...plain } = lead;
       out = {
         lead: plain,
+        // AU24 (RB-36's gap, as the contact export): who receives the person's data, 07-A §3 word for word, and the privacy page.
+        processors: processorsBlock(),
         manifest: Object.keys(LEAD_EXPORT_PARTS),
         keyedFormMonths: keyedFormMonthsOf(keep ?? undefined),
       };
@@ -185,12 +194,14 @@ export const leadData = new Hono<AppEnv>()
       client_id: string | null;
       legal_hold: number;
       email: string;
+      address_held: number;
       same: string;
     }>();
     if (!read) return err(c, NOT_FOUND, 404);
     if (read.client_id !== null) return err(c, LEAD_CONVERTED, 409);
     const same = JSON.parse(read.same) as { id: string; ref: string; held: number }[];
-    if (same.some((l) => l.held === 1)) return err(c, LEGAL_HOLD, 409);
+    // AU25 L1: a hold on a contact (or its client) with the same address holds the lead too, as the triggers do.
+    if (same.some((l) => l.held === 1) || read.address_held === 1) return err(c, LEGAL_HOLD, 409);
     if (same.length > MAX_ERASED_LEADS)
       return err(c, TOO_MANY_LEADS, 409, { refs: same.slice(0, MAX_ERASED_LEADS).map((l) => l.ref) });
     const ids = JSON.stringify(same.map((l) => l.id));
@@ -237,6 +248,11 @@ export const leadData = new Hono<AppEnv>()
       if (!again) return err(c, NOT_FOUND, 404);
       if (again.client_id !== null) return err(c, LEAD_CONVERTED, 409);
       if (again.legal_hold === 1) return err(c, LEGAL_HOLD, 409);
+      const held = await db
+        .prepare(`SELECT ${HELD_EMAIL_SQL("contact_email")} AS held FROM leads WHERE id = ?1`)
+        .bind(id)
+        .first<{ held: number }>();
+      if (held?.held === 1) return err(c, LEGAL_HOLD, 409);
       return err(c, STALE, 409);
     }
     return c.json({ ok: true, erased: same.map((l) => l.ref) });

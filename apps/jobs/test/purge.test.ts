@@ -254,6 +254,27 @@ describe("purgeLead [ADM-LEAD-05]", () => {
     expect(await count("leads")).toBe(2);
   });
 
+  it("full audit AU25 L1: leaves a lead whose address a held contact (or its held client) has, in the scan and when enqueued; after the hold, it goes", async () => {
+    await realEnv.DB.prepare(
+      "INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency, legal_hold) VALUES ('c-held','C0002','A','A','business','IN','unregistered','19','INR', 1)",
+    ).run();
+    await realEnv.DB.prepare(
+      "INSERT INTO contacts (id, client_id, name, email) VALUES ('k-held', 'c-held', 'Asha Rao', 'held.person@example.com')",
+    ).run();
+    const lead = await addLead({ email: "Held.Person@Example.com" });
+    const free = await addLead();
+    const env = makeEnv();
+    await enqueueDue(env, NOW);
+    const queued = sent.map((m) => (m as { leadId?: string }).leadId);
+    expect(queued).toContain(free);
+    expect(queued).not.toContain(lead);
+    expect(await purgeLead(makeEnv(), lead, NOW)).toBe("skipped");
+    expect(await exists(lead)).toBe(true);
+    await realEnv.DB.prepare("UPDATE clients SET legal_hold = 0 WHERE id = 'c-held'").run();
+    expect(await purgeLead(makeEnv(), lead, NOW)).toBe("deleted");
+    await realEnv.DB.prepare("DELETE FROM contacts WHERE id = 'k-held'").run();
+  });
+
   it("a redelivered message finds nothing and writes nothing more", async () => {
     const id = await addLead();
     expect(await purgeLead(makeEnv(), id, NOW)).toBe("deleted");

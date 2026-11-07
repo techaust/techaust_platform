@@ -148,8 +148,14 @@ describe("EXPLAIN: every report statement uses an index", () => {
     for (const [sql, binds] of [
       [STATEMENT_PAGE_SQL(false), statementPageBinds("c", "INR", "2026-04-01", "2027-03-31")],
       [STATEMENT_PAGE_SQL(true), statementPageBinds("c", "INR", "2026-04-01", "2027-03-31", cursor)],
-      [STATEMENT_BALANCE_BEFORE_SQL(false), statementBalanceBeforeBinds("c", "INR", "2026-04-01")],
-      [STATEMENT_BALANCE_BEFORE_SQL(true), statementBalanceBeforeBinds("c", "INR", "2026-04-01", cursor)],
+      [
+        STATEMENT_BALANCE_BEFORE_SQL(false),
+        statementBalanceBeforeBinds("c", "INR", "2026-04-01", "2027-03-31"),
+      ],
+      [
+        STATEMENT_BALANCE_BEFORE_SQL(true),
+        statementBalanceBeforeBinds("c", "INR", "2026-04-01", "2027-03-31", cursor),
+      ],
       [STATEMENT_TOTALS_SQL, statementTotalsBinds("c", "INR", "2026-04-01", "2027-03-31")],
       [STATEMENT_COUNT_SQL, statementTotalsBinds("c", "INR", "2026-04-01", "2027-03-31")],
     ] as const) {
@@ -231,7 +237,7 @@ describe("EXPLAIN: every report statement uses an index", () => {
     );
     const before = await plan(
       STATEMENT_BALANCE_BEFORE_SQL(true),
-      ...statementBalanceBeforeBinds("c", "INR", "2026-04-01", cursor),
+      ...statementBalanceBeforeBinds("c", "INR", "2026-04-01", "2027-03-31", cursor),
     );
     expect(before).toMatch(/SEARCH d USING INDEX documents_client_issued \(client_id=\?\)/);
     const ledger = await plan(STATEMENT_LEDGER_SQL, "c", "INR");
@@ -683,7 +689,7 @@ describe("a statement closes at the ledger", () => {
     const ledger = await first<{ balance: number }>(STATEMENT_LEDGER_SQL, c, "INR");
     const opening = await first<{ balance: number }>(
       STATEMENT_BALANCE_BEFORE_SQL(false),
-      ...statementBalanceBeforeBinds(c, "INR", range[0]),
+      ...statementBalanceBeforeBinds(c, "INR", ...range),
     );
     expect(opening?.balance).toBe(0);
     expect((opening?.balance ?? 0) + debits - credits).toBe(ledger?.balance);
@@ -710,7 +716,7 @@ describe("a statement closes at the ledger", () => {
     // the range's opening: everything before 2026-06-01 is inv1 + inv2
     const before = await first<{ balance: number }>(
       STATEMENT_BALANCE_BEFORE_SQL(false),
-      ...statementBalanceBeforeBinds(c, "INR", "2026-06-01"),
+      ...statementBalanceBeforeBinds(c, "INR", "2026-06-01", range[1]),
     );
     expect(before?.balance).toBe(inv1.computed.totalMinor + inv2.computed.totalMinor);
     // the balance before a page's cursor includes the cursor row itself
@@ -718,7 +724,7 @@ describe("a statement closes at the ledger", () => {
     const cursor = { sk: `${second.date}|1`, id: second.id };
     const upTo = await first<{ balance: number }>(
       STATEMENT_BALANCE_BEFORE_SQL(true),
-      ...statementBalanceBeforeBinds(c, "INR", range[0], cursor),
+      ...statementBalanceBeforeBinds(c, "INR", ...range, cursor),
     );
     expect(upTo?.balance).toBe(inv1.computed.totalMinor + inv2.computed.totalMinor);
     const rest = await all<{ id: string }>(

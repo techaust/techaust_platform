@@ -19,6 +19,7 @@ import { isLutCheckKind, isLutCheckMessage } from "@techaust/core/invoices";
 import {
   isBellsSweepKind,
   isRefundNotifyKind,
+  isRefundReversedKind,
   isSigninUnfinishedKind,
   isStaffNotifyKind,
 } from "@techaust/core/notifications";
@@ -27,7 +28,7 @@ import { isPortalAlertKind } from "@techaust/core/portal";
 import { isStatsKind, isStatsMessage } from "@techaust/core/stats";
 import { isUsageKind } from "@techaust/core/usage";
 import { processBilling, processBillingDeadLetter } from "./billing.ts";
-import { processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
+import { processDeedDeadLetter, processDeedPdf, processDeedSigned } from "./deed-pdf.ts";
 import { processDigest } from "./digest.ts";
 import { CLAIM_TIMEOUT_MS, processDeadLetter, processEmail } from "./email.ts";
 import { isErasureKeyMissing } from "./erasure.ts";
@@ -42,7 +43,7 @@ import { processPdf, processPdfDeadLetter } from "./pdf.ts";
 import { processPortalAlert } from "./portal-alerts.ts";
 import { enqueueDue, processStatementPurge, purgeLead } from "./purge.ts";
 import { processReceipt, processReceiptDeadLetter } from "./receipts.ts";
-import { processRefundNotify } from "./refund-notify.ts";
+import { processRefundNotify, processRefundReversed } from "./refund-notify.ts";
 import { processRefundDeadLetter, processRefundFamily } from "./refunds.ts";
 import { processReminderSend } from "./reminders.ts";
 import { processEdfReminder, processRealisationScan } from "./reports.ts";
@@ -104,6 +105,9 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
         if (isReceiptKind(message.body)) await processReceiptDeadLetter(env, message.body);
         else if (isPdfMessage(message.body) && message.body.kind === "pdf.statement")
           await processStatementDeadLetter(env, message.body);
+        // Full audit AU11 (B6 L6): a deed's PDF that ran out of tries rings the owners once (it was only logged).
+        else if (isPdfMessage(message.body) && message.body.kind === "pdf.deed")
+          await processDeedDeadLetter(env, message.body);
         else await processPdfDeadLetter(env, message.body);
         message.ack();
       } else if (queue.endsWith("-pdf") && isReceiptKind(message.body)) {
@@ -260,6 +264,10 @@ export async function handleQueue(batch: MessageBatch<unknown>, env: Env): Promi
       } else if (queue.endsWith("-email") && isRefundNotifyKind(message.body)) {
         // M7.2 (Q4 A): one refund's client emails, before the generic path (a window wait is a NEW delayed message made inside, never a retry).
         await processRefundNotify(env, message.body);
+        message.ack();
+      } else if (queue.endsWith("-email") && isRefundReversedKind(message.body)) {
+        // M6–M7 audit AU1: a refund that came back, the client's email (held behind 07-ZT's gate), before the generic path as `refund.notify`.
+        await processRefundReversed(env, message.body);
         message.ack();
       } else if (queue.endsWith("-email") && isStaffAlert(message.body)) {
         // Expanded into ordinary emails; an alert that cannot be read or has no row is acknowledged (a retry cannot help).

@@ -328,6 +328,112 @@ test("a lead: legal hold set and lifted, consent withdrawn, the export, then the
   await expect(page).toHaveURL(/\/leads$/);
 });
 
+/** The focused element's outline as drawn (style and width), so a rule that hides it fails the test. */
+const focusedOutline = (page: Page) =>
+  page.evaluate(() => {
+    const el = document.activeElement;
+    if (!el) return { style: "none", width: "0px", tag: "" };
+    const s = getComputedStyle(el);
+    return { style: s.outlineStyle, width: s.outlineWidth, tag: el.getAttribute("role") ?? el.tagName };
+  });
+
+test("a held client's project: no Delete on its notes or files (AU23); arrow keys show the ring on every tab and menu item (AU15)", async ({
+  page,
+}) => {
+  // Its own client, project, note and file (sample, local database only), so the hold touches no other test's records; the file row has no stored
+  // object (the list never reads one) and is never opened. Its code and name sort after the sample clients, and it has a contact, so the tests that open
+  // "the first client" still find one with contacts.
+  const client = `cl-m74-hold-${run}`;
+  const project = `prj-m74-hold-${run}`;
+  const note = `note-m74-hold-${run}`;
+  const file = `file-m74-hold-${run}`;
+  const t = Date.now();
+  d1(
+    [
+      `INSERT INTO clients (id, code, legal_name, display_name, type, country, gst_status, state_code, currency, billing_address, created_at, updated_at)
+        VALUES ('${client}', 'ZM-${run}', 'Zinnia Mills Private Limited (sample)', 'Zinnia Mills (sample)', 'business', 'IN', 'unregistered', '19', 'INR',
+          '{"line1":"9 Sample Garden Road","city":"Kolkata","state":"West Bengal","stateCode":"19","postalCode":"700001","country":"IN"}', ${t}, ${t});`,
+      `INSERT INTO contacts (id, client_id, name, email, is_primary) VALUES ('ct-m74-hold-${run}', '${client}', 'Neha Bose (sample)',
+        'neha.${run.toLowerCase()}@example.test', 1);`,
+      `INSERT INTO projects (id, code, client_id, name, currency, status, created_at, updated_at)
+        VALUES ('${project}', 'PRJ-ZM-${run}', '${client}', 'Records archive for Zinnia Mills (sample)', 'INR', 'active', ${t}, ${t});`,
+      `INSERT INTO notes (id, client_id, project_id, visibility, body_md, created_at, updated_at)
+        VALUES ('${note}', '${client}', '${project}', 'internal', 'Kick-off notes for the archive (sample).', ${t}, ${t});`,
+      `INSERT INTO files (id, client_id, project_id, r2_key, filename, mime, size, sha256, shared, created_at)
+        VALUES ('${file}', '${client}', '${project}', 'files/${client}/${file}', 'archive-scope-sample.pdf', 'application/pdf', 1024,
+          '${"0".repeat(64)}', 0, ${t});`,
+    ].join("\n"),
+  );
+  await stepUp(page);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const hold = (on: boolean) =>
+    page.request.post("/api/v1/legal-holds", {
+      headers,
+      data: {
+        entityType: "client",
+        entityId: client,
+        on,
+        reason: on ? "Records kept for a dispute (sample)." : "Dispute settled (sample).",
+      },
+    });
+  const noteActions = () => page.getByRole("button", { name: /^Actions for the note by / });
+  const fileDelete = () => page.getByRole("button", { name: "Delete archive-scope-sample.pdf" });
+
+  // AU15: the tabs move focus by the arrow keys (manual activation), and the focused, unselected tab draws the 2 px ring
+  await page.goto(`/projects/${project}?tab=notes`);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Records archive for Zinnia Mills (sample)" }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Notes" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Files" })).toBeFocused();
+  await expect(page.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "false");
+  const ring = await focusedOutline(page);
+  expect(ring.style, "the unselected tab's ring").not.toBe("none");
+  expect(ring.width).toBe("2px");
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("tab", { name: "Notes" })).toBeFocused();
+
+  // not held: the note's menu offers Delete, and so does the file; the menu items draw the ring as the arrow keys reach them
+  await noteActions().focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("menuitem", { name: "Delete" })).toBeFocused();
+  expect((await focusedOutline(page)).style, "the menu item's ring").not.toBe("none");
+  await page.keyboard.press("Escape");
+  await page.getByRole("tab", { name: "Files" }).click();
+  await expect(fileDelete()).toBeVisible();
+
+  const set = await hold(true);
+  expect(set.ok(), await set.text()).toBe(true);
+  try {
+    // held: the banner's rule stands, and neither list offers Delete (the server would answer 409 legal_hold)
+    await page.goto(`/projects/${project}?tab=notes`);
+    await expect(page.getByText("Kick-off notes for the archive (sample).")).toBeVisible();
+    await noteActions().click();
+    await expect(page.getByRole("menuitem", { name: "Edit" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.getByRole("tab", { name: "Files" }).click();
+    await expect(page.getByText("archive-scope-sample.pdf", { exact: true }).first()).toBeVisible();
+    await expect(fileDelete()).toHaveCount(0);
+    await shot(page, "held-project-files-1280");
+    // and the client page's notes (on its overview) and Files tab say the same
+    await page.goto(`/clients/${client}`);
+    await expect(page.getByText("Kick-off notes for the archive (sample).")).toBeVisible();
+    await noteActions().click();
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+    await page.goto(`/clients/${client}?tab=files`);
+    await expect(page.getByText("archive-scope-sample.pdf", { exact: true }).first()).toBeVisible();
+    await expect(fileDelete()).toHaveCount(0);
+  } finally {
+    const lifted = await hold(false);
+    expect(lifted.ok(), await lifted.text()).toBe(true);
+  }
+});
+
 test("Settings › Data retention: six figures, the trial report, real deletion on and off, the lift refused", async ({
   page,
 }) => {

@@ -182,11 +182,20 @@ function ProjectView(props: {
         ) : tab === "milestones" ? (
           <Milestones data={props.data} reload={props.reload} />
         ) : tab === "notes" ? (
-          <NotesPanel scope={scope} clientName={project.clientName} readOnly={props.data.clientAnonymised} />
+          <NotesPanel
+            scope={scope}
+            clientName={project.clientName}
+            readOnly={props.data.clientAnonymised}
+            held={props.data.clientLegalHold === true}
+          />
         ) : tab === "deed" ? (
           <DeedTab projectId={project.id} />
         ) : (
-          <FilesPanel scope={scope} readOnly={props.data.clientAnonymised} />
+          <FilesPanel
+            scope={scope}
+            readOnly={props.data.clientAnonymised}
+            held={props.data.clientLegalHold === true}
+          />
         )}
       </Tabs>
     </>

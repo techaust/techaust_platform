@@ -405,6 +405,7 @@ function LeadView({
         title={lead.name}
         crumbs={CRUMBS}
         status={<StagePill stage={lead.stage} reason={lead.lostReason} />}
+        wideActions
         action={
           canWrite || canDataTools ? (
             <>

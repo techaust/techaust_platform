@@ -15,7 +15,13 @@ import { issueDateOf, issueFyOf } from "@techaust/core/invoices";
 import { maxNumber, sqlPrintfPattern } from "@techaust/core/numbering";
 import type { ReceiptRenderMessage } from "@techaust/core/pdf-jobs";
 import { receiptHeaderOf, receiptIdOf, receiptSealOf } from "@techaust/core/receipts";
-import { RECEIPT_ALLOCATIONS_SQL, RECEIPT_PAYMENT_SQL, receiptIssueStatements } from "@techaust/db/receipts";
+import {
+  RECEIPT_ALLOCATIONS_SQL,
+  RECEIPT_PAYMENT_SQL,
+  RECEIPT_SERIES_SQL,
+  receiptFailureStatements,
+  receiptIssueStatements,
+} from "@techaust/db/receipts";
 import { Hono } from "hono/tiny";
 import * as z from "zod/mini";
 import { clientGoneSql, storedPdfRefusal } from "./anonymised.ts";
@@ -44,6 +50,15 @@ type PayRow = {
   refunded_minor: number;
   receipt_exists: number | null;
 };
+
+/**
+ * M6–M7 audit AU3: the owners' bells when the sweep leaves a payment out after RECEIPT_ISSUE_MAX_FAILURES refused issues (staff lines, the lead's under the owner's
+ * delegation; drafted in docs/07-content-appendix/ZT-audit-money.md lines 4 and 5).
+ */
+export const RECEIPT_SERIES_FULL_BELL =
+  "Receipts can't be numbered: the receipt series is full for this year. Widen its format in Settings › Numbering.";
+export const RECEIPT_BLOCKED_BELL =
+  "A payment's receipt couldn't be issued after 3 tries. Open the payment to check it.";
 
 const numberOf = async (db: D1Database, receiptId: string) =>
   (
@@ -131,7 +146,23 @@ export async function issueReceipt(
     },
     issuedOn,
   });
-  if (!header.ok) return { result: "not_eligible", why: header.code };
+  const numberingVersion = numRow?.version ?? null;
+  // M6–M7 audit AU3 (B0 7, B6 L4): a refusal of a payment that is due is counted, so the sweep tries it after the others and leaves it out after
+  // RECEIPT_ISSUE_MAX_FAILURES (one owners' bell then); `series_full` has its own reason and line.
+  const refused = async (why: string): Promise<IssueReceiptResult> => {
+    await db.batch(
+      receiptFailureStatements(db, {
+        paymentId,
+        reason: why,
+        numberingVersion,
+        now,
+        bellTitle: why === "series_full" ? RECEIPT_SERIES_FULL_BELL : RECEIPT_BLOCKED_BELL,
+        link: "/payments",
+      }),
+    );
+    return { result: "not_eligible", why };
+  };
+  if (!header.ok) return refused(header.code);
   const pattern = sqlPrintfPattern(format);
   const st = receiptIssueStatements(db, {
     paymentId,
@@ -140,7 +171,7 @@ export async function issueReceipt(
     pattern: pattern.pattern,
     argOrder: pattern.argOrder,
     maxNumber: maxNumber(format),
-    numberingVersion: numRow?.version ?? null,
+    numberingVersion,
     issueDate: issuedOn,
     headerExtras: JSON.stringify({ receiptOf: header.value }),
     sealSha256: await receiptSealOf(header.value),
@@ -161,12 +192,25 @@ export async function issueReceipt(
     });
   } catch (e) {
     // A race (the primary key) or a refused freeze (`issue_result`): nothing was written, no number burned. Re-read.
-    if (!/UNIQUE|issue_result|documents_receipt|PRIMARY/.test(String(e) + String((e as Error)?.cause ?? "")))
+    // M6–M7 audit AU3 (B0 7): `issue_result_check`'s own words ("issue did not freeze…": the INSERT's WHERE refused it, a full series among them) were not
+    // matched here, so a full series threw and the sweep's message ended in the dead-letter queue every hour; now it is a counted refusal like the others.
+    if (
+      !/UNIQUE|issue_result|issue did not freeze|documents_receipt|PRIMARY/.test(
+        String(e) + String((e as Error)?.cause ?? ""),
+      )
+    )
       throw e;
   }
   const number = await numberOf(db, receiptId);
-  if (!done)
-    return number ? { result: "already_issued", number } : { result: "not_eligible", why: "changed" };
+  if (!done) {
+    if (number) return { result: "already_issued", number };
+    // The INSERT's WHERE refused it: a series with no room left (`series_full`), else something it was read from changed in between (`changed`).
+    const counter = await db
+      .prepare("SELECT next_no FROM doc_counters WHERE series = ?1 AND fy = ?2")
+      .bind(RECEIPT_SERIES_SQL, issueFyOf(now))
+      .first<{ next_no: number }>();
+    return refused(counter && counter.next_no > maxNumber(format) ? "series_full" : "changed");
+  }
   await enqueueReceiptPdf(env, receiptId);
   return number ? { result: "issued", number } : { result: "issued" };
 }

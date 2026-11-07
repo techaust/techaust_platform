@@ -85,8 +85,20 @@ input[type="date"]:focus-within {
   outline-offset: 2px;
 }
 
-/* Headings take focus only programmatically (a step change), to move the screen reader; no ring for those. */
-[tabindex="-1"]:focus {
+/* Headings, dialog titles, notices and regions take focus only programmatically (a step change), to move the screen reader; no
+   ring for those. Controls also carry tabindex="-1" in a roving group (a tablist's unselected tabs, a menu's items) and are reached
+   by the arrow keys, so they keep the ring (audit AU15, WCAG 2.4.7). */
+[tabindex="-1"]:not(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"]
+):focus {
   outline: none;
 }
 

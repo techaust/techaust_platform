@@ -47,7 +47,7 @@ import {
   type UsageRaw,
 } from "@techaust/db/care";
 import { headerExtrasJson, invoiceSealOf } from "@techaust/db/documents";
-import { invoiceIssueStatements, invoiceSendStatements } from "@techaust/db/issue";
+import { invoiceIssueStatements, invoiceSendStatements, NOT_STOPPED_SQL } from "@techaust/db/issue";
 import { type CareOf, careView } from "./care-authority.ts";
 import { blockerCodesOf, CARE_OF_SQL } from "./care-blockers.ts";
 import { enqueuePdf } from "./document-events.ts";
@@ -90,11 +90,12 @@ const bellTitle = {
     reasons.includes("usd_needs_fx")
       ? `Care invoice draft for ${client} needs the exchange rate before it can be issued.`
       : `Care invoice draft for ${client} (${periodWords(period)}) is ready to check.`,
-  // "Care invoice {number} for {client} was issued and emailed." (the number is put between the two parts by SQL, so it is right in the batch that issued the invoice)
+  // "Care invoice {number} for {client} was issued and emailed." (the number is put between the two parts by SQL, so it is right in the batch that issued the invoice);
+  // not emailed: the lead's line of the full audit (AU43), which names every reason a billing contact can't receive it (AU19).
   issuedHead: `Care invoice `,
   issuedTail: (client: string, notEmailed: boolean) =>
     notEmailed
-      ? ` for ${client} was issued, but no billing contact has portal access, so it wasn't emailed.`
+      ? ` for ${client} was issued, but no billing contact can receive it (they need portal access, finance access and an address that isn't stopped).`
       : ` for ${client} was issued and emailed.`,
   // "{client}'s care plan has an unbilled period ({period}). Invoice it by hand." (Q51)
   missedPeriod: (client: string, period: Period) =>
@@ -147,8 +148,10 @@ const PLAN_FACTS_SQL = `SELECT p.id, p.client_id, p.last_billed_period, k.care_a
 /** Every terms row of the plan with the role of its author (the automatic issue needs the terms an OWNER wrote). `?1` plan id. */
 const TERMS_AUTHORS_SQL =
   "SELECT t.id, u.role AS author_role FROM care_plan_terms t JOIN staff_users u ON u.id = t.created_by WHERE t.care_plan_id = ?1";
-const CONTACTS_COLS =
-  "id, name, email, anonymised_at, updated_at, is_billing, is_primary, portal_access, can_see_finance FROM contacts";
+// Full audit M6–M7 AU19 (B4 M1): `stopped` 1 when emails to the address are stopped (a bounce, a spam report, by hand); the erased form (`h:` + keyed hash)
+// needs the erasure key, which this Worker never holds (the lead's decision, full audit AU41), so the email consumer stays its guard (it skips and rings).
+const CONTACTS_COLS = `id, name, email, anonymised_at, updated_at, is_billing, is_primary, portal_access, can_see_finance,
+  NOT ${NOT_STOPPED_SQL("contacts.email", "NULL")} AS stopped FROM contacts`;
 const CONTACTS_ORDER = "anonymised_at IS NULL ORDER BY is_billing DESC, is_primary DESC, name, id LIMIT 10";
 /** The live contacts of the client of a plan (`?1` the plan id), billing first. */
 const CONTACTS_OF_PLAN_SQL = `SELECT ${CONTACTS_COLS} WHERE client_id = (SELECT client_id FROM care_plans WHERE id = ?1) AND ${CONTACTS_ORDER}`;
@@ -175,15 +178,24 @@ export type ContactRow = {
   is_primary: number;
   portal_access: number;
   can_see_finance: number;
+  /** AU19: emails to the address are stopped. */
+  stopped: number;
 };
 type CatalogueRow = { id: string; code: string; sac: string | null; gst_rate_bp: number | null };
 
-/** The billing contacts that can be emailed (portal access on), at most 5: the recipients of an automatic send. */
+/**
+ * The billing contacts that can be emailed (portal access on, finance, not anonymised and (AU19) emails to the address not stopped), at most 5: the
+ * recipients of an automatic send. None left: the invoice is issued without sends and the bell says it wasn't emailed (`notEmailed`).
+ */
 export const recipientsOf = (contacts: readonly ContactRow[]) =>
   contacts
     .filter(
       (k) =>
-        k.is_billing === 1 && k.portal_access === 1 && k.can_see_finance === 1 && k.anonymised_at === null,
+        k.is_billing === 1 &&
+        k.portal_access === 1 &&
+        k.can_see_finance === 1 &&
+        k.anonymised_at === null &&
+        k.stopped !== 1,
     )
     .slice(0, 5);
 

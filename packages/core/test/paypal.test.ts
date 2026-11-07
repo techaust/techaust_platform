@@ -538,7 +538,11 @@ describe("judgePayPalCapture [ADM-PAY-04, run file C steps 4 to 8; 08-C RA-38]",
     expect(v(order(), capture({ status: "DECLINED" }))).toBe("capture_denied");
     expect(v(order(), capture({ status: "FAILED" }))).toBe("capture_denied");
     expect(v(order(), capture({ status: "REFUNDED" }))).toBe("capture_refunded");
-    expect(v(order(), capture({ status: "PARTIALLY_REFUNDED" }))).toBe("capture_refunded");
+    // M6–M7 audit AU6 (B1 M1): refunded in part before we first settled it, after RA-38's country test.
+    expect(v(order(), capture({ status: "PARTIALLY_REFUNDED" }))).toBe("partly_refunded");
+    expect(
+      v(orderWith({ payer: { address: { country_code: "IN" } } }), capture({ status: "PARTIALLY_REFUNDED" })),
+    ).toBe("not_export_receipt");
     expect(v(order(), capture({ final_capture: false }))).toBe("not_final");
     expect(v(orderWith({ payer: { address: { country_code: "IN" } } }), capture())).toBe(
       "not_export_receipt",
@@ -598,7 +602,7 @@ describe("judgePayPalCapture [ADM-PAY-04, run file C steps 4 to 8; 08-C RA-38]",
   it("review part 1, finding 1: every verdict but `capture_refunded` is a stored review kind (`not_final` included)", () => {
     // Compile time: a review verdict is a review kind.
     const asKind = (v: PayPalReviewVerdict): ReviewKind => v;
-    const stored = PAYPAL_JUDGE_VERDICTS.filter((v) => v !== "capture_refunded");
+    const stored = PAYPAL_JUDGE_VERDICTS.filter((v) => v !== "capture_refunded" && v !== "partly_refunded");
     for (const v of stored) expect(REVIEW_KINDS).toContain(asKind(v));
     expect(REVIEW_KINDS).toContain("not_final");
     expect(REVIEW_KINDS).not.toContain("capture_refunded");

@@ -38,7 +38,27 @@ export type GatewayRefund = {
   /** Our `payment_refunds.id` as we sent it, when the gateway echoes it. */
   readonly ourId: string | null;
   readonly failureCode: string | null;
+  /**
+   * M6–M7 audit AU1: Stripe's `requires_action` (read as `pending`). AU36 (Settled by the lead on the safest reading, 2026-11-07): on a refund that had already
+   * succeeded the money can still reach the customer once they act, so it never reverses our refund (`reversalOf`); the caller opens a `refund_reversed` item at
+   * stage `requires_action` for the Owner instead (`awaitsAction`). Absent on every other answer.
+   */
+  readonly requiresAction?: true;
 };
+
+/**
+ * M6–M7 audit AU1 (B0 1; Researched 2026-11-07, docs.stripe.com/refunds "Failed refunds": a refund can fail after `succeeded`, up to 30 days later, when the
+ * bank returns the funds): a refund we hold as `succeeded` that the gateway now shows failed (Stripe `failed` or `canceled`) is reversed with this failure code;
+ * null: it still stands. Razorpay and PayPal take the same path if their answer ever says failed after success. AU36 (Settled by the lead on the safest reading,
+ * 2026-11-07): Stripe's `requires_action` after success never reverses it.
+ */
+export function reversalOf(g: GatewayRefund): string | null {
+  if (g.state === "failed") return g.failureCode ?? "gateway_failed";
+  return null;
+}
+
+/** AU36: a refund we hold as `succeeded` that Stripe now shows `requires_action`: no reversal, one item for the Owner (once per refund). */
+export const awaitsAction = (g: GatewayRefund): boolean => g.requiresAction === true && g.state !== "failed";
 
 /** Razorpay's refund entity (`POST /v1/payments/{id}/refund`, `GET /v1/refunds/{id}`, an item of `GET /v1/payments/{id}/refunds`), else null. */
 export function readRazorpayRefund(v: unknown): GatewayRefund | null {
@@ -83,6 +103,7 @@ export function readStripeRefund(v: unknown): GatewayRefund | null {
     ourId: ourId(md.techaust_refund),
     failureCode:
       state === "failed" ? (code(v.failure_reason) ?? `stripe_${String(v.status)}`.slice(0, 64)) : null,
+    ...(v.status === "requires_action" ? { requiresAction: true as const } : {}),
   };
 }
 
@@ -246,6 +267,20 @@ export const isRefundEventName = (provider: string, name: string): boolean =>
       : provider === "paypal"
         ? name === "PAYMENT.CAPTURE.REFUNDED"
         : false;
+
+/**
+ * M6–M7 audit AU61 (review L1): the stored refund events that can say a refund we hold as `succeeded` came back, so only these re-fetch it (AU1, AU36): Stripe's
+ * `refund.failed` and `refund.updated` (a later `failed`, `canceled` or `requires_action`), Razorpay's `refund.failed`. Every other event of a succeeded refund
+ * (Razorpay's `refund.created`/`refund.processed`, Stripe's `refund.created` and `charge.refunded`, PayPal's `PAYMENT.CAPTURE.REFUNDED`, the only PayPal refund
+ * event this branch reads: PayPal names no refund-failed event) is routine and closes quietly with no gateway call, so an unreachable gateway never retries and
+ * dead-letters a refund that is fine.
+ */
+export const mayReverseRefund = (provider: string, name: string): boolean =>
+  provider === "stripe"
+    ? name === "refund.failed" || name === "refund.updated"
+    : provider === "razorpay"
+      ? name === "refund.failed"
+      : false;
 
 /** For the warm-up (J): one made-up refund read per gateway and one event each; returns how many read (5). */
 export function warmRefundReaders(): number {

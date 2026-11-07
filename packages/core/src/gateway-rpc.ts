@@ -29,6 +29,11 @@ export type ProcessEventResult = {
    * (the client's email; its consumer re-checks every rule in SQL).
    */
   readonly refundNotify?: string;
+  /**
+   * M6–M7 audit AU1: a refund event showed this refund of ours, which had succeeded, failed at the gateway, and it was reversed: the jobs Worker enqueues
+   * `refund.reversed` for it (the client's email, held behind its copy gate until the owner approves 07-ZT).
+   */
+  readonly refundReversed?: string;
 };
 
 /**
@@ -163,6 +168,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 export function isProcessEventResult(v: unknown): v is ProcessEventResult {
   if (!isObj(v) || !(PROCESS_EVENT_RESULTS as readonly unknown[]).includes(v.result)) return false;
   if (v.refundNotify !== undefined && !isRpcId(v.refundNotify)) return false;
+  if (v.refundReversed !== undefined && !isRpcId(v.refundReversed)) return false;
   if (v.next === undefined) return true;
   return isObj(v.next) && v.next.kind === "gateway.advance" && isRpcId(v.next.paymentId);
 }

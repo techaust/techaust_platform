@@ -294,7 +294,7 @@ async function mailReceipt(env: Env, row: Row, r: ReceiptOf, key: string, now: n
     amount: formatMoney(money(r.amountMinor, r.currency)),
     date: received ? formatDate(received) : r.receivedOn,
     attached: attach ? "1" : "0",
-    url: `${portalBase(env)}/invoices`,
+    url: `${portalBase(env)}/receipts`, // full audit AU13 (B3 L1): the receipts page, where the receipt is listed
   };
   const messages: EmailMessage[] = contacts.map((c) => ({
     template: "receipt.sent",

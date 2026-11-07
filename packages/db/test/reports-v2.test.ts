@@ -77,9 +77,20 @@ const T = 1_700_000_000_000;
 
 const plan = async (sql: string, ...binds: unknown[]): Promise<string> =>
   (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, ...binds)).map((r) => r.detail).join("\n");
-/** A table scan (a SEARCH is fine): any of the tables these statements read, by name or alias. */
-const scansTable = (p: string) =>
-  /SCAN (documents|payments|payment_refunds|leads|clients|care_plans|d|p|f|l|c|n)\b(?! USING)/.test(p);
+/**
+ * A table scan (a SEARCH is fine): any of the tables these statements read, by name or alias. M6–M7 audit AU37, AU48: the one walk left out is
+ * `refundsOutSql`'s co-routine, aliased `fo` at every caller (its own two index SEARCHes are listed above it): exactly the line `SCAN fo`, and only when
+ * the plan has `CO-ROUTINE fo`. Any other `SCAN` of these names, another co-routine's included, is a table scan.
+ */
+const scansTable = (p: string) => {
+  const refundsOut = /CO-ROUTINE fo\b/.test(p);
+  return p.split("\n").some((line) => {
+    if (refundsOut && line.trim() === "SCAN fo") return false;
+    return /SCAN (documents|payments|payment_refunds|leads|clients|care_plans|d|p|f|fo|l|c|n)\b(?! USING)/.test(
+      line,
+    );
+  });
+};
 const rowsRead = async (sql: string, ...binds: unknown[]) =>
   (
     await env.DB.prepare(sql)

@@ -510,21 +510,22 @@ describe("portal-auth triggers (0006; POR-01, POR-02)", () => {
   });
 });
 
-describe("installed trigger migrations equal what src/triggers.ts generates", () => {
-  // Strip the leading "-- Hand-written" comment and collapse whitespace, so the comparison is about the SQL.
-  const norm = (sql: string) =>
-    sql
-      .replace(/^--[^\n]*\n/gm, "")
-      .replaceAll("--> statement-breakpoint", "")
-      .replaceAll(";", "")
-      .replace(/\s+/g, " ")
-      .trim();
+// The migration files as written, byte for byte (Vite's `?raw`; `test/env.d.ts`).
+const MIGRATION_TEXT = import.meta.glob("../migrations/*.sql", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+
+describe("installed trigger migrations equal what src/triggers.ts generates, byte for byte", () => {
+  // M6–M7 audit AU61 (review L3): the exact text, never whitespace-folded, so a shared piece that later sets reuse (0079's close rules in 0084) can't drift
+  // from the applied file without failing here (`scripts/write-triggers.ts` would otherwise rewrite it on regeneration).
   for (const set of Object.keys(TRIGGER_SETS) as (keyof typeof TRIGGER_SETS)[]) {
     it(`${set}`, () => {
-      const file = env.TEST_MIGRATIONS.find((m) => m.name.slice(5).replace(".sql", "") === set);
-      expect(file, `a migration NNNN_${set}.sql exists`).toBeDefined();
-      const installed = norm((file?.queries ?? []).join(" "));
-      const wanted = norm(triggerMigrationSql(set).replaceAll("\n--> statement-breakpoint\n", " "));
+      const path = Object.keys(MIGRATION_TEXT).find((p) => new RegExp(`/\\d{4}_${set}\\.sql$`).test(p));
+      expect(path, `a migration NNNN_${set}.sql exists`).toBeDefined();
+      const installed = MIGRATION_TEXT[path ?? ""] ?? "";
+      const wanted = triggerMigrationSql(set);
       // 0001 also holds the first issue guard (a view and a trigger), which migration 0007 replaces; the generator no
       // longer writes them, so for that one set the generated part is the start of the installed file.
       const same = set === "triggers" ? installed.startsWith(wanted) : installed === wanted;
