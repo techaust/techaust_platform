@@ -10,6 +10,7 @@
     "./audit": "./src/audit.ts",
     "./catalogue": "./src/catalogue.ts",
     "./bank": "./src/bank.ts",
+    "./body": "./src/body.ts",
     "./care": "./src/care.ts",
     "./care-billing": "./src/care-billing.ts",
     "./clients": "./src/clients.ts",

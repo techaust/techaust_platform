@@ -671,6 +671,51 @@ describe("AU2 (B0 2): the recon lists read one provider's range of payments_conf
     expect(at2.ids.sort()).toEqual(["au2-pay-00007", "au2-pay-01500"]);
     expect(at5.ids.sort()).toEqual(["au2-pay-00007", "au2-pay-01500"]);
     expect(at5.n).toBeGreaterThan(1);
+    // AU61 (review L7): the shared window (`boundedWindowSql`) answers exactly what recon's hand-written window did, row for row on every page of both lists
+    const handWritten = (provider: "razorpay" | "manual", cols: string, range: string, match: string) =>
+      `WITH w AS (SELECT p.id, p.received_on FROM payments p INDEXED BY payments_confirmed_provider
+       WHERE p.provider = '${provider}' AND p.status = 'confirmed' AND p.kind = 'payment'${range}
+         AND (p.received_on > ?2 OR (p.received_on = ?2 AND p.id > ?3))
+       ORDER BY p.received_on, p.id LIMIT ${RECON_SCAN}),
+     e AS (SELECT received_on AS scan_on, id AS scan_id, (SELECT count(*) FROM w) AS scanned FROM w ORDER BY received_on DESC, id DESC LIMIT 1)
+   SELECT s.*, e.scan_on, e.scan_id, e.scanned
+   FROM e LEFT JOIN (SELECT ${cols} FROM w CROSS JOIN payments p ON p.id = w.id WHERE ${match} ORDER BY p.received_on, p.id LIMIT 51) s ON 1
+   ORDER BY s.received_on, s.id`;
+    const twins: [string, string, unknown][] = [
+      [
+        MANUAL_UNTICKED_SQL,
+        handWritten(
+          "manual",
+          "p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.reference_norm",
+          "",
+          "p.verified_at < ?1 AND NOT EXISTS (SELECT 1 FROM bank_matches bm INDEXED BY bank_matches_payment WHERE bm.payment_id = p.id AND bm.removed_at IS NULL)",
+        ),
+        Number.MAX_SAFE_INTEGER,
+      ],
+      [
+        GATEWAY_UNSETTLED_SQL,
+        handWritten(
+          "razorpay",
+          "p.id, p.client_id, p.currency, p.amount_minor, p.received_on, p.provider_payment_id",
+          " AND p.received_on <= ?1",
+          "NOT EXISTS (SELECT 1 FROM settlement_items si INDEXED BY settlement_items_payment WHERE si.payment_id = p.id)",
+        ),
+        "9999-12-31",
+      ],
+    ];
+    for (const [now, was, first] of twins) {
+      let n = 0;
+      for (let k = "", id = ""; n < 100; ) {
+        const a = await env.DB.prepare(now).bind(first, k, id).all<CreditHeldScanRow>();
+        const b = await env.DB.prepare(was).bind(first, k, id).all<CreditHeldScanRow>();
+        expect(a.results, `page ${n}`).toEqual(b.results);
+        n++;
+        const p = creditHeldPage(a.results, RECON_SCAN);
+        if (!p.next) break;
+        k = p.next.k;
+        id = p.next.id;
+      }
+    }
     // the route: the window's own columns never leave it, and a full window hands on a cursor
     const page = (await json(await call("/reconciliation/unmatched?tab=manual", { cookie: o.cookie }))) as {
       items: J[];

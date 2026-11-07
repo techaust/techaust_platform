@@ -3,6 +3,7 @@
 // fresh (a token works once) and for THIS surface (the `action` the page asked for) on THIS host (`hostname`).
 // Everything fails closed: no token, an over-long token, a network error, a non-2xx answer or a non-JSON body is `false`.
 // The timeout signal is created inside the call, never at module level (a timer outside a request throws in Workers).
+import { readTextCapped } from "@techaust/core/body";
 
 export const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 /** A Turnstile token is at most 2,048 characters (Cloudflare's documented limit). */
@@ -32,36 +33,6 @@ type SiteverifyAnswer = { success?: unknown; action?: unknown; hostname?: unknow
 /** M6–M7 audit AU39: the most bytes of a siteverify answer we read. */
 export const SITEVERIFY_MAX_BYTES = 16 * 1024;
 
-/** The body as text through a byte cap (declared or streamed); over it: the rest cancelled, null. */
-async function readCapped(res: Response, max: number): Promise<string | null> {
-  const declared = Number(res.headers.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > max) {
-    await res.body?.cancel();
-    return null;
-  }
-  if (!res.body) return "";
-  const reader = res.body.getReader();
-  const parts: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel();
-      return null;
-    }
-    parts.push(value);
-  }
-  const bytes = new Uint8Array(size);
-  let at = 0;
-  for (const p of parts) {
-    bytes.set(p, at);
-    at += p.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
-}
-
 /** True only for a real, unused token issued for `action` on one of `hostnames`. */
 export async function verifyTurnstile(o: VerifyTurnstile): Promise<boolean> {
   if (!o.secret || o.token.length === 0 || o.token.length > MAX_TOKEN_LENGTH) return false;
@@ -82,7 +53,8 @@ export async function verifyTurnstile(o: VerifyTurnstile): Promise<boolean> {
       return false;
     }
     // AU39: the answer is read only up to `SITEVERIFY_MAX_BYTES` (siteverify answers a few hundred bytes); a longer one fails closed.
-    const text = await readCapped(res, SITEVERIFY_MAX_BYTES);
+    // AU61 (review L7): core's one capped reader, shared with the SES client and the gateway clients.
+    const text = await readTextCapped(res, SITEVERIFY_MAX_BYTES);
     if (text === null) return false;
     const r = JSON.parse(text) as SiteverifyAnswer;
     if (r === null || typeof r !== "object" || r.success !== true) return false;

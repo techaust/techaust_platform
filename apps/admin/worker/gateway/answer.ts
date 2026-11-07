@@ -1,6 +1,7 @@
 // How the gateway clients read an answer (M6–M7 audit AU7 L2, L3; run file docs/runs/full-audit-m6-m7.md B1): every call that carries our credentials is sent
 // with `redirect: "manual"` (a 3xx is never followed to another host with the Authorization header; it reads as `bad_answer`), and the body is read as JSON
 // only up to `GATEWAY_ANSWER_MAX_BYTES`, streamed, so an unexpectedly large answer can't fill the isolate's memory.
+import { readTextCapped } from "@techaust/core/body";
 
 /** The most bytes of one gateway answer we read (256 KiB: Razorpay's, Stripe's and PayPal's largest objects we fetch are a few KiB). */
 export const GATEWAY_ANSWER_MAX_BYTES = 256 * 1024;
@@ -16,41 +17,22 @@ export async function readJsonCapped(
   res: Response,
   max: number = GATEWAY_ANSWER_MAX_BYTES,
 ): Promise<{ ok: true; value: unknown } | { ok: false }> {
-  const declared = Number(res.headers?.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > max) {
-    await res.body?.cancel();
-    return { ok: false };
-  }
   // No stream to read: the start-up dry run's Response-shaped answers (global scope refuses a Response with a body: warm-rpc.ts) keep their small body in
-  // memory behind `json()`; a real Response with no body fails `json()`, which reads as not JSON.
+  // memory behind `json()`; a real Response with no body fails `json()`, which reads as not JSON. A declared length over the cap is refused first.
   if (!res.body) {
+    const declared = Number(res.headers?.get("content-length") ?? "");
+    if (Number.isFinite(declared) && declared > max) return { ok: false };
     try {
       return { ok: true, value: (await res.json()) as unknown };
     } catch {
       return { ok: false };
     }
   }
-  const reader = res.body.getReader();
-  const parts: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel();
-      return { ok: false };
-    }
-    parts.push(value);
-  }
-  const bytes = new Uint8Array(size);
-  let at = 0;
-  for (const p of parts) {
-    bytes.set(p, at);
-    at += p.byteLength;
-  }
+  // AU61 (review L7): the one capped reader shared with the SES client and the Turnstile check (core `readTextCapped`).
+  const text = await readTextCapped(res, max);
+  if (text === null) return { ok: false };
   try {
-    return { ok: true, value: JSON.parse(new TextDecoder().decode(bytes)) as unknown };
+    return { ok: true, value: JSON.parse(text) as unknown };
   } catch {
     return { ok: false };
   }

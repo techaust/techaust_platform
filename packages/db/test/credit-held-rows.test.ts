@@ -12,6 +12,7 @@ import {
   creditHeldPage,
   creditHeldSql,
 } from "../src/refunds.ts";
+import { overpaymentAdvanceAtSql, paymentFreeAtSql, paymentNetAtSql } from "../src/sql-rules.ts";
 import { mkClientRow, mkMember } from "./billing-helpers.ts";
 import { all, run } from "./helpers.ts";
 
@@ -137,5 +138,45 @@ describe("CREDIT_HELD_SQL at 2,000 and 5,000 confirmed payments [L19, AU2, RA-41
     const small = await every(creditHeldSql(50), 50);
     expect(small.pages).toBeGreaterThan(100);
     expect(small.ids.sort()).toEqual((await everyUnbounded()).sort());
+  });
+
+  it("AU61 (review L7): the shared window (`boundedWindowSql`) answers exactly what the hand-written window did, row for row on every page", async () => {
+    // The window as it was written before AU61 (kept here as the twin; the shared builder replaced it).
+    const handWritten = (
+      scan: number,
+    ) => `WITH w AS (SELECT p.id, p.received_on FROM payments p INDEXED BY payments_confirmed
+       WHERE p.status = 'confirmed' AND p.received_on <= ?2 AND (p.received_on > ?3 OR (p.received_on = ?3 AND p.id > ?4))
+       ORDER BY p.received_on, p.id LIMIT ${scan}),
+     e AS (SELECT received_on AS scan_on, id AS scan_id, (SELECT count(*) FROM w) AS scanned FROM w ORDER BY received_on DESC, id DESC LIMIT 1)
+   SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
+     s.held_since_at, s.confirmed_after, e.scan_on, e.scan_id, e.scanned
+   FROM e LEFT JOIN (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1", { p: "p", day: "?2" })} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
+         (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at,
+         p.verified_at > ?1 AS confirmed_after
+       FROM w CROSS JOIN payments p ON p.id = w.id
+       WHERE p.kind = 'payment' AND ${overpaymentAdvanceAtSql("p", "?1", "?2", "?5")}
+       ORDER BY p.received_on, p.id LIMIT 51) s ON 1
+   LEFT JOIN clients k ON k.id = s.client_id
+   ORDER BY s.received_on, s.id`;
+    for (const scan of [CREDIT_HELD_SCAN, 50]) {
+      let pages = 0;
+      for (let k = "", id = ""; pages < 200; ) {
+        const binds = [AT, DAY, k, id, 100_000];
+        const now = await env.DB.prepare(creditHeldSql(scan))
+          .bind(...binds)
+          .all<Held>();
+        const was = await env.DB.prepare(handWritten(scan))
+          .bind(...binds)
+          .all<Held>();
+        expect(Object.keys(now.results[0] ?? {})).toEqual(Object.keys(was.results[0] ?? {}));
+        expect(now.results, `scan ${scan}, page ${pages}`).toEqual(was.results);
+        pages++;
+        const p = creditHeldPage(now.results, scan);
+        if (!p.next) break;
+        k = p.next.k;
+        id = p.next.id;
+      }
+      expect(pages).toBeGreaterThan(1);
+    }
   });
 });

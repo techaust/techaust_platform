@@ -346,8 +346,8 @@ const listQuery = z.extend(paymentsListQuery, { after: z.optional(z.string().che
  * One page of the list, each variant read through an index (docs/05 rule: index every filter): a client's entries through `payments_client` (newest received
  * first); the pending ones through `payments_pending` (oldest recorded first: the Owner's "Payments to check", 07-ZH line 4); the confirmed ones through
  * `payments_confirmed` (newest received first); all of them (no status, M7.3 C8) through `payments_received` (newest received first); a rejected or withdrawn
- * filter in the table's own order, newest written first (those entries are rare).
- * Returns the SQL and the name of its sort key, for the cursor.
+ * filter through `payments_status_received` (M6–M7 audit AU2, newest received first); "Proof awaited" through `payments_proof_awaited`. Every cursor is the
+ * last row's sort key and id (no rowid). Returns the SQL and the name of its sort key, for the cursor.
  */
 export function paymentListSql(f: {
   client: boolean;
@@ -421,7 +421,7 @@ export function paymentListSql(f: {
   }
   if (cursor) where.push(cursor);
   return {
-    sql: `SELECT ${PAYMENT_COLS}, p.rowid AS rid FROM ${from} JOIN clients c ON c.id = p.client_id${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order} LIMIT ${PAGE + 1}`,
+    sql: `SELECT ${PAYMENT_COLS} FROM ${from} JOIN clients c ON c.id = p.client_id${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY ${order} LIMIT ${PAGE + 1}`,
     key,
   };
 }
@@ -525,7 +525,7 @@ export const payments = new Hono<AppEnv>()
         ...(q.to !== undefined ? [q.to] : []),
         ...cursorBinds,
       )
-      .all<PaymentRow & { rid: number }>();
+      .all<PaymentRow>();
     const page = results.slice(0, PAGE);
     const last = page.at(-1);
     const next =

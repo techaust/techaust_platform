@@ -24,7 +24,7 @@ export const istDayEndMsSql = (day: string): string =>
  * M6–M7 audit AU37 (Settled by the lead on the safest reading, 2026-11-07 (08-C RA-41)): refund row `f` counts as gone out at instant `at` (an SQL expression, UTC
  * ms, exclusive: the first instant AFTER the period) when it succeeded, or when it had succeeded and came back only at or after `at` (`reversed_at`, set once by
  * the reversal, which keeps `settled_on` and `settled_at`). So a period that ended before the refund came back keeps it, and filed figures never move. A reader
- * through the partial index `payment_refunds_settled` (succeeded only) adds the reversed ones through `reversedRefundsSql`.
+ * through the partial index `payment_refunds_settled` (succeeded only) adds the reversed ones through `refundsOutSql`'s second branch.
  */
 export const refundOutAtSql = (f: string, at: string): string =>
   `(${f}.status = 'succeeded' OR (${f}.status = 'failed' AND ${f}.reversed_at IS NOT NULL AND ${f}.reversed_at >= ${at}))`;

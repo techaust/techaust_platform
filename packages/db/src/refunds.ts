@@ -409,22 +409,48 @@ export const CREDIT_HELD_SCAN = 1_000;
  * route goes on from the 51st match, else from the window's end while the window was full (`scanned` = `CREDIT_HELD_SCAN`), else it is done: the pages together
  * hold exactly the unbounded answer (a db test pages both).
  */
-export const creditHeldSql = (
-  scan: number,
-): string => `WITH w AS (SELECT p.id, p.received_on FROM payments p INDEXED BY payments_confirmed
-       WHERE p.status = 'confirmed' AND p.received_on <= ?2 AND (p.received_on > ?3 OR (p.received_on = ?3 AND p.id > ?4))
-       ORDER BY p.received_on, p.id LIMIT ${scan}),
-     e AS (SELECT received_on AS scan_on, id AS scan_id, (SELECT count(*) FROM w) AS scanned FROM w ORDER BY received_on DESC, id DESC LIMIT 1)
-   SELECT s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit,
-     s.held_since_at, s.confirmed_after, e.scan_on, e.scan_id, e.scanned
-   FROM e LEFT JOIN (SELECT p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1", { p: "p", day: "?2" })} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
+export const creditHeldSql = (scan: number): string =>
+  boundedWindowSql({
+    from: "payments p INDEXED BY payments_confirmed",
+    window: "p.status = 'confirmed' AND p.received_on <= ?2",
+    after: ["?3", "?4"],
+    scan,
+    cols: `p.id, p.client_id, p.currency, p.received_on, p.amount_minor, ${paymentNetAtSql("p.id", "?1", { p: "p", day: "?2" })} AS net, ${paymentFreeAtSql("p", "?1", "?2")} AS credit,
          (SELECT max(hs.created_at) FROM payment_allocations hs INDEXED BY payment_allocations_payment WHERE hs.payment_id = p.id AND hs.created_at <= ?1) AS held_since_at,
-         p.verified_at > ?1 AS confirmed_after
-       FROM w CROSS JOIN payments p ON p.id = w.id
-       WHERE p.kind = 'payment' AND ${overpaymentAdvanceAtSql("p", "?1", "?2", "?5")}
-       ORDER BY p.received_on, p.id LIMIT 51) s ON 1
-   LEFT JOIN clients k ON k.id = s.client_id
+         p.verified_at > ?1 AS confirmed_after`,
+    match: `p.kind = 'payment' AND ${overpaymentAdvanceAtSql("p", "?1", "?2", "?5")}`,
+    select:
+      "s.id, s.client_id, k.code AS client_code, k.display_name AS client_name, s.currency, s.received_on, s.amount_minor, s.net, s.credit, s.held_since_at, s.confirmed_after",
+    join: "LEFT JOIN clients k ON k.id = s.client_id",
+  });
+
+/**
+ * M6–M7 audit AU61 (review L7): the bounded window both paged payment lists share (`creditHeldSql` here, admin recon's unsettled and unticked lists). The
+ * window `w` is the next `scan` payments of `from` (aliased `p`) that `window` keeps, after the keyset `(received_on, id)` bound at `after`, oldest first; the
+ * page is the ones `match` keeps among them (`cols`, at most 51, oldest first), shaped by `select` (default every column) with an optional `join` (aliases
+ * `s` for the page, `e` for the window's end). Every row carries the window's last key and size (`scan_on`, `scan_id`, `scanned`); a window with no match
+ * answers ONE row of only those (its `id` NULL). `creditHeldPage` pages it: the pages together hold exactly what an unbounded read would.
+ */
+export const boundedWindowSql = (o: {
+  from: string;
+  window: string;
+  after: readonly [string, string];
+  scan: number;
+  cols: string;
+  match: string;
+  select?: string;
+  join?: string;
+}): string => {
+  const [on, id] = o.after;
+  return `WITH w AS (SELECT p.id, p.received_on FROM ${o.from}
+       WHERE ${o.window}
+         AND (p.received_on > ${on} OR (p.received_on = ${on} AND p.id > ${id}))
+       ORDER BY p.received_on, p.id LIMIT ${o.scan}),
+     e AS (SELECT received_on AS scan_on, id AS scan_id, (SELECT count(*) FROM w) AS scanned FROM w ORDER BY received_on DESC, id DESC LIMIT 1)
+   SELECT ${o.select ?? "s.*"}, e.scan_on, e.scan_id, e.scanned
+   FROM e LEFT JOIN (SELECT ${o.cols} FROM w CROSS JOIN payments p ON p.id = w.id WHERE ${o.match} ORDER BY p.received_on, p.id LIMIT 51) s ON 1${o.join ? `\n   ${o.join}` : ""}
    ORDER BY s.received_on, s.id`;
+};
 
 export const CREDIT_HELD_SQL = creditHeldSql(CREDIT_HELD_SCAN);
 

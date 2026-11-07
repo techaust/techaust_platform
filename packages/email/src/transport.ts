@@ -3,6 +3,7 @@
 //   sent      accepted (SES message id)
 //   permanent a 4xx other than throttling: log `failed` and acknowledge, retrying cannot help
 //   retry     throttling, 5xx, a network error or (M6–M7 audit AU39) a 3xx, never followed: let the queue redeliver
+import { readTextCapped } from "@techaust/core/body";
 import { AwsClient, AwsV4Signer } from "aws4fetch";
 import { allowedHeaders, emailTags, formatAddress, headerValue } from "./headers.ts";
 
@@ -71,36 +72,9 @@ export const SES_ANSWER_MAX_BYTES = 16 * 1024;
 
 /**
  * M6–M7 audit AU39: a response body as text, read through a byte cap (streamed; a declared or streamed size over `max` cancels the rest and answers null), so
- * an unexpected answer can't fill the isolate's memory. Never throws for an over-long body.
+ * an unexpected answer can't fill the isolate's memory. Never throws for an over-long body. AU61 (review L7): core's one shared reader, re-exported here.
  */
-export async function readTextCapped(res: Response, max: number): Promise<string | null> {
-  const declared = Number(res.headers.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > max) {
-    await res.body?.cancel();
-    return null;
-  }
-  if (!res.body) return "";
-  const reader = res.body.getReader();
-  const parts: Uint8Array[] = [];
-  let size = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > max) {
-      await reader.cancel();
-      return null;
-    }
-    parts.push(value);
-  }
-  const bytes = new Uint8Array(size);
-  let at = 0;
-  for (const p of parts) {
-    bytes.set(p, at);
-    at += p.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
-}
+export { readTextCapped };
 
 const THROTTLE_CODES = [
   "Throttling",

@@ -12,6 +12,8 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
+  /* AU61 (review L5): the width of the faded edges below; the frame (and the browser's own focus scroll) keeps a focused or open link clear of them. */
+  scroll-padding-inline: var(--space-10);
 }
 
 .report-nav ul {

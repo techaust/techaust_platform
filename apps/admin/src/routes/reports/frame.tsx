@@ -5,10 +5,21 @@ import { type ReactNode, useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router";
 import { PageHeader } from "../../components/display.tsx";
 import { allowed } from "../../lib/access.ts";
-import { nearestScrollLeft, REPORTS, REPORTS_COPY } from "../../lib/reports.ts";
+import { REPORTS, REPORTS_COPY, revealScrollLeft } from "../../lib/reports.ts";
 import { useUser } from "../../session.tsx";
 
 export const CRUMBS = [{ label: REPORTS_COPY.group, to: "/reports" }];
+
+/**
+ * Scroll the index row (never the page) so `link` sits fully in view, clear of the faded edges: their width is the row's `scroll-padding-inline` (reports.css).
+ * Nothing to do while the row doesn't overflow (from a tablet up it wraps).
+ */
+function reveal(row: HTMLElement, link: HTMLElement) {
+  if (row.scrollWidth <= row.clientWidth) return;
+  const left = link.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
+  const inset = Number.parseFloat(getComputedStyle(row).scrollPaddingLeft) || 0;
+  row.scrollLeft = revealScrollLeft(row.scrollLeft, row.clientWidth, left, link.offsetWidth, inset);
+}
 
 /** The page frame of one report: the title and lede, then the section's index of reports. */
 export function ReportFrame(props: { title: string; lede: ReactNode; children: ReactNode }) {
@@ -25,10 +36,21 @@ export function ReportFrame(props: { title: string; lede: ReactNode; children: R
   useEffect(() => {
     const row = nav.current;
     const link = row?.querySelector<HTMLElement>('[aria-current="page"]');
-    if (!row || !link || row.scrollWidth <= row.clientWidth) return;
-    const left = link.getBoundingClientRect().left - row.getBoundingClientRect().left + row.scrollLeft;
-    row.scrollLeft = nearestScrollLeft(row.scrollLeft, row.clientWidth, left, link.offsetWidth);
+    if (row && link) reveal(row, link);
   }, [pathname]);
+  // AU61 (review L5): a link reached with Tab is brought fully into view too, clear of the faded edges (the browser's own focus scroll stops at the edge,
+  // under the fade).
+  useEffect(() => {
+    const row = nav.current;
+    if (!row) return;
+    const focused = (e: FocusEvent) => {
+      const link =
+        e.target instanceof HTMLElement ? e.target.closest<HTMLElement>(".report-nav__link") : null;
+      if (link) reveal(row, link);
+    };
+    row.addEventListener("focusin", focused);
+    return () => row.removeEventListener("focusin", focused);
+  }, []);
   // AU22 (B4 L4): which edges of a scrolling index hide more reports (`data-more`, the CSS fades those edges); none once the index wraps (no overflow).
   useEffect(() => {
     const row = nav.current;

@@ -19,6 +19,7 @@ import {
   BANK_MATCH_BY_ID_SQL,
   bankMatchRemoveStatement,
   bankMatchStatement,
+  boundedWindowSql,
   type CreditHeldScanRow,
   creditHeldPage,
   SETTLEMENTS_SQL,
@@ -134,14 +135,15 @@ export const RECON_SCAN = 1_000;
  * exactly what an unbounded read would (a test compares them). At 5,000 bank payments the unbounded manual list read 10,000 rows.
  */
 const windowSql = (provider: "razorpay" | "manual", cols: string, range: string, match: string) =>
-  `WITH w AS (SELECT p.id, p.received_on FROM payments p INDEXED BY payments_confirmed_provider
-       WHERE p.provider = '${provider}' AND p.status = 'confirmed' AND p.kind = 'payment'${range}
-         AND (p.received_on > ?2 OR (p.received_on = ?2 AND p.id > ?3))
-       ORDER BY p.received_on, p.id LIMIT ${RECON_SCAN}),
-     e AS (SELECT received_on AS scan_on, id AS scan_id, (SELECT count(*) FROM w) AS scanned FROM w ORDER BY received_on DESC, id DESC LIMIT 1)
-   SELECT s.*, e.scan_on, e.scan_id, e.scanned
-   FROM e LEFT JOIN (SELECT ${cols} FROM w CROSS JOIN payments p ON p.id = w.id WHERE ${match} ORDER BY p.received_on, p.id LIMIT 51) s ON 1
-   ORDER BY s.received_on, s.id`;
+  // AU61 (review L7): the window is the one `creditHeldSql` uses (`boundedWindowSql`, `@techaust/db/refunds`).
+  boundedWindowSql({
+    from: "payments p INDEXED BY payments_confirmed_provider",
+    window: `p.provider = '${provider}' AND p.status = 'confirmed' AND p.kind = 'payment'${range}`,
+    after: ["?2", "?3"],
+    scan: RECON_SCAN,
+    cols,
+    match,
+  });
 
 /** Razorpay payments 5 or more days old (`?1` the last received day) that no settlement item names, keyset `(received_on, id)` from `?2`/`?3` (AU2 window). */
 export const GATEWAY_UNSETTLED_SQL = windowSql(
