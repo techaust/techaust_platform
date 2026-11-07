@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fixtures } from "./fixtures.ts";
 import { ROUTES } from "./guard.ts";
 import { mkOffer } from "./offer-fixtures.ts";
-import { addressBindingOf } from "./rate-limit.ts";
+import { addressBindingOf, SESSION_LIMITED_PUBLIC } from "./rate-limit.ts";
 import { bodyOf, call, counted, countOf, sessionFor, siteverify, withEnv } from "./test-helpers.ts";
 
 const RATE_LIMITED_BODY = { code: "rate_limited", message: "Too many requests. Please try again later." };
@@ -27,13 +27,12 @@ function limiter(success: boolean) {
 const LIMITED = ROUTES.filter((r) => r.method === "POST" && addressBindingOf(r.path) !== null);
 
 describe("C2: the sign-in and emailed-link rows are limited per address, before any D1 work and before Turnstile [ASVS 2.4.1]", () => {
-  it("covers both sign-in rows, the sign-out, every /t/* row and the PayPal return (full audit AU13), and nothing else", () => {
+  it("covers both sign-in rows, every /t/* row and the PayPal return (full audit AU13), and nothing else; the sign-out is limited per session (AU55)", () => {
     expect(LIMITED.map((r) => r.path).sort()).toEqual(
       ROUTES.filter(
         (r) =>
           r.path === "/api/v1/auth/magic" ||
           r.path === "/api/v1/auth/magic/verify" ||
-          r.path === "/api/v1/auth/logout" ||
           r.path === "/api/v1/pay/paypal/return" ||
           r.path.startsWith("/api/v1/t/"),
       )
@@ -42,15 +41,15 @@ describe("C2: the sign-in and emailed-link rows are limited per address, before 
     );
     expect(LIMITED.length).toBeGreaterThanOrEqual(12);
     expect(addressBindingOf("/api/v1/auth/magic")).toBe("RL_SIGNIN");
-    expect(addressBindingOf("/api/v1/auth/logout")).toBe("RL_SIGNIN");
+    expect(addressBindingOf("/api/v1/auth/logout")).toBeNull();
     expect(addressBindingOf("/api/v1/t/offer/accept")).toBe("RL_LINKS");
     expect(addressBindingOf("/api/v1/pay/paypal/return")).toBe("RL_LINKS");
-    // every public POST row that is not limited per address touches no D1 before its own checks: today, none is left
+    // every public POST row that is not limited per address is limited per session in its handler: today, only the sign-out
     expect(
       ROUTES.filter(
         (r) => r.method === "POST" && r.access === "public" && addressBindingOf(r.path) === null,
       ).map((r) => r.path),
-    ).toEqual([]);
+    ).toEqual([...SESSION_LIMITED_PUBLIC]);
   });
 
   for (const row of LIMITED) {
@@ -130,6 +129,52 @@ describe("L2: every signed-in request is limited per session, before any D1 work
     const e = withEnv(env, { RL_SESSION: allowing.l });
     expect((await call("/me", { cookie: s.cookie }, e)).status).toBe(200);
     expect((await call("/me", {}, e)).status).toBe(401);
+    expect(allowing.keys).toHaveLength(1);
+  });
+});
+
+describe("AU55: the sign-out is limited per session, never per address, and a 429 still signs the browser out", () => {
+  it("over the session's limit: 429 with the cleared cookie, no D1 call, the session left as it is; the key is the session's, never the address's", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const c = counted();
+    const refusing = limiter(false);
+    const busyAddress = limiter(false);
+    const before = await countOf("access_log");
+    const res = await call(
+      "/auth/logout",
+      { method: "POST", cookie: s.cookie, ip: "203.0.113.89" },
+      withEnv(c.env, { RL_SESSION: refusing.l, RL_SIGNIN: busyAddress.l }),
+    );
+    expect(res.status).toBe(429);
+    expect((await bodyOf(res)).error).toEqual(RATE_LIMITED_BODY);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    const cleared = res.headers.get("Set-Cookie") ?? "";
+    expect(cleared).toMatch(/__Host-ta_portal=;/);
+    expect(cleared).toMatch(/Max-Age=0/i);
+    expect(c.calls()).toBe(0);
+    expect(await countOf("access_log")).toBe(before);
+    expect(refusing.keys).toHaveLength(1);
+    expect(refusing.keys[0]).toMatch(/^s:[0-9a-f]{32}$/);
+    // the same bucket as the guard's per-session limit
+    const guarded = limiter(false);
+    await call("/me", { cookie: s.cookie }, withEnv(env, { RL_SESSION: guarded.l }));
+    expect(guarded.keys[0]).toBe(refusing.keys[0]);
+    // the address limiter is never asked, so a busy shared address can't stop a sign-out
+    expect(busyAddress.keys).toHaveLength(0);
+    expect(await countOf("client_sessions", "id = ? AND revoked_at IS NULL", s.sessionId)).toBe(1);
+  });
+
+  it("within the limit the sign-out ends the session; no cookie: the limiter is not asked and the answer is 204", async () => {
+    const f = await fixtures();
+    const s = await sessionFor(f.a.finance);
+    const allowing = limiter(true);
+    const e = withEnv(env, { RL_SESSION: allowing.l });
+    const res = await call("/auth/logout", { method: "POST", cookie: s.cookie }, e);
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Set-Cookie") ?? "").toMatch(/__Host-ta_portal=;/);
+    expect(await countOf("client_sessions", "id = ? AND revoked_at IS NOT NULL", s.sessionId)).toBe(1);
+    expect((await call("/auth/logout", { method: "POST" }, e)).status).toBe(204);
     expect(allowing.keys).toHaveLength(1);
   });
 });

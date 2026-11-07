@@ -8,13 +8,12 @@ import { createMiddleware } from "hono/factory";
 import { type AppEnv, type Ctx, rateLimited } from "./context.ts";
 
 /**
- * The public rows limited per address and the binding of each: the two sign-in rows and (full audit AU13, B3 L2) the sign-out, which reads and deletes the
- * session; every emailed-link row (`/t/...`) and (AU13) the PayPal return, which reads the checkout and may call the finance Worker. No public row that
- * touches D1 is left unlimited.
+ * The public rows limited per address and the binding of each: the two sign-in rows; every emailed-link row (`/t/...`) and (full audit AU13) the PayPal
+ * return, which reads the checkout and may call the finance Worker. The sign-out is limited per SESSION instead (`SESSION_LIMITED_PUBLIC`). No public row
+ * that touches D1 is left unlimited.
  */
 export function addressBindingOf(path: string): "RL_SIGNIN" | "RL_LINKS" | null {
-  if (path === "/api/v1/auth/magic" || path === "/api/v1/auth/magic/verify" || path === "/api/v1/auth/logout")
-    return "RL_SIGNIN";
+  if (path === "/api/v1/auth/magic" || path === "/api/v1/auth/magic/verify") return "RL_SIGNIN";
   if (path.startsWith("/api/v1/t/") || path === "/api/v1/pay/paypal/return") return "RL_LINKS";
   return null;
 }
@@ -28,6 +27,13 @@ export async function sessionAllowed(c: Ctx, sessionId: string): Promise<boolean
   if (!limiter || c.var.warm) return true;
   return underLimit(limiter, await rateLimitKey(c.env.PORTAL_KEY_PEPPER, "s", sessionId), "portal.session");
 }
+
+/**
+ * Full audit AU55 (early check of AF2, L1): the public rows limited per SESSION in their own handler (`RL_SESSION`, the same bucket as the guard's, keyed by
+ * the HMAC of the cookie's hash) rather than per address: the sign-out, so a busy shared address never stops a person signing out, and its 429 still clears
+ * the cookie. AU13 had it on `RL_SIGNIN` per address.
+ */
+export const SESSION_LIMITED_PUBLIC = ["/api/v1/auth/logout"] as const;
 
 /** The 429 of a limiter: the existing quota body, `Retry-After` one period. */
 export const tooMany = (c: Ctx) => rateLimited(c, RATE_LIMIT_RETRY_S);
