@@ -128,7 +128,14 @@ async function handleHook(req: Request, env: HookEnv, now: number, out: { o?: st
   // P7 A2.2: the hook now reads that mode too (`hookModeOf`: no D1 read while the flag is off), so only events of the mode Stripe runs in are kept: a test-mode
   // event in live mode, or a live one in test mode, is answered 200 with nothing written (`livemode_mismatch`). The finance judge still checks `livemode` on the
   // re-fetched session (`expectedLivemode`), so a mode changed between the hook and the judge never reaches the ledger either.
-  const modeKept = e.livemode === ((await hookModeOf(env, "stripe")) === "live");
+  // P7 early check (M1): a mode that can't be read is 503 `mode_unavailable` with nothing written (Stripe retries a non-2xx answer).
+  const mode = await hookModeOf(env, "stripe");
+  if (mode === null) {
+    out.o = "mode_unavailable";
+    logEvent("hook.mode_unavailable", { provider: "stripe" });
+    return refuse(503, "mode_unavailable");
+  }
+  const modeKept = e.livemode === (mode === "live");
   // M6.5 (L36; Step 0 point 4): a refund or dispute event carries no checkout marks (S4: Stripe copies no metadata to a Refund or a Dispute; ours sets its own
   // `techaust_refund` on the refunds we make). Kept with its whitelisted facts when its livemode is ours; the finance Worker matches the PaymentIntent to OUR
   // payment and ignores the rest (one D1 row per not-ours event on the shared account, accepted).

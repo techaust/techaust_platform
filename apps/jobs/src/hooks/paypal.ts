@@ -5,7 +5,8 @@
 //   2. `PAYPAL_WEBHOOK_ID` set (and never the simulator's literal `WEBHOOK_ID`: Step 0.4 row 21), else 503 `hook_unconfigured` (nothing written);
 //   3. the five `PAYPAL-*` headers present and well formed, the certificate URL on PayPal's own API host for the mode the hook runs in (`isPayPalCertUrl` with
 //      `mode`, P7 A2.1: `api.sandbox.paypal.com` in test, `api.paypal.com` in live; the mode is test while `PAYMENTS_LIVE_ALLOWED` is not "true", else Settings ›
-//      Gateways' PayPal mode: `hookModeOf`; the local simulator's only while `ENVIRONMENT` is "local"), else 400 `signature_missing` (NOT counted: anyone can
+//      Gateways' PayPal mode: `hookModeOf`, read only after the other headers are well formed, and a failed read is 503 `mode_unavailable` with nothing written
+//      and nothing counted; the local simulator's only while `ENVIRONMENT` is "local"), else 400 `signature_missing` (NOT counted: anyone can
 //      send no header; but counted when all five are present and well formed and only the certificate URL is refused, review part 1 finding 12);
 //   4. the certificate's key from this isolate's cache (at most 4 entries, each kept until the certificate's `notAfter` or 6 hours, whichever is sooner, and
 //      checked again on every hit), a failed URL remembered for 10 minutes (16 at most, the oldest forgotten first), at most 2 certificate fetches a minute
@@ -219,17 +220,21 @@ async function handleHook(
   const raw = await readCapped(req, HOOK_MAX_BYTES);
   if (raw === null) return refuse(413, "payload_too_large");
   const local = secretOf(env, "ENVIRONMENT") === "local";
-  // P7 A2.1: the certificate host follows the mode PayPal runs in (no D1 read while the go-live flag is off).
-  const mode = await hookModeOf(env, "paypal");
+  // P7 A2.1: the certificate host follows the mode PayPal runs in. Early check L2: asked for lazily, inside the verifier, only once the transmission id, time
+  // and signature are well formed (and no D1 read at all while the go-live flag is off), so an anonymous post never costs a read.
+  let mode: "test" | "live" | null = null;
   let certUrl: string | null = null;
   const a = await payPalHookBytes(raw, req.headers, env, {
     now,
     local,
-    mode,
+    modeOf: async () => {
+      mode = await hookModeOf(env, "paypal");
+      return mode;
+    },
     ids: uuidv7,
     keyFor: async (url) => {
       // `isPayPalCertUrl` already passed inside the verifier; checked again here so no other URL can ever be fetched.
-      if (!isPayPalCertUrl(url, { local, mode })) return null;
+      if (mode === null || !isPayPalCertUrl(url, { local, mode })) return null;
       certUrl = url;
       return certKeyFor(url, now, f);
     },
@@ -246,8 +251,11 @@ async function handleHook(
 export type PayPalHookDeps = {
   readonly now: number;
   readonly local: boolean;
-  /** P7 A2.1: the mode the hook runs in (only that mode's certificate host); absent: either host (the start-up dry run). */
-  readonly mode?: "test" | "live";
+  /**
+   * P7 A2.1: the mode the hook runs in (only that mode's certificate host), asked for lazily by the verifier after the cheap header checks (early check L2);
+   * null: it couldn't be read (503 `mode_unavailable`). Absent: either host (the start-up dry run).
+   */
+  readonly modeOf?: () => Promise<"test" | "live" | null>;
   /** `uuidv7` for every real call; the start-up dry run passes made-up ids (global scope refuses random values). */
   readonly ids: () => string;
   /**
@@ -295,13 +303,18 @@ export async function payPalHookBytes(
     webhookId: secretOf(env, "PAYPAL_WEBHOOK_ID"),
     keyFor: d.keyFor,
     local: d.local,
-    ...(d.mode ? { mode: d.mode } : {}),
+    ...(d.modeOf ? { modeOf: d.modeOf } : {}),
   });
   if (verdict === "webhook_id_invalid") return no(503, "hook_unconfigured");
   if (verdict === "signature_missing") return no(400, "signature_missing");
   if (verdict === "cert_unavailable") {
     logEvent("hook.cert_unavailable", { provider: "paypal" });
     return no(503, "cert_unavailable");
+  }
+  // P7 early check (M1): Settings › Gateways couldn't be read: 503 with nothing written and no failure counted (PayPal retries a non-2xx answer).
+  if (verdict === "mode_unavailable") {
+    logEvent("hook.mode_unavailable", { provider: "paypal" });
+    return no(503, "mode_unavailable", "mode_unavailable");
   }
   // Review part 1, finding 12: a signed post whose certificate URL we refuse is counted like a bad signature (the owners hear of it at 5), still answered
   // `signature_missing`. P7 A2.1: the certificate hosts follow the gateway's mode (`hookModeOf`).

@@ -60,7 +60,8 @@ export async function fetchSettlements(
 ): Promise<FetchSettlementsResult> {
   const q = reconQueryOf(a.day, a.skip);
   if (!q) return { result: "retry" };
-  const api = razorpayOf(env, await gatewayModeOf(env.DB, env));
+  // P7 (the lead's decision on finding 5): Settings' own mode, never the A2.3 test fallback (live while the flag is off stays `live_not_allowed`).
+  const api = razorpayOf(env, await gatewayModeOf(env.DB));
   // Early check 2, finding 10: no Razorpay key here is not a failure to retry (the jobs Worker acknowledges it).
   if (!api || api.blocked === "unconfigured") return { result: "unconfigured" };
   if (api.blocked === "live_not_allowed") return { result: "live_not_allowed" };
@@ -316,7 +317,7 @@ export const reconciliation = new Hono<AppEnv>()
       .bind(now - RECON_FETCH_GAP_MS)
       .first();
     if (recent) return err(c, TOO_SOON, 429);
-    const api = razorpayOf(c.env, await gatewayModeOf(c.env.DB, c.env));
+    const api = razorpayOf(c.env, await gatewayModeOf(c.env.DB));
     if (!api || api.blocked === "unconfigured") return err(c, GATEWAY_UNAVAILABLE, 503);
     if (api.blocked === "live_not_allowed") return err(c, LIVE_NOT_ALLOWED, 503);
     const r = await fetchSettlements(c.env, { provider: "razorpay", day, skip: 0 }, now);

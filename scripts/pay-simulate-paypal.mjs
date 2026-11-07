@@ -78,7 +78,11 @@ export async function simulatePayPal(args) {
           intent: "CAPTURE",
           status: "APPROVED",
           purchase_units: [
-            { reference_id: checkout, custom_id: checkout, amount: { currency_code: "USD", value } },
+            {
+              reference_id: checkout,
+              custom_id: `${checkout}-local`,
+              amount: { currency_code: "USD", value },
+            },
           ],
         }
       : {
@@ -86,7 +90,7 @@ export async function simulatePayPal(args) {
           status: "COMPLETED",
           amount: { currency_code: "USD", value },
           final_capture: true,
-          custom_id: checkout,
+          custom_id: `${checkout}-local`, // P7: the environment mark, as the local finance Worker makes it
           create_time: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
           supplementary_data: { related_ids: { order_id: order } },
         };

@@ -902,6 +902,7 @@ describe("routes per role, the review list, the provider contract", () => {
       settingsMode: "test",
       liveFlag: "false",
       fetch: stubFetch,
+      env: "local",
     });
     expect(await checkProviderContract(ok, { liveAllowed: "false" })).toEqual([]);
     let n = 0;
@@ -915,6 +916,7 @@ describe("routes per role, the review list, the provider contract", () => {
       settingsMode: "live",
       liveFlag: "false",
       fetch: counting,
+      env: "local",
     });
     expect(await checkProviderContract(live, { liveAllowed: "false" })).toEqual([]);
     expect(n).toBe(0);

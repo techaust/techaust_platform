@@ -19,11 +19,11 @@ export const BELL_SIGNATURES =
   "Razorpay webhook signatures failed 5 times in an hour. Check the webhook secret.";
 
 /**
- * P7 A2.3 (the M3.1 follow-up): Settings › Gateways still says Live for a gateway while live payments are switched off, so it runs in test mode. Staff words,
- * builder's draft for the lead's approval under the owner's delegation (run file docs/runs/p7-payments.md).
+ * P7 A2.3 (the M3.1 follow-up): Settings › Gateways still says Live for a gateway while live payments are switched off, so its new checkouts run in test mode.
+ * Staff words, approved by the lead under the owner's delegation, 2026-11-07 (run file docs/runs/p7-payments.md, D4).
  */
 export const BELL_LIVE_REVERTED =
-  "Live payments are switched off, so every gateway set to Live is running in test mode. Set it back to Test in Settings › Gateways.";
+  "Live payments are switched off, so the gateways set to Live in Settings › Gateways are running in test mode and can't take real payments. Set them back to Test, or switch live payments on first.";
 
 // ---- M6.3 (07-ZM S17, staff words, lead under the owner's delegation) -------------------------------------------------------------------------------------------
 

@@ -13,9 +13,13 @@ import {
   payPalModeOfSettings,
   setStubTransport,
   stripeModeOfSettings,
+  stubFetch,
 } from "./gateway/config.ts";
 import { processEvent } from "./gateway/events.ts";
 import { BELL_LIVE_REVERTED } from "./gateway/messages.ts";
+import { razorpayProvider } from "./gateway/razorpay.ts";
+import { refundGwOf } from "./gateway/refund-gw.ts";
+import { fetchSettlements } from "./recon.ts";
 import { calls, eventRow, issued, linkFor, owner, stub } from "./test-gateway.ts";
 import { one } from "./test-helpers.ts";
 import { putSwiftBank, putTax } from "./test-invoice-types.ts";
@@ -233,5 +237,59 @@ describe("A2.3: a gateway left in live mode runs as test while the go-live flag 
     const inv = await issued(o);
     const l = await linkFor(o, inv);
     expect(l.checkoutId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it("the lead's decision on finding 5: refunds and the reconciliation fetch keep live_not_allowed (no test fallback), with zero calls", async () => {
+    await setLive("razorpay");
+    await env.DB.prepare("UPDATE settings SET value = ?1 WHERE key = 'gateways'")
+      .bind(
+        JSON.stringify({ razorpay: { mode: "live" }, stripe: { mode: "live" }, paypal: { mode: "live" } }),
+      )
+      .run();
+    calls.length = 0;
+    for (const p of ["razorpay", "stripe", "paypal"])
+      expect((await refundGwOf(env, p))?.blocked).toBe("live_not_allowed");
+    expect(await fetchSettlements(env, { provider: "razorpay", day: "2026-11-06", skip: 0 })).toEqual({
+      result: "live_not_allowed",
+    });
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("P7 early check L4: the Razorpay adapter needs its environment mark (no default)", () => {
+  it("a malformed mark is refused before any call; a good one is sent as notes.techaust_env", async () => {
+    const seen: unknown[] = [];
+    const counting: typeof fetch = async (i, o) => {
+      if (o?.body) seen.push(JSON.parse(String(o.body)));
+      return stubFetch(i, o);
+    };
+    const req = {
+      checkoutId: uuidv7(),
+      clientId: "c1",
+      documentId: uuidv7(),
+      currency: "INR" as const,
+      amountMinor: 118_000,
+      description: "Invoice TH/INV/2627/1",
+      expiresAt: Date.now() + 86_400_000,
+      callbackUrl: "https://portal.example.test/pay/return",
+    };
+    const cfg = {
+      keyId: "rzp_test_K1",
+      keySecret: "s",
+      settingsMode: "test" as const,
+      liveFlag: "false",
+      fetch: counting,
+    };
+    expect(await razorpayProvider({ ...cfg, env: "" }).createCheckout(req)).toEqual({
+      ok: false,
+      code: "provider_error",
+    });
+    expect(await razorpayProvider({ ...cfg, env: "Prod" }).createCheckout(req)).toEqual({
+      ok: false,
+      code: "provider_error",
+    });
+    expect(seen).toEqual([]);
+    expect((await razorpayProvider({ ...cfg, env: "staging" }).createCheckout(req)).ok).toBe(true);
+    expect((seen[0] as { notes: Record<string, string> }).notes.techaust_env).toBe("staging");
   });
 });

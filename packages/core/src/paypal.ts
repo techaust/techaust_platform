@@ -878,6 +878,8 @@ export const PAYPAL_SIGNATURE_VERDICTS = [
   "signature_invalid",
   /** Review part 1, finding 12: the five headers present and well formed, the certificate URL refused (the hook answers 400 `signature_missing`, counted). */
   "cert_url_refused",
+  /** P7 early check (M1): the gateway's mode could not be read (the hook answers 503 `mode_unavailable`, nothing written, not counted). */
+  "mode_unavailable",
 ] as const;
 export type PayPalSignatureVerdict = (typeof PAYPAL_SIGNATURE_VERDICTS)[number];
 
@@ -917,6 +919,11 @@ export type PayPalSignatureInput = {
   readonly local?: boolean;
   /** P7 A2.1: the mode the hook runs in; only that mode's certificate host is accepted (absent: either host, the M6.4 rule). */
   readonly mode?: ProviderMode;
+  /**
+   * P7 early check (M1, L2): the mode, asked for lazily, only after the transmission id, time and signature are well formed (the hook reads Settings ›
+   * Gateways then, and only while the go-live flag is "true"); null: it couldn't be read → `mode_unavailable` (the hook answers 503, PayPal retries). Wins over `mode`.
+   */
+  readonly modeOf?: () => Promise<ProviderMode | null>;
 };
 
 /**
@@ -953,9 +960,16 @@ export async function verifyPayPalSignature(i: PayPalSignatureInput): Promise<Pa
     return "signature_missing";
   const sig = base64Bytes(sigText);
   if (!sig) return "signature_missing";
+  // P7 early check (L2): the mode is asked for only now, once the cheap header checks passed, so an anonymous post costs no D1 read; it can't be read → 503.
+  let mode = i.mode;
+  if (i.modeOf) {
+    const m = await i.modeOf();
+    if (m === null) return "mode_unavailable";
+    mode = m;
+  }
   // Review part 1, finding 12: every other header present and well formed, only the certificate URL refused: counted (a misrouted or forged signed post, or
   // PayPal moving its certificates to a host we don't allow), never fetched.
-  if (!isPayPalCertUrl(certUrl, { local: i.local === true, ...(i.mode ? { mode: i.mode } : {}) }))
+  if (!isPayPalCertUrl(certUrl, { local: i.local === true, ...(mode ? { mode } : {}) }))
     return certUrl !== null && algo !== null ? "cert_url_refused" : "signature_missing";
   let key: RsaKey | null;
   try {

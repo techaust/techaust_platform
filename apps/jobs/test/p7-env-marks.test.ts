@@ -67,7 +67,7 @@ describe("hookModeOf (A2.1, A2.2): the mode a webhook is judged in", () => {
       ).toBe("test");
   });
 
-  it("the flag on: Settings › Gateways' mode per gateway; no row, or a failed read, is test", async () => {
+  it("the flag on: Settings › Gateways' mode per gateway; no row is test; a failed read is null (the hooks answer 503)", async () => {
     const e = { DB: realEnv.DB, PAYMENTS_LIVE_ALLOWED: "true" } as { DB: D1Database };
     expect(await hookModeOf(e, "stripe")).toBe("test");
     await setModes({ stripe: "live" });
@@ -82,7 +82,7 @@ describe("hookModeOf (A2.1, A2.2): the mode a webhook is judged in", () => {
       },
       PAYMENTS_LIVE_ALLOWED: "true",
     } as unknown as { DB: D1Database };
-    expect(await hookModeOf(broken, "stripe")).toBe("test");
+    expect(await hookModeOf(broken, "stripe")).toBeNull();
   });
 });
 
@@ -394,5 +394,78 @@ describe("POST /stripe (A2.2): livemode follows the mode Stripe runs in", () => 
     const l = stripeEvent(true);
     expect((await stripePost(l.body, { PAYMENTS_LIVE_ALLOWED: "true" })).status).toBe(200);
     expect(await rowsOf("stripe", l.id)).toHaveLength(1);
+  });
+});
+
+// ---- the early check's M1 and L2: a mode that can't be read is 503; PayPal reads it only after the cheap header checks -------------------------------------------
+
+/** The real database, except that the Settings › Gateways read throws (D1 down for that one statement); every prepared SQL is recorded. */
+const modeReadFails = () => {
+  const seen: string[] = [];
+  const DB = new Proxy(realEnv.DB, {
+    get(t, k) {
+      if (k === "prepare")
+        return (sql: string) => {
+          seen.push(sql);
+          if (sql.includes("FROM settings WHERE key = 'gateways'")) throw new Error("D1 down");
+          return t.prepare(sql);
+        };
+      const v = Reflect.get(t, k);
+      return typeof v === "function" ? v.bind(t) : v;
+    },
+  });
+  return { DB, seen };
+};
+const failuresOf = async (prefix: string) =>
+  (
+    await realEnv.DB.prepare("SELECT coalesce(sum(count), 0) AS n FROM hook_failures WHERE key LIKE ?1")
+      .bind(`${prefix}%`)
+      .first<{ n: number }>()
+  )?.n ?? 0;
+
+describe("M1: the Stripe and PayPal hooks answer 503 mode_unavailable when the mode can't be read (flag on), with nothing written or counted", () => {
+  it("Stripe: 503, no row, no failure count", async () => {
+    const { DB } = modeReadFails();
+    const before = await failuresOf("stripe:sig:");
+    const e = stripeEvent(false);
+    const res = await stripePost(e.body, { PAYMENTS_LIVE_ALLOWED: "true", DB });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: { code: "mode_unavailable" } });
+    expect(await rowsOf("stripe", e.id)).toHaveLength(0);
+    expect(await failuresOf("stripe:sig:")).toBe(before);
+    expect(fakes.leads).toHaveLength(0);
+  });
+
+  it("PayPal: 503, no row, no failure count", async () => {
+    const { DB } = modeReadFails();
+    const before = await failuresOf("paypal:sig:");
+    const e = ppEvent(`${uuidv7()}-local`);
+    const res = await ppPost(e.body, { over: { PAYMENTS_LIVE_ALLOWED: "true", DB } });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: { code: "mode_unavailable" } });
+    expect(await rowsOf("paypal", e.eventId)).toHaveLength(0);
+    expect(await failuresOf("paypal:sig:")).toBe(before);
+    expect(fakes.leads).toHaveLength(0);
+  });
+
+  it("L2: PayPal never reads the mode for a post whose headers fail the cheap checks (no D1 read at all)", async () => {
+    const { DB, seen } = modeReadFails();
+    const e = ppEvent(`${uuidv7()}-local`);
+    const res = await payPalHook(
+      new Request("https://jobs.example.test/paypal", {
+        method: "POST",
+        headers: { "content-type": "application/json", "paypal-transmission-id": "abc" },
+        body: e.body,
+      }),
+      makeEnv({ PAYPAL_WEBHOOK_ID: WEBHOOK, PAYMENTS_LIVE_ALLOWED: "true", DB }) as unknown as {
+        DB: D1Database;
+        LEADS_QUEUE: Queue;
+      },
+      Date.now(),
+      certFetch,
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: { code: "signature_missing" } });
+    expect(seen).toEqual([]);
   });
 });

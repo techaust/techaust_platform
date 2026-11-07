@@ -26,18 +26,19 @@ export const secretOf = (env: object, name: string): string | undefined => {
 /**
  * P7 A2.1, A2.2: the mode a gateway's webhook is judged in, the finance Worker's own rule (core `effectiveMode`): test while `PAYMENTS_LIVE_ALLOWED` is not
  * exactly "true" (no D1 read: the flag is "false" in every config until the owner's go-live); else Settings › Gateways' mode for that gateway, read by primary
- * key (`GATEWAY_MODES_SQL`; a missing row or field is test). A failed read is test too (the safe side: no live event is kept on a guess).
+ * key (`GATEWAY_MODES_SQL`; a missing row or field is test). P7 early check (M1): a failed read is null, and the Stripe and PayPal hooks answer 503
+ * `mode_unavailable` with nothing written and no failure counted (both gateways retry a non-2xx answer), so no event of either mode is dropped on a guess.
  */
 export async function hookModeOf(
   env: { DB: D1Database },
   provider: "razorpay" | "stripe" | "paypal",
-): Promise<"test" | "live"> {
+): Promise<"test" | "live" | null> {
   if (secretOf(env, "PAYMENTS_LIVE_ALLOWED") !== "true") return "test";
   try {
     const row = await env.DB.prepare(GATEWAY_MODES_SQL).first<Record<string, unknown>>();
     return effectiveMode(row?.[provider], "true");
   } catch {
-    return "test";
+    return null;
   }
 }
 

@@ -35,6 +35,7 @@ import {
   type PayPalOrder,
   type PayPalOrderBody,
   parsePayPalEvent,
+  payPalCustomIdOf,
   payPalModeOfOrigin,
   paypalOriginFor,
   readPayPalCapture,
@@ -449,7 +450,8 @@ export function stubCapture(
       paypal_fee: { currency_code: "USD", value: usd(fee) },
       net_amount: { currency_code: "USD", value: usd(p.amountMinor - fee) },
     },
-    custom_id: p.checkoutId,
+    // P7: marked "local" like the orders this Worker makes locally (`payPalCustomIdOf`), so every local path reads the split.
+    custom_id: payPalCustomIdOf(p.checkoutId, "local"),
     create_time: at,
     update_time: at,
     supplementary_data: { related_ids: { order_id: orderId } },
@@ -473,7 +475,7 @@ export function stubOrder(
     purchase_units: [
       {
         reference_id: p.checkoutId,
-        custom_id: p.checkoutId,
+        custom_id: payPalCustomIdOf(p.checkoutId, "local"),
         amount: { currency_code: "USD", value: usd(p.amountMinor) },
         ...(capture ? { payments: { captures: [capture] } } : {}),
       },

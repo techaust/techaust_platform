@@ -64,10 +64,14 @@ const as = <T>(
         ...(r.status === undefined ? {} : { status: r.status }),
       };
 
-/** The refund client for `provider`, or null when this Worker has no transport for it (503 `gateway_unavailable`). */
+/**
+ * The refund client for `provider`, or null when this Worker has no transport for it (503 `gateway_unavailable`). P7 (the lead's decision on the early check,
+ * finding 5): refunds read Settings' own mode, never the test fallback of A2.3, so a gateway set to live while `PAYMENTS_LIVE_ALLOWED` is "false" stays 503
+ * `live_not_allowed` here (money never goes back through a mode other than the one it came in). Only new checkouts fall back to test.
+ */
 export async function refundGwOf(env: { DB: D1Database }, provider: string): Promise<RefundGw | null> {
   if (provider === "razorpay") {
-    const api = razorpayOf(env, await gatewayModeOf(env.DB, env));
+    const api = razorpayOf(env, await gatewayModeOf(env.DB));
     if (!api) return null;
     return {
       provider,
@@ -93,7 +97,7 @@ export async function refundGwOf(env: { DB: D1Database }, provider: string): Pro
     };
   }
   if (provider === "stripe") {
-    const api = stripeOf(env, await stripeModeOfSettings(env.DB, env));
+    const api = stripeOf(env, await stripeModeOfSettings(env.DB));
     if (!api) return null;
     return {
       provider,
@@ -113,7 +117,7 @@ export async function refundGwOf(env: { DB: D1Database }, provider: string): Pro
     };
   }
   if (provider === "paypal") {
-    const api = payPalOf(env, await payPalModeOfSettings(env.DB, env));
+    const api = payPalOf(env, await payPalModeOfSettings(env.DB));
     if (!api) return null;
     return {
       provider,
