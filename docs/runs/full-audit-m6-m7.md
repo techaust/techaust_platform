@@ -679,3 +679,23 @@ Skills: `cloudflare:workers-best-practices` (L1, L2, L4, L7: no buffering of unb
 - **AU62:** `packages/auth` keeps its new workspace link to `@techaust/core`. It's internal and pure (no new outside package; packages import packages).
 - **AU63:** the dead-letter alert name for `refund.reversed` is reworded by the lead to "the email telling a client their refund came back" (staff line).
 - **AU64:** the portal bundle is 163,583 bytes (ceiling 200,000; plan line 160,000; L47 is the owner's question, and the lead's recommendation stays: raise the line to 180,000). The other three copies of a capped reader (`apps/jobs/src/hooks/shared.ts`, `usage.ts`, `apps/web/src/forms.ts`) become a follow-up.
+
+## Lead's final checks (2026-11-07)
+At 5fa703d7, one package at a time (a re-check reviewer ran beside it, so the start-up times read high):
+- **`pnpm build`:** exit 0.
+- **`pnpm check`:** exit 0.
+- **`pnpm test`:** core 2,713; db 1,092; auth 156; email 205; pdf 415; ui 471 (+2 skipped); testing 4; web 1,019; portal 957; jobs 780; admin 5,310. All pass.
+- **Bytes and start-up (fastest of 7):**
+
+  | Worker | Bytes | Start-up |
+  |---|---|---|
+  | admin front | 121,871 | 51.2 ms |
+  | API | 561,095 | 159.4 ms |
+  | finance | 435,938 | 129.6 ms |
+  | invoices | 567,389 | 146.0 ms |
+  | portal | 163,583 (past the 160,000 plan line; L47, the owner's) | 67.6 ms |
+  | jobs | 871,148 | 163.2 ms |
+
+  All are under their ceilings and the 200 ms gate.
+- **Migrations:** 0080–0086 pass `check-migrations` (87 in all).
+- **Earlier finding, fixed:** a full parallel run timed out on two web tests under load; one package at a time is green. The `rate-limit-config` core test missed `RL_SIGNOUT` and was fixed by the lead (55126b45).
