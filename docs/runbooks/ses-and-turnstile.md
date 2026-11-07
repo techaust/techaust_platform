@@ -202,3 +202,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "D:\Business\1. Parent Proje
 If email stops after step D2, **Actions → Activate** on the old key brings it back at once; then tell me.
 
 Production (Phase 7) gets its own IAM user and key, rotated the same way on the production jobs Worker.
+
+## Part 9. The digest's own suppression options: bounces only (about 5 minutes; your hosted step, only after the lead's go-ahead)
+
+**Status:** drafted by the builder in the full audit M6–M7 fix round AF3 (run file `docs/runs/full-audit-m6-m7.md`, AU54). Nothing has been changed in AWS. Do it only when the lead says so.
+
+**Why:** the owners' weekly digest is sent on the configuration set **`techaust-marketing`**; every other email (sign-in links, invoices, receipts, security alerts) goes on **`techaust-transactional`**. By default every configuration set uses the **account-level suppression list**, which adds an address after a hard bounce **or a complaint**. So if an owner clicks "Report spam" on a digest, SES puts that owner's own address on the account-wide list, and from then on SES silently drops **every** email to it, sign-in links and security alerts included. Our own system already handles that spam click safely: it only switches that owner's digest off (AU20). This part tells SES to do the same: for email sent on `techaust-marketing`, only a **bounce** puts an address on the list; a **complaint** never does.
+
+**What AWS's documentation says** (checked 2026-11-07 through the AWS SES Developer Guide pages "Using configuration set-level suppression to override your account-level suppression list", "Creating configuration sets → Suppression list options" and "Managing lists and subscriptions"): a configuration set can **override the account-level settings** with its own suppression conditions ("bounces, complaints, or bounces and complaints"); for email sent with that configuration set, an address is then added to the account-level suppression list only for the reasons enabled on it. The same setting through the API is `SuppressedReasons = BOUNCE` on the configuration set (`PutConfigurationSetSuppressionOptions`). The event destination (EventBridge, set up in M7.2 step H4) is a separate setting: SES still reports the complaint to us, so the digest is still switched off.
+
+**Steps (AWS console, the TecHaust account):**
+1. Sign in to the AWS console (the TecHaust account). Top right, check the region is **Asia Pacific (Mumbai) ap-south-1**.
+2. In the search bar at the top, type **SES** and open **Amazon Simple Email Service**.
+3. Left menu: **Configuration → Configuration sets**.
+4. Click the name **`techaust-marketing`** (not `techaust-transactional`: leave that one exactly as it is).
+5. Find the panel **Suppression list options** and click **Edit**.
+6. Under **Suppression list settings**, tick **Override account level settings**.
+7. Under **Suppression list**, tick **Enabled**.
+8. Under **Specify the reason(s)…**, choose **Bounce** only (not "Complaint", not "Bounce and complaint").
+9. Click **Save changes**.
+10. Check: the **Suppression list options** panel of `techaust-marketing` now shows the override on, suppression enabled, and the reason **Bounce** only. Then open **`techaust-transactional`** and check its panel still uses the **account-level** settings (no override).
+11. Tell me "Part 9 done" (there is nothing secret to copy). I record it in the status file and the decisions record.
+
+**If a screen doesn't match:** stop and tell me what you see; don't pick another option. If you saved something else by mistake, open the same panel, set it as in steps 6–8 (or untick **Override account level settings** to go back to the default), save, and tell me.
+
+**Production (Phase 7):** the production SES setup gets the same `techaust-marketing` setting when it is made.

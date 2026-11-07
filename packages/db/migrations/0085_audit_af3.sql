@@ -1,0 +1,1 @@
+ALTER TABLE `retention_run_counts` ADD `written` integer DEFAULT 0 NOT NULL;

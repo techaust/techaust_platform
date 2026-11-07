@@ -10,6 +10,7 @@ import { AUDIT_EXPORT_COLUMNS, BACKUP_SCOPE, monthlyExportSql } from "../src/bac
 import { auditIpDueSql } from "../src/dp-shared.ts";
 import { DRAIN_PAGE_SQL, ORPHAN_FILES_SQL, SIGNATURES_IN_USE_SQL } from "../src/r2-sweep.ts";
 import {
+  BELL_MARKER_SCRUBBED_TITLE,
   bindsOf,
   dryRunSql,
   dueWhere,
@@ -250,6 +251,14 @@ async function seed() {
   await run("INSERT INTO auth_attempts (key, window_start) VALUES (?1, ?2)", `t:${uuidv7()}`, ago(1));
   await run("INSERT INTO pdf_asks (key, asked_at) VALUES (?1, ?2)", uuidv7(), ago(3));
   await run("INSERT INTO hook_failures (key, window_start) VALUES (?1, ?2)", uuidv7(), ago(3));
+  // AU53: a once-only marker bell of 400 days (kept, its title scrubbed)
+  await run(
+    "INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link, read_at, created_at) VALUES (?1, ?2, 'milestone.unbilled', 'milestone', ?4, 'Milestone 1 for Pat Example', '/', NULL, ?3)",
+    uuidv7(),
+    owner,
+    ago(400),
+    uuidv7(),
+  );
   // bells: read 100 days ago (due), unread 100 days (kept), any 400 days (due), read 10 days (kept)
   for (const [at, read] of [
     [ago(100), 1],
@@ -419,13 +428,15 @@ describe("dry run and live (L5): the same rows, only those, held kept, financial
     const selected: Record<string, number> = {};
     const due: Record<string, number[]> = {};
     const every: Record<string, number[]> = {};
+    // keyed by family and position (AU53: the bells family has two entries on one table, a delete and a scrub)
     for (const family of RETENTION_FAMILIES)
-      for (const t of FAMILY_TABLES[family]) {
+      for (const [i, t] of FAMILY_TABLES[family].entries()) {
         const [p1, p2] = bindsOf(family, cut[family], asOf);
         const where = dueWhere(t);
-        due[t.table] = await rowidsOf(t.table, where, ...[p1, p2].slice(0, highestPlaceholder(where)));
-        every[t.table] = await rowidsOf(t.table);
-        selected[family] = (selected[family] ?? 0) + (due[t.table]?.length ?? 0);
+        const k = `${family}#${i}`;
+        due[k] = await rowidsOf(t.table, where, ...[p1, p2].slice(0, highestPlaceholder(where)));
+        every[k] = await rowidsOf(t.table);
+        selected[family] = (selected[family] ?? 0) + (due[k]?.length ?? 0);
       }
     const auditBefore = await all<{
       r: number;
@@ -465,7 +476,7 @@ describe("dry run and live (L5): the same rows, only those, held kept, financial
       audit_ip: 1,
       sessions: 3,
       counters: 3,
-      bells: 2,
+      bells: 3,
       stats: 1,
       requests: 1,
       consent: 3,
@@ -475,8 +486,17 @@ describe("dry run and live (L5): the same rows, only those, held kept, financial
       expect(counts[f]?.held_skipped, f).toBe(1);
     // M3: exactly the selected rows went (or, for the audit scrub, lost their IP and browser), and every other row is still there unchanged
     for (const family of RETENTION_FAMILIES)
-      for (const t of FAMILY_TABLES[family]) {
-        const gone = new Set(due[t.table]);
+      for (const [i, t] of FAMILY_TABLES[family].entries()) {
+        const k = `${family}#${i}`;
+        const gone = new Set(due[k]);
+        if (t.scrub && t.table === "notifications") {
+          // AU53: the marker bells selected keep their row, with the neutral title
+          for (const r of due[k] ?? [])
+            expect(
+              (await first<{ title: string }>("SELECT title FROM notifications WHERE rowid = ?1", r))?.title,
+            ).toBe(BELL_MARKER_SCRUBBED_TITLE);
+          continue;
+        }
         if (t.scrub) {
           const now = await all<{
             r: number;
@@ -491,7 +511,7 @@ describe("dry run and live (L5): the same rows, only those, held kept, financial
           }
           continue;
         }
-        expect(await rowidsOf(t.table), t.table).toEqual((every[t.table] ?? []).filter((r) => !gone.has(r)));
+        expect(await rowidsOf(t.table), k).toEqual((every[k] ?? []).filter((r) => !gone.has(r)));
       }
     // H1: the live contact's old grant (and the purged lead's receipts of the same hash) stay; L1: the access row with an old id but a young `at` stays
     expect(

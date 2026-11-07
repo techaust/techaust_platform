@@ -770,13 +770,13 @@ export type PaymentsRegisterRow = {
  * range (`refundsOutSql`), so a filed period's register never moves.
  */
 export const REFUNDS_REGISTER_SQL = (after: boolean): string =>
-  `SELECT f.id, f.payment_id, f.provider, f.origin, f.mode, f.paid_to, f.reason_code, f.settled_on, f.currency, f.amount_minor, f.inr_refunded_minor, f.reference_norm,
-       f.provider_refund_id, f.client_id, c.code AS client_code, c.display_name AS client_name, fd.number_display AS document_number, fc.number_display AS credit_note_number,
+  `SELECT fo.id, fo.payment_id, fo.provider, fo.origin, fo.mode, fo.paid_to, fo.reason_code, fo.settled_on, fo.currency, fo.amount_minor, fo.inr_refunded_minor, fo.reference_norm,
+       fo.provider_refund_id, fo.client_id, c.code AS client_code, c.display_name AS client_name, fd.number_display AS document_number, fc.number_display AS credit_note_number,
        fp.provider_payment_id AS payment_provider_ref, fp.reference_norm AS payment_reference
-   FROM (${refundsOutSql("?1", "?2")}) f JOIN payments fp ON fp.id = f.payment_id JOIN clients c ON c.id = f.client_id
-     LEFT JOIN documents fd ON fd.id = f.document_id LEFT JOIN documents fc ON fc.id = f.credit_note_id
-   WHERE fp.status = 'confirmed' ${after ? "AND (f.settled_on > ?3 OR (f.settled_on = ?3 AND f.id > ?4))" : ""}
-   ORDER BY f.settled_on, f.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
+   FROM (${refundsOutSql("?1", "?2")}) fo JOIN payments fp ON fp.id = fo.payment_id JOIN clients c ON c.id = fo.client_id
+     LEFT JOIN documents fd ON fd.id = fo.document_id LEFT JOIN documents fc ON fc.id = fo.credit_note_id
+   WHERE fp.status = 'confirmed' ${after ? "AND (fo.settled_on > ?3 OR (fo.settled_on = ?3 AND fo.id > ?4))" : ""}
+   ORDER BY fo.settled_on, fo.id LIMIT ${REPORT_PAGE_SIZE + 1}`;
 
 /** One row of `REFUNDS_REGISTER_SQL` as D1 returns it. */
 export type RefundsRegisterRow = {
@@ -831,7 +831,8 @@ const inrDocTaxable = (c: string) =>
   `CASE ${c} WHEN 'INR' THEN d.taxable_minor ELSE json_extract(d.computed, '$.inr.taxableMinor') END`;
 const inrDocTotal = (c: string) => `CASE ${c} WHEN 'INR' THEN d.total_minor ELSE d.total_inr_minor END`;
 const inrPaid = (c: string) => `CASE ${c} WHEN 'INR' THEN p.amount_minor ELSE p.inr_received_minor END`;
-const inrRefunded = (c: string) => `CASE ${c} WHEN 'INR' THEN f.amount_minor ELSE f.inr_refunded_minor END`;
+const inrRefunded = (c: string, f = "f") =>
+  `CASE ${c} WHEN 'INR' THEN ${f}.amount_minor ELSE ${f}.inr_refunded_minor END`;
 
 /**
  * `[count, taxable, total, inr count, inr taxable, inr total]` of the documents `d` that match `is` (an SQL condition) in currency `c` (6 arguments, under D1's 32).
@@ -845,9 +846,10 @@ const collectedJson = (is: string, c: string) => {
   const tds = `${is} AND p.kind = 'tds'`;
   return `json_array(count(CASE WHEN ${pay} THEN 1 END), coalesce(sum(CASE WHEN ${pay} THEN p.amount_minor END), 0), count(CASE WHEN ${tds} THEN 1 END), coalesce(sum(CASE WHEN ${tds} THEN p.amount_minor END), 0), coalesce(sum(CASE WHEN ${pay} THEN ${inrPaid(c)} END), 0), count(CASE WHEN ${pay} AND (${inrPaid(c)}) IS NULL THEN 1 END))`;
 };
-/** `[refunds, refunded, inr refunded, inr missing]` of the succeeded refunds `f` that match `is` in currency `c`. */
-const refundedJson = (is: string, c: string) =>
-  `json_array(count(CASE WHEN ${is} THEN 1 END), coalesce(sum(CASE WHEN ${is} THEN f.amount_minor END), 0), coalesce(sum(CASE WHEN ${is} THEN ${inrRefunded(c)} END), 0), count(CASE WHEN ${is} AND (${inrRefunded(c)}) IS NULL THEN 1 END))`;
+/** `[refunds, refunded, inr refunded, inr missing]` of the succeeded refunds `f` (the alias; AU48: `fo` over `refundsOutSql`) that match `is` in currency `c`. */
+const refundedJson = (is: string, c: string, f = "f") =>
+  `json_array(count(CASE WHEN ${is} THEN 1 END), coalesce(sum(CASE WHEN ${is} THEN ${f}.amount_minor END), 0), coalesce(sum(CASE WHEN ${is} THEN ${inrRefunded(c, f)} END), 0), count(CASE WHEN ${is} AND (${inrRefunded(c, f)}) IS NULL THEN 1 END))`;
+const refundedOutJson = (is: string, c: string) => refundedJson(is, c, "fo");
 /** One JSON object with a value per currency (`{"INR": [...], "USD": [...]}`), each from `json(<currency test>, <currency literal>)`. */
 const perCurrency = (json: (is: string, c: string) => string, col: string) =>
   `json_object(${SQL_CURRENCIES.map((c) => `'${c}', ${json(`${col} = '${c}'`, `'${c}'`)}`).join(", ")})`;
@@ -913,7 +915,7 @@ export const REVENUE_MONTHS_SQL = /* @__PURE__ */ (() => {
            (SELECT ${perCurrency(invoicedJson, "d.currency")} FROM documents d INDEXED BY documents_issued_on WHERE ${ISSUED_IN("m.f", "m.t")}) AS inv,
            (SELECT ${perCurrency(collectedJson, "p.currency")} FROM payments p INDEXED BY payments_confirmed
              WHERE p.status = 'confirmed' AND p.received_on >= m.f AND p.received_on <= m.t) AS pay,
-           (SELECT ${perCurrency(refundedJson, "f.currency")} FROM (${refundsOutSql("m.f", "m.t")}) f JOIN payments fp ON fp.id = f.payment_id
+           (SELECT ${perCurrency(refundedOutJson, "fo.currency")} FROM (${refundsOutSql("m.f", "m.t")}) fo JOIN payments fp ON fp.id = fo.payment_id
              WHERE ${REFUNDS_OF_COLLECTED}) AS ref
          FROM (${months}) m LIMIT -1) x
    JOIN (${currencyRows}) cur

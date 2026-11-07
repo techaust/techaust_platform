@@ -146,6 +146,9 @@ export const RECEIPTS_DUE_SQL = `SELECT p.id FROM payments p INDEXED BY payments
  * batch, ONE owners' bell when this very write made it the `RECEIPT_ISSUE_MAX_FAILURES`th failure (kind `receipt.blocked`, the payment, `?2` the title):
  * guarded on the row now holding exactly that count at exactly this instant, so a later try writes no second bell. Binds `?1` payment, `?2` reason, `?3` now,
  * `?4` version; the bell `?1` payment, `?2` title, `?3` now, `?4` link.
+ * Full audit M6–M7 AU47 (re-check L1): the count also starts again at 1 when the last try was in an earlier IST financial year (AU38 lets a `series_full`
+ * payment back in on 1 April), so every FY gives it `RECEIPT_ISSUE_MAX_FAILURES` tries; the third of a new FY rings the owners again: the bell row (unique per
+ * member, kind and payment) is brought back unread with its new time.
  */
 export function receiptFailureStatements(
   db: D1Database,
@@ -161,17 +164,18 @@ export function receiptFailureStatements(
   return [
     db
       .prepare(
-        `UPDATE payments SET receipt_failures = CASE WHEN receipt_fail_version IS ?4 THEN receipt_failures + 1 ELSE 1 END, receipt_tried_at = ?3,
+        `UPDATE payments SET receipt_failures = CASE WHEN receipt_fail_version IS ?4 AND ${istFyOfMsSql("receipt_tried_at")} = ${istFyOfMsSql("?3")} THEN receipt_failures + 1 ELSE 1 END, receipt_tried_at = ?3,
            receipt_fail_reason = ?2, receipt_fail_version = ?4
          WHERE id = ?1 AND status = 'confirmed' AND kind = 'payment' AND receipt_document_id IS NULL`,
       )
       .bind(a.paymentId, a.reason.slice(0, 32), a.now, a.numberingVersion),
     db
       .prepare(
-        `INSERT OR IGNORE INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
+        `INSERT INTO notifications (id, user_id, kind, entity_type, entity_id, title, link)
          SELECT 'n_' || lower(hex(randomblob(16))), u.id, 'receipt.blocked', 'payment', ?1, ?2, ?4 FROM staff_users u
          WHERE u.status = 'active' AND u.role = 'owner'
-           AND EXISTS (SELECT 1 FROM payments bp WHERE bp.id = ?1 AND bp.receipt_failures = ${RECEIPT_ISSUE_MAX_FAILURES} AND bp.receipt_tried_at = ?3)`,
+           AND EXISTS (SELECT 1 FROM payments bp WHERE bp.id = ?1 AND bp.receipt_failures = ${RECEIPT_ISSUE_MAX_FAILURES} AND bp.receipt_tried_at = ?3)
+         ON CONFLICT (user_id, kind, entity_id) DO UPDATE SET title = excluded.title, link = excluded.link, read_at = NULL, created_at = excluded.created_at`,
       )
       .bind(a.paymentId, a.bellTitle, a.now, a.link),
   ];
