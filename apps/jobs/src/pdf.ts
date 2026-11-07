@@ -29,6 +29,7 @@ import {
   PDF_MAX_HOPS,
   type PdfCertificateMessage,
   type PdfDeedMessage,
+  type PdfRebuildMessage,
   type PdfRenderMessage,
   type PdfSnapshotMessage,
   type PdfStatementMessage,
@@ -318,6 +319,94 @@ async function verifiedSignature(
   return { mime: ref.mime, base64: toBase64(bytes) };
 }
 
+// ---- render plans (Rebuild PDF, JOB-PDF-02: the first render and the rebuild share them; run file docs/runs/rebuild-pdf.md) ----------------------------
+
+/** A refusal of a plan: the sealed record failed a check, so nothing is rendered (a retry would print the same page). */
+export type PlanRefusal = { ok: false; code: string };
+/** What the browser prints: the page and its options, made only when a render needs them (an adopted PDF never builds its page). */
+export type PdfPage = { html: string; options: ReturnType<typeof pdfOptionsFor> };
+export type RenderPlan = { ok: true; page: () => PdfPage };
+
+/** The invoice envelope read back and verified against its row: the issue's own seal check (`verifyInvoiceEnvelope`). */
+export async function invoiceCheck(
+  row: Pick<RenderRow, "id" | "snapshot_sha256">,
+  envelopeText: string,
+): Promise<{ ok: true; envelope: InvoiceEnvelope } | PlanRefusal> {
+  const envelope = parseInvoiceEnvelope(envelopeText);
+  if (envelope === null) return { ok: false, code: "shape" };
+  if (envelope.documentId !== row.id || envelope.snapshotSha256 !== row.snapshot_sha256)
+    return { ok: false, code: "row_mismatch" };
+  const verdict = await verifyInvoiceEnvelope(envelope);
+  return verdict.ok ? { ok: true, envelope } : { ok: false, code: verdict.code };
+}
+
+/**
+ * The page of a verified invoice envelope, or the refusal: `signature_required`, `signature` or `statutory_<line>`.
+ * T4 (rt2, L4): a credit or debit note, or an invoice for a payment received, is never rendered without the signature it must carry (Researched 2026-10-30, Rule 53(1A)
+ * CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17)); an older staging document issued before the rule is refused (one bell, no retry: the
+ * frozen envelope would print the same page). The supplier copy of such a document whose recipient PDF is already stored (`pdf_sha256` set, made before the rule) is not
+ * refused (code review 1): it is the supplier's own record of a page that already exists. The signature image must be the frozen one (LD11). LD33 (M5.2): an export
+ * invoice prints its frozen endorsement and a proforma its frozen notice, byte for byte, or nothing is rendered; LD54 (M5.3): a credit or debit note names the invoice it
+ * is against (Rule 53(1A); Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)).
+ */
+export async function invoicePlan(
+  env: Env,
+  envelope: InvoiceEnvelope,
+  row: Pick<RenderRow, "pdf_sha256">,
+  copy: "recipient" | "supplier",
+  htmlOf: HtmlOf = renderDocumentHtml,
+): Promise<RenderPlan | PlanRefusal> {
+  if (signatureMissing(envelope) && !(copy === "supplier" && row.pdf_sha256 !== null))
+    return { ok: false, code: "signature_required" };
+  const signature = await verifiedSignature(env, envelope);
+  if (signature === "refused") return { ok: false, code: "signature" };
+  // the generic portal address (the host of PORTAL_URL), never a personal link; unset leaves the "pay in the portal" line out
+  const view = toInvoiceView(envelope, viewConfigFor(env.PORTAL_URL), {
+    signature,
+    portalLink: portalHost(env.PORTAL_URL),
+    copy,
+  });
+  const html = htmlOf(view);
+  const missing = missingStatutoryLine(envelope, html);
+  if (missing !== null) return { ok: false, code: `statutory_${missing}` };
+  const options = pdfOptionsFor(view);
+  return { ok: true, page: () => ({ html, options }) };
+}
+
+/** The offer envelope read back and verified against its row (the send's own seal check), and its page. */
+export async function offerPlan(
+  env: Pick<Env, "PORTAL_URL">,
+  row: Pick<RenderRow, "id" | "snapshot_sha256">,
+  envelopeText: string,
+): Promise<(RenderPlan & { envelope: Envelope }) | PlanRefusal> {
+  const envelope = parseEnvelope(envelopeText);
+  if (envelope === null) return { ok: false, code: "shape" };
+  if (envelope.documentId !== row.id || envelope.snapshotSha256 !== row.snapshot_sha256)
+    return { ok: false, code: "row_mismatch" };
+  const verdict = await verifyEnvelope(envelope);
+  if (!verdict.ok) return { ok: false, code: verdict.code };
+  return {
+    ok: true,
+    envelope,
+    page: () => {
+      const view = viewOf(env, envelope);
+      return { html: renderDocumentHtml(view), options: pdfOptionsFor(view) };
+    },
+  };
+}
+
+/**
+ * The acceptance certificate's page from its evidence row. `sealedName` (the rebuild): a document without a frozen `recipient.legalName` is refused
+ * (`certificate_unsealed`), so a rebuilt certificate never prints the live client name; the first render keeps M4.5's fallback for an old document.
+ */
+export function certificatePlan(
+  read: { view: Parameters<typeof renderCertificateHtml>[0]; nameSealed: boolean },
+  opts: { sealedName: boolean },
+): RenderPlan | PlanRefusal {
+  if (opts.sealedName && !read.nameSealed) return { ok: false, code: "certificate_unsealed" };
+  return { ok: true, page: () => ({ html: renderCertificateHtml(read.view), options: pdfOptionsFor() }) };
+}
+
 /** `render` for an issued invoice (the common steps are `processRender`'s). Returns the outcome; throws for anything a retry can fix. */
 async function renderInvoice(
   env: Env,
@@ -330,23 +419,14 @@ async function renderInvoice(
   /** `supplier`: the stored DUPLICATE FOR SUPPLIER copy (Q11): the same frozen envelope, the other copy mark, its own key; no row is written, nothing is emailed. */
   copy: "recipient" | "supplier" = "recipient",
 ): Promise<RenderOutcome> {
-  const envelope = parseInvoiceEnvelope(envelopeText);
-  const verdict =
-    envelope === null
-      ? ({ ok: false, code: "shape" } as const)
-      : envelope.documentId !== row.id || envelope.snapshotSha256 !== row.snapshot_sha256
-        ? ({ ok: false, code: "row_mismatch" } as const)
-        : await verifyInvoiceEnvelope(envelope);
+  const checked = await invoiceCheck(row, envelopeText);
   const label = documentLabel(row.number_display);
-  if (!envelope || !verdict.ok) {
-    logEvent("pdf.refused", {
-      stage: "render",
-      code: verdict.ok ? "unknown" : verdict.code,
-      family: "invoice",
-    });
+  if (!checked.ok) {
+    logEvent("pdf.refused", { stage: "render", code: checked.code, family: "invoice" });
     await env.DB.batch(refusedBell(env, row.id, label));
     return "refused";
   }
+  const envelope = checked.envelope;
   const keyInput = { type: envelope.type, fy: envelope.fy, number: envelope.number, version: 1 };
   const keys = pdfKeys(keyInput);
   const target = copy === "supplier" ? supplierPdfKey(keyInput) : keys.pdf;
@@ -367,51 +447,24 @@ async function renderInvoice(
     return "adopted";
   }
 
-  // T4 (rt2, L4): a credit or debit note, or an invoice for a payment received, is never rendered without the signature it must carry (Researched 2026-10-30, Rule 53(1A)
-  // CGST Rules (08-C RA-22); s.31(3)(d) CGST Act and Rule 50 CGST Rules (08-C RA-17)). Checked after the adoption above, so a PDF already stored stays; an older staging
-  // document issued before the rule is refused here (one bell, no retry: the frozen envelope would print the same page). The fix is not in Settings (the document is
-  // frozen), so the bell is its own line (07-ZC line 7, L7) with the invoice's page.
-  // The supplier copy of such a document whose recipient PDF is already stored (`pdf_sha256` set, made before the rule) is not refused (code review 1): it is
-  // the supplier's own record of a page that already exists, the same frozen envelope, so refusing it would only ring the bell at every ask and never store it.
-  if (signatureMissing(envelope) && !(copy === "supplier" && row.pdf_sha256 !== null)) {
-    logEvent("pdf.refused", {
-      stage: "render",
-      code: "signature_required",
-      family: "invoice",
-      type: envelope.type,
-    });
-    await env.DB.batch(refusedWith(env, row.id, BELL_COPY.invoiceUnsigned(label), `/invoices/${row.id}`));
+  // Checked after the adoption above, so a PDF already stored stays (the plan's refusals: `invoicePlan`).
+  const plan = await invoicePlan(env, envelope, row, copy, htmlOf);
+  if (!plan.ok) {
+    if (plan.code === "signature_required") {
+      logEvent("pdf.refused", { stage: "render", code: plan.code, family: "invoice", type: envelope.type });
+      await env.DB.batch(refusedWith(env, row.id, BELL_COPY.invoiceUnsigned(label), `/invoices/${row.id}`));
+    } else if (plan.code === "signature") {
+      logEvent("pdf.refused", { stage: "render", code: plan.code, family: "invoice" });
+      // Same kind (the sweep leaves it alone), but its own line and the place to fix it (07-R §3).
+      await env.DB.batch(refusedWith(env, row.id, BELL_COPY.invoiceSignature(label), "/settings/company"));
+    } else {
+      logEvent("pdf.refused", { stage: "render", code: plan.code, family: "invoice", type: envelope.type });
+      await env.DB.batch(refusedBell(env, row.id, label));
+    }
     return "refused";
   }
-  const signature = await verifiedSignature(env, envelope);
-  if (signature === "refused") {
-    logEvent("pdf.refused", { stage: "render", code: "signature", family: "invoice" });
-    // Same kind (the sweep leaves it alone), but its own line and the place to fix it (07-R §3).
-    await env.DB.batch(refusedWith(env, row.id, BELL_COPY.invoiceSignature(label), "/settings/company"));
-    return "refused";
-  }
-  // the generic portal address (the host of PORTAL_URL), never a personal link; unset leaves the "pay in the portal" line out
-  const view = toInvoiceView(envelope, viewConfigFor(env.PORTAL_URL), {
-    signature,
-    portalLink: portalHost(env.PORTAL_URL),
-    copy,
-  });
-  const html = htmlOf(view);
-  // LD33 (M5.2): an export invoice prints its frozen endorsement and a proforma its frozen notice, byte for byte, or nothing is rendered (the owners'
-  // bell rings once, the message is acknowledged without a retry: a retry would print the same page). LD54 (M5.3): a credit or debit note names the invoice it
-  // is against (the frozen number as one text node of its own), or nothing is rendered the same way (Rule 53(1A); Researched 2026-10-28, Rule 46 CGST Rules (08-C RA-05)).
-  const missing = missingStatutoryLine(envelope, html);
-  if (missing !== null) {
-    logEvent("pdf.refused", {
-      stage: "render",
-      code: `statutory_${missing}`,
-      family: "invoice",
-      type: envelope.type,
-    });
-    await env.DB.batch(refusedBell(env, row.id, label));
-    return "refused";
-  }
-  const result = await renderPaced(env, html, pdfOptionsFor(view), clock);
+  const page = plan.page();
+  const result = await renderPaced(env, page.html, page.options, clock);
   if (!result.ok) return failed(env, msg, result, now);
 
   const { bytes, sha256 } = await putPdfOnce(env.DOCS, target, result.bytes);
@@ -619,15 +672,9 @@ export async function processRender(
   const envelopeObject = await env.DOCS.get(row.snapshot_r2_key);
   if (envelopeObject === null) throw new Error("the envelope object is missing");
   if (invoice) return renderInvoice(env, msg, row, await envelopeObject.text(), now, clock, htmlOf);
-  const envelope = parseEnvelope(await envelopeObject.text());
-  const verdict =
-    envelope === null
-      ? ({ ok: false, code: "shape" } as const)
-      : envelope.documentId !== row.id || envelope.snapshotSha256 !== row.snapshot_sha256
-        ? ({ ok: false, code: "row_mismatch" } as const)
-        : await verifyEnvelope(envelope);
-  if (!envelope || !verdict.ok) {
-    logEvent("pdf.refused", { stage: "render", code: verdict.ok ? "unknown" : verdict.code });
+  const plan = await offerPlan(env, row, await envelopeObject.text());
+  if (!plan.ok) {
+    logEvent("pdf.refused", { stage: "render", code: plan.code });
     await env.DB.batch([
       bell(
         env,
@@ -640,6 +687,7 @@ export async function processRender(
     ]);
     return "refused";
   }
+  const { envelope } = plan;
   const keys = pdfKeys({
     type: envelope.type,
     fy: envelope.fy,
@@ -662,8 +710,8 @@ export async function processRender(
     return "adopted";
   }
 
-  const view = viewOf(env, envelope);
-  const result = await renderPaced(env, renderDocumentHtml(view), pdfOptionsFor(view), clock);
+  const page = plan.page();
+  const result = await renderPaced(env, page.html, page.options, clock);
   if (!result.ok) return failed(env, msg, result, now);
 
   const { bytes, sha256 } = await putPdfOnce(env.DOCS, keys.pdf, result.bytes);
@@ -681,6 +729,7 @@ export async function failed(
     | PdfStatementMessage
     | PdfSupplierMessage
     | PdfDeedMessage
+    | PdfRebuildMessage
     | ReceiptRenderMessage,
   result: Exclude<Awaited<ReturnType<typeof renderPaced>>, { ok: true }>,
   now: number,
@@ -768,12 +817,11 @@ export async function processCertificate(
     return "adopted";
   }
 
-  const result = await renderPaced(
-    env as unknown as RenderEnv,
-    renderCertificateHtml(read.view),
-    pdfOptionsFor(),
-    clock,
-  );
+  // The first render keeps M4.5's fallback name for an old document (`sealedName: false`), so the plan never refuses here.
+  const plan = certificatePlan(read, { sealedName: false });
+  if (!plan.ok) throw new Error(`certificate plan: ${plan.code}`);
+  const page = plan.page();
+  const result = await renderPaced(env as unknown as RenderEnv, page.html, page.options, clock);
   if (!result.ok) return failed(env, msg, result, now);
   const { bytes, sha256 } = await putPdfOnce(env.DOCS, read.key, result.bytes);
   await insert(sha256, { browserMs: result.browserMs });
@@ -876,6 +924,8 @@ export async function processPdf(
   else if (body.kind === "pdf.statement") logEvent("pdf.statement_misrouted");
   // T11: a deed's PDF is routed by `handleQueue` to `deed-pdf.ts` the same way (that file imports this one).
   else if (body.kind === "pdf.deed") logEvent("pdf.deed_misrouted");
+  // Rebuild PDF: routed by `handleQueue` to `pdf-rebuild.ts` the same way (that file imports this one).
+  else if (body.kind === "pdf.rebuild") logEvent("pdf.rebuild_misrouted");
   else await processSweep(env, body);
 }
 
