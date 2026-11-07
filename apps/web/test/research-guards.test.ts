@@ -42,10 +42,10 @@ describe("the verified-backup gate [RB-30: 'encrypted, off-site backups' is true
     }
   });
 
-  it("the file in the repo exists, is valid JSON and records no verified backup yet: production stays blocked until the L7 commit sets it", () => {
+  it("the file in the repo records the first production restore drill (L7, 2026-11-07) and passes the gate", () => {
     const text = readFileSync(ready.BACKUP_RECORD_FILE, "utf8");
-    expect(JSON.parse(text)).toEqual({ verifiedOn: null, restoreDrill: false });
-    expect(ready.checkBackupVerified(text, today)).toHaveLength(1);
+    expect(JSON.parse(text)).toEqual({ verifiedOn: "2026-11-07", restoreDrill: true });
+    expect(ready.checkBackupVerified(text, "2026-11-08")).toEqual([]);
   });
 
   it("checkProdReadiness reads the record file (a built site that is otherwise fine still fails on it)", () => {
