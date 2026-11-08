@@ -19,10 +19,9 @@ Out of scope: DNSSEC (pending at the registry; re-check), the private-repository
 - **Cloudflare:** seven production Workers match their configs (secrets, bindings, crons; workers.dev and previews off; `PAYMENTS_LIVE_ALLOWED` false); four custom domains; six queues with consumers and dead-letter queues, no backlog; D1 90 migrations and the seed; R2 buckets private; production Turnstile widgets on the right hosts; the 110 Worker errors of the day all 00:00–00:30 IST (the placeholder Workers, before the first deploy), none since; hourly cron on time.
 - **Found and fixed by the owner's yes in chat:** Web Analytics collected nothing after #200 (the site had `enabled: false`); switched to `auto_install: false`; visits recorded again.
 
-## Integration notes
+## Integration notes (before the review)
 - Local: `pnpm check` green; the four changed test files 120 passed (gate behaviour run through bash with stand-ins for `gh` and the clock); the built website in local workerd: `/pricing/`, `/services/`, `/services/custom-web-apps/`, `/industries/saas-startups/` 301 to the address without the slash (query kept), `/calculator/` still to `/pricing`, pages without a slash 200, `/api/health` 200.
 - Not verified: the gate against GitHub's real API (first scheduled night after the merge); the robots files and redirects on production (next production deploy, owner's approval).
-
 
 ## Review (reviewer, Opus 5.5 high; copied in by the lead)
 **APPROVE**: no critical or high; 1 medium, 8 low. Skills: `cloudflare:workers-best-practices`, `code-review` (high). Verified against the bundled `workers-shared` rules engine: placeholders never match an empty segment, static before dynamic, `_redirects` before assets; no open redirect (`//evil.com/`, `/\evil.com/`, `/%5Cevil.com/`, `/%2F%2Fevil.com/` stay on site); query kept; `run_worker_first` paths untouched; no loop (Astro `format: "file"`, `trailingSlash: "never"`). Gate: GNU date and month ends, `gh api -f` encoding, `bash -e` with `&& continue`, `!cancelled()`, workflow-level concurrency, skipped-job runs, permissions and fork safety all sound. Tests: four files, 120 passed.
@@ -36,10 +35,16 @@ Out of scope: DNSSEC (pending at the registry; re-check), the private-repository
 8. **Low:** the test's matcher doesn't model splats. **Fixed:** the test refuses a `*` source until `target()` models it.
 9. **Low:** non-existent addresses with a slash now pass through a 301 before the 404. **Kept** (harmless, recorded).
 
-## Integration notes
+## Integration notes (after the review)
 - Fixes on the same branch after the review; `check-spa-headers --source` ok; the four changed test files 121 passed, 1 skipped; `pnpm check` green again before the PR.
 - Also today (owner's yes in chat, no code): Web Analytics site switched to manual snippet (visits recorded again at 21:59 UTC); GitHub secret scanning and push protection turned on (0 alerts at first read). The repository scan the owner asked for found no secret, client data or real tax or bank number in any of the 3,455 commits (gitleaks in CI plus a pattern search; only Turnstile site keys and made-up test values).
-- Not verified: the gate against GitHub's real API (the first scheduled night after the merge); robots and redirects on production (next production deploy, the owner's approval).
+- Not verified: the gate against GitHub's real API (the first scheduled night after the merge) (see Handover).
+- Merged as #202 (22:56 UTC, CI green); deployed in `deploy-prod.yml` run 42425133667 (owner's approval). Live: admin and portal `/robots.txt` end in their own plain file (`User-agent: *`, `Disallow:`), `text/plain`; `/pricing/`, `/services/`, `/services/custom-web-apps/`, `/industries/saas-startups/` 301 to the address without the slash (query kept); `//evil.com/` and `/%5Cevil.com/` stay on techaust.com; pages without a slash 200; four health checks 200; beacon on the website only.
 
 ## Usage
 Lead: Opus 5.5 high. Reviewer (agent-aa4ccadacc7942f90): claude-opus-5-5 / high, skills cloudflare:workers-best-practices, code-review. The `code-review` skill's own read-only helper (agent-a0de9796344914dcb, general-purpose): claude-opus-5-5 / high, skills none (the docs/14 §9 exception). `node tools/model-audit.mjs 2026-11-07`: all runs within the plan.
+
+## Handover (end of the 2026-11-08 day session)
+- **Done:** #202 merged and deployed (run 42425133667); robots, redirects, health and the beacon checked live.
+- **The gate on GitHub's real API:** the 23:10 UTC try started at 00:26 UTC (76 minutes late; the 21:10 try never started). Its gate read the run list ("No daily copy since 2026-11-07T20:30:00Z: backing up."), the backup job uploaded and checked `daily/techaust-prod-20261108T002659Z.tar` (348,160 bytes) and made November's monthly finance copy (run 42429761313).
+- **Next:** confirm the 01:10 UTC try's gate skipped ("uploaded and checked a daily copy since …: this try is skipped"); watch a week of nights (12 "Open follow-ups").

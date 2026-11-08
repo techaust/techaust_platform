@@ -189,7 +189,7 @@ Audited 2026-11-07 (analyst A1, read-only, over all Worker and SPA code; chapter
 | Bank details | D1 (`bank_accounts`), entered by the Owner in Settings | Owner (full), Accountant (masked) | n/a |
 
 **Rules:**
-- **Never commit secrets.** `.env.example` and `.dev.vars.example` list names only. `.dev.vars` and `.env*` are git-ignored. gitleaks scans the full git history in CI (a local pre-commit hook is optional and not yet installed).
+- **Never commit secrets.** `.env.example` and `.dev.vars.example` list names only. `.dev.vars` and `.env*` are git-ignored. gitleaks scans the full git history in CI (a local pre-commit hook is optional and not yet installed), and GitHub secret scanning with push protection is on (2026-11-08): a push holding a recognised live key is refused.
 - I will **never** read your `CREDENTIALS` folder. When a secret is needed, I give you the exact `wrangler secret put NAME --env staging` command and **you** paste the value into your terminal.
 - Gateway keys can't be entered in the admin UI (ADM-SET-06). The UI shows only "configured / missing" and the mode.
 - Owner accounts on Cloudflare, GitHub, AWS, Razorpay, Stripe, PayPal, Zoho and the domain registrar all use **2FA with an authenticator app or passkey**, and recovery codes stored offline.

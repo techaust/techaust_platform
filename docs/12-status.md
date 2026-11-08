@@ -3,48 +3,46 @@
 _Replaced (never appended) at the end of every session._
 
 ## Date
-**2026-11-08, early morning (IST): production is live.** The next conversation starts with "start the day" (or "continue"); the memory note `launch-2026-11-08` and [runs/p7-launch](runs/p7-launch.md) ("Launch log", "Cloudflare zone settings") hold the detail.
+**2026-11-08, early morning (IST), end of the day session: production is live and checked; the fixes from the production check are deployed; the first scheduled backup ran.** The next conversation starts with "start the day" (or "continue"); [runs/prod-check-2026-11-08](runs/prod-check-2026-11-08.md) and [runs/p7-launch](runs/p7-launch.md) (the newest "Handover") hold the detail.
 
 ## Done
-- **Production launched (Phase 7 L1–L8):** techaust.com, admin.techaust.com, portal.techaust.com and hooks.techaust.com are live on the new Workers (`deploy-prod.yml` run 42403321307, approved by the owner; all seven Workers deployed, every health check passed, zero Worker errors since).
-  - The LUT fold renumbered after #197 (0089 regenerated on 0088, identical SQL) and merged (#199). Production D1 holds migrations 0000–0089 and the seed.
-  - Custom Domains attached through the connector; the 30-minute website check on a temporary hostname passed, then it was detached and removed from DNS and the docs.
-  - The owner's "go": techaust.com attached; pages, redirects, robots, sitemap, security.txt, no noindex and `/api/health` checked live.
-- **Cloudflare Access removed from production admin** (owner): admin answers with its own sign-in. Staging keeps Access.
-- **Cloudflare zone settings (L10, owner's yes each):** minimum TLS 1.2, SSL Full (strict), Always Use HTTPS, DNSSEC, CAA, the `/api/` rate-limit rule, Email Obfuscation off, Browser Cache TTL respecting our headers, Speed Brain and Crawler Hints on; the unused staging events queues deleted; the owner deleted the old "Workers Builds" API token.
-- **Record:** #198 (the night of 2026-11-07) merged.
+- **#200 deployed** (`deploy-prod.yml` run 42416188549, owner's approval): the old paths with a trailing slash answer 301; the beacon is on website pages only.
+- **Web Analytics fixed** (owner's yes): the site's `enabled: false` had stopped collection altogether; switched to manual snippet (`auto_install: false`, same token); visits recorded again from 21:59 UTC (03:29 IST).
+- **Deep production check** (owner's request, read-only): website (35 sitemap pages and 16 quote-form links, every link and asset, robots, sitemap, security.txt, RSS, llms.txt, redirects, 404, headers, the form APIs, Turnstile, 375 px), admin and portal (headers, noindex, cross-site refusal, a route on each of the four admin Workers), hooks, DNS and email records, TLS, and Cloudflare (Workers vs configs, domains, secrets by name, crons, queues, D1 90 migrations, R2 private, Turnstile widgets, errors). All as expected apart from the items fixed in #202.
+- **#202 merged and deployed** (run 42425133667, owner's approval): admin and portal ship their own plain `robots.txt` that leaves crawling open (the noindex header keeps them out of search); website addresses with a trailing slash answer 301; the nightly backup is tried at 21:10, 23:10 and 01:10 UTC with a `gate` job. Review APPROVE (1 medium, 8 low; 7 fixed, 2 kept with reasons). Checked live after the deploy.
+- **First scheduled backup:** the 23:10 UTC try started at 00:26 UTC (76 minutes late; the 21:10 try never started); the gate read the run list and backed up; `daily/techaust-prod-20261108T002659Z.tar` (348,160 bytes) uploaded and checked, and November's monthly finance copy made (run 42429761313).
+- **Repository scan** (owner's question): no secret, client data or real tax or bank number in any of the 3,455 commits (CI's gitleaks plus a pattern search: only public Turnstile site keys and made-up test values); the owner's own name, phone and address are the published business contacts.
+- **GitHub secret scanning and push protection on** (owner's yes); 0 alerts.
+- **Clean-up:** 14 old worktrees, their leftover folders and 27 merged local branches removed; only `main` remains (plus this record's worktree until its PR merges).
+- **Record:** CLAUDE.md (robots, redirects, backups, Web Analytics, rule 6), docs/08, runbooks environments and restore, both run files, CHANGELOG (#200–#202), 13 (four rows in #202).
 
 ## In progress
-- **[#200](https://github.com/techaust/techaust_platform/pull/200) `fix/launch-day`** (worktree `../launch-fix`), auto-merge on, CI running after `main` was merged in:
-  - the four old paths with a trailing slash redirect (today they show the 404 page);
-  - Web Analytics added by the website layout on production builds only;
-  - `set-prod-secrets.ps1` makes a PayPal placeholder the hook accepts;
-  - the audit test checks field names only (a random id spelt "HMAC");
-  - the launch log and the zone settings in the run file.
-  Auto-fix couldn't be turned on by this session for #200 (the owner can, from the PR bar).
-- **Web Analytics:** Cloudflare's automatic injection is off and confirmed gone from all three hosts (browser user agent). Until #200 is deployed, the website counts no visits.
-- **DNSSEC:** the DS record is published at .com; Cloudflare still showed `pending`. Re-check that it reads `active`.
+- **This record's PR** (`docs/record-2026-11-08-day`, worktree `../rec9-side`): auto-merge on; remove the worktree after it merges.
+- **The 01:10 UTC backup try** had not run at the end of the session; its gate should skip (a daily copy exists since 20:30 UTC). Check that run's gate line ("uploaded and checked a daily copy since …: this try is skipped").
 
 ## Next
-1. When #200 merges: a production deploy (`deploy-prod.yml tag=main stage=full check_web=true`) on the owner's yes in that conversation; the owner approves in GitHub. Then check the trailing-slash redirects and that the beacon appears once on website pages and never on admin or portal.
-2. The owner's first sign-in: `pnpm.cmd invite --email <their staff address> --role owner --production` in the repo folder (their own `wrangler login`; type PRODUCTION), then enrolment and production Settings (GSTIN, Udyam, bank, signature PNG, LUT FY 2026-27 ARN, "Email on documents", payment terms, gateway modes = test, series numbers if any FY 2026-27 document was issued outside the system), then Catalogue › Publish.
-3. The contact-form test on techaust.com from the owner's phone: the lead arrives and the acknowledgement email is sent (also proves SES production access and the production email queue).
-4. Gateway TEST webhooks to `hooks.techaust.com/{razorpay,stripe,paypal}`: first check staging's open checkouts (payments L4), then the real webhook secrets (`tools/set-random-secret.ps1 … -Environment production`: Razorpay random `-Clipboard`; Stripe and PayPal `-Mode paste`). One test event per gateway shows "processed".
-5. Search Console (sitemap), a free uptime monitor, Sentry and the AWS connection back on (Q11), `backup.yml`'s first scheduled run (02:40 IST) checked.
+1. **Re-check:** last night's 01:10 UTC try skipped; DNSSEC reads `active` (at 21:30 UTC the .com servers had no DS record yet and Cloudflare showed `pending`; switched on 19:33 UTC; if still `pending` after 24 hours, look into it).
+2. **The owner's first sign-in:** `pnpm.cmd invite --email <their staff address> --role owner --production` in the repo folder (their own `wrangler login`; type PRODUCTION), then enrolment and production Settings (GSTIN, Udyam, bank, signature PNG, LUT FY 2026-27 ARN, "Email on documents", payment terms, gateway modes = test, series numbers if any FY 2026-27 document was issued outside the system), then Catalogue › Publish. Then read the admin CPU again (one 7.3 ms request during the first deploy; 6.2 ms or less since).
+3. **The contact-form test** from the owner's phone: the lead arrives and the acknowledgement email is sent (also proves SES production access and the production email queue).
+4. **Gateway TEST webhooks** to `hooks.techaust.com/{razorpay,stripe,paypal}`: first check staging's open checkouts (payments L4), then the real webhook secrets (`tools/set-random-secret.ps1 … -Environment production`: Razorpay random `-Clipboard`; Stripe and PayPal `-Mode paste`). One test event per gateway shows "processed".
+5. Search Console (sitemap), a free uptime monitor, Sentry and the AWS connection back on (Q11).
 6. L11, the two-week watch, from 2026-11-08. L9 (live payments) when the owner says so.
 
 ## Waits on the owner
-- **The approval** of the next production deploy in GitHub (after #200).
 - **The first sign-in and Settings** (Next 2), the contact-form test (Next 3), the gateway dashboards for the webhooks (Next 4).
-- **Speed check from a phone:** open `https://techaust.com/cdn-cgi/trace` on mobile data and read `colo=` (BOM, DEL, MAA or CCU = India). This PC is served from Marseille on the free plan; paid plans don't promise Indian routing either.
+- **Speed check from a phone:** open `https://techaust.com/cdn-cgi/trace` on mobile data and read `colo=` (BOM, DEL, MAA or CCU = India).
+- **Auto-fix** on PRs this session couldn't switch it on for (#200, #202, this record's PR): the PR bar's switch, if wanted.
 - **After launch:** Search Console, an uptime monitor, signing the AWS connection in to TecHaust.
 - **Dated duties:** the October IFF by 13 Nov (only if needed); the October EDF by 30 Nov (only if needed); the FY 2026-27 LUT before the next export invoice; DMARC `p=none` → `quarantine` after 2–4 weeks of clean reports (from about 22 Nov), then the HSTS preload review.
 - **Live payments (L9):** live accounts and keys, then the go-live order in `docs/runbooks/payment-gateways.md`.
 - **Model menu:** Opus 5.5, high, for every conversation.
 
 ## Open follow-ups
+- **2026-11-08, new (the production check; [runs/prod-check-2026-11-08](runs/prod-check-2026-11-08.md)):**
+  - **GitHub's schedule is unreliable:** the catalogue job's 30-minute schedule ran every 4–7 hours; the backup's 21:10 try never started and the 23:10 try came 76 minutes late. Watch a week of nights; if all three tries keep failing to start, a trigger from the jobs Worker's own cron (needs a GitHub token as a production secret, owner's choice) is the next step.
+  - **Kept from the review:** a by-hand run or re-run from 20:30 UTC (02:00 IST) counts as that night's copy; non-existent addresses with a trailing slash now pass through a 301 before the 404.
+  - **Going private:** the analysis is in [runbooks/environments.md](runbooks/environments.md) "Going private" (not decided; its own task if wanted).
 - **2026-11-08, new (the launch; [runs/p7-launch](runs/p7-launch.md)):**
-  - **Clean-up:** remove the side worktrees `../p7-side`, `../docs-side`, `../pay-side`, `../ops-side`, `../lut-side`, `../rb-side`, `../rec-side`, `../m74-side`, `../m75-side`, `../audit-side`, `../rec8-side` (after its PR), `../launch-fix` (after #200) and `.claude/worktrees/agent-a8bbd6359c2c79b47`, then their local branches (long paths: `Remove-Item -LiteralPath "\\?\<full path>" -Recurse -Force`).
   - **`build:production` and `build:staging`** use Unix `VAR=value` syntax, so on Windows they fail (`'CLOUDFLARE_ENV' is not recognized`); run the steps under bash with `export CLOUDFLARE_ENV=…` (CI is Linux). A cross-platform script is a small fix.
   - **A local production web build leaves `apps/web/dist` in production mode,** which fails web's robots test until the folder is removed.
   - **Speed Brain is zone-wide:** admin and portal also send the `Speculation-Rules` header (prefetch of same-origin links on hover; harmless for the SPAs; watch for odd prefetches).
