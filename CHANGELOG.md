@@ -2,6 +2,9 @@
 
 One line per merged pull request, newest first; dates in IST.
 
+- 2026-11-08 [#202](https://github.com/techaust/techaust_platform/pull/202) fix(ops): SPA robots.txt, 301 for trailing-slash pages, three nightly backup tries
+- 2026-11-08 [#200](https://github.com/techaust/techaust_platform/pull/200) fix(launch): trailing-slash redirects, PayPal placeholder shape, audit test field names
+- 2026-11-08 [#201](https://github.com/techaust/techaust_platform/pull/201) docs: record for 2026-11-08 (production live)
 - 2026-11-08 [#198](https://github.com/techaust/techaust_platform/pull/198) docs: record for the night of 2026-11-07 (launch preparation)
 - 2026-11-08 [#199](https://github.com/techaust/techaust_platform/pull/199) feat(invoices): fold the M3 LUT into the list before production
 - 2026-11-07 [#197](https://github.com/techaust/techaust_platform/pull/197) feat(pdf): Owner-only Rebuild PDF for a lost or damaged stored PDF

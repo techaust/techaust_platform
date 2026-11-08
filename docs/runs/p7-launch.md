@@ -515,3 +515,9 @@ Read-only audit of the techaust.com zone first, then the owner approved each cha
 - **This PR (#200):** when it merges, run `deploy-prod.yml tag=main stage=full check_web=true` on the owner's yes in that conversation (owner approves in GitHub). Then check: the four old paths with a trailing slash answer 301; the beacon appears once on website pages (browser user agent) and never on admin or portal; `/cdn-cgi/rum` reports stop and `cloudflareinsights.com` reports start.
 - **Re-check:** Cloudflare's injected beacon gone (it was switched off with `enabled: false` and the rule paused; still served at the last check); DNSSEC `active` (DS published at .com).
 - **Owner's next steps:** the first Owner invite and Settings, then the contact-form test, then the gateway test webhooks (12 Next 2–4).
+
+## Handover (end of the 2026-11-08 day session)
+- **#200 deployed** (`deploy-prod.yml` run 42416188549, owner's approval): the four old paths with a trailing slash answer 301; the beacon appears once on website pages and never on admin or portal (browser user agent).
+- **Web Analytics was collecting nothing:** the site's `enabled: false` (the earlier switch-off) stopped collection, not just injection, so no visit counted after #200. Fixed on the owner's yes: `auto_install: false` (manual snippet), same site token; visits recorded again from 21:59 UTC. CLAUDE.md now says never to use `enabled: false`.
+- **DNSSEC correction:** the earlier line "DS published at .com" was wrong. At 21:30 UTC the .com servers held no DS record for techaust.com and Cloudflare showed `pending` (DNSSEC switched on 19:33 UTC). Cloudflare Registrar submits the DS itself; re-check that it reads `active` (if still `pending` after 24 hours, look into it).
+- **Production check and fixes:** [runs/prod-check-2026-11-08](prod-check-2026-11-08.md) (#202, deployed in run 42425133667).
